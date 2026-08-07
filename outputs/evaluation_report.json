@@ -1,0 +1,179 @@
+{
+  "schema_version": 2,
+  "checkpoint": "outputs\\a_scheme.pt",
+  "checkpoint_epoch": 100,
+  "checkpoint_best_val": 0.0007820864848326892,
+  "objective_version": "a_scheme_no_projection_orthogonal_v1",
+  "dataset_seed": 10000,
+  "num_samples": 128,
+  "dataset_config": {
+    "num_points": 64,
+    "point_dim": 2,
+    "min_control_points": 5,
+    "max_control_points": 10,
+    "noise_std": 0.001,
+    "knot_nonuniformity": 0.65,
+    "sampling_nonuniformity": 0.45,
+    "turn_strength": 0.45,
+    "normalize": true,
+    "return_ground_truth": true
+  },
+  "model_config": {
+    "point_dim": 2,
+    "degree": 3,
+    "hidden_dim": 64,
+    "encoder_layers": 3,
+    "max_internal_knots": 8,
+    "min_parameter_gap": 0.0001,
+    "min_knot_gap": 0.001,
+    "lambda_poly": 1e-06,
+    "lambda_knot": 1e-05,
+    "gate_eps": 0.0,
+    "gate_mode": "hard_concrete",
+    "gate_temperature": 2.0,
+    "hard_concrete_gamma": -0.1,
+    "hard_concrete_zeta": 1.1,
+    "activity_threshold": 0.75,
+    "activity_initial_bias": -2.0,
+    "gap_parameterization": "strict",
+    "activity_use_local_context": true,
+    "activity_context_bandwidth": 0.08,
+    "activity_use_pilot_importance": true,
+    "activity_pilot_importance_gain": 1.0,
+    "compute_first_derivative": false
+  },
+  "gate_mode": "hard_concrete",
+  "activity_use_pilot_importance": true,
+  "legacy_checkpoint_migration": false,
+  "loss_config": {
+    "weights": {
+      "fit": 1.0,
+      "l0": 0.0002,
+      "activity": 0.0,
+      "binary": 0.0,
+      "orthogonal": 0.0,
+      "gap": 0.01,
+      "parameter_prior": 0.01
+    },
+    "min_knot_gap": 0.001
+  },
+  "loss_config_assumed": false,
+  "activity_threshold": 0.75,
+  "candidate_internal_knots": 8,
+  "expected_active_count_mean": 0.35609525442123413,
+  "activity_min": 0.0009139472967945039,
+  "activity_max": 0.46344247460365295,
+  "mean_within_curve_activity_range": 0.11282318830490112,
+  "mean_within_curve_pilot_importance_range": 3.2199347019195557,
+  "hard_retained_mean": 0.0,
+  "hard_retained_min": 0,
+  "hard_retained_max": 0,
+  "zero_knot_fraction": 1.0,
+  "hard_count_histogram": {
+    "0": 128
+  },
+  "threshold_sweep": {
+    "0.1": {
+      "mean": 0.8203125,
+      "histogram": {
+        "0": 73,
+        "1": 27,
+        "2": 17,
+        "3": 3,
+        "4": 5,
+        "5": 3
+      }
+    },
+    "0.3": {
+      "mean": 0.046875,
+      "histogram": {
+        "0": 123,
+        "1": 4,
+        "2": 1
+      }
+    },
+    "0.4": {
+      "mean": 0.0234375,
+      "histogram": {
+        "0": 125,
+        "1": 3
+      }
+    },
+    "0.5": {
+      "mean": 0.0,
+      "histogram": {
+        "0": 128
+      }
+    },
+    "0.6": {
+      "mean": 0.0,
+      "histogram": {
+        "0": 128
+      }
+    },
+    "0.7": {
+      "mean": 0.0,
+      "histogram": {
+        "0": 128
+      }
+    },
+    "0.75": {
+      "mean": 0.0,
+      "histogram": {
+        "0": 128
+      }
+    },
+    "0.9": {
+      "mean": 0.0,
+      "histogram": {
+        "0": 128
+      }
+    }
+  },
+  "network_total_objective": 0.0007820864848326892,
+  "network_current_no_orthogonal_objective": 0.0007820864848326892,
+  "network_forward_fit_loss": 0.0006943582120584324,
+  "network_forward_rms_euclidean": 0.026350677639454215,
+  "network_forward_coordinate_rmse": 0.018632742847718802,
+  "standard_bspline_refit_loss": 0.0006943579099925046,
+  "standard_bspline_refit_rms_euclidean": 0.026350671907799706,
+  "standard_bspline_coordinate_rmse": 0.01863273883620253,
+  "standard_bspline_control_count_mean": 4.0,
+  "standard_bspline_augmented_objective_mean": 0.04444310276721808,
+  "standard_bspline_rank_deficient_fraction": null,
+  "standard_bspline_smoothness_weight": 1e-06,
+  "standard_bspline_control_ridge": 0.0,
+  "raw_loss_components": {
+    "loss": 0.0007820864848326892,
+    "fit_loss": 0.0006943582120584324,
+    "l0_loss": 0.35609523952007294,
+    "expected_active_count": 0.35609523952007294,
+    "activity_loss": 0.04451190307736397,
+    "binary_loss": 0.03965717367827892,
+    "gap_loss": 0.0,
+    "parameter_prior_loss": 0.001650921709369868
+  },
+  "weighted_loss_components": {
+    "fit": 0.0006943582120584324,
+    "l0": 7.121904790401459e-05,
+    "activity": 0.0,
+    "binary": 0.0,
+    "gap": 0.0,
+    "parameter_prior": 1.650921709369868e-05
+  },
+  "true_parameter_rmse": 0.05206011040840379,
+  "true_knot_count_histogram": {
+    "1": 23,
+    "2": 28,
+    "3": 20,
+    "4": 22,
+    "5": 17,
+    "6": 18
+  },
+  "true_knot_count_mean": 3.28125,
+  "knot_match_tolerance": 0.05,
+  "knot_match_precision": 0.0,
+  "knot_match_recall": 0.0,
+  "knot_match_f1": 0.0,
+  "matched_knot_mae": null
+}
