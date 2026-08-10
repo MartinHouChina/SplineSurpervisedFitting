@@ -11,13 +11,15 @@ from ..spline.differentiable_solver import (
 )
 from ..spline.truncated_power_basis import build_design_matrix
 from .activity_head import ActivityHead
+from .count_conditioned_knot_head import CountConditionedKnotHead
+from .count_head import CountHead
 from .geometry_encoder import GeometryEncoder
 from .knot_head import KnotHead
 from .parameter_head import ParameterHead
 
 
 class SplineFittingNetwork(nn.Module):
-    """Jointly predict t, candidate U and sparse Hard-Concrete knot gates."""
+    """Predict point parameters and either count-conditioned or gated knots."""
 
     def __init__(
         self,
@@ -43,6 +45,8 @@ class SplineFittingNetwork(nn.Module):
         activity_use_local_context: bool = True,
         activity_context_bandwidth: float = 0.08,
         activity_use_query_features: bool = True,
+        activity_use_candidate_self_attention: bool = True,
+        activity_candidate_attention_heads: int = 4,
         activity_use_pilot_importance: bool = False,
         activity_pilot_importance_gain: float = 1.0,
         detach_activity_gate_for_fit: bool = True,
@@ -50,8 +54,19 @@ class SplineFittingNetwork(nn.Module):
         knot_attention_heads: int = 4,
         knot_parameterization: str = "independent_queries",
         compute_first_derivative: bool = False,
+        structure_mode: str = "hard_concrete",
+        count_attention_heads: int = 4,
+        count_head_mode: str = "ordinal_local_attention",
+        count_query_count: int = 4,
+        count_decoder_mode: str = "shared_count_embedding",
+        geometry_feature_mode: str | None = None,
     ) -> None:
         super().__init__()
+        if structure_mode not in {"hard_concrete", "count_conditioned"}:
+            raise ValueError(
+                "structure_mode must be 'hard_concrete' or 'count_conditioned'"
+            )
+        self.structure_mode = structure_mode
         self.degree = degree
         self.lambda_poly = lambda_poly
         self.lambda_knot = lambda_knot
@@ -73,50 +88,85 @@ class SplineFittingNetwork(nn.Module):
         if hard_concrete_zeta is not None:
             gate_stretch_high = hard_concrete_zeta
 
-        self.encoder = GeometryEncoder(point_dim, hidden_dim, encoder_layers)
+        if geometry_feature_mode is None:
+            geometry_feature_mode = (
+                "chord_derivatives"
+                if self.structure_mode == "count_conditioned"
+                else "raw_differences"
+            )
+        self.encoder = GeometryEncoder(
+            point_dim,
+            hidden_dim,
+            encoder_layers,
+            feature_mode=geometry_feature_mode,
+        )
         self.parameter_head = ParameterHead(
             hidden_dim, min_parameter_gap, gap_parameterization=gap_parameterization
         )
-        use_knot_cross_attention = (
-            knot_use_local_cross_attention and gate_mode != "legacy_soft"
-        )
-        if gate_mode == "legacy_soft":
-            knot_parameterization = "interval"
-        self.knot_head = KnotHead(
-            hidden_dim,
-            max_internal_knots,
-            min_knot_gap,
-            gap_parameterization=gap_parameterization,
-            use_local_cross_attention=use_knot_cross_attention,
-            attention_heads=knot_attention_heads,
-            knot_parameterization=knot_parameterization,
-        )
+        if self.structure_mode == "count_conditioned":
+            self.count_head = CountHead(
+                hidden_dim,
+                max_internal_knots,
+                mode=count_head_mode,
+                attention_heads=count_attention_heads,
+                query_count=count_query_count,
+            )
+            self.knot_head = CountConditionedKnotHead(
+                hidden_dim,
+                max_internal_knots,
+                min_gap=min_knot_gap,
+                attention_heads=count_attention_heads,
+                mode=count_decoder_mode,
+            )
+        else:
+            use_knot_cross_attention = (
+                knot_use_local_cross_attention and gate_mode != "legacy_soft"
+            )
+            if gate_mode == "legacy_soft":
+                knot_parameterization = "interval"
+            self.knot_head = KnotHead(
+                hidden_dim,
+                max_internal_knots,
+                min_knot_gap,
+                gap_parameterization=gap_parameterization,
+                use_local_cross_attention=use_knot_cross_attention,
+                attention_heads=knot_attention_heads,
+                knot_parameterization=knot_parameterization,
+            )
         # Legacy checkpoints did not use knot-local context. Keeping it disabled
         # in legacy mode preserves their forward semantics and MLP dimensions.
-        use_local_context = activity_use_local_context and gate_mode != "legacy_soft"
-        use_pilot_importance = (
-            activity_use_pilot_importance and gate_mode != "legacy_soft"
-        )
-        use_query_features = (
-            activity_use_query_features
-            and gate_mode != "legacy_soft"
-            and knot_parameterization == "independent_queries"
-        )
-        self.activity_head = ActivityHead(
-            hidden_dim,
-            initial_bias=activity_initial_bias,
-            gate_mode=gate_mode,
-            gate_temperature=gate_temperature,
-            gate_stretch_low=gate_stretch_low,
-            gate_stretch_high=gate_stretch_high,
-            activity_threshold=activity_threshold,
-            gate_eps=gate_eps,
-            use_local_context=use_local_context,
-            context_bandwidth=activity_context_bandwidth,
-            use_query_features=use_query_features,
-            use_pilot_importance=use_pilot_importance,
-            pilot_importance_gain=activity_pilot_importance_gain,
-        )
+        if self.structure_mode == "hard_concrete":
+            use_local_context = (
+                activity_use_local_context and gate_mode != "legacy_soft"
+            )
+            use_pilot_importance = (
+                activity_use_pilot_importance and gate_mode != "legacy_soft"
+            )
+            use_query_features = (
+                activity_use_query_features
+                and gate_mode != "legacy_soft"
+                and knot_parameterization == "independent_queries"
+            )
+            use_candidate_self_attention = (
+                activity_use_candidate_self_attention and use_query_features
+            )
+            self.activity_head = ActivityHead(
+                hidden_dim,
+                initial_bias=activity_initial_bias,
+                gate_mode=gate_mode,
+                gate_temperature=gate_temperature,
+                gate_stretch_low=gate_stretch_low,
+                gate_stretch_high=gate_stretch_high,
+                activity_threshold=activity_threshold,
+                gate_eps=gate_eps,
+                use_local_context=use_local_context,
+                context_bandwidth=activity_context_bandwidth,
+                use_query_features=use_query_features,
+                use_candidate_self_attention=use_candidate_self_attention,
+                candidate_attention_heads=activity_candidate_attention_heads,
+                use_pilot_importance=use_pilot_importance,
+                pilot_importance_gain=activity_pilot_importance_gain,
+            )
 
     def _pilot_knot_importance(
         self,
@@ -164,48 +214,85 @@ class SplineFittingNetwork(nn.Module):
 
     def set_gate_temperature(self, value: float) -> None:
         """Update the Hard-Concrete temperature used on subsequent forwards."""
-        self.activity_head.set_gate_temperature(value)
+        if hasattr(self, "activity_head"):
+            self.activity_head.set_gate_temperature(value)
 
     def set_force_open_gates(self, enabled: bool) -> None:
         """Force actual design-matrix gates open, e.g. during warm-up."""
-        self.activity_head.set_force_open_gates(enabled)
+        if hasattr(self, "activity_head"):
+            self.activity_head.set_force_open_gates(enabled)
 
     def set_activity_threshold(self, value: float) -> None:
         """Set the fixed probability threshold used by deterministic gates."""
-        self.activity_head.set_activity_threshold(value)
+        if hasattr(self, "activity_head"):
+            self.activity_head.set_activity_threshold(value)
 
-    def forward(self, points: torch.Tensor) -> dict[str, torch.Tensor]:
+    def forward(
+        self,
+        points: torch.Tensor,
+        true_internal_knot_count: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
         local_features, global_features = self.encoder(points)
         parameter_output = self.parameter_head(local_features, global_features)
-        knot_output = self.knot_head(
-            global_features,
-            local_features=local_features,
-            positions=parameter_output["params"],
-        )
-        if self.activity_head.use_pilot_importance:
-            pilot_delta, normalized_importance = self._pilot_knot_importance(
+        if self.structure_mode == "count_conditioned":
+            count_output = self.count_head(
+                global_features,
+                local_features,
                 parameter_output["params"],
-                knot_output["internal_knots"],
-                points,
             )
-        else:
+            selected_count = (
+                true_internal_knot_count
+                if true_internal_knot_count is not None
+                else count_output["predicted_knot_count"]
+            )
+            selected_count = selected_count.to(
+                device=points.device,
+                dtype=torch.long,
+            )
+            knot_output = self.knot_head(
+                global_features,
+                local_features,
+                parameter_output["params"],
+                selected_count,
+            )
+            fit_activity_gate = knot_output["knot_mask"].to(points.dtype)
             pilot_delta = torch.zeros_like(knot_output["internal_knots"])
-            normalized_importance = torch.zeros_like(knot_output["internal_knots"])
-        activity_output = self.activity_head(
-            global_features,
-            knot_output["internal_knots"],
-            local_features=local_features,
-            params=parameter_output["params"],
-            query_features=knot_output.get("knot_query_features"),
-            normalized_knot_importance=normalized_importance,
-        )
-
-        sampled_activity_gate = activity_output["activity_gate"]
-        fit_activity_gate = (
-            sampled_activity_gate.detach()
-            if self.detach_activity_gate_for_fit
-            else sampled_activity_gate
-        )
+            normalized_importance = torch.zeros_like(
+                knot_output["internal_knots"]
+            )
+            activity_output: dict[str, torch.Tensor] = {}
+        else:
+            count_output = {}
+            knot_output = self.knot_head(
+                global_features,
+                local_features=local_features,
+                positions=parameter_output["params"],
+            )
+            if self.activity_head.use_pilot_importance:
+                pilot_delta, normalized_importance = self._pilot_knot_importance(
+                    parameter_output["params"],
+                    knot_output["internal_knots"],
+                    points,
+                )
+            else:
+                pilot_delta = torch.zeros_like(knot_output["internal_knots"])
+                normalized_importance = torch.zeros_like(
+                    knot_output["internal_knots"]
+                )
+            activity_output = self.activity_head(
+                global_features,
+                knot_output["internal_knots"],
+                local_features=local_features,
+                params=parameter_output["params"],
+                query_features=knot_output.get("knot_query_features"),
+                normalized_knot_importance=normalized_importance,
+            )
+            sampled_activity_gate = activity_output["activity_gate"]
+            fit_activity_gate = (
+                sampled_activity_gate.detach()
+                if self.detach_activity_gate_for_fit
+                else sampled_activity_gate
+            )
 
         basis_output = build_design_matrix(
             params=parameter_output["params"],
@@ -229,9 +316,9 @@ class SplineFittingNetwork(nn.Module):
             "local_features": local_features,
             "global_features": global_features,
             **parameter_output,
+            **count_output,
             **knot_output,
             **activity_output,
-            "sampled_activity_gate": sampled_activity_gate,
             "fit_activity_gate": fit_activity_gate,
             "pilot_drop_objective_delta": pilot_delta,
             "normalized_knot_importance": normalized_importance,
@@ -239,6 +326,8 @@ class SplineFittingNetwork(nn.Module):
             **solver_output,
             "reconstructed_points": reconstructed,
         }
+        if self.structure_mode == "hard_concrete":
+            output["sampled_activity_gate"] = sampled_activity_gate
         if self.compute_first_derivative:
             first_derivative_design = build_derivative_design_matrix(
                 params=parameter_output["params"],

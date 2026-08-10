@@ -1,0 +1,87 @@
+\documentclass[preprint,12pt]{elsarticle}
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\journal{Computer-Aided Design}
+
+\newcommand{\TODO}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Kmax}{K_{\max}}
+
+\begin{document}
+
+\begin{frontmatter}
+
+\title{Canonical Ordinal Model-Order Prediction for Learning-Based
+B-Spline Curve Fitting}
+
+% Computer-Aided Design uses double-anonymized review. Author information is
+% intentionally kept in title_page.tex rather than this manuscript.
+
+\begin{abstract}
+Recovering a compact parametric B-spline from ordered point samples requires
+estimating both a discrete model order and continuous knot locations. Existing
+learned pruning formulations often use independent or weakly coupled binary
+gates, for which a fixed threshold must simultaneously determine how many knots
+to retain and which knots are geometrically necessary. This coupling can yield
+poorly calibrated structures despite low curve-fitting error. We formulate the
+problem instead as tolerance-aware canonical model-order selection followed by
+count-conditioned knot prediction. Redundant source knots are removed under a
+fixed geometric tolerance to construct identifiable supervision. A local
+cross-attention head predicts the internal-knot count through ordinal targets,
+and a shared count-conditioned query decoder returns exactly that many ordered
+knot locations. Complete count branches are compared using a learned-prior BIC
+criterion. The resulting knot vector is converted
+to a standard open cubic B-spline whose control points are obtained by regularized
+least squares. \TODO{Insert final quantitative improvements on count accuracy,
+knot F1, matched knot error, fitting RMS, and runtime.} Experiments on synthetic
+nonuniform cubic B-splines and \TODO{a real or public CAD benchmark} evaluate
+structural accuracy, geometric fidelity, robustness, and generalization. The
+proposed decomposition removes deployment-time threshold tuning and provides a
+direct, interpretable connection between learned inference and CAD model order.
+\end{abstract}
+
+\begin{keyword}
+B-spline \sep knot prediction \sep curve fitting \sep geometric deep learning
+\sep model order selection \sep computer-aided design
+\end{keyword}
+
+\end{frontmatter}
+
+\input{sections/01_introduction}
+\input{sections/02_related_work}
+\input{sections/03_problem_formulation}
+\input{sections/04_method}
+\input{sections/05_experimental_setup}
+\input{sections/06_results}
+\input{sections/07_conclusion}
+
+\section*{CRediT authorship contribution statement}
+\TODO{Describe each author's contributions using the CRediT taxonomy. Keep the
+anonymized review version free of identifying information if required by the
+submission system.}
+
+\section*{Declaration of competing interest}
+The authors declare that they have no known competing financial interests or
+personal relationships that could have appeared to influence the work reported
+in this paper. \TODO{Confirm this statement.}
+
+\section*{Data availability}
+The source code, trained models, and generated benchmark data will be deposited
+in \TODO{repository and persistent identifier} upon publication.
+
+\section*{Declaration of generative AI and AI-assisted technologies in the
+manuscript preparation process}
+During the preparation of this work, the authors used \TODO{name of tool or
+remove this section} to assist with \TODO{language editing or manuscript
+organization}. The authors reviewed and edited all generated material and take
+full responsibility for the content of the article.
+
+\bibliographystyle{elsarticle-num}
+\bibliography{references}
+
+\end{document}

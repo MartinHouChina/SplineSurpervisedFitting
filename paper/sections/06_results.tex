@@ -1,0 +1,92 @@
+\section{Results and discussion}
+\label{sec:results}
+
+\subsection{Why threshold pruning fails}
+
+Table~\ref{tab:v3diagnostic} records the observed v3 validation behavior. The
+mean retained count is only moderately above the truth, but its distribution is
+pathological: 49 of 128 curves retain all eight candidates and 22 retain none.
+The result confirms that a mean-count loss does not constrain per-curve
+cardinality and that globally coupled gate scores are poorly calibrated for a
+fixed threshold.
+
+\begin{table}[t]
+  \centering
+  \caption{Diagnostic results for the v3 threshold-pruning baseline on 128
+  validation curves. These are not results of the proposed method.}
+  \label{tab:v3diagnostic}
+  \begin{tabular}{lr}
+    \toprule
+    Metric & Value \\
+    \midrule
+    True internal-knot count, mean & 3.281 \\
+    Retained count at threshold 0.5, mean & 4.242 \\
+    Curves retaining all 8 candidates & 49/128 \\
+    Curves retaining zero candidates & 22/128 \\
+    Knot precision / recall / F1 at 0.05 & 0.407 / 0.526 / 0.459 \\
+    Matched-knot MAE & 0.0240 \\
+    Standard B-spline refit RMS & 0.0160 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Main comparison}
+
+The v4 categorical model reached a knot precision of approximately 0.44, but
+its training and validation count accuracies were approximately 0.64 and 0.21,
+respectively. Supplying the true count increased knot precision to approximately
+0.55, whereas additionally supplying true point parameters produced no further
+improvement. These diagnostics motivate canonical labels, ordinal local count
+attention, and parameter sharing across count-conditioned representations.
+
+\begin{table*}[t]
+  \centering
+  \caption{Main test-set comparison. Best values should be bold and the second
+  best underlined only after all runs are complete.}
+  \label{tab:main}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    Method & Count acc. $\uparrow$ & Count MAE $\downarrow$ & Knot F1 $\uparrow$
+    & Knot MAE $\downarrow$ & RMS $\downarrow$ & Time (ms) $\downarrow$ \\
+    \midrule
+    Fixed-$\Kmax$ & -- & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} \\
+    Independent gates & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} \\
+    Hard-Concrete v3 & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} \\
+    Count + top-$K$ & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} \\
+    Categorical count v4 & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} \\
+    Proposed ordinal, argmax & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} \\
+    Proposed ordinal, BIC & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} & \TODO{x} \\
+    \bottomrule
+  \end{tabular}
+\end{table*}
+
+\TODO{Discuss whether improvements come from count accuracy, better knot
+localization, or both. Include confidence intervals and statistical tests where
+appropriate. Do not infer structural superiority from fitting error alone.}
+
+\subsection{Robustness, generalization, and failure cases}
+
+Evaluate increasing noise, nonuniform sampling, knot clustering, unseen control
+point counts, and 3D curves. Show representative successes and failures,
+including curves whose count is misclassified by one or more knots. Discuss
+rank deficiency and the effect of control-polygon regularization.
+
+\begin{figure}[t]
+  \centering
+  \fbox{\parbox[c][42mm][c]{0.90\linewidth}{\centering
+  \TODO{Qualitative comparison: samples, true curve/knots, v3 threshold result,
+  proposed result, and pointwise error plot.}}}
+  \caption{Representative structural and geometric fitting results.}
+  \label{fig:qualitative}
+\end{figure}
+
+\subsection{Limitations}
+
+The supervised count formulation requires a specified geometric tolerance and
+labeled knot vectors under a consistent parameterization. Greedy removal is
+deterministic but is not guaranteed to find the globally smallest knot set.
+The present study focuses on single open cubic
+curves and does not yet handle closed curves, repeated knots, rational weights,
+surface patch topology, or continuity constraints between CAD entities. A
+an ordinal count error may still select the wrong representation, while BIC
+selection increases deployment cost by refitting several complete branches.

@@ -24,10 +24,11 @@ class LossWeights:
     existence: float = 0.0
     knot_position: float = 0.0
     count: float = 0.0
+    over_count: float = 0.0
 
 
 class SplineFittingLoss(nn.Module):
-    """Combine curve fitting with parameter, existence and knot supervision."""
+    """Combine fitting with either gated or count-conditioned structure loss."""
 
     def __init__(
         self,
@@ -135,9 +136,24 @@ class SplineFittingLoss(nn.Module):
         denominator = tangent.norm(dim=-1).clamp_min(1e-8)
         return (numerator / denominator).pow(2).mean()
 
-    def _gap_loss(self, internal_knots: torch.Tensor) -> torch.Tensor:
+    def _gap_loss(
+        self,
+        internal_knots: torch.Tensor,
+        knot_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         if internal_knots.shape[-1] == 0:
             return internal_knots.new_zeros(())
+        if knot_mask is not None:
+            losses: list[torch.Tensor] = []
+            for batch_index in range(internal_knots.shape[0]):
+                knots = internal_knots[batch_index, knot_mask[batch_index]]
+                if knots.numel() == 0:
+                    continue
+                gaps = torch.cat(
+                    [knots[:1], knots[1:] - knots[:-1], 1.0 - knots[-1:]]
+                )
+                losses.append(torch.relu(self.min_knot_gap - gaps).pow(2).mean())
+            return torch.stack(losses).mean() if losses else internal_knots.new_zeros(())
         boundary_left = internal_knots[:, :1]
         interior = internal_knots[:, 1:] - internal_knots[:, :-1]
         boundary_right = 1.0 - internal_knots[:, -1:]
@@ -160,24 +176,29 @@ class SplineFittingLoss(nn.Module):
         if not 0.0 <= activity_threshold <= 1.0:
             raise ValueError("activity_threshold must lie in [0, 1]")
         fit_loss = self._fit_loss(output["reconstructed_points"], points)
+        count_conditioned = "count_logits" in output
 
-        # Hard-Concrete makes the expected L0 norm differentiable:
-        # E[||z||_0] = sum_j P(z_j != 0).  It is intentionally a count per
-        # curve (not a mean over K), so the loss has the same semantics as the
-        # number of deployed internal knots.
-        l0_probability = output.get("l0_probability", output["activity"])
-        l0_loss = l0_probability.sum(dim=-1).mean()
-
-        # These two terms are legacy diagnostics.  Their default weights are
-        # zero in the A scheme because Hard-Concrete already supplies both
-        # exact zeros and a principled expected-L0 penalty.
-        if output["activity"].shape[-1] == 0:
-            activity_loss = output["activity"].new_zeros(())
-            binary_loss = output["activity"].new_zeros(())
+        if count_conditioned:
+            l0_probability = None
+            l0_loss = output["expected_knot_count"].mean()
+            activity_loss = points.new_zeros(())
+            binary_loss = points.new_zeros(())
         else:
-            activity_loss = output["activity"].mean()
-            binary_loss = (output["activity"] * (1.0 - output["activity"])).mean()
-        gap_loss = self._gap_loss(output["internal_knots"])
+            # Historical Hard-Concrete/soft-gate objective.
+            l0_probability = output.get("l0_probability", output["activity"])
+            l0_loss = l0_probability.sum(dim=-1).mean()
+            if output["activity"].shape[-1] == 0:
+                activity_loss = output["activity"].new_zeros(())
+                binary_loss = output["activity"].new_zeros(())
+            else:
+                activity_loss = output["activity"].mean()
+                binary_loss = (
+                    output["activity"] * (1.0 - output["activity"])
+                ).mean()
+        gap_loss = self._gap_loss(
+            output["internal_knots"],
+            output.get("knot_mask"),
+        )
 
         if chord_params is None:
             parameter_prior_loss = torch.zeros(
@@ -201,61 +222,126 @@ class SplineFittingLoss(nn.Module):
             existence_loss = points.new_zeros(())
             knot_position_loss = points.new_zeros(())
             count_loss = points.new_zeros(())
+            over_count_loss = points.new_zeros(())
             existence_true_positive_count = points.new_zeros(())
             existence_predicted_count = points.new_zeros(())
             existence_target_count = points.new_zeros(())
+            count_correct = points.new_zeros(())
+            count_absolute_error = points.new_zeros(())
         elif true_internal_knots is None or true_internal_knot_mask is None:
             raise ValueError(
                 "true_internal_knots and true_internal_knot_mask must be provided together"
             )
         else:
-            existence_targets, position_targets, matched_mask = (
-                self._ordered_knot_assignment(
-                    output["internal_knots"],
-                    true_internal_knots,
-                    true_internal_knot_mask,
-                )
-            )
-            if output["activity"].numel() == 0:
+            true_count = true_internal_knot_mask.to(torch.long).sum(dim=-1)
+            if count_conditioned:
                 existence_loss = points.new_zeros(())
-                knot_position_loss = points.new_zeros(())
-            else:
-                probability_logits = output.get("activity_probability_logits")
-                if probability_logits is None:
-                    probability_logits = torch.logit(
-                        output["activity"].clamp(1e-6, 1.0 - 1e-6)
+                existence_true_positive_count = points.new_zeros(())
+                existence_predicted_count = points.new_zeros(())
+                existence_target_count = points.new_zeros(())
+                if "count_ordinal_logits" in output:
+                    thresholds = torch.arange(
+                        1,
+                        output["count_ordinal_logits"].shape[-1] + 1,
+                        device=points.device,
                     )
-                existence_loss = F.binary_cross_entropy_with_logits(
-                    probability_logits, existence_targets
-                )
-                if matched_mask.any():
+                    ordinal_targets = (
+                        true_count.unsqueeze(-1) >= thresholds.unsqueeze(0)
+                    ).to(points.dtype)
+                    count_loss = F.binary_cross_entropy_with_logits(
+                        output["count_ordinal_logits"], ordinal_targets
+                    )
+                else:
+                    count_loss = F.cross_entropy(output["count_logits"], true_count)
+                over_count_loss = torch.relu(
+                    output["expected_knot_count"] - true_count.to(points.dtype)
+                ).mean()
+                predicted_count = output["predicted_knot_count"].to(torch.long)
+                count_correct = (predicted_count == true_count).to(points.dtype).mean()
+                count_absolute_error = (
+                    predicted_count - true_count
+                ).abs().to(points.dtype).mean()
+                selected_count = output["count_used_for_knots"].to(torch.long)
+                predicted_positions: list[torch.Tensor] = []
+                target_positions: list[torch.Tensor] = []
+                for batch_index in range(points.shape[0]):
+                    count = int(true_count[batch_index].item())
+                    if count == 0 or int(selected_count[batch_index].item()) != count:
+                        continue
+                    predicted_positions.append(
+                        output["internal_knots"][batch_index, :count]
+                    )
+                    target_positions.append(
+                        true_internal_knots[batch_index][
+                            true_internal_knot_mask[batch_index]
+                        ]
+                    )
+                if predicted_positions:
                     knot_position_loss = F.smooth_l1_loss(
-                        output["internal_knots"][matched_mask],
-                        position_targets[matched_mask],
+                        torch.cat(predicted_positions),
+                        torch.cat(target_positions),
                         beta=self.knot_position_beta,
                     )
                 else:
                     knot_position_loss = points.new_zeros(())
-            candidate_count = max(output["activity"].shape[-1], 1)
-            true_count = true_internal_knot_mask.to(points.dtype).sum(dim=-1)
-            predicted_count = l0_probability.sum(dim=-1)
-            count_loss = (
-                ((predicted_count - true_count) / candidate_count).pow(2).mean()
-            )
-            existence_prediction = output["activity"] >= activity_threshold
-            existence_target = existence_targets.to(torch.bool)
-            existence_true_positive_count = (
-                (existence_prediction & existence_target)
-                .to(points.dtype)
-                .sum(dim=-1)
-                .mean()
-            )
-            existence_predicted_count = (
-                existence_prediction.to(points.dtype).sum(dim=-1).mean()
-            )
-            existence_target_count = (
-                existence_target.to(points.dtype).sum(dim=-1).mean()
-            )
+            else:
+                existence_targets, position_targets, matched_mask = (
+                    self._ordered_knot_assignment(
+                        output["internal_knots"],
+                        true_internal_knots,
+                        true_internal_knot_mask,
+                    )
+                )
+                if output["activity"].numel() == 0:
+                    existence_loss = points.new_zeros(())
+                    knot_position_loss = points.new_zeros(())
+                else:
+                    probability_logits = output.get("activity_probability_logits")
+                    if probability_logits is None:
+                        probability_logits = torch.logit(
+                            output["activity"].clamp(1e-6, 1.0 - 1e-6)
+                        )
+                    existence_loss = F.binary_cross_entropy_with_logits(
+                        probability_logits, existence_targets
+                    )
+                    if matched_mask.any():
+                        knot_position_loss = F.smooth_l1_loss(
+                            output["internal_knots"][matched_mask],
+                            position_targets[matched_mask],
+                            beta=self.knot_position_beta,
+                        )
+                    else:
+                        knot_position_loss = points.new_zeros(())
+                candidate_count = max(output["activity"].shape[-1], 1)
+                true_count_float = true_count.to(points.dtype)
+                predicted_count_float = l0_probability.sum(dim=-1)
+                count_loss = (
+                    (
+                        (predicted_count_float - true_count_float)
+                        / candidate_count
+                    )
+                    .pow(2)
+                    .mean()
+                )
+                over_count_loss = points.new_zeros(())
+                existence_prediction = output["activity"] >= activity_threshold
+                existence_target = existence_targets.to(torch.bool)
+                existence_true_positive_count = (
+                    (existence_prediction & existence_target)
+                    .to(points.dtype)
+                    .sum(dim=-1)
+                    .mean()
+                )
+                existence_predicted_count = (
+                    existence_prediction.to(points.dtype).sum(dim=-1).mean()
+                )
+                existence_target_count = (
+                    existence_target.to(points.dtype).sum(dim=-1).mean()
+                )
+                count_correct = points.new_zeros(())
+                count_absolute_error = (
+                    predicted_count_float - true_count_float
+                ).abs().mean()
 
         total = (
             self.weights.fit * fit_loss
@@ -268,6 +354,7 @@ class SplineFittingLoss(nn.Module):
             + self.weights.existence * existence_loss
             + self.weights.knot_position * knot_position_loss
             + self.weights.count * count_loss
+            + self.weights.over_count * over_count_loss
         )
         losses = {
             "loss": total,
@@ -282,9 +369,12 @@ class SplineFittingLoss(nn.Module):
             "existence_loss": existence_loss,
             "knot_position_loss": knot_position_loss,
             "count_loss": count_loss,
+            "over_count_loss": over_count_loss,
             "existence_true_positive_count": existence_true_positive_count,
             "existence_predicted_count": existence_predicted_count,
             "existence_target_count": existence_target_count,
+            "count_accuracy": count_correct,
+            "count_absolute_error": count_absolute_error,
         }
         if self.weights.orthogonal != 0.0:
             if "first_derivative" not in output:

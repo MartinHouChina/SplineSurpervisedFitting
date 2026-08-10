@@ -170,6 +170,32 @@ class ActivityHeadTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             head(torch.zeros(1, 8), torch.tensor([[0.5]]))
 
+    def test_candidate_self_attention_couples_sorted_query_features(self) -> None:
+        torch.manual_seed(9)
+        head = ActivityHead(
+            hidden_dim=8,
+            use_query_features=True,
+            use_candidate_self_attention=True,
+            candidate_attention_heads=2,
+        ).eval()
+        query_features = torch.randn(2, 3, 8, requires_grad=True)
+        output = head(
+            torch.randn(2, 8),
+            torch.tensor([[0.2, 0.5, 0.8], [0.1, 0.4, 0.9]]),
+            query_features=query_features,
+        )
+
+        self.assertEqual(output["activity"].shape, (2, 3))
+        self.assertEqual(output["activity_candidate_features"].shape, (2, 3, 8))
+        self.assertEqual(output["candidate_self_attention_weights"].shape, (2, 3, 3))
+        torch.testing.assert_close(
+            output["candidate_self_attention_weights"].sum(dim=-1),
+            torch.ones(2, 3),
+        )
+        output["activity_logits"].sum().backward()
+        self.assertIsNotNone(query_features.grad)
+        self.assertGreater(float(query_features.grad.abs().sum()), 0.0)
+
 
 class HardConcreteSplineNetworkTests(unittest.TestCase):
     def test_supervised_gate_is_detached_only_from_fit_path(self) -> None:

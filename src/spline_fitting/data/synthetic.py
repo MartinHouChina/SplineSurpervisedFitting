@@ -144,6 +144,102 @@ def evaluate_bspline_curve(
     return basis @ control_points
 
 
+def fit_control_points_for_internal_knots(
+    parameters: torch.Tensor,
+    points: torch.Tensor,
+    internal_knots: torch.Tensor,
+    *,
+    degree: int = 3,
+    ridge: float = 1e-7,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Refit control points and return ``(control_points, RMS distance)``."""
+    knot_vector = torch.cat(
+        [
+            torch.zeros(
+                degree + 1, device=points.device, dtype=points.dtype
+            ),
+            internal_knots.to(device=points.device, dtype=points.dtype),
+            torch.ones(
+                degree + 1, device=points.device, dtype=points.dtype
+            ),
+        ]
+    )
+    num_control_points = int(internal_knots.numel()) + degree + 1
+    basis = bspline_basis_matrix(
+        parameters,
+        knot_vector,
+        degree,
+        num_control_points,
+    )
+    normal = basis.transpose(0, 1) @ basis
+    normal = normal + ridge * torch.eye(
+        num_control_points, device=points.device, dtype=points.dtype
+    )
+    right_hand_side = basis.transpose(0, 1) @ points
+    control_points = torch.linalg.solve(normal, right_hand_side)
+    reconstructed = basis @ control_points
+    rms_distance = (
+        (reconstructed - points).pow(2).sum(dim=-1).mean().sqrt()
+    )
+    return control_points, rms_distance
+
+
+def canonicalize_internal_knots(
+    parameters: torch.Tensor,
+    points: torch.Tensor,
+    internal_knots: torch.Tensor,
+    *,
+    degree: int = 3,
+    error_tolerance: float = 5e-3,
+    ridge: float = 1e-7,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Greedily remove redundant knots under a geometric RMS tolerance.
+
+    The returned representation is a deterministic, parsimonious target for
+    supervised learning.  It describes the smallest representation reached by
+    greedy single-knot removal, rather than the arbitrary representation used
+    by the random curve generator.
+    """
+    if error_tolerance < 0.0:
+        raise ValueError("error_tolerance must be non-negative")
+    retained = torch.sort(internal_knots.detach().clone()).values
+    control_points, rms_distance = fit_control_points_for_internal_knots(
+        parameters,
+        points,
+        retained,
+        degree=degree,
+        ridge=ridge,
+    )
+
+    while retained.numel() > 0:
+        best_index = -1
+        best_rms: torch.Tensor | None = None
+        best_control: torch.Tensor | None = None
+        for index in range(retained.numel()):
+            candidate = torch.cat([retained[:index], retained[index + 1 :]])
+            candidate_control, candidate_rms = fit_control_points_for_internal_knots(
+                parameters,
+                points,
+                candidate,
+                degree=degree,
+                ridge=ridge,
+            )
+            if best_rms is None or bool(candidate_rms < best_rms):
+                best_index = index
+                best_rms = candidate_rms
+                best_control = candidate_control
+
+        if best_rms is None or float(best_rms) > error_tolerance:
+            break
+        retained = torch.cat([retained[:best_index], retained[best_index + 1 :]])
+        control_points = best_control
+        rms_distance = best_rms
+
+    if control_points is None:
+        raise RuntimeError("canonical knot refit did not produce control points")
+    return retained, control_points, rms_distance
+
+
 def _random_unit_vector(
     dimension: int,
     generator: torch.Generator | None,
@@ -318,6 +414,8 @@ class SyntheticCubicBSplineDataset(Dataset):
         seed: int = 42,
         normalize: bool = True,
         return_ground_truth: bool = True,
+        canonical_knot_tolerance: float = 5e-3,
+        cache_samples: bool = True,
         dtype: torch.dtype = torch.float32,
     ) -> None:
         if size <= 0:
@@ -336,6 +434,11 @@ class SyntheticCubicBSplineDataset(Dataset):
         self.seed = seed
         self.normalize = normalize
         self.return_ground_truth = return_ground_truth
+        if canonical_knot_tolerance < 0.0:
+            raise ValueError("canonical_knot_tolerance must be non-negative")
+        self.canonical_knot_tolerance = canonical_knot_tolerance
+        self.cache_samples = bool(cache_samples)
+        self._sample_cache: dict[int, dict[str, torch.Tensor | int]] = {}
         self.dtype = dtype
         self.degree = 3
         self.max_knot_vector_length = max_control_points + self.degree + 1
@@ -356,6 +459,10 @@ class SyntheticCubicBSplineDataset(Dataset):
         )
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor | int]:
+        if index < 0 or index >= self.size:
+            raise IndexError(index)
+        if self.cache_samples and index in self._sample_cache:
+            return self._sample_cache[index]
         generator = torch.Generator().manual_seed(self.seed + index)
         sample = generate_cubic_bspline_sample(
             num_points=self.num_points,
@@ -387,10 +494,15 @@ class SyntheticCubicBSplineDataset(Dataset):
         if not self.return_ground_truth:
             return result
 
-        control_points = (
-            (sample.control_points - center) / scale
-            if self.normalize
-            else sample.control_points
+        source_internal = sample.knot_vector[
+            sample.degree + 1 : -(sample.degree + 1)
+        ]
+        internal, control_points, canonical_fit_rms = canonicalize_internal_knots(
+            sample.parameters,
+            points,
+            source_internal,
+            degree=sample.degree,
+            error_tolerance=self.canonical_knot_tolerance,
         )
         num_control_points = control_points.shape[0]
         padded_control = torch.zeros(
@@ -404,13 +516,17 @@ class SyntheticCubicBSplineDataset(Dataset):
 
         padded_knots = torch.ones(self.max_knot_vector_length, dtype=self.dtype)
         knot_mask = torch.zeros(self.max_knot_vector_length, dtype=torch.bool)
-        knot_length = sample.knot_vector.numel()
-        padded_knots[:knot_length] = sample.knot_vector
+        canonical_knot_vector = torch.cat(
+            [
+                torch.zeros(sample.degree + 1, dtype=self.dtype),
+                internal,
+                torch.ones(sample.degree + 1, dtype=self.dtype),
+            ]
+        )
+        knot_length = canonical_knot_vector.numel()
+        padded_knots[:knot_length] = canonical_knot_vector
         knot_mask[:knot_length] = True
 
-        internal = sample.knot_vector[
-            sample.degree + 1 : -(sample.degree + 1)
-        ]
         padded_internal = torch.zeros(self.max_internal_knots, dtype=self.dtype)
         internal_mask = torch.zeros(self.max_internal_knots, dtype=torch.bool)
         padded_internal[: internal.numel()] = internal
@@ -426,8 +542,13 @@ class SyntheticCubicBSplineDataset(Dataset):
                 "true_internal_knots": padded_internal,
                 "true_internal_knot_mask": internal_mask,
                 "num_control_points": num_control_points,
+                "source_num_control_points": sample.control_points.shape[0],
+                "source_internal_knot_count": source_internal.numel(),
+                "canonical_fit_rms": canonical_fit_rms,
             }
         )
+        if self.cache_samples:
+            self._sample_cache[index] = result
         return result
 
 

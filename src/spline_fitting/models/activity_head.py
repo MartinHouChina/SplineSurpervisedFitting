@@ -22,6 +22,8 @@ class ActivityHead(nn.Module):
         use_local_context: bool = False,
         context_bandwidth: float = 0.08,
         use_query_features: bool = False,
+        use_candidate_self_attention: bool = False,
+        candidate_attention_heads: int = 4,
         use_pilot_importance: bool = False,
         pilot_importance_gain: float = 1.0,
     ) -> None:
@@ -34,14 +36,41 @@ class ActivityHead(nn.Module):
             raise ValueError("context_bandwidth must be positive")
         if pilot_importance_gain < 0.0:
             raise ValueError("pilot_importance_gain must be non-negative")
+        if candidate_attention_heads <= 0:
+            raise ValueError("candidate_attention_heads must be positive")
+        if hidden_dim % candidate_attention_heads != 0:
+            raise ValueError("hidden_dim must be divisible by candidate_attention_heads")
+        if use_candidate_self_attention and not use_query_features:
+            raise ValueError(
+                "candidate self-attention requires query-feature conditioning"
+            )
 
         self.gate_mode = gate_mode
         self.gate_eps = float(gate_eps)
         self.use_local_context = bool(use_local_context)
         self.context_bandwidth = float(context_bandwidth)
         self.use_query_features = bool(use_query_features)
+        self.use_candidate_self_attention = bool(use_candidate_self_attention)
         self.use_pilot_importance = bool(use_pilot_importance)
         self.pilot_importance_gain = float(pilot_importance_gain)
+        if self.use_candidate_self_attention:
+            self.candidate_position_projection = nn.Sequential(
+                nn.Linear(1, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, hidden_dim),
+            )
+            self.candidate_self_attention = nn.MultiheadAttention(
+                hidden_dim,
+                candidate_attention_heads,
+                batch_first=True,
+            )
+            self.candidate_attention_norm = nn.LayerNorm(hidden_dim)
+            self.candidate_feed_forward = nn.Sequential(
+                nn.Linear(hidden_dim, 2 * hidden_dim),
+                nn.GELU(),
+                nn.Linear(2 * hidden_dim, hidden_dim),
+            )
+            self.candidate_output_norm = nn.LayerNorm(hidden_dim)
         activity_input_dim = hidden_dim + 1
         if self.use_query_features:
             activity_input_dim += hidden_dim
@@ -106,6 +135,8 @@ class ActivityHead(nn.Module):
             activity_features = global_expanded
 
         features = [activity_features]
+        candidate_attention_weights = None
+        activity_candidate_features = query_features
         if self.use_query_features:
             if query_features is None:
                 raise ValueError(
@@ -113,7 +144,35 @@ class ActivityHead(nn.Module):
                 )
             if query_features.shape != (batch, num_knots, global_features.shape[-1]):
                 raise ValueError("query_features must have shape [B, K, H]")
-            features.append(query_features)
+            activity_candidate_features = query_features
+            if self.use_candidate_self_attention:
+                candidate_tokens = (
+                    query_features
+                    + activity_features
+                    + self.candidate_position_projection(internal_knots.unsqueeze(-1))
+                )
+                if num_knots == 0:
+                    candidate_attention_weights = internal_knots.new_empty(
+                        batch, 0, 0
+                    )
+                    activity_candidate_features = candidate_tokens
+                else:
+                    attended, candidate_attention_weights = (
+                        self.candidate_self_attention(
+                            candidate_tokens,
+                            candidate_tokens,
+                            candidate_tokens,
+                            need_weights=True,
+                            average_attn_weights=True,
+                        )
+                    )
+                    attended = self.candidate_attention_norm(
+                        candidate_tokens + attended
+                    )
+                    activity_candidate_features = self.candidate_output_norm(
+                        attended + self.candidate_feed_forward(attended)
+                    )
+            features.append(activity_candidate_features)
         features.append(internal_knots.unsqueeze(-1))
         logits = self.mlp(torch.cat(features, dim=-1)).squeeze(-1)
         if self.use_pilot_importance:
@@ -141,7 +200,11 @@ class ActivityHead(nn.Module):
                 "activity_gate": gate,
             }
 
-        return {
+        result = {
             "activity_logits": logits,
             **gate_output,
         }
+        if self.use_candidate_self_attention:
+            result["activity_candidate_features"] = activity_candidate_features
+            result["candidate_self_attention_weights"] = candidate_attention_weights
+        return result

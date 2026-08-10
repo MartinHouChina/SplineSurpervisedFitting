@@ -1,68 +1,55 @@
 # 文件索引
 
-## 数据
+## 数据与模型
 
 | 文件 | 作用 |
 |---|---|
-| `data/synthetic.py` | 生成开放三次 B 样条、非均匀参数、采样点及完整真值 |
-| `data/dataset.py` | 通用曲线数据、归一化和弦长参数工具 |
+| `data/synthetic.py` | 生成开放三次 B 样条，并通过容差约束节点删除构造 canonical 标签 |
+| `models/geometry_encoder.py` | 编码坐标和弦长归一化一阶/二阶导数 |
+| `models/parameter_head.py` | 预测严格递增点参数 |
+| `models/count_head.py` | 局部 cross-attention 序数节点计数；兼容 v4 categorical 模式 |
+| `models/count_conditioned_knot_head.py` | 共享 query + count embedding 的有序节点解码；兼容 v4 独立分支 |
+| `models/spline_network.py` | 组装主网络、可微线性求解和历史结构路径 |
+| `models/activity_head.py`、`hard_concrete.py` | v3 及更早 checkpoint 兼容模块 |
 
-## 模型
-
-| 文件 | 作用 |
-|---|---|
-| `models/geometry_encoder.py` | 编码点、一阶差分和二阶差分 |
-| `models/parameter_head.py` | 预测严格递增参数 \(t\) |
-| `models/knot_head.py` | 独立节点 query、位置编码 cross-attention 和节点位置预测 |
-| `models/activity_head.py` | 结合 query 与节点局部特征预测 existence logits |
-| `models/hard_concrete.py` | 计算非零概率、训练门和部署二值门 |
-| `models/spline_network.py` | 组装模型、停梯度 gate、设计矩阵和可微线性求解 |
-
-## 损失与训练
+## 损失、部署与训练
 
 | 文件 | 作用 |
 |---|---|
-| `losses/total_loss.py` | 有序节点匹配及 fit、参数、existence、位置和节点数损失 |
-| `training/trainer.py` | 训练/验证、existence 指标和 checkpoint 选择 |
-| `checkpointing.py` | 当前模型构建及旧 checkpoint 显式迁移 |
-
-## 样条与部署
-
-| 文件 | 作用 |
-|---|---|
-| `spline/truncated_power_basis.py` | 构造训练用截断幂设计矩阵 |
-| `spline/differentiable_solver.py` | 可微求解训练代理的线性系数 |
-| `spline/curve_evaluation.py` | 重建和密集采样训练代理曲线 |
-| `evaluation/bspline_inference.py` | 删除节点并重拟合标准开放 B 样条控制点 |
-| `evaluation/knot_diagnostics.py` | 节点计数、匹配和拟合诊断 |
+| `losses/total_loss.py` | 序数数量、过预测、节点位置、参数和拟合损失 |
+| `evaluation/bspline_inference.py` | 标准 B 样条重拟合和 BIC 完整分支选择 |
+| `evaluation/knot_diagnostics.py` | 节点匹配及拟合统计 |
+| `training/trainer.py` | teacher-conditioned 训练、真实推理验证和 checkpoint 选择 |
+| `checkpointing.py` | v5、v4、v3 及更早结构的显式迁移 |
 
 ## 脚本
 
 | 文件 | 作用 |
 |---|---|
-| `scripts/train.py` | 生成训练/验证数据并训练当前 v2 objective |
-| `scripts/evaluate_checkpoint.py` | 输出网络、existence、节点和部署 B 样条指标，可保存 JSON |
-| `scripts/visualize_result.py` | 可视化真值、训练代理、部署曲线和节点概率 |
+| `scripts/train.py` | 训练 v5，并保存模型、数据、损失和训练配置 |
+| `scripts/evaluate_checkpoint.py` | 报告网络数量、部署数量、节点匹配和标准 B 样条指标 |
+| `scripts/visualize_result.py` | 对比采样点、拟合曲线、控制多边形和数量分布 |
 
 ## 测试
 
 | 文件 | 主要覆盖内容 |
 |---|---|
-| `tests/test_hard_concrete.py` | Hard-Concrete、二值门和拟合路径 stop-gradient |
-| `tests/test_a_scheme_loss_and_gaps.py` | 参数/节点监督、有序匹配和 existence 指标 |
-| `tests/test_bspline_inference.py` | 节点删除与标准 B 样条重拟合 |
-| `tests/test_knot_diagnostics.py` | 拟合和节点匹配统计 |
-| `tests/test_checkpointing.py` | v2 与历史 checkpoint 迁移 |
-| `tests/test_trainer_selection.py` | existence F1 优先的 checkpoint 规则 |
+| `tests/test_canonical_labels.py` | canonical 删除标签的一致性、容差和确定性 |
+| `tests/test_count_conditioned.py` | 序数 CountHead、共享解码、梯度、BIC 分支选择 |
+| `tests/test_checkpointing.py` | v5/v4/v3/v2/历史 checkpoint 严格迁移 |
+| `tests/test_bspline_inference.py` | 标准 B 样条重拟合 |
+| `tests/test_trainer_selection.py` | 几何匹配优先的 checkpoint 规则 |
 
-## 输出文件
+## 文档与论文
 
-训练 checkpoint 保存以下配置，以保证评估可复现：
+| 文件 | 作用 |
+|---|---|
+| `README.md` | 当前工作流、数据集和命令入口 |
+| `docs/architecture.md` | v5 模型结构 |
+| `docs/training_pipeline.md` | 数据、训练与评估协议 |
+| `docs/deployment_pipeline.md` | network/BIC 数量选择、标准 B 样条重拟合和指标解释 |
+| `docs/math_formulation.md` | 核心数学定义 |
+| `docs/pruning_redesign.md` | v3→v4→v5 的设计演化 |
+| `paper/` | Computer-Aided Design LaTeX 论文工程 |
 
-- `model_config`；
-- `dataset_config`；
-- `loss_config`；
-- `training_config`；
-- `objective_version`。
-
-`outputs/` 中的 `.pt`、`.json` 和图片为实验产物，不属于源代码。
+`outputs/` 中的 checkpoint、JSON 和图片属于实验产物，不属于源代码。

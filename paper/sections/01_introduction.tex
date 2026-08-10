@@ -1,0 +1,42 @@
+\section{Introduction}
+\label{sec:introduction}
+
+B-spline curves are a basic representation in geometric modeling because they
+combine local control, compact storage, stable evaluation, and compatibility
+with established CAD kernels \cite{deboor1972,cox1972,piegl1997}. Converting
+ordered measurements into a compact B-spline nevertheless remains difficult:
+point parameters, the number and locations of internal knots, and control points
+are mutually dependent. Excess knots improve data fidelity but reduce
+compactness and may fit noise, whereas too few knots erase geometric detail.
+
+Learning-based inference offers a way to amortize this nonlinear estimation
+across a family of curves. A common design predicts a fixed set of candidate
+knots and attaches a binary existence gate to every candidate. Our preliminary
+experiments show a structural failure of this strategy: a model can achieve a
+small fitting error while retaining all candidates for many curves and none for
+others. This occurs because a fixed probability threshold is asked to infer
+both model order and candidate identity.
+
+We instead define a parsimonious target by removing source knots under a fixed
+geometric tolerance, treat the resulting number of internal knots as an ordinal
+variable, and predict knot locations conditional on that number. This view
+matches the semantics of CAD model selection: first choose the representation
+complexity, then estimate its continuous parameters.
+
+The intended contributions are:
+\begin{itemize}
+  \item a tolerance-aware canonical labeling procedure that avoids supervising
+  arbitrary redundant source representations;
+  \item a local-attention ordinal count estimator that removes binary candidate
+  thresholding from B-spline knot inference;
+  \item a shared count-conditioned query decoder that predicts exactly the
+  selected number of ordered internal knots;
+  \item an end-to-end fitting pipeline that converts the prediction to a
+  standard open cubic B-spline through a regularized linear solve and BIC model
+  selection; and
+  \item a structural evaluation protocol that separates knot-count accuracy,
+  knot localization, and geometric fitting fidelity.
+\end{itemize}
+
+\TODO{Rewrite the contribution list after the final implementation and ensure
+that every claimed contribution is supported by an experiment.}

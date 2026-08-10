@@ -1,0 +1,31 @@
+\section{Problem formulation}
+\label{sec:problem}
+
+Let $Q=(q_i)_{i=0}^{M-1}\in\R^{M\times d}$ be ordered samples from an unknown
+curve. We seek a degree-$p$ open B-spline
+\begin{equation}
+  C(t)=\sum_{r=0}^{n-1}N_{r,p}(t;U)P_r,
+  \qquad t\in[0,1],
+\end{equation}
+with control points $P_r\in\R^d$ and knot vector
+\begin{equation}
+  U=(\underbrace{0,\ldots,0}_{p+1},
+  u_1,\ldots,u_K,
+  \underbrace{1,\ldots,1}_{p+1}),
+  \quad 0<u_1<\cdots<u_K<1.
+\end{equation}
+The unknowns comprise point parameters
+$0=t_0<\cdots<t_{M-1}=1$, the discrete internal-knot count
+$K\in\{0,\ldots,\Kmax\}$, the knot locations, and the control points.
+
+Given predictions $(\widehat t,\widehat K,\widehat U)$, the control points are
+obtained by
+\begin{equation}
+  \widehat P=\arg\min_P
+  \|A(\widehat t,\widehat U)P-Q\|_F^2
+  +\lambda_s\|D_2P\|_F^2+\lambda_r\|P\|_F^2,
+  \label{eq:control_solve}
+\end{equation}
+where $A$ is the B-spline collocation matrix and $D_2$ penalizes second
+differences of the control polygon. The primary goal is not only low fitting
+error but recovery of the simplest structurally correct representation.

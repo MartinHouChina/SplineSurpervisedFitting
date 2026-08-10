@@ -1,0 +1,48 @@
+\section{Experimental setup}
+\label{sec:experiments}
+
+\subsection{Datasets}
+
+The synthetic benchmark contains open cubic B-splines generated from smooth
+random control polygons. The current configuration uses 64 ordered samples per
+curve, 5--10 source control points, 1--6 source internal knots, nonuniform knot intervals,
+nonuniform parameter sampling, and Gaussian coordinate noise with standard
+deviation $10^{-3}$. Curves are centered and scaled to unit radius. Canonical
+targets are produced by greedy knot removal under normalized RMS tolerance
+$5\times10^{-3}$ and contain 0--6 internal knots. The default training and validation sets contain 10,000 and
+1,000 curves with disjoint random seeds.
+
+\TODO{Add an unseen test set and a public or real CAD dataset. Explain how
+ground-truth curve parameterizations are made comparable.}
+
+\subsection{Baselines and ablations}
+
+The comparison should include:
+\begin{enumerate}
+  \item fixed-$\Kmax$ fitting without deletion;
+  \item independent supervised existence gates;
+  \item candidate self-attention with Hard-Concrete gates (v3);
+  \item a CountHead followed by top-$K$ candidate ranking; and
+  \item categorical count-conditioned decoding with source labels (v4);
+  \item ordinal shared count-conditioned decoding with canonical labels; and
+  \item the full method with BIC and learned count prior.
+\end{enumerate}
+Classical chord-length fitting and an optimization-based adaptive knot method
+should be included when implementations are available. Ablations should remove
+true-parameter supervision, position encoding, local cross-attention, count
+conditioning, canonical labeling, decoder sharing, BIC selection, and
+control-polygon regularization one at a time.
+
+\subsection{Metrics}
+
+We report count accuracy, count mean absolute error, knot precision/recall/F1
+within tolerances $\{0.01,0.02,0.05\}$, matched-knot MAE, pointwise Euclidean
+RMS, maximum deviation, control-point count, zero/all-knot failure rates, and
+runtime. Knot matching is reported only under a shared parameterization. Model
+selection uses the validation set; the test set is evaluated once.
+
+\subsection{Implementation details}
+
+\TODO{Record hardware, software versions, parameter count, optimizer, learning
+rates, batch size, epoch count, random seeds, loss weights, and training time.
+Report mean and standard deviation over at least three seeds.}

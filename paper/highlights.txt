@@ -1,0 +1,7 @@
+Highlights
+
+- Redundant source knots are removed to construct tolerance-aware supervision.
+- Local ordinal attention predicts spline model order without node gates.
+- A shared count-conditioned decoder returns strictly ordered knot vectors.
+- Learned-prior BIC selects among complete standard B-spline representations.
+- Structural metrics expose failures hidden by low curve-fitting error.

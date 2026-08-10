@@ -1,0 +1,85 @@
+\section{Method}
+\label{sec:method}
+
+\subsection{Geometry encoding and point parameterization}
+
+The encoder receives point coordinates together with first and second
+derivatives normalized by chord-length parameter gaps. It produces local tokens $F\in\R^{M\times h}$ and a pooled curve
+descriptor $g\in\R^h$. A parameter head predicts positive intervals, which are
+normalized to form a strictly increasing parameter sequence. A positional
+encoding of the predicted parameters is added to the local tokens before knot
+decoding.
+
+\subsection{Canonical structural supervision}
+
+Starting from a generated source knot vector, we greedily remove the single
+knot whose removal gives the smallest refitting error. A removal is accepted
+when the normalized Euclidean RMS remains below a prescribed tolerance
+$\epsilon$. The terminal representation defines the canonical count $K^*$ and
+knot locations $U^*$. Thus the target describes required geometric complexity
+rather than the arbitrary representation used to generate the samples.
+
+\subsection{Ordinal knot-count prediction}
+
+A set of count queries cross-attends to the position-encoded local tokens and
+produces a scalar complexity evidence $e$. Ordered thresholds $b_r$ define
+\begin{equation}
+  s_r=P(K\ge r)=\sigma(e-b_r),\qquad r=1,\ldots,\Kmax.
+\end{equation}
+Adjacent survival probabilities define a normalized class distribution. The
+head is trained using binary ordinal targets $\mathbf 1[K^*\ge r]$ and an
+asymmetric expected-overcount penalty.
+
+\subsection{Count-conditioned knot decoder}
+
+All admissible counts share interval queries, cross-attention, and output
+weights. A learned count embedding conditions the first $K+1$ interval queries.
+Positive interval logits are normalized to obtain exactly $K$ strictly ordered
+internal knots. During training, the representation indexed by the true count
+receives the knot-position and fitting losses.
+The direct neural prediction used for validation is
+\begin{equation}
+  \widehat K=\arg\max_K p_K,
+  \qquad \widehat U=\mathcal D_{\widehat K}(F,g).
+\end{equation}
+The deployment refinement described below may instead select among complete
+count branches. No candidate deletion, binary gate, or probability threshold
+is used.
+
+\subsection{Training objective}
+
+For a sample with count $K^*$ and true internal knots $U^*$, the objective is
+\begin{equation}
+  \mathcal L=\lambda_f\mathcal L_{fit}
+  +\lambda_t\mathcal L_t
+  +\lambda_K\mathcal L_{count}
+  +\lambda_o\mathcal L_{over}
+  +\lambda_u\mathcal L_{knot},
+\end{equation}
+where
+\begin{align}
+  \mathcal L_{fit}&=M^{-1}\sum_i\|C(\widehat t_i)-q_i\|_2^2,\\
+  \mathcal L_t&=M^{-1}\sum_i(\widehat t_i-t_i^*)^2,\\
+  \mathcal L_{count}&=\Kmax^{-1}\sum_r
+  \operatorname{BCEWithLogits}(e-b_r,\mathbf 1[K^*\ge r]),\\
+  \mathcal L_{over}&=\max(0,\mathbb E[K]-K^*),\\
+  \mathcal L_{knot}&=(K^*)^{-1}\sum_{j=1}^{K^*}
+  \operatorname{SmoothL1}(\widehat u_j^{(K^*)}-u_j^*).
+\end{align}
+
+\subsection{Standard B-spline deployment}
+
+Every complete count-conditioned representation defines an open knot vector.
+Equation \eqref{eq:control_solve} is solved for each admissible count, after
+which BIC augmented by the learned count prior selects the deployed model.
+This compares complete spline orders and does not delete individual candidates.
+
+\begin{figure}[t]
+  \centering
+  \fbox{\parbox[c][35mm][c]{0.90\linewidth}{\centering
+  \TODO{Architecture figure: ordered samples $\rightarrow$ encoder and
+  parameter head $\rightarrow$ CountHead $\rightarrow$ selected
+  count-conditioned decoder $\rightarrow$ standard B-spline refit.}}}
+  \caption{Overview of the proposed count-conditioned fitting pipeline.}
+  \label{fig:architecture}
+\end{figure}

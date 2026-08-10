@@ -1,0 +1,31 @@
+\section{Related work}
+\label{sec:related_work}
+
+\subsection{B-spline parameterization and knot placement}
+
+Classical B-spline fitting alternates or jointly optimizes point parameters,
+knot vectors, and control points. Standard references describe basis evaluation,
+least-squares fitting, and practical knot construction
+\cite{deboor1972,cox1972,piegl1997,dierckx1993}. Parameterization rules such as
+chord length and centripetal parameterization remain strong deterministic
+baselines \cite{lee1989}. \TODO{Add recent adaptive knot-placement and model
+selection papers from Computer-Aided Design and Computer Aided Geometric Design.}
+
+\subsection{Learning geometric representations for CAD}
+
+Recent geometric learning methods infer parametric primitives, CAD structure,
+or editable representations from sampled geometry. Large CAD datasets have
+enabled supervised learning of geometric quantities and reconstruction
+pipelines \cite{koch2019abc}. \TODO{Add the most relevant curve- and
+spline-reconstruction methods, clearly distinguishing unordered point-cloud
+methods from the ordered-curve setting studied here.}
+
+\subsection{Sparse gates and set prediction}
+
+Hard-Concrete gates provide a differentiable approximation to an $L_0$
+penalty \cite{louizos2018}. Set-prediction architectures instead associate
+learned queries with targets through assignment losses \cite{carion2020}.
+Although these mechanisms are useful for variable-cardinality prediction,
+independent gates require probability calibration and a deployment threshold.
+Our formulation makes cardinality explicit and conditions continuous knot
+prediction on the selected count.

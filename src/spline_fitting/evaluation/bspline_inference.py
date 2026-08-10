@@ -386,15 +386,21 @@ def refit_model_output_as_bsplines(
     rcond: float | None = None,
     binary_tolerance: float = 1e-6,
 ) -> list[HardGatedBSplineFit]:
-    """Deployment adapter for ``SplineFittingNetwork.eval()`` output."""
-    required = ("params", "internal_knots", "activity_gate")
+    """Deployment adapter for gated and count-conditioned model outputs."""
+    required = ("params", "internal_knots")
     missing = [name for name in required if name not in output]
     if missing:
         raise KeyError("model output is missing: " + ", ".join(missing))
+    if "knot_mask" in output:
+        hard_gates = output["knot_mask"]
+    elif "activity_gate" in output:
+        hard_gates = output["activity_gate"]
+    else:
+        raise KeyError("model output is missing knot_mask or activity_gate")
     return refit_hard_gated_bspline_batch(
         parameters=output["params"],
         candidate_knots=output["internal_knots"],
-        hard_gates=output["activity_gate"],
+        hard_gates=hard_gates,
         points=points,
         degree=degree,
         smoothness_weight=smoothness_weight,
@@ -402,3 +408,74 @@ def refit_model_output_as_bsplines(
         rcond=rcond,
         binary_tolerance=binary_tolerance,
     )
+
+
+@torch.no_grad()
+def select_count_conditioned_output_by_bic(
+    output: dict[str, torch.Tensor],
+    points: torch.Tensor,
+    *,
+    degree: int = 3,
+    smoothness_weight: float = 1e-6,
+    prior_weight: float = 1.0,
+) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
+    """Select a complete count-conditioned branch using BIC plus count prior.
+
+    This compares complete ``K``-knot models; it never deletes individual
+    candidates.  The returned output can be passed directly to the standard
+    deployment refitter.
+    """
+    required = {
+        "params",
+        "branch_internal_knots",
+        "count_probabilities",
+    }
+    missing = sorted(required.difference(output))
+    if missing:
+        raise KeyError("count-conditioned output is missing: " + ", ".join(missing))
+    branches = output["branch_internal_knots"]
+    probabilities = output["count_probabilities"]
+    maximum = branches.shape[1] - 1
+    if probabilities.shape[-1] != maximum + 1:
+        raise ValueError("count probabilities and knot branches disagree")
+
+    batch_size, num_points, point_dim = points.shape
+    observation_count = max(num_points * point_dim, 2)
+    scores = points.new_empty(batch_size, maximum + 1)
+    for batch_index in range(batch_size):
+        for count in range(maximum + 1):
+            knots = branches[batch_index, count, :count]
+            fit = refit_bspline_control_points(
+                output["params"][batch_index],
+                points[batch_index],
+                knots,
+                degree=degree,
+                smoothness_weight=smoothness_weight,
+            )
+            coordinate_sse = (
+                (fit.reconstructed_points - points[batch_index]).pow(2).sum()
+            )
+            parameter_count = (count + degree + 1) * point_dim + count
+            bic = observation_count * torch.log(
+                coordinate_sse / observation_count + 1e-12
+            ) + parameter_count * torch.log(
+                points.new_tensor(float(observation_count))
+            )
+            log_prior = torch.log(
+                probabilities[batch_index, count].clamp_min(1e-8)
+            )
+            scores[batch_index, count] = bic - 2.0 * prior_weight * log_prior
+
+    selected_count = scores.argmin(dim=-1)
+    branch_index = selected_count.view(batch_size, 1, 1).expand(
+        -1, 1, branches.shape[-1]
+    )
+    selected_knots = torch.gather(branches, 1, branch_index).squeeze(1)
+    slots = torch.arange(maximum, device=points.device)
+    knot_mask = slots.unsqueeze(0) < selected_count.unsqueeze(1)
+    selected_output = dict(output)
+    selected_output["internal_knots"] = selected_knots
+    selected_output["knot_mask"] = knot_mask
+    selected_output["count_used_for_knots"] = selected_count
+    selected_output["deployment_selected_knot_count"] = selected_count
+    return selected_output, scores

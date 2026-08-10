@@ -12,10 +12,14 @@ class GeometryEncoder(nn.Module):
         point_dim: int = 2,
         hidden_dim: int = 128,
         num_layers: int = 4,
+        feature_mode: str = "chord_derivatives",
     ) -> None:
         super().__init__()
         if num_layers < 1:
             raise ValueError("num_layers must be positive")
+        if feature_mode not in {"raw_differences", "chord_derivatives"}:
+            raise ValueError("unsupported geometry feature mode")
+        self.feature_mode = feature_mode
 
         layers: list[nn.Module] = []
         in_channels = point_dim * 3
@@ -30,8 +34,24 @@ class GeometryEncoder(nn.Module):
             in_channels = hidden_dim
         self.backbone = nn.Sequential(*layers)
 
-    @staticmethod
-    def _geometric_features(points: torch.Tensor) -> torch.Tensor:
+    def _geometric_features(self, points: torch.Tensor) -> torch.Tensor:
+        if self.feature_mode == "chord_derivatives":
+            segments = points[:, 1:] - points[:, :-1]
+            lengths = segments.norm(dim=-1).clamp_min(1e-6)
+            gaps = lengths / lengths.sum(dim=-1, keepdim=True).clamp_min(1e-6)
+            segment_derivative = segments / gaps.unsqueeze(-1)
+            first = torch.zeros_like(points)
+            first[:, 0] = segment_derivative[:, 0]
+            first[:, 1:] = segment_derivative
+
+            second = torch.zeros_like(points)
+            if points.shape[1] > 2:
+                midpoint_gap = 0.5 * (gaps[:, 1:] + gaps[:, :-1])
+                second[:, 1:-1] = (
+                    segment_derivative[:, 1:] - segment_derivative[:, :-1]
+                ) / midpoint_gap.unsqueeze(-1).clamp_min(1e-6)
+            return torch.cat([points, first, second], dim=-1)
+
         first = torch.zeros_like(points)
         first[:, 1:] = points[:, 1:] - points[:, :-1]
 
