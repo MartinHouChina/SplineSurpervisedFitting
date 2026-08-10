@@ -107,9 +107,12 @@ class CheckpointMigrationTests(unittest.TestCase):
 
         self.assertFalse(legacy)
         self.assertFalse(config["compute_first_derivative"])
+        self.assertTrue(config["detach_activity_gate_for_fit"])
         self.assertTrue(assumed)
         self.assertEqual(loss_config["weights"]["orthogonal"], 0.0)
         self.assertEqual(loss_config["weights"]["true_parameter"], 1e-2)
+        self.assertEqual(loss_config["weights"]["existence"], 5e-3)
+        self.assertEqual(loss_config["weights"]["count"], 2e-3)
 
     def test_cross_attention_checkpoint_restores_strictly(self) -> None:
         config = {
@@ -123,6 +126,7 @@ class CheckpointMigrationTests(unittest.TestCase):
             "knot_attention_heads": 4,
             "knot_parameterization": "independent_queries",
             "activity_use_query_features": True,
+            "detach_activity_gate_for_fit": True,
         }
         reference = SplineFittingNetwork(**config).eval()
         checkpoint = {
@@ -140,6 +144,27 @@ class CheckpointMigrationTests(unittest.TestCase):
             expected = reference(points)
             actual = restored.eval()(points)
         torch.testing.assert_close(actual["internal_knots"], expected["internal_knots"])
+
+    def test_v1_checkpoint_preserves_coupled_fit_gate_semantics(self) -> None:
+        checkpoint = {
+            "objective_version": "independent_query_supervised_hard_concrete_v1",
+            "model_config": {
+                "point_dim": 2,
+                "gate_mode": "hard_concrete",
+                "knot_parameterization": "independent_queries",
+                "knot_use_local_cross_attention": True,
+                "activity_use_query_features": True,
+            },
+        }
+
+        config, legacy = migrate_model_config(checkpoint)
+        loss_config, assumed = migrate_loss_config(checkpoint, legacy=legacy)
+
+        self.assertFalse(legacy)
+        self.assertFalse(config["detach_activity_gate_for_fit"])
+        self.assertTrue(assumed)
+        self.assertEqual(loss_config["weights"]["existence"], 1e-3)
+        self.assertEqual(loss_config["weights"]["count"], 1e-3)
 
 
 if __name__ == "__main__":

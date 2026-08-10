@@ -1,8 +1,8 @@
 {
   "schema_version": 3,
   "checkpoint": "outputs\\independent_queries.pt",
-  "checkpoint_epoch": 31,
-  "checkpoint_best_val": 0.001117298030294478,
+  "checkpoint_epoch": 25,
+  "checkpoint_best_val": 0.001128759904531762,
   "objective_version": "independent_query_supervised_hard_concrete_v1",
   "dataset_seed": 10000,
   "num_samples": 128,
@@ -68,19 +68,17 @@
   "loss_config_assumed": false,
   "activity_threshold": 0.5,
   "candidate_internal_knots": 8,
-  "expected_active_count_mean": 4.466500759124756,
-  "activity_min": 0.4882771968841553,
-  "activity_max": 0.6606477499008179,
-  "mean_within_curve_activity_range": 0.022959664463996887,
+  "expected_active_count_mean": 4.628246307373047,
+  "activity_min": 0.5141727328300476,
+  "activity_max": 0.6674820184707642,
+  "mean_within_curve_activity_range": 0.02283450961112976,
   "mean_within_curve_pilot_importance_range": null,
-  "hard_retained_mean": 7.9453125,
-  "hard_retained_min": 6,
+  "hard_retained_mean": 8.0,
+  "hard_retained_min": 8,
   "hard_retained_max": 8,
   "zero_knot_fraction": 0.0,
   "hard_count_histogram": {
-    "6": 2,
-    "7": 3,
-    "8": 123
+    "8": 128
   },
   "threshold_sweep": {
     "0.1": {
@@ -102,25 +100,23 @@
       }
     },
     "0.5": {
-      "mean": 7.9453125,
+      "mean": 8.0,
       "histogram": {
-        "6": 2,
-        "7": 3,
-        "8": 123
+        "8": 128
       }
     },
     "0.6": {
-      "mean": 0.9453125,
+      "mean": 1.7734375,
       "histogram": {
-        "0": 107,
-        "1": 2,
-        "2": 1,
-        "3": 2,
-        "4": 2,
-        "5": 1,
+        "0": 88,
+        "1": 4,
+        "2": 2,
+        "3": 6,
+        "4": 1,
+        "5": 4,
         "6": 2,
-        "7": 2,
-        "8": 9
+        "7": 3,
+        "8": 18
       }
     },
     "0.7": {
@@ -136,46 +132,46 @@
       }
     }
   },
-  "network_total_objective": 0.001117298030294478,
-  "network_current_no_orthogonal_objective": 0.001117298030294478,
-  "network_forward_fit_loss": 0.0001368919765809551,
-  "network_forward_rms_euclidean": 0.01170008446896667,
-  "network_forward_coordinate_rmse": 0.008273209068461738,
-  "standard_bspline_refit_loss": 5.25240542259553e-05,
-  "standard_bspline_refit_rms_euclidean": 0.007247348082295709,
-  "standard_bspline_coordinate_rmse": 0.005124648962825199,
-  "standard_bspline_control_count_mean": 11.9453125,
-  "standard_bspline_augmented_objective_mean": 0.003361711532306799,
+  "network_total_objective": 0.001128759904531762,
+  "network_current_no_orthogonal_objective": 0.001128759904531762,
+  "network_forward_fit_loss": 0.00013790654338663444,
+  "network_forward_rms_euclidean": 0.011743361673159626,
+  "network_forward_coordinate_rmse": 0.008303810673017373,
+  "standard_bspline_refit_loss": 5.125486755730435e-05,
+  "standard_bspline_refit_rms_euclidean": 0.007159250488515146,
+  "standard_bspline_coordinate_rmse": 0.005062354569343953,
+  "standard_bspline_control_count_mean": 12.0,
+  "standard_bspline_augmented_objective_mean": 0.003280471044490696,
   "standard_bspline_rank_deficient_fraction": null,
   "standard_bspline_smoothness_weight": 1e-06,
   "standard_bspline_control_ridge": 0.0,
   "raw_loss_components": {
-    "loss": 0.001117298030294478,
-    "fit_loss": 0.0001368919765809551,
-    "l0_loss": 4.466500997543335,
-    "expected_active_count": 4.466500997543335,
-    "activity_loss": 0.5583126246929169,
-    "binary_loss": 0.24550402164459229,
+    "loss": 0.001128759904531762,
+    "fit_loss": 0.00013790654338663444,
+    "l0_loss": 4.628246307373047,
+    "expected_active_count": 4.628246307373047,
+    "activity_loss": 0.578530803322792,
+    "binary_loss": 0.2430063560605049,
     "gap_loss": 0.0,
-    "parameter_prior_loss": 0.004117415577638894,
-    "true_parameter_loss": 0.00038894734461791813,
-    "existence_loss": 0.717374637722969,
-    "knot_position_loss": 0.019459043629467487,
-    "count_loss": 0.06455148756504059
+    "parameter_prior_loss": 0.004147366154938936,
+    "true_parameter_loss": 0.00038495608896482736,
+    "existence_loss": 0.7318311184644699,
+    "knot_position_loss": 0.018392933066934347,
+    "count_loss": 0.07124331593513489
   },
   "weighted_loss_components": {
-    "fit": 0.0001368919765809551,
+    "fit": 0.00013790654338663444,
     "l0": 0.0,
     "activity": 0.0,
     "binary": 0.0,
     "gap": 0.0,
     "parameter_prior": 0.0,
-    "true_parameter": 3.8894734461791816e-06,
-    "existence": 0.0007173746377229691,
-    "knot_position": 0.00019459043629467489,
-    "count": 6.455148756504059e-05
+    "true_parameter": 3.8495608896482736e-06,
+    "existence": 0.00073183111846447,
+    "knot_position": 0.00018392933066934346,
+    "count": 7.124331593513489e-05
   },
-  "true_parameter_rmse": 0.019721748195681735,
+  "true_parameter_rmse": 0.019620297696234624,
   "true_knot_count_histogram": {
     "1": 23,
     "2": 28,
@@ -186,8 +182,8 @@
   },
   "true_knot_count_mean": 3.28125,
   "knot_match_tolerance": 0.05,
-  "knot_match_precision": 0.3775811209439528,
-  "knot_match_recall": 0.9142857142857143,
-  "knot_match_f1": 0.5344467640918581,
-  "matched_knot_mae": 0.022992117640872795
+  "knot_match_precision": 0.37890625,
+  "knot_match_recall": 0.9238095238095239,
+  "knot_match_f1": 0.5373961218836565,
+  "matched_knot_mae": 0.022790468960385963
 }

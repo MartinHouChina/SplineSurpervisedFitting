@@ -10,9 +10,9 @@ from torch.utils.data import Dataset
 class CubicBSplineSample:
     """One synthetic open cubic B-spline and its sampled point cloud.
 
-    Ground-truth parameters can supervise ParameterHead in the current
-    synthetic training path. Knot and control-point metadata remain available
-    for evaluation and visualization.
+    Ground-truth parameters supervise ParameterHead; internal knots supervise
+    query positions and existence. Control points and the full knot vector are
+    retained for evaluation and visualization.
     """
 
     points: torch.Tensor
@@ -300,8 +300,8 @@ class SyntheticCubicBSplineDataset(Dataset):
     """Deterministic-on-index dataset of sampled open cubic B-splines.
 
     Ground-truth parameters, knot vectors and control points are padded and
-    returned with every sample. The current trainer uses ``true_params`` while
-    knot and control-point metadata remain diagnostic targets.
+    returned with every sample. Training uses ``true_params`` and true internal
+    knots; control points and the full knot vector support diagnostics.
     """
 
     def __init__(

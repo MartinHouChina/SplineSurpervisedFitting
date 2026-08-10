@@ -136,6 +136,7 @@ def main() -> None:
                 true_params=true_params,
                 true_internal_knots=true_internal_knots,
                 true_internal_knot_mask=true_internal_knot_mask,
+                activity_threshold=threshold,
             )
             batch_size = points.shape[0]
             total_samples += batch_size
@@ -280,12 +281,33 @@ def main() -> None:
     parameter_rmse = math.sqrt(
         true_parameter_squared_error / max(true_parameter_values, 1)
     )
+    existence_true_positive = mean_losses["existence_true_positive_count"]
+    existence_predicted = mean_losses["existence_predicted_count"]
+    existence_target = mean_losses["existence_target_count"]
+    existence_precision = (
+        existence_true_positive / existence_predicted
+        if existence_predicted > 0.0
+        else 0.0
+    )
+    existence_recall = (
+        existence_true_positive / existence_target if existence_target > 0.0 else 0.0
+    )
+    existence_f1 = (
+        2.0
+        * existence_precision
+        * existence_recall
+        / (existence_precision + existence_recall)
+        if existence_precision + existence_recall > 0.0
+        else 0.0
+    )
 
     report = {
-        "schema_version": 3,
+        "schema_version": 4,
         "checkpoint": str(args.checkpoint),
         "checkpoint_epoch": checkpoint.get("epoch"),
         "checkpoint_best_val": checkpoint.get("best_val"),
+        "checkpoint_selection_metric": checkpoint.get("selection_metric"),
+        "checkpoint_selection_value": checkpoint.get("selection_value"),
         "objective_version": checkpoint.get("objective_version", "historical"),
         "dataset_seed": args.seed,
         "num_samples": total_samples,
@@ -294,6 +316,9 @@ def main() -> None:
         "gate_mode": model_config["gate_mode"],
         "activity_use_pilot_importance": model_config.get(
             "activity_use_pilot_importance", False
+        ),
+        "detach_activity_gate_for_fit": model_config.get(
+            "detach_activity_gate_for_fit", False
         ),
         "legacy_checkpoint_migration": legacy_checkpoint,
         "loss_config": loss_config,
@@ -355,11 +380,19 @@ def main() -> None:
         "knot_match_recall": recall,
         "knot_match_f1": f1,
         "matched_knot_mae": knot_mae if math.isfinite(knot_mae) else None,
+        "existence_label_precision": existence_precision,
+        "existence_label_recall": existence_recall,
+        "existence_label_f1": existence_f1,
     }
 
     print("Checkpoint knot-reduction evaluation")
     print(f"  checkpoint: {args.checkpoint}")
     print(f"  recorded best epoch: {checkpoint.get('epoch', 'not recorded')}")
+    print(
+        "  checkpoint selection: "
+        f"{checkpoint.get('selection_metric', 'historical')} = "
+        f"{checkpoint.get('selection_value', checkpoint.get('best_val', 'not recorded'))}"
+    )
     print(
         "  objective version: "
         f"{checkpoint.get('objective_version', 'historical (pre-removal)')}"
@@ -367,6 +400,10 @@ def main() -> None:
     print(f"  samples / seed: {total_samples} / {args.seed}")
     print(f"  recorded noise_std: {dataset_config.get('noise_std', 'not recorded')}")
     print(f"  gate mode: {model_config['gate_mode']}")
+    print(
+        "  detach activity gate from fit gradient: "
+        f"{model_config.get('detach_activity_gate_for_fit', False)}"
+    )
     print(
         "  local cross-attention KnotHead: "
         f"{model_config.get('knot_use_local_cross_attention', False)}"
@@ -405,6 +442,11 @@ def main() -> None:
     print(f"  E[K] / activity probability mass: {masses.mean().item():.6f}")
     print(f"  activity range over all values: [{activity_min:.7f}, {activity_max:.7f}]")
     print(f"  mean within-curve activity range: {ranges.mean().item():.7e}")
+    print(
+        f"  supervised existence@{threshold:.2f}: "
+        f"precision={existence_precision:.3f}, recall={existence_recall:.3f}, "
+        f"F1={existence_f1:.3f}"
+    )
     if model_config.get("activity_use_pilot_importance", False):
         print(
             "  mean within-curve pilot importance range: "

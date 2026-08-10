@@ -42,7 +42,9 @@ class HardConcreteGateTests(unittest.TestCase):
             output["activity_gate"], (expected >= 0.5).to(logits.dtype)
         )
         self.assertTrue(
-            bool(((output["activity_gate"] == 0) | (output["activity_gate"] == 1)).all())
+            bool(
+                ((output["activity_gate"] == 0) | (output["activity_gate"] == 1)).all()
+            )
         )
 
     def test_training_sample_is_bounded_stochastic_and_differentiable(self) -> None:
@@ -135,7 +137,9 @@ class ActivityHeadTests(unittest.TestCase):
         )
         captured: list[torch.Tensor] = []
 
-        def capture_input(_module: torch.nn.Module, args: tuple[torch.Tensor, ...]) -> None:
+        def capture_input(
+            _module: torch.nn.Module, args: tuple[torch.Tensor, ...]
+        ) -> None:
             captured.append(args[0].detach())
 
         handle = head.mlp[0].register_forward_pre_hook(capture_input)
@@ -168,6 +172,24 @@ class ActivityHeadTests(unittest.TestCase):
 
 
 class HardConcreteSplineNetworkTests(unittest.TestCase):
+    def test_supervised_gate_is_detached_only_from_fit_path(self) -> None:
+        model = SplineFittingNetwork(
+            hidden_dim=16,
+            encoder_layers=1,
+            max_internal_knots=3,
+            knot_attention_heads=4,
+            detach_activity_gate_for_fit=True,
+        ).train()
+        output = model(torch.randn(2, 16, 2))
+
+        self.assertTrue(output["sampled_activity_gate"].requires_grad)
+        self.assertFalse(output["fit_activity_gate"].requires_grad)
+        self.assertFalse(output["activity_gate"].requires_grad)
+        torch.testing.assert_close(
+            output["fit_activity_gate"], output["sampled_activity_gate"].detach()
+        )
+        self.assertTrue(output["activity_probability_logits"].requires_grad)
+
     def test_drop_objective_delta_matches_explicit_constrained_optimum(self) -> None:
         torch.manual_seed(3)
         batch, columns, dimension = 2, 5, 2
@@ -185,18 +207,14 @@ class HardConcreteSplineNetworkTests(unittest.TestCase):
         expected_columns = []
         full_minimum = -(rhs * coefficients).sum(dim=(-2, -1))
         for dropped in range(2, columns):
-            keep = torch.tensor(
-                [index for index in range(columns) if index != dropped]
-            )
+            keep = torch.tensor([index for index in range(columns) if index != dropped])
             reduced_normal = normal[:, keep][:, :, keep]
             reduced_rhs = rhs[:, keep]
             reduced_coefficients = torch.linalg.solve(
                 reduced_normal,
                 reduced_rhs,
             )
-            reduced_minimum = -(
-                reduced_rhs * reduced_coefficients
-            ).sum(dim=(-2, -1))
+            reduced_minimum = -(reduced_rhs * reduced_coefficients).sum(dim=(-2, -1))
             expected_columns.append(reduced_minimum - full_minimum)
         expected = torch.stack(expected_columns, dim=-1)
 

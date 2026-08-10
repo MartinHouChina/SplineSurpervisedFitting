@@ -31,7 +31,26 @@ class Trainer:
 
     @staticmethod
     def _mean_metrics(accumulator: dict[str, float], samples: int) -> dict[str, float]:
-        return {key: value / max(samples, 1) for key, value in accumulator.items()}
+        metrics = {key: value / max(samples, 1) for key, value in accumulator.items()}
+        required = {
+            "existence_true_positive_count",
+            "existence_predicted_count",
+            "existence_target_count",
+        }
+        if required.issubset(metrics):
+            true_positive = metrics["existence_true_positive_count"]
+            predicted = metrics["existence_predicted_count"]
+            target = metrics["existence_target_count"]
+            precision = true_positive / predicted if predicted > 0.0 else 0.0
+            recall = true_positive / target if target > 0.0 else 0.0
+            metrics["existence_precision"] = precision
+            metrics["existence_recall"] = recall
+            metrics["existence_f1"] = (
+                2.0 * precision * recall / (precision + recall)
+                if precision + recall > 0.0
+                else 0.0
+            )
+        return metrics
 
     def _run_epoch(
         self,
@@ -69,6 +88,7 @@ class Trainer:
                     l0_scale=l0_scale,
                     activity_scale=activity_scale,
                     binary_scale=binary_scale,
+                    activity_threshold=self.activity_threshold,
                 )
                 knot_metrics = activity_statistics(
                     output["activity"], self.activity_threshold
@@ -116,6 +136,7 @@ class Trainer:
     ) -> list[dict[str, float]]:
         history: list[dict[str, float]] = []
         best_val = float("inf")
+        best_existence_f1 = float("-inf")
 
         for epoch in range(epochs):
             l0_scale = l0_schedule(epoch) if l0_schedule else 1.0
@@ -141,8 +162,10 @@ class Trainer:
                 val_metrics = self._run_epoch(val_loader, False, l0_scale, 1.0, 1.0)
                 record.update({f"val/{k}": v for k, v in val_metrics.items()})
                 current_val = val_metrics["loss"]
+                current_existence_f1 = val_metrics.get("existence_f1", 0.0)
             else:
                 current_val = train_metrics["loss"]
+                current_existence_f1 = train_metrics.get("existence_f1", 0.0)
 
             history.append(record)
             displayed_metrics = val_metrics if val_loader is not None else train_metrics
@@ -151,6 +174,7 @@ class Trainer:
                 f"train={train_metrics['loss']:.6f} | val={current_val:.6f} | "
                 f"fit={displayed_metrics['fit_loss']:.6f} | "
                 f"exist={displayed_metrics['existence_loss']:.4f} | "
+                f"exist_F1={displayed_metrics.get('existence_f1', 0.0):.3f} | "
                 f"knot_pos={displayed_metrics['knot_position_loss']:.4f} | "
                 f"E[K]={displayed_metrics['expected_active_count']:.2f} | "
                 f"active@{self.activity_threshold:.2f}="
@@ -161,12 +185,18 @@ class Trainer:
                 f"temperature={gate_temperature if gate_temperature is not None else float('nan'):.3f}"
             )
 
+            better_structure = current_existence_f1 > best_existence_f1 + 1e-12
+            equal_structure_better_loss = (
+                abs(current_existence_f1 - best_existence_f1) <= 1e-12
+                and current_val < best_val
+            )
             if (
                 checkpoint_path is not None
                 and epoch >= checkpoint_selection_start_epoch
-                and current_val < best_val
+                and (better_structure or equal_structure_better_loss)
             ):
                 best_val = current_val
+                best_existence_f1 = current_existence_f1
                 path = Path(checkpoint_path)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 torch.save(
@@ -174,7 +204,9 @@ class Trainer:
                         "model_state_dict": self.model.state_dict(),
                         "epoch": epoch + 1,
                         "best_val": current_val,
-                        "selection_metric": "loss",
+                        "selection_metric": "existence_f1_then_loss",
+                        "selection_value": current_existence_f1,
+                        "best_existence_f1": best_existence_f1,
                         "metrics": record,
                         "history": list(history),
                         "activity_threshold": self.activity_threshold,

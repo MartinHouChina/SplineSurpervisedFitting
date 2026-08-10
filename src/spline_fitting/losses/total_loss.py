@@ -155,7 +155,10 @@ class SplineFittingLoss(nn.Module):
         l0_scale: float = 1.0,
         activity_scale: float = 1.0,
         binary_scale: float = 1.0,
+        activity_threshold: float = 0.5,
     ) -> dict[str, torch.Tensor]:
+        if not 0.0 <= activity_threshold <= 1.0:
+            raise ValueError("activity_threshold must lie in [0, 1]")
         fit_loss = self._fit_loss(output["reconstructed_points"], points)
 
         # Hard-Concrete makes the expected L0 norm differentiable:
@@ -198,6 +201,9 @@ class SplineFittingLoss(nn.Module):
             existence_loss = points.new_zeros(())
             knot_position_loss = points.new_zeros(())
             count_loss = points.new_zeros(())
+            existence_true_positive_count = points.new_zeros(())
+            existence_predicted_count = points.new_zeros(())
+            existence_target_count = points.new_zeros(())
         elif true_internal_knots is None or true_internal_knot_mask is None:
             raise ValueError(
                 "true_internal_knots and true_internal_knot_mask must be provided together"
@@ -236,6 +242,20 @@ class SplineFittingLoss(nn.Module):
             count_loss = (
                 ((predicted_count - true_count) / candidate_count).pow(2).mean()
             )
+            existence_prediction = output["activity"] >= activity_threshold
+            existence_target = existence_targets.to(torch.bool)
+            existence_true_positive_count = (
+                (existence_prediction & existence_target)
+                .to(points.dtype)
+                .sum(dim=-1)
+                .mean()
+            )
+            existence_predicted_count = (
+                existence_prediction.to(points.dtype).sum(dim=-1).mean()
+            )
+            existence_target_count = (
+                existence_target.to(points.dtype).sum(dim=-1).mean()
+            )
 
         total = (
             self.weights.fit * fit_loss
@@ -262,6 +282,9 @@ class SplineFittingLoss(nn.Module):
             "existence_loss": existence_loss,
             "knot_position_loss": knot_position_loss,
             "count_loss": count_loss,
+            "existence_true_positive_count": existence_true_positive_count,
+            "existence_predicted_count": existence_predicted_count,
+            "existence_target_count": existence_target_count,
         }
         if self.weights.orthogonal != 0.0:
             if "first_derivative" not in output:

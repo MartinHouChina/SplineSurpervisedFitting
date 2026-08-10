@@ -45,6 +45,7 @@ class SplineFittingNetwork(nn.Module):
         activity_use_query_features: bool = True,
         activity_use_pilot_importance: bool = False,
         activity_pilot_importance_gain: float = 1.0,
+        detach_activity_gate_for_fit: bool = True,
         knot_use_local_cross_attention: bool = True,
         knot_attention_heads: int = 4,
         knot_parameterization: str = "independent_queries",
@@ -56,6 +57,13 @@ class SplineFittingNetwork(nn.Module):
         self.lambda_knot = lambda_knot
         self.gate_eps = gate_eps
         self.gate_mode = gate_mode
+        # In the supervised-existence objective, curve fitting must not teach
+        # the structural classifier to open every useful basis column. The
+        # sampled Hard-Concrete value is still used numerically by the solver;
+        # only its fit-gradient is stopped. Legacy models retain the old path.
+        self.detach_activity_gate_for_fit = bool(
+            detach_activity_gate_for_fit and gate_mode != "legacy_soft"
+        )
         # The current objective does not need curve tangents.  This switch is
         # retained only so historical checkpoints with the projection-
         # orthogonality loss can reproduce their original forward pass.
@@ -192,10 +200,17 @@ class SplineFittingNetwork(nn.Module):
             normalized_knot_importance=normalized_importance,
         )
 
+        sampled_activity_gate = activity_output["activity_gate"]
+        fit_activity_gate = (
+            sampled_activity_gate.detach()
+            if self.detach_activity_gate_for_fit
+            else sampled_activity_gate
+        )
+
         basis_output = build_design_matrix(
             params=parameter_output["params"],
             internal_knots=knot_output["internal_knots"],
-            activity=activity_output["activity_gate"],
+            activity=fit_activity_gate,
             degree=self.degree,
             eps=0.0,
             gate_transform="direct",
@@ -216,6 +231,8 @@ class SplineFittingNetwork(nn.Module):
             **parameter_output,
             **knot_output,
             **activity_output,
+            "sampled_activity_gate": sampled_activity_gate,
+            "fit_activity_gate": fit_activity_gate,
             "pilot_drop_objective_delta": pilot_delta,
             "normalized_knot_importance": normalized_importance,
             **basis_output,
@@ -226,7 +243,7 @@ class SplineFittingNetwork(nn.Module):
             first_derivative_design = build_derivative_design_matrix(
                 params=parameter_output["params"],
                 internal_knots=knot_output["internal_knots"],
-                activity=activity_output["activity_gate"],
+                activity=fit_activity_gate,
                 degree=self.degree,
                 order=1,
                 eps=0.0,

@@ -6,8 +6,9 @@ from typing import Any, Mapping
 from .models.spline_network import SplineFittingNetwork
 
 
-PREVIOUS_OBJECTIVE_VERSION = "cross_attention_true_params_hard_concrete_v1"
-CURRENT_OBJECTIVE_VERSION = "independent_query_supervised_hard_concrete_v1"
+CROSS_ATTENTION_OBJECTIVE_VERSION = "cross_attention_true_params_hard_concrete_v1"
+PREVIOUS_OBJECTIVE_VERSION = "independent_query_supervised_hard_concrete_v1"
+CURRENT_OBJECTIVE_VERSION = "independent_query_supervised_hard_concrete_v2"
 
 
 LEGACY_LOSS_CONFIG: dict[str, Any] = {
@@ -44,7 +45,7 @@ A_SCHEME_WITH_ORTHOGONAL_LOSS_CONFIG: dict[str, Any] = {
     "min_knot_gap": 1e-3,
 }
 
-PREVIOUS_OBJECTIVE_LOSS_CONFIG: dict[str, Any] = {
+CROSS_ATTENTION_LOSS_CONFIG: dict[str, Any] = {
     "weights": {
         "fit": 1.0,
         "l0": 2e-5,
@@ -61,6 +62,24 @@ PREVIOUS_OBJECTIVE_LOSS_CONFIG: dict[str, Any] = {
     "min_knot_gap": 1e-3,
 }
 
+PREVIOUS_OBJECTIVE_LOSS_CONFIG: dict[str, Any] = {
+    "weights": {
+        "fit": 1.0,
+        "l0": 0.0,
+        "activity": 0.0,
+        "binary": 0.0,
+        "orthogonal": 0.0,
+        "gap": 0.0,
+        "parameter_prior": 0.0,
+        "true_parameter": 1e-2,
+        "existence": 1e-3,
+        "knot_position": 1e-2,
+        "count": 1e-3,
+    },
+    "min_knot_gap": 1e-3,
+    "knot_position_beta": 0.02,
+}
+
 A_SCHEME_LOSS_CONFIG: dict[str, Any] = {
     "weights": {
         "fit": 1.0,
@@ -72,9 +91,9 @@ A_SCHEME_LOSS_CONFIG: dict[str, Any] = {
         "gap": 0.0,
         "parameter_prior": 0.0,
         "true_parameter": 1e-2,
-        "existence": 1e-3,
+        "existence": 5e-3,
         "knot_position": 1e-2,
-        "count": 1e-3,
+        "count": 2e-3,
     },
     "min_knot_gap": 1e-3,
 }
@@ -112,6 +131,13 @@ def migrate_model_config(
         config["knot_parameterization"] = "interval"
     if "activity_use_query_features" not in config:
         config["activity_use_query_features"] = False
+    if "detach_activity_gate_for_fit" not in config:
+        # v1 and all earlier checkpoints allowed fit gradients through the
+        # gate. An incomplete v2 config receives the v2 behavior; historical
+        # resumed training keeps its exact optimization semantics.
+        config["detach_activity_gate_for_fit"] = (
+            checkpoint.get("objective_version") == CURRENT_OBJECTIVE_VERSION
+        )
     if "compute_first_derivative" not in config:
         saved_weights = checkpoint.get("loss_config", {}).get("weights", {})
         if "orthogonal" in saved_weights:
@@ -122,6 +148,7 @@ def migrate_model_config(
             needs_derivative = checkpoint.get("objective_version") not in {
                 CURRENT_OBJECTIVE_VERSION,
                 PREVIOUS_OBJECTIVE_VERSION,
+                CROSS_ATTENTION_OBJECTIVE_VERSION,
             }
         config["compute_first_derivative"] = needs_derivative
     return config, legacy
@@ -139,6 +166,7 @@ def migrate_loss_config(
     no_orthogonal_objective = objective_version in {
         CURRENT_OBJECTIVE_VERSION,
         PREVIOUS_OBJECTIVE_VERSION,
+        CROSS_ATTENTION_OBJECTIVE_VERSION,
     }
     if assumed:
         if legacy:
@@ -147,6 +175,8 @@ def migrate_loss_config(
             default_config = A_SCHEME_LOSS_CONFIG
         elif objective_version == PREVIOUS_OBJECTIVE_VERSION:
             default_config = PREVIOUS_OBJECTIVE_LOSS_CONFIG
+        elif objective_version == CROSS_ATTENTION_OBJECTIVE_VERSION:
+            default_config = CROSS_ATTENTION_LOSS_CONFIG
         else:
             default_config = A_SCHEME_WITH_ORTHOGONAL_LOSS_CONFIG
         config = deepcopy(default_config)

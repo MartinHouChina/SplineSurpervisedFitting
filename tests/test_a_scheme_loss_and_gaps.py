@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from spline_fitting.losses.total_loss import LossWeights, SplineFittingLoss
 from spline_fitting.models.knot_head import KnotHead
 from spline_fitting.models.parameter_head import ParameterHead
+from spline_fitting.training.trainer import Trainer
 
 
 class ASchemeLossAndGapTests(unittest.TestCase):
@@ -157,6 +158,22 @@ class ASchemeLossAndGapTests(unittest.TestCase):
         losses["loss"].backward()
         self.assertGreater(float(logits.grad.abs().sum()), 0.0)
         self.assertGreater(float(predicted.grad.abs().sum()), 0.0)
+        self.assertEqual(float(losses["existence_true_positive_count"]), 2.0)
+        self.assertEqual(float(losses["existence_predicted_count"]), 3.0)
+        self.assertEqual(float(losses["existence_target_count"]), 2.0)
+
+    def test_epoch_metrics_compute_global_existence_f1_from_counts(self) -> None:
+        metrics = Trainer._mean_metrics(
+            {
+                "existence_true_positive_count": 6.0,
+                "existence_predicted_count": 10.0,
+                "existence_target_count": 8.0,
+            },
+            samples=2,
+        )
+        self.assertAlmostEqual(metrics["existence_precision"], 0.6)
+        self.assertAlmostEqual(metrics["existence_recall"], 0.75)
+        self.assertAlmostEqual(metrics["existence_f1"], 2 * 0.6 * 0.75 / 1.35)
 
     def test_parameter_head_enforces_configured_gap_after_normalization(self) -> None:
         head = ParameterHead(hidden_dim=16, min_gap=0.02)

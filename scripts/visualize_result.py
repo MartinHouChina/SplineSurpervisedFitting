@@ -100,6 +100,7 @@ def main() -> None:
                 if "true_internal_knot_mask" in sample
                 else None
             ),
+            activity_threshold=activity_threshold,
         )
         forward_fit = point_fit_statistics(output["reconstructed_points"], points)
         activity_summary = activity_statistics(output["activity"], activity_threshold)

@@ -80,7 +80,7 @@ def main() -> None:
     parser.add_argument(
         "--lambda-existence",
         type=float,
-        default=1e-3,
+        default=5e-3,
         help="Supervised BCE weight for per-query knot existence.",
     )
     parser.add_argument(
@@ -92,7 +92,7 @@ def main() -> None:
     parser.add_argument(
         "--lambda-count",
         type=float,
-        default=1e-3,
+        default=2e-3,
         help="Weight for normalized expected-versus-true knot count.",
     )
     parser.add_argument(
@@ -114,7 +114,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=ROOT / "outputs" / "independent_queries.pt",
+        default=ROOT / "outputs" / "independent_queries_v2.pt",
     )
     args = parser.parse_args()
 
@@ -197,6 +197,7 @@ def main() -> None:
         "activity_use_query_features": True,
         "activity_context_bandwidth": args.activity_context_bandwidth,
         "activity_use_pilot_importance": False,
+        "detach_activity_gate_for_fit": True,
         "knot_use_local_cross_attention": True,
         "knot_attention_heads": args.knot_attention_heads,
         "knot_parameterization": "independent_queries",
@@ -209,7 +210,6 @@ def main() -> None:
             "l0": args.lambda_l0,
             "activity": 0.0,
             "binary": 0.0,
-            # Compatibility metadata only; not part of the current objective.
             "orthogonal": 0.0,
             "gap": 0.0,
             "parameter_prior": args.lambda_parameter_prior,
@@ -220,6 +220,7 @@ def main() -> None:
         },
         "min_knot_gap": 1e-3,
         "knot_position_beta": args.knot_position_beta,
+        "checkpoint_selection_metric": "existence_f1_then_loss",
     }
     loss_fn = SplineFittingLoss(
         LossWeights(**loss_config["weights"]),
@@ -276,6 +277,7 @@ def main() -> None:
         "activity_initial_bias": args.activity_initial_bias,
         "activity_context_bandwidth": args.activity_context_bandwidth,
         "activity_use_pilot_importance": False,
+        "detach_activity_gate_for_fit": True,
         "activity_use_query_features": True,
         "knot_use_local_cross_attention": True,
         "knot_attention_heads": args.knot_attention_heads,
