@@ -44,6 +44,24 @@ class CanonicalLabelTests(unittest.TestCase):
             sample["source_internal_knot_count"],
         )
 
+    def test_training_population_can_resample_without_changing_validation_mode(self) -> None:
+        resampled = SyntheticCubicBSplineDataset(
+            size=2,
+            seed=123,
+            resample_each_epoch=True,
+        )
+        epoch_zero = resampled[0]["points"].clone()
+        resampled.set_epoch(1)
+        epoch_one = resampled[0]["points"].clone()
+        self.assertFalse(torch.equal(epoch_zero, epoch_one))
+        self.assertEqual(resampled[0]["sample_epoch"], 1)
+
+        fixed = SyntheticCubicBSplineDataset(size=2, seed=123)
+        fixed_zero = fixed[0]["points"].clone()
+        fixed.set_epoch(3)
+        torch.testing.assert_close(fixed[0]["points"], fixed_zero)
+        self.assertEqual(fixed[0]["sample_epoch"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

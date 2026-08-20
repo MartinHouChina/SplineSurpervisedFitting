@@ -13,13 +13,15 @@ from ..spline.truncated_power_basis import build_design_matrix
 from .activity_head import ActivityHead
 from .count_conditioned_knot_head import CountConditionedKnotHead
 from .count_head import CountHead
+from .dynamic_knot_decoder import DynamicKnotDecoder
 from .geometry_encoder import GeometryEncoder
+from .interactive_structure_head import InteractiveStructureHead
 from .knot_head import KnotHead
 from .parameter_head import ParameterHead
 
 
 class SplineFittingNetwork(nn.Module):
-    """Predict point parameters and either count-conditioned or gated knots."""
+    """Predict parameters, spline structure, and ordered internal knots."""
 
     def __init__(
         self,
@@ -60,11 +62,16 @@ class SplineFittingNetwork(nn.Module):
         count_query_count: int = 4,
         count_decoder_mode: str = "shared_count_embedding",
         geometry_feature_mode: str | None = None,
+        structure_attention_heads: int = 4,
     ) -> None:
         super().__init__()
-        if structure_mode not in {"hard_concrete", "count_conditioned"}:
+        if structure_mode not in {
+            "hard_concrete",
+            "count_conditioned",
+            "interactive_dynamic",
+        }:
             raise ValueError(
-                "structure_mode must be 'hard_concrete' or 'count_conditioned'"
+                "unsupported structure_mode"
             )
         self.structure_mode = structure_mode
         self.degree = degree
@@ -91,7 +98,7 @@ class SplineFittingNetwork(nn.Module):
         if geometry_feature_mode is None:
             geometry_feature_mode = (
                 "chord_derivatives"
-                if self.structure_mode == "count_conditioned"
+                if self.structure_mode in {"count_conditioned", "interactive_dynamic"}
                 else "raw_differences"
             )
         self.encoder = GeometryEncoder(
@@ -103,7 +110,19 @@ class SplineFittingNetwork(nn.Module):
         self.parameter_head = ParameterHead(
             hidden_dim, min_parameter_gap, gap_parameterization=gap_parameterization
         )
-        if self.structure_mode == "count_conditioned":
+        if self.structure_mode == "interactive_dynamic":
+            self.structure_head = InteractiveStructureHead(
+                hidden_dim,
+                max_internal_knots,
+                attention_heads=structure_attention_heads,
+            )
+            self.knot_head = DynamicKnotDecoder(
+                hidden_dim,
+                max_internal_knots,
+                min_gap=min_knot_gap,
+                attention_heads=structure_attention_heads,
+            )
+        elif self.structure_mode == "count_conditioned":
             self.count_head = CountHead(
                 hidden_dim,
                 max_internal_knots,
@@ -227,27 +246,72 @@ class SplineFittingNetwork(nn.Module):
         if hasattr(self, "activity_head"):
             self.activity_head.set_activity_threshold(value)
 
+    @staticmethod
+    def _select_knot_count(
+        predicted_count: torch.Tensor,
+        teacher_count: torch.Tensor | None,
+        teacher_forcing_ratio: float,
+    ) -> torch.Tensor:
+        if not 0.0 <= teacher_forcing_ratio <= 1.0:
+            raise ValueError("teacher_forcing_ratio must lie in [0, 1]")
+        if teacher_count is None or teacher_forcing_ratio == 0.0:
+            return predicted_count
+        teacher_count = teacher_count.to(
+            device=predicted_count.device,
+            dtype=torch.long,
+        )
+        if teacher_count.shape != predicted_count.shape:
+            raise ValueError("teacher and predicted knot counts must share shape [B]")
+        if teacher_forcing_ratio == 1.0:
+            return teacher_count
+        use_teacher = torch.rand(
+            predicted_count.shape,
+            device=predicted_count.device,
+        ) < teacher_forcing_ratio
+        return torch.where(use_teacher, teacher_count, predicted_count)
+
     def forward(
         self,
         points: torch.Tensor,
         true_internal_knot_count: torch.Tensor | None = None,
+        teacher_forcing_ratio: float = 1.0,
     ) -> dict[str, torch.Tensor]:
         local_features, global_features = self.encoder(points)
         parameter_output = self.parameter_head(local_features, global_features)
-        if self.structure_mode == "count_conditioned":
+        if self.structure_mode == "interactive_dynamic":
+            count_output = self.structure_head(
+                global_features,
+                local_features,
+                parameter_output["params"],
+            )
+            selected_count = self._select_knot_count(
+                count_output["predicted_knot_count"],
+                true_internal_knot_count,
+                teacher_forcing_ratio,
+            )
+            knot_output = self.knot_head(
+                global_features,
+                local_features,
+                parameter_output["params"],
+                count_output["structure_query_features"],
+                selected_count,
+            )
+            fit_activity_gate = knot_output["knot_mask"].to(points.dtype)
+            pilot_delta = torch.zeros_like(knot_output["internal_knots"])
+            normalized_importance = torch.zeros_like(
+                knot_output["internal_knots"]
+            )
+            activity_output: dict[str, torch.Tensor] = {}
+        elif self.structure_mode == "count_conditioned":
             count_output = self.count_head(
                 global_features,
                 local_features,
                 parameter_output["params"],
             )
-            selected_count = (
-                true_internal_knot_count
-                if true_internal_knot_count is not None
-                else count_output["predicted_knot_count"]
-            )
-            selected_count = selected_count.to(
-                device=points.device,
-                dtype=torch.long,
+            selected_count = self._select_knot_count(
+                count_output["predicted_knot_count"],
+                true_internal_knot_count,
+                teacher_forcing_ratio,
             )
             knot_output = self.knot_head(
                 global_features,

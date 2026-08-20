@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from spline_fitting.checkpointing import (
+    COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
     CURRENT_OBJECTIVE_VERSION,
     build_model_from_checkpoint,
     migrate_loss_config,
@@ -39,7 +40,12 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--num-samples", type=int, default=128)
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--seed", type=int, default=10000)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=20000,
+        help="Independent synthetic test seed (training defaults: train=42, val=10000).",
+    )
     parser.add_argument("--activity-threshold", type=float, default=None)
     parser.add_argument(
         "--threshold-sweep",
@@ -75,13 +81,21 @@ def main() -> None:
     model.set_activity_threshold(threshold)
     model.to(device).eval()
     structure_mode = model_config.get("structure_mode", "hard_concrete")
-    count_conditioned = structure_mode == "count_conditioned"
+    count_conditioned = structure_mode in {
+        "count_conditioned",
+        "interactive_dynamic",
+    }
     count_selection = args.count_selection
     if count_selection == "auto":
         count_selection = (
             "bic"
-            if checkpoint.get("objective_version") == CURRENT_OBJECTIVE_VERSION
+            if checkpoint.get("objective_version")
+            == COUNT_CONDITIONED_V5_OBJECTIVE_VERSION
             else "network"
+        )
+    if structure_mode == "interactive_dynamic" and count_selection == "bic":
+        parser.error(
+            "v6 decodes only the selected count and does not support exhaustive BIC"
         )
 
     dataset_config = dict(checkpoint.get("dataset_config", {}))
@@ -90,7 +104,8 @@ def main() -> None:
     dataset_config.setdefault(
         "canonical_knot_tolerance",
         5e-3
-        if checkpoint.get("objective_version") == CURRENT_OBJECTIVE_VERSION
+        if checkpoint.get("objective_version")
+        in {CURRENT_OBJECTIVE_VERSION, COUNT_CONDITIONED_V5_OBJECTIVE_VERSION}
         else 0.0,
     )
     dataset_config["return_ground_truth"] = True

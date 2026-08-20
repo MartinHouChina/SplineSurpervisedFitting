@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from spline_fitting.checkpointing import (
     COUNT_CONDITIONED_V4_OBJECTIVE_VERSION,
+    COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
     CURRENT_OBJECTIVE_VERSION,
     PREVIOUS_OBJECTIVE_VERSION,
     build_model_from_checkpoint,
@@ -109,7 +110,7 @@ class CheckpointMigrationTests(unittest.TestCase):
 
         self.assertFalse(legacy)
         self.assertFalse(config["compute_first_derivative"])
-        self.assertEqual(config["structure_mode"], "count_conditioned")
+        self.assertEqual(config["structure_mode"], "interactive_dynamic")
         self.assertTrue(assumed)
         self.assertEqual(loss_config["weights"]["orthogonal"], 0.0)
         self.assertEqual(loss_config["weights"]["true_parameter"], 5e-2)
@@ -150,14 +151,14 @@ class CheckpointMigrationTests(unittest.TestCase):
             actual = restored.eval()(points)
         torch.testing.assert_close(actual["internal_knots"], expected["internal_knots"])
 
-    def test_current_count_conditioned_checkpoint_restores_strictly(self) -> None:
+    def test_current_interactive_checkpoint_restores_strictly(self) -> None:
         config = {
             "point_dim": 2,
             "hidden_dim": 16,
             "encoder_layers": 1,
             "max_internal_knots": 3,
-            "structure_mode": "count_conditioned",
-            "count_attention_heads": 4,
+            "structure_mode": "interactive_dynamic",
+            "structure_attention_heads": 4,
         }
         reference = SplineFittingNetwork(**config).eval()
         checkpoint = {
@@ -168,6 +169,34 @@ class CheckpointMigrationTests(unittest.TestCase):
 
         restored, migrated, legacy = build_model_from_checkpoint(checkpoint)
 
+        self.assertFalse(legacy)
+        self.assertEqual(migrated["structure_mode"], "interactive_dynamic")
+        points = torch.randn(2, 12, 2)
+        with torch.no_grad():
+            expected = reference(points)
+            actual = restored.eval()(points)
+        torch.testing.assert_close(actual["count_logits"], expected["count_logits"])
+        torch.testing.assert_close(actual["internal_knots"], expected["internal_knots"])
+
+    def test_v5_count_conditioned_checkpoint_restores_strictly(self) -> None:
+        config = {
+            "point_dim": 2,
+            "hidden_dim": 16,
+            "encoder_layers": 1,
+            "max_internal_knots": 3,
+            "structure_mode": "count_conditioned",
+            "count_attention_heads": 4,
+            "count_head_mode": "ordinal_local_attention",
+            "count_decoder_mode": "shared_count_embedding",
+            "geometry_feature_mode": "chord_derivatives",
+        }
+        reference = SplineFittingNetwork(**config).eval()
+        checkpoint = {
+            "objective_version": COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
+            "model_config": config,
+            "model_state_dict": reference.state_dict(),
+        }
+        restored, migrated, legacy = build_model_from_checkpoint(checkpoint)
         self.assertFalse(legacy)
         self.assertEqual(migrated["structure_mode"], "count_conditioned")
         points = torch.randn(2, 12, 2)

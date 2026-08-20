@@ -1,312 +1,256 @@
-# 模型内部数据流
+# v6 模型内部投喂顺序
 
-以下内容描述 `structure_mode="count_conditioned"` 的 v5 主路径。
-
-## 实际 forward 投喂顺序
-
-代码不是把原始点分别直接投给三个 head。真实调用顺序如下：
+## 1. 完整 forward
 
 ```python
-# 1. 原始有序点只先进入编码器
+# 输入点只先进入几何编码器
 local_features, global_features = encoder(points)
 
-# 2. 参数头读取编码后的局部特征和全局特征
+# 参数头读取局部特征和全局特征
 parameter_output = parameter_head(local_features, global_features)
 params = parameter_output["params"]
 
-# 3. 数量头读取全局特征、局部特征和预测参数
-count_output = count_head(global_features, local_features, params)
-predicted_count = count_output["predicted_knot_count"]
+# 交互式结构头读取参数化局部几何，直接预测最终数量分布
+structure_output = structure_head(
+    global_features,
+    local_features,
+    params,
+)
+predicted_count = structure_output["predicted_knot_count"]
 
-# 4. 决定本次用于节点解码的数量
+# 训练取真实数量；验证和部署取网络预测数量
 selected_count = true_count if training else predicted_count
 
-# 5. 节点头读取相同的几何特征、预测参数和 selected_count
+# K>0 时只解码 selected_count 对应的 K+1 个区间 query；K=0 时跳过
 knot_output = knot_head(
     global_features,
     local_features,
     params,
+    structure_output["structure_query_features"],
     selected_count,
 )
 
-# 6. 用所选节点构造设计矩阵并求拟合系数
+# 使用所选节点进行训练代理拟合
 design = build_design_matrix(params, internal_knots, knot_mask)
 coefficients = solve_coefficients(design, points)
 reconstructed_points = design @ coefficients
 ```
 
-对应的数据依赖关系是：
+依赖关系：
 
 ```text
 points
-  └─ GeometryEncoder
-       ├─ local_features ─┬─ ParameterHead ── params ─┬─ CountHead
-       │                  │                            └─ KnotHead
-       └─ global_features ┴────────────────────────────┴─ CountHead/KnotHead
-
-CountHead → predicted_count ──┐
-true_count（仅训练）───────────┼─ selected_count → KnotHead 选择节点表示
-                              └─ 训练取 true，验证/普通推理取 predicted
+  ↓
+GeometryEncoder
+  ├─ local_features ─┬─ ParameterHead ─→ params
+  └─ global_features ┘                    │
+                                         ↓
+                              InteractiveStructureHead
+                                ├─ P(K)
+                                └─ structure_query_features
+                                         │
+                 true K（仅训练）或 predicted K
+                                         ↓
+                                DynamicKnotDecoder
+                                         ↓
+                                  K 个有序节点
 ```
-
-因此 ParameterHead 在 CountHead 之前运行，因为 CountHead 的局部 memory 需要使用 `params` 位置编码。
-
-## 1. 输入
-
-网络输入：
-
-```text
-points: [B, M, D]
-```
-
-- `B`：batch size；
-- `M`：每条曲线的有序采样点数量，默认 64；
-- `D`：空间维度，支持 2 或 3。
-
-采样点在进入网络前已经中心化，并按最大点半径缩放。
 
 ## 2. GeometryEncoder
 
-编码器为每个采样点构造三类输入：
-
-1. 归一化坐标；
-2. 按弦长参数间隔归一化的一阶导数；
-3. 按弦长参数间隔归一化的二阶导数。
-
-经过一维卷积、GroupNorm 和 GELU 后得到：
+输入：
 
 ```text
-local_features:  [B, M, H]
-global_features: [B, H]
+points: [B,M,D]
 ```
 
-`local_features` 保留参数方向上的局部几何变化；`global_features` 是沿采样点维度最大池化后的曲线级描述。
-
-## 3. ParameterHead
-
-ParameterHead 的输入不是原始坐标，而是：
+编码器使用坐标、弦长归一化一阶导数和二阶导数，输出：
 
 ```text
 local_features:  [B,M,H]
 global_features: [B,H]
 ```
 
-首先把全局特征复制到每个采样位置：
+## 3. ParameterHead
+
+ParameterHead 不读取原始点。它把全局特征复制到每个采样位置，与局部特征拼接：
 
 ```text
-global_expanded: [B,M,H]
+local_features:   [B,M,H]
+global_expanded:  [B,M,H]
+fused:            [B,M,2H]
 ```
 
-然后与局部特征拼接：
-
-```text
-fused = concat(local_features, global_expanded)
-fused: [B,M,2H]
-```
-
-MLP 对前 `M-1` 个位置分别输出一个原始参数间隔：
+MLP 对前 `M-1` 个位置预测原始参数间隔：
 
 ```text
 raw_parameter_gaps: [B,M-1]
 ```
 
-这些间隔经过 softmax、最小间隔约束和累加，得到：
+间隔经 softmax、最小间隔约束和累加得到：
 
 \[
 0=t_0<t_1<\cdots<t_{M-1}=1.
 \]
 
-输出：
+输出 `params:[B,M]` 被后续两个模块共同使用。
 
-```text
-params: [B, M]
-```
+## 4. InteractiveStructureHead
 
-`params` 有两个作用：
+### 4.1 Cross-attention
 
-- 与 `true_params` 计算参数监督损失；
-- 生成位置编码，供 CountHead 和 KnotHead 读取参数域位置。
-
-## 4. Ordinal CountHead
-
-CountHead 不只读取全局池化特征。它使用多个可学习 count query，对下面的 memory 做 cross-attention：
+构造带参数位置编码的 memory：
 
 \[
 F_{memory}=F_{local}+\operatorname{PE}(t).
 \]
 
-注意力特征与 `global_features` 拼接后产生曲线复杂度证据 \(e\)。有序阈值 \(b_r\) 定义：
+一次性使用 `Kmax` 个结构 query：
 
 \[
-s_r=P(K\ge r)=\sigma(e-b_r),\qquad r=1,\ldots,K_{max}.
+Z=\operatorname{CrossAttention}(Q_{structure},F_{memory}).
 \]
 
-由相邻 survival probability 得到：
+这里的 `Kmax` 个 query 是数量判断所需的局部结构探测器，不是最终输出的候选节点。
 
-```text
-count_probabilities:    [B, Kmax+1]
-predicted_knot_count:   [B]
-expected_knot_count:    [B]
-count_ordinal_logits:   [B, Kmax]
-```
+### 4.2 Query self-attention
 
-`predicted_knot_count` 是类别概率 argmax，不是对节点逐个做阈值判断。
-
-## 5. Shared Count-Conditioned KnotHead
-
-节点解码器维护一组共享 interval query。对于给定数量 \(K\)：
-
-1. 取前 \(K+1\) 个 interval query；
-2. 加入全局曲线特征；
-3. 加入节点数量 embedding `Embedding(K)`；
-4. 对 `local_features + PE(params)` 做 cross-attention；
-5. 输出 \(K+1\) 个 interval logits。
-
-区间经过 softmax 和最小间隔约束：
+结构 query 之间交换信息：
 
 \[
-\Delta_j=\delta+[1-(K+1)\delta]\operatorname{softmax}(a)_j.
+\widetilde Z=\operatorname{SelfAttention}(Z).
 \]
 
-前缀和生成内部节点：
+它允许模型判断不同局部几何证据是互补还是冗余。
+
+### 4.3 从停止风险得到数量分布
+
+第 \(j\) 个 token 输出条件停止概率 \(h_j\)。例如：
 
 \[
-u_j=\sum_{r=0}^{j-1}\Delta_r,qquad j=1,\ldots,K.
+P(K=0)=h_1,
 \]
-
-因此无需排序即可保证：
 
 \[
-0<u_1<\cdots<u_K<1.
+P(K=1)=(1-h_1)h_2,
 \]
 
-### 如何得到“对应长度”的节点向量
+\[
+P(K=2)=(1-h_1)(1-h_2)h_3.
+\]
 
-PyTorch batch 中不能让每个样本直接拥有不同的张量宽度，因此实现采用“全部分支定宽保存 + mask 表示真实长度”。网络一次 forward 会计算全部数量分支：
+最后一类为一直没有停止：
 
-```text
-branch_internal_knots: [B, Kmax+1, Kmax]
-```
+\[
+P(K=K_{max})=\prod_{j=1}^{K_{max}}(1-h_j).
+\]
 
-随后根据本次所选数量提取：
-
-```text
-internal_knots:       [B, Kmax]
-knot_mask:            [B, Kmax]
-count_used_for_knots: [B]
-```
-
-`knot_mask` 只是把变长节点表示放进固定宽度张量，不是 Activity 门，也不是剪枝结果。
-
-假设 `Kmax=6`，某条曲线选择 `K=3`。内部实际过程是：
+所有类别概率天然非负且和为 1。输出：
 
 ```text
-K=0 分支 → [0,  0,  0, 0, 0, 0]
-K=1 分支 → [u1, 0,  0, 0, 0, 0]
-K=2 分支 → [u1, u2, 0, 0, 0, 0]
-K=3 分支 → [u1, u2, u3,0, 0, 0]  ← selected_count=3 选择这一行
-K=4 分支 → [u1, u2, u3,u4,0, 0]
-K=5 分支 → [u1, u2, u3,u4,u5,0]
-K=6 分支 → [u1, u2, u3,u4,u5,u6]
+structure_query_features:          [B,Kmax,H]
+structure_stop_logits:             [B,Kmax]
+structure_survival_probabilities:  [B,Kmax]
+count_probabilities:               [B,Kmax+1]
+predicted_knot_count:              [B]
 ```
 
-选择后返回：
+这里没有独立 CountHead，也没有对 activity 做阈值删除。
+
+## 5. DynamicKnotDecoder
+
+输入：
+
+```text
+global_features
+local_features
+params
+structure_query_features
+selected_count
+```
+
+最终节点 query 同时读取：
+
+- 带参数位置编码的局部几何 token；
+- 经过交互的 structure query token；
+- 全局曲线特征；
+- `Embedding(K)`。
+
+### 5.1 只计算所需数量
+
+假设一个 batch 的 `selected_count` 为：
+
+```text
+[2,2,4,3,4,2]
+```
+
+解码器按数量分组：
+
+```text
+K=2：样本 0,1,5 → 每条使用 3 个 interval query
+K=3：样本 3     → 使用 4 个 interval query
+K=4：样本 2,4   → 每条使用 5 个 interval query
+```
+
+不会计算 K=0、1、5、6 的节点表示，也不会产生 `branch_internal_knots`。
+
+输出仍填充成 batch 定宽形式：
+
+```text
+internal_knots: [B,Kmax]
+knot_mask:      [B,Kmax]
+```
+
+填充只用于张量存储。例如 K=3：
 
 ```text
 internal_knots = [u1,u2,u3,0,0,0]
 knot_mask      = [1, 1, 1, 0,0,0]
 ```
 
-训练代理使用 `knot_mask` 关闭后三列。标准 B 样条部署则执行：
+### 5.2 有序节点生成
 
-```python
-valid_knots = internal_knots[knot_mask]
-```
+给定正整数 K，只取前 `K+1` 个共享 interval query，输出正区间；K=0 时直接返回空节点向量：
 
-此时才得到物理长度真正为 3 的节点向量 `[u1,u2,u3]`。
+\[
+\Delta_j=\delta+[1-(K+1)\delta]\operatorname{softmax}(a)_j.
+\]
 
-### 每个 K 分支怎样生成 K 个节点
+节点为前缀和：
 
-`K=3` 时不是直接回归三个无序数，而是生成 4 个正区间：
+\[
+u_j=\sum_{r=0}^{j-1}\Delta_r,\qquad j=1,\ldots,K.
+\]
 
-```text
-interval query 数量 = K+1 = 4
-预测区间 = [Δ0, Δ1, Δ2, Δ3]
-约束       Δj > 0，且 Δ0+Δ1+Δ2+Δ3 = 1
-```
+因此节点天然严格有序。
 
-然后取前三个前缀和：
+## 6. 计算复杂度
 
-```text
-u1 = Δ0
-u2 = Δ0 + Δ1
-u3 = Δ0 + Δ1 + Δ2
-```
+结构头固定使用 `Kmax` 个 query：cross-attention 复杂度为 \(O(BK_{max}M)\)，query self-attention 为 \(O(BK_{max}^2)\)。位置解码在 K>0 时只使用每条曲线的 `K+1` 个 query，K=0 时不运行，其主要注意力复杂度为：
 
-最后一个区间 `Δ3` 表示 `u3` 到参数域终点 1 的距离。因此输出必然满足 `0 < u1 < u2 < u3 < 1`。
+\[
+O\left(\sum_{b:K_b>0}(K_b+1)(M+K_{max})\right).
+\]
 
-## 6. 训练代理拟合
+因此节点位置解码不再枚举全部数量分支。结构 query 的 self-attention 仍为 \(O(K_{max}^2)\)；当 `Kmax=20` 时是固定的 400 个 query-pair，但不适合无限增大 `Kmax`。
 
-网络使用所选节点构造固定宽度截断幂基：
+## 7. 训练代理
+
+动态节点通过 `knot_mask` 构造截断幂基：
 
 \[
 \Phi=[1,t,t^2,t^3,m_j(t-u_j)_+^3].
 \]
 
-其中 `m_j` 来自确定性的 `knot_mask`。随后在 forward 内可微求解线性系数：
+forward 内可微求解线性系数并产生 `reconstructed_points`。该曲线用于训练拟合损失，不是最终导出的标准 B 样条控制多边形。
 
-\[
-D^*=\arg\min_D\|\Phi D-Q\|_F^2+
-\lambda_{poly}\|D_{poly}\|_F^2+
-\lambda_{knot}\|D_{knot}\|_F^2.
-\]
+## 8. 训练、验证、部署的数量来源
 
-输出的 `reconstructed_points` 用于训练拟合损失。这个截断幂模型是训练代理，不是最终导出的 CAD B 样条控制多边形。
+| 阶段 | selected_count | 说明 |
+|---|---|---|
+| 训练前期 | canonical 真实数量 | 稳定监督动态位置解码器 |
+| 训练后期 | 按 teacher-forcing 比例混合真实数量和预测数量 | 缩小训练与部署的输入差异 |
+| 验证 | `argmax count_probabilities` | 不使用 teacher count |
+| 部署 | `argmax count_probabilities` | 最终且唯一的数量决策 |
 
-## 7. forward 中数量从哪里来
-
-### 训练模式
-
-Trainer 调用：
-
-```python
-model(points, true_internal_knot_count=true_count)
-```
-
-CountHead 仍然正常预测并接受序数监督，但 KnotHead 使用真实 canonical 数量选择表示。这是 teacher-conditioned 节点解码。
-
-### 验证和普通推理
-
-调用：
-
-```python
-model(points)
-```
-
-此时 KnotHead 使用 `predicted_knot_count`。验证阶段不会读取真实数量来选择节点。
-
-### BIC 部署
-
-模型 forward 后保留所有 `branch_internal_knots`。部署器逐个检查完整数量分支，再选择最终数量。详细过程见 [deployment_pipeline.md](deployment_pipeline.md)。
-
-## 8. 关键输出字段
-
-| 字段 | 含义 |
-|---|---|
-| `params` | 预测点参数 |
-| `count_probabilities` | 0 到 Kmax 的节点数量分布 |
-| `predicted_knot_count` | CountHead 原始 argmax |
-| `branch_internal_knots` | 所有完整数量分支的节点 |
-| `internal_knots` | 当前选中分支的定宽节点张量 |
-| `knot_mask` | 当前数量对应的有效槽位 |
-| `reconstructed_points` | 截断幂训练代理重建结果 |
-
-## 9. 历史兼容
-
-`checkpointing.py` 根据 objective version 恢复对应模块：
-
-- v5：ordinal local attention + shared count embedding；
-- v4：categorical global head + independent branches；
-- v3 及更早：Hard-Concrete/ActivityHead。
-
-历史模块不参与新的 v5 训练。
+部署流程见 [deployment_pipeline.md](deployment_pipeline.md)。

@@ -11,7 +11,7 @@ from ..evaluation.knot_diagnostics import activity_statistics, match_internal_kn
 
 
 class Trainer:
-    """Trainer with gate warm-up, expected-L0 scheduling and temperature annealing."""
+    """Train and validate current or checkpoint-compatible spline models."""
 
     def __init__(
         self,
@@ -87,6 +87,7 @@ class Trainer:
         l0_scale: float,
         activity_scale: float,
         binary_scale: float,
+        teacher_forcing_ratio: float = 1.0,
     ) -> dict[str, float]:
         self.model.train(training)
         totals: dict[str, float] = defaultdict(float)
@@ -114,12 +115,15 @@ class Trainer:
                     true_internal_knot_count
                     if training
                     and getattr(self.model, "structure_mode", None)
-                    == "count_conditioned"
+                    in {"count_conditioned", "interactive_dynamic"}
                     else None
                 )
                 output = self.model(
                     points,
                     true_internal_knot_count=teacher_count,
+                    teacher_forcing_ratio=(
+                        teacher_forcing_ratio if training else 0.0
+                    ),
                 )
                 losses = self.loss_fn(
                     output,
@@ -224,6 +228,7 @@ class Trainer:
         binary_schedule: Callable[[int], float] | None = None,
         gate_temperature_schedule: Callable[[int], float] | None = None,
         gate_warmup_epochs: int = 0,
+        teacher_forcing_schedule: Callable[[int], float] | None = None,
         checkpoint_selection_start_epoch: int = 0,
         checkpoint_path: str | Path | None = None,
         epoch_offset: int = 0,
@@ -236,6 +241,9 @@ class Trainer:
         best_knot_matched_mae = float("inf")
 
         for epoch in range(epochs):
+            dataset = train_loader.dataset
+            if hasattr(dataset, "set_epoch"):
+                dataset.set_epoch(epoch_offset + epoch)
             l0_scale = l0_schedule(epoch) if l0_schedule else 1.0
             activity_scale = activity_schedule(epoch) if activity_schedule else 1.0
             binary_scale = binary_schedule(epoch) if binary_schedule else 1.0
@@ -244,6 +252,13 @@ class Trainer:
                 if gate_temperature_schedule is not None
                 else None
             )
+            teacher_forcing_ratio = (
+                teacher_forcing_schedule(epoch)
+                if teacher_forcing_schedule is not None
+                else 1.0
+            )
+            if not 0.0 <= teacher_forcing_ratio <= 1.0:
+                raise ValueError("teacher forcing schedule must return a value in [0, 1]")
             if gate_temperature is not None and hasattr(
                 self.model, "set_gate_temperature"
             ):
@@ -251,10 +266,18 @@ class Trainer:
             if hasattr(self.model, "set_force_open_gates"):
                 self.model.set_force_open_gates(epoch < gate_warmup_epochs)
             train_metrics = self._run_epoch(
-                train_loader, True, l0_scale, activity_scale, binary_scale
+                train_loader,
+                True,
+                l0_scale,
+                activity_scale,
+                binary_scale,
+                teacher_forcing_ratio,
             )
 
-            record = {f"train/{k}": v for k, v in train_metrics.items()}
+            record = {
+                **{f"train/{k}": v for k, v in train_metrics.items()},
+                "train/teacher_forcing_ratio": teacher_forcing_ratio,
+            }
             if val_loader is not None:
                 val_metrics = self._run_epoch(val_loader, False, l0_scale, 1.0, 1.0)
                 record.update({f"val/{k}": v for k, v in val_metrics.items()})
@@ -276,7 +299,10 @@ class Trainer:
 
             history.append(record)
             displayed_metrics = val_metrics if val_loader is not None else train_metrics
-            if getattr(self.model, "structure_mode", None) == "count_conditioned":
+            if getattr(self.model, "structure_mode", None) in {
+                "count_conditioned",
+                "interactive_dynamic",
+            }:
                 structure_report = (
                     f"count_loss={displayed_metrics['count_loss']:.4f} | "
                     f"count_acc={displayed_metrics.get('count_accuracy', 0.0):.3f} | "
@@ -304,6 +330,7 @@ class Trainer:
                 f"knot_F1@{self.knot_match_tolerance:.3f}="
                 f"{displayed_metrics.get('knot_match_f1', 0.0):.3f} | "
                 f"knot_pos={displayed_metrics['knot_position_loss']:.4f} | "
+                f"teacher={teacher_forcing_ratio:.3f} | "
                 f"l0_scale={l0_scale:.3f} | "
                 f"temperature={gate_temperature if gate_temperature is not None else float('nan'):.3f}"
             )

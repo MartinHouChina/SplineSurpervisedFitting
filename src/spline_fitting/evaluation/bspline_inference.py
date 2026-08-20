@@ -386,7 +386,7 @@ def refit_model_output_as_bsplines(
     rcond: float | None = None,
     binary_tolerance: float = 1e-6,
 ) -> list[HardGatedBSplineFit]:
-    """Deployment adapter for gated and count-conditioned model outputs."""
+    """Deployment adapter for gated and structured-knot model outputs."""
     required = ("params", "internal_knots")
     missing = [name for name in required if name not in output]
     if missing:

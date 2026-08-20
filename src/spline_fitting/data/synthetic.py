@@ -416,6 +416,8 @@ class SyntheticCubicBSplineDataset(Dataset):
         return_ground_truth: bool = True,
         canonical_knot_tolerance: float = 5e-3,
         cache_samples: bool = True,
+        resample_each_epoch: bool = False,
+        epoch_seed_stride: int = 1_000_003,
         dtype: torch.dtype = torch.float32,
     ) -> None:
         if size <= 0:
@@ -438,6 +440,11 @@ class SyntheticCubicBSplineDataset(Dataset):
             raise ValueError("canonical_knot_tolerance must be non-negative")
         self.canonical_knot_tolerance = canonical_knot_tolerance
         self.cache_samples = bool(cache_samples)
+        self.resample_each_epoch = bool(resample_each_epoch)
+        if epoch_seed_stride <= 0:
+            raise ValueError("epoch_seed_stride must be positive")
+        self.epoch_seed_stride = int(epoch_seed_stride)
+        self.epoch = 0
         self._sample_cache: dict[int, dict[str, torch.Tensor | int]] = {}
         self.dtype = dtype
         self.degree = 3
@@ -446,6 +453,15 @@ class SyntheticCubicBSplineDataset(Dataset):
 
     def __len__(self) -> int:
         return self.size
+
+    def set_epoch(self, epoch: int) -> None:
+        """Select a deterministic fresh training population for an epoch."""
+        if epoch < 0:
+            raise ValueError("epoch must be non-negative")
+        next_epoch = int(epoch) if self.resample_each_epoch else 0
+        if next_epoch != self.epoch:
+            self.epoch = next_epoch
+            self._sample_cache.clear()
 
     @staticmethod
     def _chord_length_parameters(points: torch.Tensor) -> torch.Tensor:
@@ -463,7 +479,8 @@ class SyntheticCubicBSplineDataset(Dataset):
             raise IndexError(index)
         if self.cache_samples and index in self._sample_cache:
             return self._sample_cache[index]
-        generator = torch.Generator().manual_seed(self.seed + index)
+        sample_seed = self.seed + self.epoch * self.epoch_seed_stride + index
+        generator = torch.Generator().manual_seed(sample_seed)
         sample = generate_cubic_bspline_sample(
             num_points=self.num_points,
             point_dim=self.point_dim,
@@ -488,6 +505,7 @@ class SyntheticCubicBSplineDataset(Dataset):
             "center": center,
             "scale": scale,
             "sample_id": index,
+            "sample_epoch": self.epoch,
             "curve_degree": sample.degree,
         }
 

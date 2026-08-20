@@ -28,7 +28,7 @@ class LossWeights:
 
 
 class SplineFittingLoss(nn.Module):
-    """Combine fitting with either gated or count-conditioned structure loss."""
+    """Combine fitting with gated or supervised structured-knot losses."""
 
     def __init__(
         self,
@@ -239,7 +239,20 @@ class SplineFittingLoss(nn.Module):
                 existence_true_positive_count = points.new_zeros(())
                 existence_predicted_count = points.new_zeros(())
                 existence_target_count = points.new_zeros(())
-                if "count_ordinal_logits" in output:
+                if "structure_survival_logits" in output:
+                    thresholds = torch.arange(
+                        1,
+                        output["structure_survival_logits"].shape[-1] + 1,
+                        device=points.device,
+                    )
+                    continuation_targets = (
+                        true_count.unsqueeze(-1) >= thresholds.unsqueeze(0)
+                    ).to(points.dtype)
+                    count_loss = F.binary_cross_entropy_with_logits(
+                        output["structure_survival_logits"],
+                        continuation_targets,
+                    )
+                elif "count_ordinal_logits" in output:
                     thresholds = torch.arange(
                         1,
                         output["count_ordinal_logits"].shape[-1] + 1,

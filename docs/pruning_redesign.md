@@ -1,57 +1,68 @@
-# 结构预测重构记录
+# 结构预测方案演化
 
-## v3：候选节点剪枝
+## v3：逐节点剪枝
 
-v3 使用固定候选节点、ActivityHead 和 Hard-Concrete。验证结果出现两种极端：大量曲线保留全部候选，另一些曲线删除全部候选；单曲线 activity 区分度不足，固定阈值同时承担数量判断和节点身份选择。
+v3 使用固定候选节点、ActivityHead 和 Hard-Concrete。实验中容易出现两种极端：保留全部候选或删除全部候选；同一曲线内的 activity 区分度也不足。
 
-结论：问题不是简单的阈值偏移，而是独立 Bernoulli 门与拟合目标之间存在结构冲突。
+根因不是单纯的阈值偏移，而是独立 Bernoulli 门同时承担“节点数量”和“节点身份”判断，并与拟合损失相互牵制。
 
-## v4：直接预测数量
+## v4：直接预测节点数量
 
-v4 将问题改写为：
-
-```text
-CountHead 预测 K → K 专属分支直接生成 K 个有序节点
-```
-
-它移除了主路径中的 ActivityHead、Hard-Concrete 和部署阈值。但实验中训练数量准确率约为 63.7%，验证仅约为 21.1%，说明存在明显过拟合。进一步分析发现：
-
-- 数量正确样本的节点 precision 约为 0.60；
-- 整体 precision 约为 0.44；
-- 使用真实数量后整体 precision 约为 0.55；
-- 使用真实参数没有继续改善，ParameterHead 不是主要瓶颈。
-
-根因包括：训练集过小、每个数量分支数据割裂，以及随机生成表示的节点数量并不一定能从曲线几何中唯一恢复。
-
-## v5：canonical ordinal count-conditioned
-
-v5 做了四项修正：
-
-1. 在固定几何容差下贪心删除源节点，把结果作为 canonical 最简标签；
-2. CountHead 用局部位置编码 cross-attention 读取整条曲线，并使用序数数量损失；
-3. 不同数量共享 interval query 和解码参数，只通过 count embedding 条件化；
-4. 部署时比较完整数量分支的 BIC 和 CountHead 先验，不逐节点剪枝。
-
-主路径为：
+v4 改为：
 
 ```text
-canonical 标签
-  → ordinal CountHead
-  → shared count-conditioned decoder
-  → 完整 K 节点模型
-  → BIC + learned prior 阶次选择
+CountHead 预测 K → 选择 K 专属分支 → 输出 K 个有序节点
 ```
 
-论文表述可归纳为“容差约束的 canonical spline supervision、学习式序数阶次估计和条件连续参数回归”。
+它移除了主路径中的 Hard-Concrete，但每个数量拥有独立分支，训练数据被拆散，参数共享不足。
 
-## 建议消融
+## v5：canonical 标签与条件数量分支
 
-| 组别 | 数量机制 | 标签 | 部署选择 |
-|---|---|---|---|
-| v3 | Bernoulli gates | 源表示 | threshold |
-| v4 | categorical | 源表示 | argmax |
-| v5-a | ordinal local | canonical | argmax |
-| v5-b | ordinal local | canonical | BIC + prior |
-| v5 full | ordinal local + shared decoder | canonical | BIC + prior |
+v5 引入：
 
-统一报告数量 accuracy/MAE、节点 Precision/Recall/F1、匹配 MAE、标准 B 样条 RMS、控制点数和推理时间。
+- 容差约束的 canonical 最简节点标签；
+- 局部位置编码的序数 CountHead；
+- 共享参数的 count-conditioned decoder；
+- BIC 与学习先验联合选择完整数量分支。
+
+这一版改善了标签歧义和分支共享，但部署仍需计算 (K=0,1,\ldots,K_{max}) 的全部节点分支。interval query 总量为
+
+\[
+\sum_{K=0}^{K_{max}}(K+1)=O(K_{max}^2),
+\]
+
+而 BIC 造成训练时数量决策与部署时数量决策不一致。
+
+## v6：交互式结构预测与动态节点解码
+
+当前主流程是 v6：
+
+```text
+带参数位置编码的局部特征
+  → Kmax 个结构 query 做 cross-attention
+  → 结构 query 之间做 self-attention
+  → continuation/stop 概率构造 P(K)
+  → 单次 argmax 得到 K
+  → DynamicKnotDecoder 只解码该 K 的节点
+```
+
+关键变化：
+
+1. 不再实例化独立 CountHead。数量判断来自与节点局部证据交互后的结构 query。
+2. 结构 query 通过 self-attention 联合判断“还需要多少节点”，不再逐节点独立阈值剪枝。
+3. 训练时用 canonical 真值数量驱动位置解码，分别稳定监督数量和位置。
+4. 验证与部署只使用网络的 (\arg\max P(K))，不使用 BIC 或第二次筛选。
+5. 当 (K>0) 时只运行 (K+1) 个 interval query；(K=0) 时跳过位置解码。
+
+因此 v6 的节点位置 query 计算只覆盖所选数量，不再枚举全部数量分支。结构 query 仍包含一次 \(K_{max}\) 规模的 cross-attention 和 \(O(K_{max}^2)\) self-attention。
+
+## 版本对比
+
+| 版本 | 数量机制 | 节点标签 | 位置解码 | 部署决策 |
+|---|---|---|---|---|
+| v3 | 独立 activity 门 | 源表示 | 固定候选后剪枝 | threshold |
+| v4 | categorical CountHead | 源表示 | 数量专属分支 | argmax |
+| v5 | ordinal CountHead | canonical | 全数量条件分支 | BIC + prior |
+| v6 | 交互式 continuation/stop | canonical | 仅所选数量动态解码 | network argmax |
+
+统一报告节点数量 accuracy/MAE、节点 Precision/Recall/F1、匹配 MAE、标准 B 样条 RMS、控制点数量和推理时间。

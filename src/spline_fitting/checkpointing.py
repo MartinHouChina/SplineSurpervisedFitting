@@ -15,7 +15,8 @@ INDEPENDENT_QUERY_V2_OBJECTIVE_VERSION = (
 )
 PREVIOUS_OBJECTIVE_VERSION = "independent_query_two_stage_hard_concrete_v3"
 COUNT_CONDITIONED_V4_OBJECTIVE_VERSION = "count_conditioned_structured_knots_v4"
-CURRENT_OBJECTIVE_VERSION = "canonical_ordinal_count_conditioned_v5"
+COUNT_CONDITIONED_V5_OBJECTIVE_VERSION = "canonical_ordinal_count_conditioned_v5"
+CURRENT_OBJECTIVE_VERSION = "interactive_structure_dynamic_knots_v6"
 
 
 LEGACY_LOSS_CONFIG: dict[str, Any] = {
@@ -135,6 +136,11 @@ CURRENT_OBJECTIVE_LOSS_CONFIG: dict[str, Any] = {
         "count": 5e-3,
         "over_count": 2e-3,
     },
+    "count_loss": "structured_continuation_binary_cross_entropy",
+}
+
+COUNT_CONDITIONED_V5_LOSS_CONFIG: dict[str, Any] = {
+    **deepcopy(CURRENT_OBJECTIVE_LOSS_CONFIG),
     "count_loss": "ordinal_binary_cross_entropy",
 }
 
@@ -152,26 +158,39 @@ def migrate_model_config(
         raise KeyError("checkpoint is missing model_config")
     config = dict(checkpoint["model_config"])
     if "structure_mode" not in config:
-        config["structure_mode"] = (
-            "count_conditioned"
-            if checkpoint.get("objective_version")
-            in {CURRENT_OBJECTIVE_VERSION, COUNT_CONDITIONED_V4_OBJECTIVE_VERSION}
-            else "hard_concrete"
-        )
+        objective_version = checkpoint.get("objective_version")
+        if objective_version == CURRENT_OBJECTIVE_VERSION:
+            config["structure_mode"] = "interactive_dynamic"
+        elif objective_version in {
+            COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
+            COUNT_CONDITIONED_V4_OBJECTIVE_VERSION,
+        }:
+            config["structure_mode"] = "count_conditioned"
+        else:
+            config["structure_mode"] = "hard_concrete"
     config.setdefault("count_attention_heads", 4)
-    is_v5 = checkpoint.get("objective_version") == CURRENT_OBJECTIVE_VERSION
+    is_v5 = (
+        checkpoint.get("objective_version")
+        == COUNT_CONDITIONED_V5_OBJECTIVE_VERSION
+    )
     config.setdefault(
         "count_head_mode",
         "ordinal_local_attention" if is_v5 else "categorical_global",
     )
     config.setdefault("count_query_count", 4)
+    config.setdefault("structure_attention_heads", 4)
     config.setdefault(
         "count_decoder_mode",
         "shared_count_embedding" if is_v5 else "independent_branches",
     )
     config.setdefault(
         "geometry_feature_mode",
-        "chord_derivatives" if is_v5 else "raw_differences",
+        (
+            "chord_derivatives"
+            if checkpoint.get("objective_version")
+            in {CURRENT_OBJECTIVE_VERSION, COUNT_CONDITIONED_V5_OBJECTIVE_VERSION}
+            else "raw_differences"
+        ),
     )
     legacy = (
         config["structure_mode"] == "hard_concrete" and "gate_mode" not in config
@@ -224,6 +243,7 @@ def migrate_model_config(
             # projection-orthogonality objective (or its historical default).
             needs_derivative = checkpoint.get("objective_version") not in {
                 CURRENT_OBJECTIVE_VERSION,
+                COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
                 COUNT_CONDITIONED_V4_OBJECTIVE_VERSION,
                 PREVIOUS_OBJECTIVE_VERSION,
                 INDEPENDENT_QUERY_V2_OBJECTIVE_VERSION,
@@ -245,6 +265,7 @@ def migrate_loss_config(
     current_objective = objective_version == CURRENT_OBJECTIVE_VERSION
     no_orthogonal_objective = objective_version in {
         CURRENT_OBJECTIVE_VERSION,
+        COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
         COUNT_CONDITIONED_V4_OBJECTIVE_VERSION,
         PREVIOUS_OBJECTIVE_VERSION,
         INDEPENDENT_QUERY_V2_OBJECTIVE_VERSION,
@@ -256,6 +277,8 @@ def migrate_loss_config(
             default_config = LEGACY_LOSS_CONFIG
         elif current_objective:
             default_config = CURRENT_OBJECTIVE_LOSS_CONFIG
+        elif objective_version == COUNT_CONDITIONED_V5_OBJECTIVE_VERSION:
+            default_config = COUNT_CONDITIONED_V5_LOSS_CONFIG
         elif objective_version == COUNT_CONDITIONED_V4_OBJECTIVE_VERSION:
             default_config = A_SCHEME_LOSS_CONFIG
         elif objective_version == PREVIOUS_OBJECTIVE_VERSION:
@@ -298,7 +321,7 @@ def migrate_loss_config(
 def build_model_from_checkpoint(
     checkpoint: Mapping[str, Any],
 ) -> tuple[SplineFittingNetwork, dict[str, Any], bool]:
-    """Construct v5 or a strictly migrated historical model from metadata."""
+    """Construct v6 or a strictly migrated historical model from metadata."""
     config, legacy = migrate_model_config(checkpoint)
     model = SplineFittingNetwork(**config)
     model.load_state_dict(checkpoint["model_state_dict"])

@@ -1,4 +1,9 @@
 from .dataset import CurvePointDataset
+from .point_cloud_io import (
+    load_ordered_point_cloud,
+    normalize_ordered_point_cloud,
+    resample_ordered_point_cloud,
+)
 from .synthetic import (
     CubicBSplineSample,
     SyntheticCubicBSplineDataset,
@@ -12,6 +17,9 @@ from .synthetic import (
 
 __all__ = [
     "CurvePointDataset",
+    "load_ordered_point_cloud",
+    "normalize_ordered_point_cloud",
+    "resample_ordered_point_cloud",
     "CubicBSplineSample",
     "SyntheticCubicBSplineDataset",
     "SyntheticCurveDataset",
