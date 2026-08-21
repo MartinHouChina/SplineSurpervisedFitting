@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from spline_fitting.data.point_cloud_io import (
+    interpolate_parameters_by_chord,
     load_ordered_point_cloud,
     normalize_ordered_point_cloud,
     resample_ordered_point_cloud,
@@ -58,6 +59,30 @@ class PointCloudIOTests(unittest.TestCase):
         self.assertEqual(resampled.shape, (9, 2))
         torch.testing.assert_close(resampled[0], points[0])
         torch.testing.assert_close(resampled[-1], points[-1])
+
+    def test_parameter_interpolation_preserves_domain_and_monotonicity(self) -> None:
+        source_chord = torch.tensor([0.0, 0.25, 0.6, 1.0])
+        source_parameters = torch.tensor([0.0, 0.1, 0.75, 1.0])
+        target_chord = torch.linspace(0.0, 1.0, 11)
+
+        result = interpolate_parameters_by_chord(
+            source_chord,
+            source_parameters,
+            target_chord,
+        )
+
+        self.assertEqual(result.shape, target_chord.shape)
+        self.assertEqual(float(result[0]), 0.0)
+        self.assertEqual(float(result[-1]), 1.0)
+        self.assertTrue(torch.all(result[1:] >= result[:-1]))
+        torch.testing.assert_close(
+            interpolate_parameters_by_chord(
+                source_chord,
+                source_parameters,
+                source_chord,
+            ),
+            source_parameters,
+        )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 # 数据生成与训练流程
 
+> 第 1–8 节记录当前已实现的 v6。第 9 节概述下一阶段候选生成与 Boehm 消冗训练协议；该部分尚未进入代码。
+
 ## 1. 数据生成
 
 每条源曲线按以下步骤生成：
@@ -101,7 +103,7 @@ output = model(
 8. 计算联合损失；
 9. 反向传播、梯度裁剪并执行 AdamW 更新。
 
-teacher count 只决定动态位置解码器运行多少个 interval query，不会替代结构数量监督。InteractiveStructureHead 仍然产生数量概率并计算 continuation loss。默认前 10 个 epoch 的 teacher-forcing 比例为 1，之后线性降低到 0.5；未使用 teacher 的样本按网络预测数量解码，从而减小训练与验证之间的 exposure gap。
+teacher count 只决定动态位置解码器运行多少个 interval query，不会替代结构数量监督。InteractiveStructureHead 仍然产生数量概率并计算 categorical cross-entropy。默认前 5 个 epoch 的 teacher-forcing 比例为 1，之后线性降低到 0.5；未使用 teacher 的样本按网络预测数量解码，从而减小训练与验证之间的 exposure gap。
 
 ## 4. 损失函数
 
@@ -109,15 +111,15 @@ teacher count 只决定动态位置解码器运行多少个 interval query，不
 
 \[
 L=L_{fit}+0.05L_t+0.005L_{structure}
-+0.002L_{over}+0.05L_{knot}.
++0.05L_{knot}.
 \]
 
 | 损失 | 具体作用 |
 |---|---|
 | `fit_loss` | 截断幂代理重建点与输入点的均方欧氏距离 |
 | `true_parameter_loss` | 预测参数与真实采样参数的 MSE |
-| `count_loss` | 对结构 survival probability \(P(K\ge r)\) 的 BCE |
-| `over_count_loss` | 惩罚期望节点数高于真实数量 |
+| `count_loss` | 合法数量类别上的 categorical cross-entropy |
+| `over_count_loss` | 历史兼容项；新训练默认权重为 0 |
 | `knot_position_loss` | 所选真实数量表示与 canonical 有序节点的 Smooth-L1 |
 
 位置损失不需要 Hungarian matching：预测节点和 canonical 节点都已经严格有序、数量相同，可直接逐位置比较。
@@ -149,14 +151,15 @@ output = model(points)
 3. 计算预测数量下的拟合和结构指标；
 4. 在共享参数域下，用容差 0.05 匹配预测节点与 canonical 节点。
 
-checkpoint 排序顺序：
+checkpoint 只在 teacher-forcing 已开始退火后参与排序，默认顺序：
 
-1. 节点匹配 F1 更高；
-2. F1 相同时 precision 更高；
-3. 再相同时匹配节点 MAE 更低；
-4. 最后比较总验证损失。
+1. 数量 MAE 更低；
+2. 数量准确率更高；
+3. 节点匹配 F1 和 precision 更高；
+4. 匹配节点 MAE 更低；
+5. 最后比较总验证损失。
 
-因此保存的 checkpoint 面向结构准确性，而不是只追求低拟合误差。
+这避免了严格节点容差偶然选择仍处于 100% teacher forcing 的早期权重。验证和部署的数量决策均为合法范围内的后验中位数；argmax 众数只作为诊断输出。
 
 ## 7. 启动训练
 
@@ -178,14 +181,16 @@ python scripts/train.py `
 --max-knots                    默认 6
 --canonical-knot-tolerance     默认 0.005
 --structure-attention-heads    默认 4
+--structure-count-mode         默认 categorical；hazard 仅用于历史实验
 --train-seed                   默认 42
 --val-seed                     默认 10000
 --resample-train-each-epoch    默认启用；每个 epoch 生成新训练曲线
 --teacher-forcing-final        默认 0.5
---teacher-forcing-warmup-epochs 默认 10
+--teacher-forcing-warmup-epochs 默认 5
+--checkpoint-selection-start-epoch 默认在 teacher-forcing 开始退火后
 --weight-decay                 默认 1e-4
 --lambda-count                 默认 0.005
---lambda-over-count            默认 0.002
+--lambda-over-count            默认 0
 --lambda-knot-position         默认 0.05
 --lambda-true-params           默认 0.05
 ```
@@ -203,6 +208,35 @@ python scripts/train.py `
 
 小规模命令仅用于检查代码链路，不代表正式性能。
 
+### 4–20 个源内部节点
+
+三次 B 样条的内部节点数等于控制点数减 4，因此 4–20 个源节点对应 8–24 个控制点。在线 canonical 贪心删除在该范围非常慢，并且删除后的数量不保证仍为 4–20。若实验目标是先训练精确的“源节点 4–20”范围，应关闭 canonical 删除并使用快速路径：
+
+```powershell
+python scripts/train.py `
+  --epochs 150 `
+  --train-size 10000 `
+  --val-size 2000 `
+  --batch-size 16 `
+  --log-every-batches 20 `
+  --min-control-points 8 `
+  --max-control-points 24 `
+  --max-knots 20 `
+  --num-points 192 `
+  --canonical-knot-tolerance 0 `
+  --structure-count-mode categorical `
+  --resample-train-each-epoch `
+  --teacher-forcing-warmup-epochs 10 `
+  --teacher-forcing-final 0.25 `
+  --lambda-over-count 0 `
+  --knot-match-tolerance 0.02 `
+  --output outputs/knot_4_20_categorical.pt
+```
+
+`canonical-knot-tolerance=0` 会直接使用生成器的源节点和归一化源控制点，不执行逐节点最小二乘删除，因此应保留每 epoch 重采样来减少对固定曲线的记忆。该模式速度快、数量范围准确，并自动把合法预测范围设为 4–20。
+
+但“源节点数量”并不是由点云唯一决定的：Boehm 插入可增加节点而不改变曲线。categorical 修复解决的是概率分解与非法边界塌缩，不保证任意源表示都可被精确反演。若目标是几何上可辨识的最简结构，应使用 canonical 标签或第 9 节的冗余输入消冗任务。
+
 ## 8. checkpoint 内容
 
 checkpoint 保存：
@@ -217,3 +251,39 @@ checkpoint 保存：
 - objective version。
 
 评估脚本优先使用 checkpoint 内的数据配置，保证标签容差和训练设置一致。
+
+## 9. 规划中的候选生成与 Boehm 消冗训练
+
+下一阶段不再要求一个节点头同时决定数量和全部连续位置，而是分为共享编码器下的两个头：
+
+```text
+CandidateKnotHead：由真实最简节点监督，优化候选覆盖率
+InteractivePruningHead：由 Boehm 冗余和删除误差监督，优化保留精度
+```
+
+### 9.1 标签与输入分离
+
+```text
+无噪声最简样条 → 真实节点标签 U*
+无噪声最简样条 + Boehm插入 → 消冗监督
+独立加入噪声/非均匀采样 → 网络点云输入 Q
+```
+
+随机 Boehm 插入位置不能作为 CandidateKnotHead 的回归标签，因为插入不改变点云且位置不由几何决定。候选头只学习覆盖真实最简节点。
+
+### 9.2 三阶段训练
+
+1. **候选预训练**：热力图、offset、单向 coverage 和轻量 repulsion；以 `candidate recall@0.02` 为 checkpoint 主指标。
+2. **消冗预训练**：输入精确及扰动 Boehm 冗余表示，监督 keep/remove、删除误差和位置精修。
+3. **联合微调**：逐步从 Boehm 理想候选切换到 CandidateKnotHead 真实输出，同时优化最终节点 F1 和标准 B 样条拟合。
+
+### 9.3 4–20 节点建议
+
+```text
+真实节点范围：4–20
+候选预算 Kc：24或28
+点云采样数：128–192，推荐192
+主匹配容差：0.01和0.02
+```
+
+最终数量来自 keep probability 的保留数量，不使用独立 CountHead。详细损失、token 特征和混合比例见 [proposal_pruning_framework.md](proposal_pruning_framework.md)。

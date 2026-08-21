@@ -122,11 +122,16 @@ def refit_bspline_control_points(
     degree: int = 3,
     smoothness_weight: float = 1e-6,
     control_ridge: float = 0.0,
+    interpolate_endpoints: bool = True,
     rcond: float | None = None,
 ) -> BSplineLeastSquaresFit:
     """Refit a standard B-spline without forming normal equations.
 
-    The control points ``P`` solve the augmented least-squares problem
+    By default, the first and last control points are fixed to the first and
+    last observations.  For an open-clamped B-spline this enforces
+    ``C(0) = Q[0]`` and ``C(1) = Q[-1]`` exactly, so the deployed curve covers
+    the complete observed parameter interval.  The remaining control points
+    solve the augmented least-squares problem
 
     ``min ||B P - Q||_F^2 + lambda_s ||D2 P||_F^2
          + lambda_r ||P||_F^2``.
@@ -181,6 +186,41 @@ def refit_bspline_control_points(
             )
         )
 
+    fixed_control_points: torch.Tensor | None = None
+    if interpolate_endpoints:
+        fixed_control_points = torch.stack([points[0], points[-1]], dim=0)
+        fixed_columns = torch.stack([basis[:, 0], basis[:, -1]], dim=-1)
+        interior_basis = basis[:, 1:-1]
+        design_blocks = [interior_basis]
+        target_blocks = [points - fixed_columns @ fixed_control_points]
+
+        if smoothness_weight > 0.0 and difference.shape[0] > 0:
+            fixed_difference = torch.stack(
+                [difference[:, 0], difference[:, -1]], dim=-1
+            )
+            design_blocks.append(smoothness_weight**0.5 * difference[:, 1:-1])
+            target_blocks.append(
+                -smoothness_weight**0.5
+                * (fixed_difference @ fixed_control_points)
+            )
+        if control_ridge > 0.0:
+            interior_count = num_control_points - 2
+            design_blocks.append(
+                control_ridge**0.5
+                * torch.eye(
+                    interior_count,
+                    device=points.device,
+                    dtype=points.dtype,
+                )
+            )
+            target_blocks.append(
+                torch.zeros(
+                    (interior_count, points.shape[1]),
+                    device=points.device,
+                    dtype=points.dtype,
+                )
+            )
+
     augmented_design = torch.cat(design_blocks, dim=0)
     augmented_target = torch.cat(target_blocks, dim=0)
     lstsq_kwargs: dict[str, object] = {"rcond": rcond}
@@ -193,7 +233,17 @@ def refit_bspline_control_points(
         augmented_target,
         **lstsq_kwargs,
     )
-    control_points = solution.solution
+    if fixed_control_points is None:
+        control_points = solution.solution
+    else:
+        control_points = torch.cat(
+            [
+                fixed_control_points[:1],
+                solution.solution,
+                fixed_control_points[1:],
+            ],
+            dim=0,
+        )
     reconstructed = basis @ control_points
     statistics = point_fit_statistics(
         reconstructed.unsqueeze(0),
@@ -208,9 +258,11 @@ def refit_bspline_control_points(
         + smoothness_weight * smoothness_squared
         + control_ridge * control_squared
     )
-    solver_rank = (
-        int(solution.rank.item()) if solution.rank.numel() == 1 else None
-    )
+    solver_rank = int(solution.rank.item()) if solution.rank.numel() == 1 else None
+    if solver_rank is not None and fixed_control_points is not None:
+        # The two fixed endpoint constraints contribute two independent rows to
+        # the effective full-control system.
+        solver_rank += 2
 
     return BSplineLeastSquaresFit(
         degree=degree,
@@ -318,6 +370,7 @@ def refit_hard_gated_bspline_batch(
     degree: int = 3,
     smoothness_weight: float = 1e-6,
     control_ridge: float = 0.0,
+    interpolate_endpoints: bool = True,
     rcond: float | None = None,
     binary_tolerance: float = 1e-6,
 ) -> list[HardGatedBSplineFit]:
@@ -360,6 +413,7 @@ def refit_hard_gated_bspline_batch(
             degree=degree,
             smoothness_weight=smoothness_weight,
             control_ridge=control_ridge,
+            interpolate_endpoints=interpolate_endpoints,
             rcond=rcond,
         )
         results.append(
@@ -383,6 +437,7 @@ def refit_model_output_as_bsplines(
     degree: int = 3,
     smoothness_weight: float = 1e-6,
     control_ridge: float = 0.0,
+    interpolate_endpoints: bool = True,
     rcond: float | None = None,
     binary_tolerance: float = 1e-6,
 ) -> list[HardGatedBSplineFit]:
@@ -405,6 +460,7 @@ def refit_model_output_as_bsplines(
         degree=degree,
         smoothness_weight=smoothness_weight,
         control_ridge=control_ridge,
+        interpolate_endpoints=interpolate_endpoints,
         rcond=rcond,
         binary_tolerance=binary_tolerance,
     )

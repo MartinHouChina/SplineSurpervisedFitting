@@ -1,5 +1,7 @@
 # v6 模型内部投喂顺序
 
+> 本文记录当前已经实现并可运行的 v6。下一阶段的候选生成与 Boehm 消冗架构见 [proposal_pruning_framework.md](proposal_pruning_framework.md)，两者不要混作同一 checkpoint 结构。
+
 ## 1. 完整 forward
 
 ```python
@@ -123,39 +125,31 @@ Z=\operatorname{CrossAttention}(Q_{structure},F_{memory}).
 
 它允许模型判断不同局部几何证据是互补还是冗余。
 
-### 4.3 从停止风险得到数量分布
+### 4.3 直接数量分类与合法范围
 
-第 \(j\) 个 token 输出条件停止概率 \(h_j\)。例如：
-
-\[
-P(K=0)=h_1,
-\]
+交互 token 汇聚后由 MLP 直接输出 `Kmax+1` 个数量 logits。若数据配置声明最小合法数量为 \(K_{min}\)，则先屏蔽 \(k<K_{min}\) 的类别，再计算：
 
 \[
-P(K=1)=(1-h_1)h_2,
+p_k=\operatorname{softmax}(\ell)_k,
+\qquad k\in[K_{min},K_{max}].
 \]
+
+部署数量取后验中位数，它最小化期望绝对数量误差：
 
 \[
-P(K=2)=(1-h_1)(1-h_2)h_3.
+\widehat K=\min\left\{k:\sum_{r=0}^{k}p_r\ge 0.5\right\}.
 \]
 
-最后一类为一直没有停止：
-
-\[
-P(K=K_{max})=\prod_{j=1}^{K_{max}}(1-h_j).
-\]
-
-所有类别概率天然非负且和为 1。输出：
+这避免了宽而平坦的分布被微小的端点概率差通过 argmax 放大为 `0/Kmax`。输出：
 
 ```text
 structure_query_features:          [B,Kmax,H]
-structure_stop_logits:             [B,Kmax]
-structure_survival_probabilities:  [B,Kmax]
 count_probabilities:               [B,Kmax+1]
+count_mode_knot_count:             [B]
 predicted_knot_count:              [B]
 ```
 
-这里没有独立 CountHead，也没有对 activity 做阈值删除。
+这里没有独立 CountHead，也没有对 activity 做阈值删除。`count_mode_knot_count` 是 argmax 诊断值，动态解码器使用 `predicted_knot_count`。旧 v6 hazard checkpoint 会恢复原 stop/survival 参数布局，但在部署前同样执行合法范围掩码和后验中位数决策。
 
 ## 5. DynamicKnotDecoder
 
@@ -250,7 +244,21 @@ forward 内可微求解线性系数并产生 `reconstructed_points`。该曲线�
 |---|---|---|
 | 训练前期 | canonical 真实数量 | 稳定监督动态位置解码器 |
 | 训练后期 | 按 teacher-forcing 比例混合真实数量和预测数量 | 缩小训练与部署的输入差异 |
-| 验证 | `argmax count_probabilities` | 不使用 teacher count |
-| 部署 | `argmax count_probabilities` | 最终且唯一的数量决策 |
+| 验证 | `posterior median(count_probabilities)` | 不使用 teacher count |
+| 部署 | `posterior median(count_probabilities)` | 最终且唯一的数量决策 |
 
 部署流程见 [deployment_pipeline.md](deployment_pipeline.md)。
+
+## 9. 下一阶段接口变化（尚未实现）
+
+规划框架保留 `GeometryEncoder + ParameterHead`，将 v6 的结构数量头和动态 interval 解码器替换为：
+
+```text
+CandidateKnotHead
+  → 固定预算 Kc 的高召回候选节点
+  → 冗余控制点求解
+  → InteractivePruningHead
+  → keep probability + position residual
+```
+
+数量由保留节点数自然产生，不再先预测 K；Boehm 插入仅用于训练消冗头，部署外部输入仍只有点云。完整接口和监督定义见 [候选生成与 Boehm 消冗框架](proposal_pruning_framework.md)。

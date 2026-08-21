@@ -22,6 +22,7 @@ class Trainer:
         grad_clip: float | None = 5.0,
         activity_threshold: float = 0.5,
         knot_match_tolerance: float = 0.05,
+        log_every_batches: int = 25,
     ) -> None:
         self.model = model.to(device)
         self.loss_fn = loss_fn.to(device)
@@ -29,6 +30,9 @@ class Trainer:
         self.device = device
         self.grad_clip = grad_clip
         self.activity_threshold = activity_threshold
+        if log_every_batches < 0:
+            raise ValueError("log_every_batches must be non-negative")
+        self.log_every_batches = int(log_every_batches)
         if knot_match_tolerance < 0.0:
             raise ValueError("knot_match_tolerance must be non-negative")
         self.knot_match_tolerance = float(knot_match_tolerance)
@@ -92,7 +96,8 @@ class Trainer:
         self.model.train(training)
         totals: dict[str, float] = defaultdict(float)
 
-        for batch in loader:
+        phase = "train" if training else "validation"
+        for batch_index, batch in enumerate(loader, start=1):
             points = batch["points"].to(self.device)
             chord_params = batch["chord_params"].to(self.device)
             true_params = batch.get("true_params")
@@ -216,6 +221,16 @@ class Trainer:
             for key, value in metrics.items():
                 totals[key] += float(value.detach().cpu()) * batch_size
 
+            if self.log_every_batches and (
+                batch_index % self.log_every_batches == 0
+                or batch_index == len(loader)
+            ):
+                print(
+                    f"  {phase} batches: {batch_index}/{len(loader)} | "
+                    f"loss={float(losses['loss'].detach().cpu()):.6f}",
+                    flush=True,
+                )
+
         return self._mean_metrics(totals, len(loader.dataset))
 
     def fit(
@@ -234,11 +249,14 @@ class Trainer:
         epoch_offset: int = 0,
         stage_name: str = "joint",
     ) -> list[dict[str, float]]:
+        if checkpoint_selection_start_epoch < 0:
+            raise ValueError("checkpoint_selection_start_epoch must be non-negative")
         history: list[dict[str, float]] = []
         best_val = float("inf")
         best_knot_match_f1 = float("-inf")
         best_knot_match_precision = float("-inf")
         best_knot_matched_mae = float("inf")
+        best_rank: tuple[float, ...] | None = None
 
         for epoch in range(epochs):
             dataset = train_loader.dataset
@@ -335,23 +353,50 @@ class Trainer:
                 f"temperature={gate_temperature if gate_temperature is not None else float('nan'):.3f}"
             )
 
-            current_rank = (
-                current_knot_match_f1,
-                current_knot_match_precision,
-                -current_knot_matched_mae,
-                -current_val,
-            )
-            best_rank = (
-                best_knot_match_f1,
-                best_knot_match_precision,
-                -best_knot_matched_mae,
-                -best_val,
-            )
+            structured_count_model = getattr(self.model, "structure_mode", None) in {
+                "count_conditioned",
+                "interactive_dynamic",
+            }
+            if structured_count_model:
+                current_count_mae = selection_metrics.get(
+                    "count_absolute_error", float("inf")
+                )
+                current_count_accuracy = selection_metrics.get(
+                    "count_accuracy", 0.0
+                )
+                if current_count_mae != current_count_mae:
+                    current_count_mae = float("inf")
+                if current_count_accuracy != current_count_accuracy:
+                    current_count_accuracy = 0.0
+                current_rank = (
+                    -current_count_mae,
+                    current_count_accuracy,
+                    current_knot_match_f1,
+                    current_knot_match_precision,
+                    -current_knot_matched_mae,
+                    -current_val,
+                )
+                selection_metric_name = (
+                    "count_mae_then_accuracy_knot_f1_precision_mae_loss"
+                )
+                selection_value = current_count_mae
+            else:
+                current_rank = (
+                    current_knot_match_f1,
+                    current_knot_match_precision,
+                    -current_knot_matched_mae,
+                    -current_val,
+                )
+                selection_metric_name = (
+                    "knot_match_f1_then_precision_mae_loss"
+                )
+                selection_value = current_knot_match_f1
             if (
                 checkpoint_path is not None
                 and epoch >= checkpoint_selection_start_epoch
-                and current_rank > best_rank
+                and (best_rank is None or current_rank > best_rank)
             ):
+                best_rank = current_rank
                 best_val = current_val
                 best_knot_match_f1 = current_knot_match_f1
                 best_knot_match_precision = current_knot_match_precision
@@ -364,10 +409,8 @@ class Trainer:
                         "epoch": epoch_offset + epoch + 1,
                         "stage": stage_name,
                         "best_val": current_val,
-                        "selection_metric": (
-                            "knot_match_f1_then_precision_mae_loss"
-                        ),
-                        "selection_value": current_knot_match_f1,
+                        "selection_metric": selection_metric_name,
+                        "selection_value": selection_value,
                         "best_knot_match_f1": best_knot_match_f1,
                         "best_knot_match_precision": best_knot_match_precision,
                         "best_knot_matched_mae": best_knot_matched_mae,

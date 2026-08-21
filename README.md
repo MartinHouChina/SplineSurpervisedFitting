@@ -2,18 +2,24 @@
 
 本项目从有序采样点预测开放三次 B 样条的点参数、内部节点数量、内部节点位置和控制点。
 
+## 状态说明
+
+- **当前可运行版本：v6 categorical。** 使用 `InteractiveStructureHead + DynamicKnotDecoder`；旧 v6 hazard checkpoint 仍可严格加载。
+- **下一阶段规划：候选生成 + Boehm 消冗/精修。** 它仍以点云作为唯一外部部署输入，但在模型内部先生成高召回冗余候选，再通过交互消冗头选择和精修节点。该框架目前只有设计文档，尚未实现，详见 [候选生成与 Boehm 消冗框架](docs/proposal_pruning_framework.md)。
+
 当前 v6 主路径为：
 
 ```text
 几何编码
   → 点参数预测
-  → 交互式结构 query 预测节点数量 K
+  → 交互式结构 query 直接分类节点数量分布
+  → 在合法范围内用后验中位数决定 K
   → K>0 时动态解码器只运行 K+1 个 interval query；K=0 时跳过
   → 得到恰好 K 个严格有序节点
-  → 标准 B 样条控制点重拟合
+  → 固定首尾端点后重拟合标准 B 样条控制点
 ```
 
-主路径中没有：
+当前 v6 主路径中没有：
 
 - 独立 CountHead；
 - Activity threshold 或 Hard-Concrete；
@@ -37,7 +43,8 @@ params [B,M]
 InteractiveStructureHead(global_features, local_features, params)
   ├─ structure_query_features [B,Kmax,H]
   ├─ count_probabilities [B,Kmax+1]
-  └─ predicted_knot_count [B]
+  ├─ count_mode_knot_count [B]（诊断）
+  └─ predicted_knot_count [B]（后验中位数）
   ↓
 DynamicKnotDecoder(..., selected_count)
   ├─ selected_count>0 时只计算 selected_count+1 个区间 query
@@ -45,24 +52,26 @@ DynamicKnotDecoder(..., selected_count)
   ├─ internal_knots [B,Kmax]
   └─ knot_mask [B,Kmax]
   ↓
-标准开放三次 B 样条重拟合
+标准开放三次 B 样条重拟合（严格通过首尾输入点）
 ```
 
-训练时 `selected_count` 使用 canonical 真实数量；验证和部署时使用网络的 `predicted_knot_count`。
+训练前期 `selected_count` 使用 canonical 真实数量，后期按 teacher-forcing 比例混入网络预测数量；验证和部署始终使用 `predicted_knot_count`。
 
 ## 节点数量如何产生
 
-`Kmax` 个结构 query 先对带参数位置编码的局部特征做 cross-attention，再通过 self-attention 交换节点必要性信息。每个 query 输出一个条件停止概率，由此构造唯一、归一化的数量分布：
+`Kmax` 个结构 query 先对带参数位置编码的局部特征做 cross-attention，再通过 self-attention 交换结构证据。汇聚后的 token 经分类器直接产生数量 logits；低于数据集合法最小数量的类别被屏蔽，再做 softmax：
 
 \[
 P(K=0),P(K=1),\ldots,P(K=K_{max}).
 \]
 
-最终数量只有一个来源：
+部署使用后验中位数，而不是对平坦分布很敏感的 argmax：
 
 \[
-\widehat K=\arg\max_KP(K).
+\widehat K=\min\left\{k:\sum_{r=0}^{k}P(K=r)\ge 0.5\right\}.
 \]
+
+`argmax` 众数仍以 `count_mode_knot_count` 输出，仅用于诊断。旧 hazard checkpoint 也采用合法范围掩码和同一中位数规则，因此无需重训即可避免非法的 0 节点预测。
 
 ## 节点位置如何产生
 
@@ -88,7 +97,9 @@ P(K=0),P(K=1),\ldots,P(K=K_{max}).
 
 canonical 节点删除只用于构造监督标签，不参与网络部署。
 
-默认训练集每个 epoch 按确定性新 seed 重新生成，验证集保持固定。前 10 个 epoch 完全使用真实数量训练位置头，随后将 teacher-forcing 比例线性降到 0.5，使训练逐渐接近验证和部署时的预测数量输入。
+默认训练集每个 epoch 按确定性新 seed 重新生成，验证集保持固定。前 5 个 epoch 完全使用真实数量训练位置头，随后将 teacher-forcing 比例线性降到 0.5。checkpoint 只在退火已经开始后参与选优，并优先比较数量 MAE，避免再次保存尚未经历部署数量路径的早期权重。
+
+训练 4–20 个源内部节点时，不要直接沿用默认在线 canonical 删除；请使用 `--min-control-points 8 --max-control-points 24 --max-knots 20 --canonical-knot-tolerance 0 --structure-count-mode categorical --resample-train-each-epoch`。完整命令见 [训练流程](docs/training_pipeline.md#4–20-个源内部节点)。
 
 ## 运行
 
@@ -126,10 +137,11 @@ python scripts/fit_point_cloud.py `
   --figure-output outputs/my_curve_fit.png
 ```
 
-CSV 每行是一个点，例如二维数据为 `x,y`。脚本默认按弦长重采样到 checkpoint 的训练点数，使用训练时相同的中心化和尺度归一化，并在输出中将控制点恢复到原坐标系。
+CSV 每行是一个点，例如二维数据为 `x,y`。脚本先按弦长重采样供网络预测，再把预测参数插值回全部原始点并执行最终控制点重拟合；输出控制点会恢复到原坐标系。若原始点远少于训练点数，或预测控制点数超过原始观测数，脚本会明确警告，因为线性重采样不会增加几何信息。
 
 ## 文档
 
+- [下一阶段：候选生成与 Boehm 消冗框架](docs/proposal_pruning_framework.md)
 - [模型内部投喂顺序](docs/architecture.md)
 - [数据生成与训练流程](docs/training_pipeline.md)
 - [部署与指标解释](docs/deployment_pipeline.md)
@@ -139,4 +151,4 @@ CSV 每行是一个点，例如二维数据为 `x,y`。脚本默认按弦长重�
 
 ## 兼容性
 
-当前 objective 为 `interactive_structure_dynamic_knots_v6`。v5、v4、v3 及更早 checkpoint 仍按各自历史结构严格加载，但不能自动转换为 v6 权重。
+当前 objective 名称仍为 `interactive_structure_dynamic_knots_v6`，具体数量实现由 checkpoint 中的 `structure_count_mode` 区分。缺少该字段的旧 v6 权重按 hazard 布局严格恢复；新训练默认 categorical。v5、v4、v3 及更早 checkpoint 仍按各自历史结构加载。

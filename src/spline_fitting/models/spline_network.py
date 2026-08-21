@@ -63,6 +63,8 @@ class SplineFittingNetwork(nn.Module):
         count_decoder_mode: str = "shared_count_embedding",
         geometry_feature_mode: str | None = None,
         structure_attention_heads: int = 4,
+        structure_count_mode: str = "categorical",
+        min_internal_knots: int = 0,
     ) -> None:
         super().__init__()
         if structure_mode not in {
@@ -115,6 +117,8 @@ class SplineFittingNetwork(nn.Module):
                 hidden_dim,
                 max_internal_knots,
                 attention_heads=structure_attention_heads,
+                count_distribution_mode=structure_count_mode,
+                min_internal_knots=min_internal_knots,
             )
             self.knot_head = DynamicKnotDecoder(
                 hidden_dim,

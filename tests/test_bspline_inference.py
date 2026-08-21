@@ -136,6 +136,57 @@ class BSplineInferenceTests(unittest.TestCase):
         )
         self.assertLess(float(result.fit_mse), 1e-24)
 
+    def test_deployment_refit_interpolates_underfit_curve_endpoints(self) -> None:
+        parameters = torch.linspace(0.0, 1.0, 65, dtype=self.dtype)
+        points = torch.stack(
+            [
+                parameters,
+                0.25 * parameters + torch.sin(5.0 * torch.pi * parameters),
+            ],
+            dim=-1,
+        )
+        output = {
+            "params": parameters.unsqueeze(0),
+            "internal_knots": torch.empty((1, 0), dtype=self.dtype),
+            "knot_mask": torch.empty((1, 0), dtype=torch.bool),
+        }
+
+        result = refit_model_output_as_bsplines(
+            output,
+            points.unsqueeze(0),
+            smoothness_weight=2e-3,
+            control_ridge=3e-4,
+        )[0]
+
+        torch.testing.assert_close(result.control_points[0], points[0])
+        torch.testing.assert_close(result.control_points[-1], points[-1])
+        torch.testing.assert_close(result.reconstructed_points[0], points[0])
+        torch.testing.assert_close(result.reconstructed_points[-1], points[-1])
+        endpoint_parameters = torch.tensor([0.0, 1.0], dtype=self.dtype)
+        torch.testing.assert_close(
+            result.spline.evaluate(endpoint_parameters),
+            points[[0, -1]],
+        )
+
+    def test_endpoint_constraints_can_be_disabled_for_compatibility(self) -> None:
+        parameters = torch.linspace(0.0, 1.0, 65, dtype=self.dtype)
+        points = torch.stack(
+            [parameters, torch.sin(5.0 * torch.pi * parameters)], dim=-1
+        )
+
+        result = refit_bspline_control_points(
+            parameters,
+            points,
+            torch.empty(0, dtype=self.dtype),
+            smoothness_weight=0.0,
+            interpolate_endpoints=False,
+        )
+
+        self.assertGreater(
+            float((result.reconstructed_points[0] - points[0]).norm()),
+            1e-3,
+        )
+
     def test_augmented_objective_matches_reported_terms(self) -> None:
         parameters = torch.linspace(0.0, 1.0, 32, dtype=self.dtype)
         internal_knots = torch.tensor([0.25, 0.6], dtype=self.dtype)

@@ -210,6 +210,11 @@ def canonicalize_internal_knots(
         degree=degree,
         ridge=ridge,
     )
+    # A zero tolerance is the explicit "preserve source representation" mode.
+    # Avoid evaluating every possible single-knot deletion when the caller has
+    # requested no canonical reduction. This matters for Kmax=20 datasets.
+    if error_tolerance == 0.0:
+        return retained, control_points, rms_distance
 
     while retained.numel() > 0:
         best_index = -1
@@ -515,13 +520,30 @@ class SyntheticCubicBSplineDataset(Dataset):
         source_internal = sample.knot_vector[
             sample.degree + 1 : -(sample.degree + 1)
         ]
-        internal, control_points, canonical_fit_rms = canonicalize_internal_knots(
-            sample.parameters,
-            points,
-            source_internal,
-            degree=sample.degree,
-            error_tolerance=self.canonical_knot_tolerance,
-        )
+        if self.canonical_knot_tolerance == 0.0:
+            internal = source_internal.detach().clone()
+            control_points = (
+                (sample.control_points - center) / scale
+                if self.normalize
+                else sample.control_points.detach().clone()
+            )
+            source_reconstruction = evaluate_bspline_curve(
+                sample.parameters,
+                control_points,
+                sample.knot_vector,
+                sample.degree,
+            )
+            canonical_fit_rms = (
+                (source_reconstruction - points).pow(2).sum(dim=-1).mean().sqrt()
+            )
+        else:
+            internal, control_points, canonical_fit_rms = canonicalize_internal_knots(
+                sample.parameters,
+                points,
+                source_internal,
+                degree=sample.degree,
+                error_tolerance=self.canonical_knot_tolerance,
+            )
         num_control_points = control_points.shape[0]
         padded_control = torch.zeros(
             self.max_control_points,

@@ -111,6 +111,8 @@ class CheckpointMigrationTests(unittest.TestCase):
         self.assertFalse(legacy)
         self.assertFalse(config["compute_first_derivative"])
         self.assertEqual(config["structure_mode"], "interactive_dynamic")
+        self.assertEqual(config["structure_count_mode"], "hazard")
+        self.assertEqual(config["min_internal_knots"], 0)
         self.assertTrue(assumed)
         self.assertEqual(loss_config["weights"]["orthogonal"], 0.0)
         self.assertEqual(loss_config["weights"]["true_parameter"], 5e-2)
@@ -160,7 +162,11 @@ class CheckpointMigrationTests(unittest.TestCase):
             "structure_mode": "interactive_dynamic",
             "structure_attention_heads": 4,
         }
-        reference = SplineFittingNetwork(**config).eval()
+        reference = SplineFittingNetwork(
+            **config,
+            structure_count_mode="hazard",
+            min_internal_knots=0,
+        ).eval()
         checkpoint = {
             "objective_version": CURRENT_OBJECTIVE_VERSION,
             "model_config": config,
@@ -171,6 +177,74 @@ class CheckpointMigrationTests(unittest.TestCase):
 
         self.assertFalse(legacy)
         self.assertEqual(migrated["structure_mode"], "interactive_dynamic")
+        self.assertEqual(migrated["structure_count_mode"], "hazard")
+        self.assertEqual(migrated["min_internal_knots"], 0)
+        points = torch.randn(2, 12, 2)
+        with torch.no_grad():
+            expected = reference(points)
+            actual = restored.eval()(points)
+        torch.testing.assert_close(actual["count_logits"], expected["count_logits"])
+        torch.testing.assert_close(actual["internal_knots"], expected["internal_knots"])
+
+    def test_old_high_k_interactive_checkpoint_infers_legal_minimum(self) -> None:
+        saved_config = {
+            "point_dim": 2,
+            "hidden_dim": 16,
+            "encoder_layers": 1,
+            "max_internal_knots": 20,
+            "structure_mode": "interactive_dynamic",
+            "structure_attention_heads": 4,
+        }
+        reference = SplineFittingNetwork(
+            **saved_config,
+            structure_count_mode="hazard",
+            min_internal_knots=4,
+        ).eval()
+        checkpoint = {
+            "objective_version": CURRENT_OBJECTIVE_VERSION,
+            "model_config": saved_config,
+            "dataset_config": {
+                "min_control_points": 8,
+                "max_control_points": 24,
+                "canonical_knot_tolerance": 0.0,
+            },
+            "model_state_dict": reference.state_dict(),
+        }
+
+        restored, migrated, _ = build_model_from_checkpoint(checkpoint)
+
+        self.assertEqual(migrated["structure_count_mode"], "hazard")
+        self.assertEqual(migrated["min_internal_knots"], 4)
+        with torch.no_grad():
+            output = restored.eval()(torch.randn(2, 24, 2))
+        torch.testing.assert_close(
+            output["count_probabilities"][:, :4], torch.zeros(2, 4)
+        )
+        self.assertTrue(torch.all(output["predicted_knot_count"] >= 4))
+
+    def test_categorical_interactive_checkpoint_restores_strictly(self) -> None:
+        config = {
+            "point_dim": 2,
+            "hidden_dim": 16,
+            "encoder_layers": 1,
+            "max_internal_knots": 5,
+            "structure_mode": "interactive_dynamic",
+            "structure_attention_heads": 4,
+            "structure_count_mode": "categorical",
+            "min_internal_knots": 2,
+        }
+        reference = SplineFittingNetwork(**config).eval()
+        checkpoint = {
+            "objective_version": CURRENT_OBJECTIVE_VERSION,
+            "model_config": config,
+            "model_state_dict": reference.state_dict(),
+        }
+
+        restored, migrated, legacy = build_model_from_checkpoint(checkpoint)
+
+        self.assertFalse(legacy)
+        self.assertEqual(migrated["structure_count_mode"], "categorical")
+        self.assertEqual(migrated["min_internal_knots"], 2)
         points = torch.randn(2, 12, 2)
         with torch.no_grad():
             expected = reference(points)

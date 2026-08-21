@@ -179,6 +179,30 @@ def migrate_model_config(
     )
     config.setdefault("count_query_count", 4)
     config.setdefault("structure_attention_heads", 4)
+    if config["structure_mode"] == "interactive_dynamic":
+        # v6 checkpoints written before categorical count prediction contain
+        # stop_head/stop_bias tensors. Missing metadata must therefore rebuild
+        # the historical hazard layout for strict state-dict loading.
+        config.setdefault("structure_count_mode", "hazard")
+        if "min_internal_knots" not in config:
+            dataset_config = checkpoint.get("dataset_config", {})
+            canonical_tolerance = float(
+                dataset_config.get("canonical_knot_tolerance", 5e-3)
+            )
+            if canonical_tolerance == 0.0:
+                degree = int(config.get("degree", 3))
+                source_minimum = int(
+                    dataset_config.get("min_control_points", degree + 1)
+                ) - (degree + 1)
+                config["min_internal_knots"] = max(
+                    0,
+                    min(
+                        source_minimum,
+                        int(config.get("max_internal_knots", source_minimum)),
+                    ),
+                )
+            else:
+                config["min_internal_knots"] = 0
     config.setdefault(
         "count_decoder_mode",
         "shared_count_embedding" if is_v5 else "independent_branches",

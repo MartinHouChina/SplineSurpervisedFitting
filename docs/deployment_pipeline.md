@@ -1,6 +1,8 @@
 # v6 部署与结果解释
 
-v6 部署只有一次节点数量决策：InteractiveStructureHead 的数量分布 argmax。没有 BIC、阈值剪枝或全部数量分支枚举。
+> 本文描述当前已实现的 v6 部署。规划中的候选生成/消冗模型仍保持点云单输入，但内部数据流不同，见 [proposal_pruning_framework.md](proposal_pruning_framework.md#8-点云单输入部署)。
+
+v6 部署只有一次节点数量决策：InteractiveStructureHead 数量分布的后验中位数。没有 BIC、阈值剪枝或全部数量分支枚举。
 
 ## 1. 部署输入
 
@@ -30,7 +32,8 @@ points
   → GeometryEncoder
   → ParameterHead 得到 params
   → InteractiveStructureHead 得到 P(K)
-  → predicted_knot_count = argmax P(K)
+  → 屏蔽数据集范围外的非法 K
+  → predicted_knot_count = posterior_median P(K)
   → predicted K>0 时 DynamicKnotDecoder 只运行 K+1 个 query；K=0 时跳过
   → 得到 predicted K 个有序节点
 ```
@@ -40,8 +43,8 @@ points
 ```text
 params
 count_probabilities
+count_mode_knot_count
 predicted_knot_count
-structure_survival_probabilities
 internal_knots
 knot_mask
 decoded_interval_query_count
@@ -110,7 +113,13 @@ U_{int}=[u_1,\ldots,u_{\widehat K}].
 U=[0,0,0,0,U_{int},1,1,1,1].
 \]
 
-根据预测参数建立标准 B 样条基矩阵，并求控制点：
+根据预测参数建立标准 B 样条基矩阵。默认固定首尾控制点：
+
+\[
+P_0=Q_0,\qquad P_{n-1}=Q_{M-1},
+\]
+
+因此开放 B 样条严格满足 \(C(0)=Q_0\) 和 \(C(1)=Q_{M-1}\)。其余控制点求解：
 
 \[
 P^*=\arg\min_P
@@ -126,6 +135,8 @@ P^*=\arg\min_P
 - 控制多边形；
 - 标准 B 样条重建曲线；
 - 拟合 RMS。
+
+`fit_point_cloud.py` 的网络仍读取训练长度的重采样序列，但最终会把预测参数插值回全部原始有序点，再用全部原始点重拟合控制点。
 
 网络 forward 内的截断幂曲线只是训练代理，标准 B 样条重拟合结果才是部署输出。
 
@@ -156,6 +167,8 @@ python scripts/evaluate_checkpoint.py `
 - `network count MAE`：节点数量绝对误差；
 - `expected count mean`：数量概率分布期望；
 - `network count histogram`：预测数量分布。
+- `categorical/hazard mode histogram`：argmax 众数，仅用于观察后验是否仍有边界倾向；
+- `mean posterior entropy` 和 `mean maximum class probability`：数量分布置信度。
 
 v6 只有一次数量决策，因此 deployment count 与 network count 相同。
 
@@ -163,6 +176,8 @@ v6 只有一次数量决策，因此 deployment count 与 network count 相同�
 
 - 最终内部节点数量；
 - 标准 B 样条重拟合 loss/RMS；
+- RMS 的 P95 和最大值，用于发现少量严重失败；
+- 首尾点 RMS 和最大误差；默认端点约束下应接近 0；
 - 平均控制点数量；
 - 零节点和最大节点比例。
 
@@ -187,7 +202,7 @@ python scripts/visualize_result.py `
   --output outputs/interactive_dynamic_v6_sample_000.png
 ```
 
-左图显示采样点、训练代理、标准 B 样条和控制多边形；右图显示唯一的数量分布及最终 argmax 数量。
+左图显示采样点、端点、训练代理、标准 B 样条和控制多边形；右图显示数量分布、argmax 众数和最终后验中位数数量。
 
 ## 8. 用户自选点云
 
@@ -201,7 +216,9 @@ python scripts/fit_point_cloud.py `
   --figure-output outputs/my_curve_fit.png
 ```
 
-CSV 每行一个点：二维为 `x,y`，三维为 `x,y,z`。输入维度必须与 checkpoint 一致，至少需要 4 个点。脚本默认按弦长重采样到 checkpoint 记录的训练点数，也可用 `--num-points` 显式指定。脚本没有节点真值，因此只报告预测数量、节点、控制点和标准 B 样条拟合 RMS，不报告 precision/recall。若点序相反，可增加 `--reverse-points`。
+CSV 每行一个点：二维为 `x,y`，三维为 `x,y,z`。输入维度必须与 checkpoint 一致，至少需要 4 个点。脚本默认按弦长重采样到 checkpoint 记录的训练点数，也可用 `--num-points` 显式指定；重采样只用于网络输入，最终控制点使用全部原始点重拟合。脚本没有节点真值，因此不报告 precision/recall。若点序相反，可增加 `--reverse-points`。
+
+若原始点数量远低于训练密度，重采样不能补回缺失几何；若预测控制点数大于原始观测数，线性系统在数据意义下也欠定。脚本会对这两种情况报警，此时很低的训练点 RMS 不能证明曲线泛化正确。
 
 ## 9. 恢复实际坐标
 
@@ -218,3 +235,9 @@ P=P_{norm}\cdot scale+center.
 \]
 
 节点参数位于 \([0,1]\)，不需要尺度恢复。
+
+## 10. 规划框架的部署边界
+
+规划框架部署时用户仍只提供有序点云，不提供 Boehm 节点、真实节点或初始控制点。系统内部依次完成候选节点生成、冗余控制点求解、节点消冗和最终重拟合。
+
+Boehm 算法只用于训练数据构造。若训练时使用精确 Boehm 冗余表示，而部署时直接使用候选头输出，必须在联合微调阶段混入真实候选头样本，避免训练/部署分布不一致。

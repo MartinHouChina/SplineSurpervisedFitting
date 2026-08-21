@@ -16,6 +16,7 @@ from spline_fitting.checkpointing import (
     build_model_from_checkpoint,
 )
 from spline_fitting.data.point_cloud_io import (
+    interpolate_parameters_by_chord,
     load_ordered_point_cloud,
     normalize_ordered_point_cloud,
     resample_ordered_point_cloud,
@@ -37,11 +38,24 @@ def _plot_result(
         figure = plt.figure(figsize=(8, 6))
         axis = figure.add_subplot(111, projection="3d")
         axis.scatter(*source_points.T, s=14, label="input points")
+        axis.scatter(
+            *source_points[[0, -1]].T,
+            s=55,
+            marker="x",
+            label="input endpoints",
+        )
         axis.plot(*dense_curve.T, label="fitted B-spline")
         axis.plot(*control_points.T, "o-", alpha=0.5, label="control polygon")
     else:
         figure, axis = plt.subplots(figsize=(8, 6))
         axis.scatter(source_points[:, 0], source_points[:, 1], s=14, label="input points")
+        axis.scatter(
+            source_points[[0, -1], 0],
+            source_points[[0, -1], 1],
+            s=55,
+            marker="x",
+            label="input endpoints",
+        )
         axis.plot(dense_curve[:, 0], dense_curve[:, 1], label="fitted B-spline")
         axis.plot(
             control_points[:, 0],
@@ -97,8 +111,22 @@ def main() -> None:
         if args.num_points is not None
         else int(checkpoint.get("dataset_config", {}).get("num_points", 64))
     )
+    minimum_recommended_points = max(16, model_point_count // 2)
+    sparse_input_warning = source_points.shape[0] < minimum_recommended_points
+    if sparse_input_warning:
+        print(
+            "WARNING: the input contains only "
+            f"{source_points.shape[0]} points, while this checkpoint was trained "
+            f"with {model_point_count}. Linear resampling does not create new "
+            "geometry; knot-count predictions may not generalize.",
+            flush=True,
+        )
     model_points = resample_ordered_point_cloud(source_points, model_point_count)
     normalized = normalize_ordered_point_cloud(model_points)
+    source_chord = normalize_ordered_point_cloud(source_points)["chord_params"]
+    source_normalized_points = (
+        source_points - normalized["center"]
+    ) / normalized["scale"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     points = normalized["points"].unsqueeze(0).to(device)
     model.to(device).eval()
@@ -138,9 +166,17 @@ def main() -> None:
             ).to(output["activity"].dtype)
         else:
             deployment_output = output
+        source_parameters = interpolate_parameters_by_chord(
+            normalized["chord_params"].to(device),
+            output["params"][0],
+            source_chord.to(device),
+        )
+        full_resolution_output = dict(deployment_output)
+        full_resolution_output["params"] = source_parameters.unsqueeze(0)
+        full_resolution_points = source_normalized_points.unsqueeze(0).to(device)
         deployed = refit_model_output_as_bsplines(
-            deployment_output,
-            points,
+            full_resolution_output,
+            full_resolution_points,
             degree=model.degree,
             smoothness_weight=args.smoothness_weight,
             control_ridge=args.control_ridge,
@@ -154,9 +190,27 @@ def main() -> None:
     dense_curve = dense_normalized * scale + center
     control_points = controls_normalized * scale + center
     fit_rmse_original = float(deployed.fit_rmse.cpu() * scale)
+    underdetermined_warning = deployed.control_points.shape[0] > source_points.shape[0]
+    if underdetermined_warning:
+        print(
+            "WARNING: predicted control-point count exceeds the number of original "
+            "observations; the refit is data-underdetermined and should not be "
+            "treated as a reliable reconstruction.",
+            flush=True,
+        )
+    normalized_start_distance = float(
+        (
+            deployed.reconstructed_points[0] - full_resolution_points[0, 0]
+        ).norm().cpu()
+    )
+    normalized_end_distance = float(
+        (
+            deployed.reconstructed_points[-1] - full_resolution_points[0, -1]
+        ).norm().cpu()
+    )
 
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "checkpoint": str(args.checkpoint),
         "point_cloud": str(args.point_cloud),
         "point_count": int(source_points.shape[0]),
@@ -170,16 +224,34 @@ def main() -> None:
         "predicted_internal_knots": deployed.retained_internal_knots.cpu().tolist(),
         "open_knot_vector": deployed.spline.knot_vector.cpu().tolist(),
         "predicted_parameters": output["params"][0].detach().cpu().tolist(),
+        "model_predicted_parameters": output["params"][0].detach().cpu().tolist(),
+        "full_resolution_refit_parameters": source_parameters.detach().cpu().tolist(),
+        "full_resolution_refit_point_count": int(source_points.shape[0]),
+        "sparse_input_warning": bool(sparse_input_warning),
+        "data_underdetermined_warning": bool(underdetermined_warning),
         "control_points": control_points.tolist(),
         "fitted_curve": dense_curve.tolist(),
         "normalization_center": center.tolist(),
         "normalization_scale": float(scale),
         "normalized_fit_rmse": float(deployed.fit_rmse.cpu()),
         "original_scale_fit_rmse": fit_rmse_original,
+        "normalized_start_endpoint_distance": normalized_start_distance,
+        "normalized_end_endpoint_distance": normalized_end_distance,
+        "original_scale_start_endpoint_distance": (
+            normalized_start_distance * float(scale)
+        ),
+        "original_scale_end_endpoint_distance": (
+            normalized_end_distance * float(scale)
+        ),
     }
     if "count_probabilities" in output:
         report["count_probabilities"] = (
             output["count_probabilities"][0].detach().cpu().tolist()
+        )
+        report["posterior_mode_internal_knot_count"] = int(
+            output.get(
+                "count_mode_knot_count", output["predicted_knot_count"]
+            )[0]
         )
     if "activity" in output:
         report["activity"] = output["activity"][0].detach().cpu().tolist()
@@ -197,9 +269,19 @@ def main() -> None:
     print(f"  points / dimension: {source_points.shape[0]} / {source_points.shape[1]}")
     print(f"  resampled model points: {model_points.shape[0]}")
     print(f"  predicted internal knots: {deployed.retained_count}")
+    if "count_probabilities" in output:
+        print(
+            "  posterior mode internal knots (diagnostic): "
+            f"{int(output.get('count_mode_knot_count', output['predicted_knot_count'])[0])}"
+        )
     print(f"  knot values: {deployed.retained_internal_knots.cpu().tolist()}")
     print(f"  normalized RMS: {float(deployed.fit_rmse.cpu()):.9e}")
     print(f"  original-scale RMS: {fit_rmse_original:.9e}")
+    print(
+        "  endpoint distances (original scale): "
+        f"start={normalized_start_distance * float(scale):.9e}, "
+        f"end={normalized_end_distance * float(scale):.9e}"
+    )
     if args.json_output is not None:
         print(f"  saved JSON: {args.json_output}")
     if args.figure_output is not None:

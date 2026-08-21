@@ -19,7 +19,10 @@ from spline_fitting.models.spline_network import SplineFittingNetwork
 class InteractiveDynamicTests(unittest.TestCase):
     def test_structure_head_returns_monotone_normalized_count_distribution(self) -> None:
         head = InteractiveStructureHead(
-            hidden_dim=16, max_internal_knots=5, attention_heads=4
+            hidden_dim=16,
+            max_internal_knots=5,
+            attention_heads=4,
+            count_distribution_mode="hazard",
         )
         global_features = torch.randn(3, 16, requires_grad=True)
         local_features = torch.randn(3, 12, 16, requires_grad=True)
@@ -35,6 +38,55 @@ class InteractiveDynamicTests(unittest.TestCase):
         self.assertTrue(torch.all(survival[:, :-1] >= survival[:, 1:]))
         output["expected_knot_count"].sum().backward()
         self.assertGreater(float(local_features.grad.abs().sum()), 0.0)
+
+    def test_categorical_count_masks_illegal_classes_and_receives_gradients(self) -> None:
+        head = InteractiveStructureHead(
+            hidden_dim=16,
+            max_internal_knots=5,
+            attention_heads=4,
+            count_distribution_mode="categorical",
+            min_internal_knots=4,
+        )
+        global_features = torch.randn(3, 16, requires_grad=True)
+        local_features = torch.randn(3, 12, 16, requires_grad=True)
+        positions = torch.linspace(0.0, 1.0, 12).expand(3, -1)
+        output = head(global_features, local_features, positions)
+
+        torch.testing.assert_close(
+            output["count_probabilities"][:, :4], torch.zeros(3, 4)
+        )
+        torch.testing.assert_close(
+            output["count_probabilities"].sum(dim=-1), torch.ones(3)
+        )
+        self.assertTrue(torch.all(output["predicted_knot_count"] >= 4))
+        self.assertTrue(torch.all(output["count_mode_knot_count"] >= 4))
+        torch.nn.functional.cross_entropy(
+            output["count_logits"], torch.tensor([4, 5, 4])
+        ).backward()
+        self.assertGreater(float(local_features.grad.abs().sum()), 0.0)
+        self.assertGreater(
+            float(head.count_classifier[-1].weight.grad.abs().sum()), 0.0
+        )
+
+    def test_deployment_count_uses_posterior_median_not_distribution_mode(self) -> None:
+        head = InteractiveStructureHead(
+            hidden_dim=16,
+            max_internal_knots=4,
+            attention_heads=4,
+            count_distribution_mode="categorical",
+        ).eval()
+        with torch.no_grad():
+            head.count_classifier[-1].weight.zero_()
+            head.count_classifier[-1].bias.copy_(
+                torch.tensor([0.30, 0.25, 0.20, 0.15, 0.10]).log()
+            )
+            output = head(
+                torch.randn(1, 16),
+                torch.randn(1, 12, 16),
+                torch.linspace(0.0, 1.0, 12).unsqueeze(0),
+            )
+        self.assertEqual(int(output["count_mode_knot_count"]), 0)
+        self.assertEqual(int(output["predicted_knot_count"]), 1)
 
     def test_dynamic_decoder_only_reports_selected_query_counts(self) -> None:
         decoder = DynamicKnotDecoder(
@@ -129,7 +181,11 @@ class InteractiveDynamicTests(unittest.TestCase):
         )
         losses["loss"].backward()
         self.assertGreater(
-            float(model.structure_head.stop_head.weight.grad.abs().sum()), 0.0
+            float(
+                model.structure_head.count_classifier[-1]
+                .weight.grad.abs().sum()
+            ),
+            0.0,
         )
         self.assertGreater(
             float(model.knot_head.interval_queries.grad.abs().sum()), 0.0

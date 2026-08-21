@@ -60,7 +60,7 @@ def main() -> None:
         "--count-selection",
         choices=("auto", "network", "bic"),
         default="auto",
-        help="Select the network argmax branch or compare complete branches by BIC.",
+        help="Use the network count decision or compare legacy complete branches by BIC.",
     )
     parser.add_argument("--count-prior-weight", type=float, default=1.0)
     parser.add_argument("--json-output", type=Path, default=None)
@@ -129,7 +129,10 @@ def main() -> None:
     loss_sums: dict[str, float] = defaultdict(float)
     retained_counts: list[torch.Tensor] = []
     predicted_counts: list[torch.Tensor] = []
+    mode_counts: list[torch.Tensor] = []
     expected_counts: list[torch.Tensor] = []
+    count_entropies: list[torch.Tensor] = []
+    count_max_probabilities: list[torch.Tensor] = []
     activity_values: list[torch.Tensor] = []
     activity_ranges: list[torch.Tensor] = []
     sweep_counts: dict[float, list[torch.Tensor]] = (
@@ -149,6 +152,8 @@ def main() -> None:
     bspline_augmented_objectives: list[float] = []
     bspline_control_counts: list[int] = []
     bspline_rank_deficient: list[bool] = []
+    bspline_start_endpoint_distances: list[float] = []
+    bspline_end_endpoint_distances: list[float] = []
     total_samples = 0
     total_matched = 0
     total_predicted = 0
@@ -181,10 +186,24 @@ def main() -> None:
 
             if count_conditioned:
                 batch_predicted = output["predicted_knot_count"].cpu()
+                batch_mode = output.get(
+                    "count_mode_knot_count", output["predicted_knot_count"]
+                ).cpu()
                 batch_expected = output["expected_knot_count"].cpu()
+                batch_probabilities = output["count_probabilities"].cpu()
                 batch_true = true_mask.sum(dim=-1).to(torch.long).cpu()
                 predicted_counts.append(batch_predicted)
+                mode_counts.append(batch_mode)
                 expected_counts.append(batch_expected)
+                count_entropies.append(
+                    -(
+                        batch_probabilities
+                        * batch_probabilities.clamp_min(1e-12).log()
+                    ).sum(dim=-1)
+                )
+                count_max_probabilities.append(
+                    batch_probabilities.amax(dim=-1)
+                )
                 for target, predicted in zip(batch_true.tolist(), batch_predicted.tolist()):
                     count_confusion[target, predicted] += 1
                 if count_selection == "bic":
@@ -232,11 +251,25 @@ def main() -> None:
             bspline_augmented_objectives.extend(
                 float(item.spline.augmented_objective) for item in deployed
             )
-            for item in deployed:
+            for index, item in enumerate(deployed):
                 control_count = int(item.control_points.shape[0])
                 bspline_control_counts.append(control_count)
                 if item.spline.solver_rank is not None:
                     bspline_rank_deficient.append(item.spline.solver_rank < control_count)
+                bspline_start_endpoint_distances.append(
+                    float(
+                        (
+                            item.reconstructed_points[0] - points[index, 0]
+                        ).norm()
+                    )
+                )
+                bspline_end_endpoint_distances.append(
+                    float(
+                        (
+                            item.reconstructed_points[-1] - points[index, -1]
+                        ).norm()
+                    )
+                )
 
             parameter_difference = output["params"].cpu() - batch["true_params"]
             true_parameter_squared_error += float(parameter_difference.pow(2).sum())
@@ -281,24 +314,47 @@ def main() -> None:
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
     knot_mae = matched_error_sum / total_matched if total_matched else float("nan")
     bspline_fit_mean = sum(bspline_fit_losses) / len(bspline_fit_losses)
+    bspline_rms_values = torch.tensor(bspline_fit_losses).sqrt()
+    bspline_rms_p95 = float(torch.quantile(bspline_rms_values, 0.95))
+    bspline_rms_max = float(bspline_rms_values.max())
     bspline_coordinate_mean = sum(bspline_coordinate_losses) / len(
         bspline_coordinate_losses
     )
     parameter_rmse = math.sqrt(
         true_parameter_squared_error / max(true_parameter_values, 1)
     )
+    endpoint_distances = (
+        bspline_start_endpoint_distances + bspline_end_endpoint_distances
+    )
+    endpoint_rmse = math.sqrt(
+        sum(value * value for value in endpoint_distances)
+        / max(len(endpoint_distances), 1)
+    )
+    endpoint_max = max(endpoint_distances, default=0.0)
     hard_histogram = _histogram(retained, candidate_count)
     true_histogram = _histogram(true_count_tensor, candidate_count)
 
     if count_conditioned:
         predicted_count_tensor = torch.cat(predicted_counts).to(torch.long)
+        mode_count_tensor = torch.cat(mode_counts).to(torch.long)
         expected_count_tensor = torch.cat(expected_counts)
+        count_entropy_tensor = torch.cat(count_entropies)
+        count_max_probability_tensor = torch.cat(count_max_probabilities)
         count_accuracy = float((predicted_count_tensor == true_count_tensor).float().mean())
         count_mae = float(
             (predicted_count_tensor - true_count_tensor).abs().float().mean()
         )
         expected_count_mean = float(expected_count_tensor.mean())
         network_histogram = _histogram(predicted_count_tensor, candidate_count)
+        mode_histogram = _histogram(mode_count_tensor, candidate_count)
+        mode_count_accuracy = float(
+            (mode_count_tensor == true_count_tensor).float().mean()
+        )
+        mode_count_mae = float(
+            (mode_count_tensor - true_count_tensor).abs().float().mean()
+        )
+        count_entropy_mean = float(count_entropy_tensor.mean())
+        count_max_probability_mean = float(count_max_probability_tensor.mean())
         deployment_count_accuracy = float(
             (retained == true_count_tensor).float().mean()
         )
@@ -315,6 +371,11 @@ def main() -> None:
         count_mae = float((retained - true_count_tensor).abs().float().mean())
         expected_count_mean = float(all_activity.sum(dim=-1).mean())
         network_histogram = hard_histogram
+        mode_histogram = None
+        mode_count_accuracy = None
+        mode_count_mae = None
+        count_entropy_mean = None
+        count_max_probability_mean = None
         deployment_count_accuracy = count_accuracy
         deployment_count_mae = count_mae
         activity_report = {
@@ -331,7 +392,7 @@ def main() -> None:
         }
 
     report = {
-        "schema_version": 7,
+        "schema_version": 9,
         "checkpoint": str(args.checkpoint),
         "checkpoint_epoch": checkpoint.get("epoch"),
         "checkpoint_selection_metric": checkpoint.get("selection_metric"),
@@ -351,10 +412,15 @@ def main() -> None:
         "expected_knot_count_mean": expected_count_mean,
         "predicted_knot_count_histogram": hard_histogram,
         "network_predicted_knot_count_histogram": network_histogram,
+        "network_mode_knot_count_histogram": mode_histogram,
         "true_knot_count_mean": float(true_count_tensor.float().mean()),
         "true_knot_count_histogram": true_histogram,
         "knot_count_accuracy": count_accuracy,
         "knot_count_mae": count_mae,
+        "mode_knot_count_accuracy": mode_count_accuracy,
+        "mode_knot_count_mae": mode_count_mae,
+        "count_distribution_entropy_mean": count_entropy_mean,
+        "count_distribution_max_probability_mean": count_max_probability_mean,
         "deployment_knot_count_accuracy": deployment_count_accuracy,
         "deployment_knot_count_mae": deployment_count_mae,
         "count_confusion_matrix": count_confusion.tolist()
@@ -372,7 +438,11 @@ def main() -> None:
         ),
         "standard_bspline_refit_loss": bspline_fit_mean,
         "standard_bspline_refit_rms_euclidean": math.sqrt(bspline_fit_mean),
+        "standard_bspline_refit_rms_euclidean_p95": bspline_rms_p95,
+        "standard_bspline_refit_rms_euclidean_max": bspline_rms_max,
         "standard_bspline_coordinate_rmse": math.sqrt(bspline_coordinate_mean),
+        "standard_bspline_endpoint_rmse": endpoint_rmse,
+        "standard_bspline_endpoint_max_distance": endpoint_max,
         "standard_bspline_control_count_mean": sum(bspline_control_counts)
         / len(bspline_control_counts),
         "standard_bspline_augmented_objective_mean": sum(
@@ -419,10 +489,21 @@ def main() -> None:
 
     if count_conditioned:
         print("\nSupervised knot count")
+        print(
+            "  count distribution / legal range: "
+            f"{model_config.get('structure_count_mode', model_config.get('count_head_mode', 'historical'))} / "
+            f"{model_config.get('min_internal_knots', 0)}..{candidate_count}"
+        )
         print(f"  network count accuracy: {count_accuracy:.3f}")
         print(f"  network count MAE: {count_mae:.3f}")
         print(f"  expected count mean: {expected_count_mean:.3f}")
         print(f"  network count histogram: {network_histogram}")
+        print("  network decision rule: posterior median (minimum absolute error)")
+        print(f"  categorical/hazard mode accuracy: {mode_count_accuracy:.3f}")
+        print(f"  categorical/hazard mode MAE: {mode_count_mae:.3f}")
+        print(f"  categorical/hazard mode histogram: {mode_histogram}")
+        print(f"  mean posterior entropy: {count_entropy_mean:.3f}")
+        print(f"  mean maximum class probability: {count_max_probability_mean:.3f}")
         print(f"  deployment selection: {count_selection}")
         print(f"  deployment count accuracy: {deployment_count_accuracy:.3f}")
         print(f"  deployment count MAE: {deployment_count_mae:.3f}")
@@ -445,6 +526,9 @@ def main() -> None:
     print(f"  all-knot fraction: {report['all_knot_fraction']:.3f}")
     print(f"  refit loss: {bspline_fit_mean:.9e}")
     print(f"  refit RMS distance: {math.sqrt(bspline_fit_mean):.9e}")
+    print(f"  refit RMS distance P95/max: {bspline_rms_p95:.9e}/{bspline_rms_max:.9e}")
+    print(f"  endpoint RMS distance: {endpoint_rmse:.9e}")
+    print(f"  endpoint max distance: {endpoint_max:.9e}")
 
     print("\nGround-truth diagnostics")
     print(f"  true knot-count mean: {true_count_tensor.float().mean():.3f}")

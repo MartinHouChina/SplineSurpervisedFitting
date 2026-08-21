@@ -21,6 +21,8 @@ def _metrics(
     knot_match_f1: float,
     knot_match_precision: float = 0.5,
     knot_matched_mae: float = 0.02,
+    count_accuracy: float = 0.0,
+    count_mae: float = 0.0,
 ) -> dict[str, float]:
     return {
         "loss": loss,
@@ -32,6 +34,9 @@ def _metrics(
         "candidate_knot_count": 3.0,
         "gate_nonzero_count": 2.0,
         "existence_f1": existence_f1,
+        "count_loss": 0.5,
+        "count_accuracy": count_accuracy,
+        "count_absolute_error": count_mae,
         "knot_match_f1": knot_match_f1,
         "knot_match_precision": knot_match_precision,
         "knot_matched_mae": knot_matched_mae,
@@ -89,6 +94,43 @@ class TrainerSelectionTests(unittest.TestCase):
         )
         self.assertAlmostEqual(checkpoint["selection_value"], 0.5)
         self.assertAlmostEqual(checkpoint["best_val"], 0.4)
+
+    def test_structured_checkpoint_prioritizes_count_mae_after_warmup(self) -> None:
+        model = torch.nn.Linear(1, 1)
+        model.structure_mode = "interactive_dynamic"
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        trainer = Trainer(model, torch.nn.Identity(), optimizer, torch.device("cpu"))
+        loader = DataLoader(TensorDataset(torch.zeros(1, 1)), batch_size=1)
+        epoch_metrics = [
+            _metrics(0.1, 0.0, 0.9, count_accuracy=0.8, count_mae=0.5),
+            _metrics(0.1, 0.0, 0.9, count_accuracy=0.8, count_mae=0.5),
+            _metrics(0.2, 0.0, 0.3, count_accuracy=0.4, count_mae=1.0),
+            _metrics(0.2, 0.0, 0.3, count_accuracy=0.4, count_mae=1.0),
+            _metrics(0.3, 0.0, 0.8, count_accuracy=0.6, count_mae=1.5),
+            _metrics(0.3, 0.0, 0.8, count_accuracy=0.6, count_mae=1.5),
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint_path = Path(directory) / "best.pt"
+            with patch.object(trainer, "_run_epoch", side_effect=epoch_metrics):
+                trainer.fit(
+                    loader,
+                    loader,
+                    epochs=3,
+                    checkpoint_selection_start_epoch=1,
+                    checkpoint_path=checkpoint_path,
+                )
+            checkpoint = torch.load(
+                checkpoint_path, map_location="cpu", weights_only=True
+            )
+
+        self.assertEqual(checkpoint["epoch"], 2)
+        self.assertEqual(
+            checkpoint["selection_metric"],
+            "count_mae_then_accuracy_knot_f1_precision_mae_loss",
+        )
+        self.assertAlmostEqual(checkpoint["selection_value"], 1.0)
+        self.assertAlmostEqual(checkpoint["best_count_mae"], 1.0)
 
 
 if __name__ == "__main__":

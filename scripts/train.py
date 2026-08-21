@@ -26,6 +26,12 @@ def main() -> None:
     )
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument(
+        "--log-every-batches",
+        type=int,
+        default=25,
+        help="Print within-epoch progress; use 0 to disable.",
+    )
     parser.add_argument("--train-size", type=int, default=10000)
     parser.add_argument("--val-size", type=int, default=1000)
     parser.add_argument("--train-seed", type=int, default=42)
@@ -53,6 +59,15 @@ def main() -> None:
     parser.add_argument("--max-knots", type=int, default=6)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--structure-attention-heads", type=int, default=4)
+    parser.add_argument(
+        "--structure-count-mode",
+        choices=("categorical", "hazard"),
+        default="categorical",
+        help=(
+            "Categorical is the current count classifier; hazard preserves the "
+            "historical continuation/stop objective."
+        ),
+    )
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument(
@@ -64,8 +79,17 @@ def main() -> None:
     parser.add_argument(
         "--teacher-forcing-warmup-epochs",
         type=int,
-        default=10,
+        default=5,
         help="Epochs that use the true knot count for every training sample.",
+    )
+    parser.add_argument(
+        "--checkpoint-selection-start-epoch",
+        type=int,
+        default=None,
+        help=(
+            "Zero-based first epoch eligible for checkpoint selection. By default, "
+            "selection starts after teacher-forcing annealing has begun."
+        ),
     )
     parser.add_argument("--lambda-poly", type=float, default=1e-6)
     parser.add_argument("--lambda-knot", type=float, default=1e-5)
@@ -76,12 +100,12 @@ def main() -> None:
         "--lambda-count",
         type=float,
         default=5e-3,
-        help="Weight for structured continuation-count supervision.",
+        help="Weight for supervised knot-count classification.",
     )
     parser.add_argument(
         "--lambda-over-count",
         type=float,
-        default=2e-3,
+        default=0.0,
         help="Asymmetric penalty on expected knot over-prediction.",
     )
     parser.add_argument("--knot-position-beta", type=float, default=0.02)
@@ -95,6 +119,8 @@ def main() -> None:
 
     if args.epochs <= 0 or args.train_size <= 0 or args.val_size <= 0:
         parser.error("epochs and dataset sizes must be positive")
+    if args.log_every_batches < 0:
+        parser.error("--log-every-batches must be non-negative")
     if args.max_knots < 0:
         parser.error("--max-knots must be non-negative")
     if (
@@ -112,6 +138,11 @@ def main() -> None:
         parser.error("--teacher-forcing-final must lie in [0, 1]")
     if args.teacher_forcing_warmup_epochs < 0:
         parser.error("--teacher-forcing-warmup-epochs must be non-negative")
+    if (
+        args.checkpoint_selection_start_epoch is not None
+        and args.checkpoint_selection_start_epoch < 0
+    ):
+        parser.error("--checkpoint-selection-start-epoch must be non-negative")
     regularizers = (
         args.lambda_poly,
         args.lambda_knot,
@@ -126,6 +157,16 @@ def main() -> None:
         parser.error("loss and solver regularization weights must be non-negative")
 
     max_true_internal_knots = args.max_control_points - 4
+    min_legal_internal_knots = (
+        args.min_control_points - 4
+        if args.canonical_knot_tolerance == 0.0
+        else 0
+    )
+    checkpoint_selection_start_epoch = (
+        min(args.teacher_forcing_warmup_epochs + 1, args.epochs - 1)
+        if args.checkpoint_selection_start_epoch is None
+        else min(args.checkpoint_selection_start_epoch, args.epochs - 1)
+    )
     if args.max_knots < max_true_internal_knots:
         parser.error(
             "structured count prediction requires --max-knots to cover the source dataset; "
@@ -172,6 +213,8 @@ def main() -> None:
         "lambda_knot": args.lambda_knot,
         "structure_mode": "interactive_dynamic",
         "structure_attention_heads": args.structure_attention_heads,
+        "structure_count_mode": args.structure_count_mode,
+        "min_internal_knots": min_legal_internal_knots,
         "geometry_feature_mode": "chord_derivatives",
         "compute_first_derivative": False,
     }
@@ -193,8 +236,14 @@ def main() -> None:
         },
         "min_knot_gap": 1e-3,
         "knot_position_beta": args.knot_position_beta,
-        "count_loss": "structured_continuation_binary_cross_entropy",
-        "checkpoint_selection_metric": "knot_match_f1_then_precision_mae_loss",
+        "count_loss": (
+            "categorical_cross_entropy"
+            if args.structure_count_mode == "categorical"
+            else "structured_continuation_binary_cross_entropy"
+        ),
+        "checkpoint_selection_metric": (
+            "count_mae_then_accuracy_knot_f1_precision_mae_loss"
+        ),
         "knot_match_tolerance": args.knot_match_tolerance,
     }
     loss_fn = SplineFittingLoss(
@@ -211,7 +260,56 @@ def main() -> None:
         optimizer,
         device,
         knot_match_tolerance=args.knot_match_tolerance,
+        log_every_batches=args.log_every_batches,
     )
+
+    print(
+        "Dataset split: "
+        f"train={args.train_size} (seed={args.train_seed}), "
+        f"validation={args.val_size} (seed={args.val_seed})",
+        flush=True,
+    )
+    print(
+        "Structure range: "
+        f"source internal knots={args.min_control_points - 4}.."
+        f"{args.max_control_points - 4}, legal prediction range="
+        f"{min_legal_internal_knots}..{args.max_knots}, "
+        f"count mode={args.structure_count_mode}",
+        flush=True,
+    )
+    if args.max_knots > 10 and args.canonical_knot_tolerance > 0.0:
+        print(
+            "WARNING: high-K online canonical deletion is CPU-intensive. "
+            "The first batch may take tens of seconds and a 10,000-sample epoch "
+            "may spend over an hour generating labels. This mode also does not "
+            "guarantee final canonical counts of 4..20.",
+            flush=True,
+        )
+        if args.resample_train_each_epoch:
+            print(
+                "WARNING: --resample-train-each-epoch repeats that canonicalization "
+                "cost every epoch. Use --no-resample-train-each-epoch for a fixed "
+                "cached training population.",
+                flush=True,
+            )
+    elif args.canonical_knot_tolerance == 0.0:
+        print(
+            "Canonical reduction disabled: source knots are used as labels via the "
+            "zero-tolerance fast path.",
+            flush=True,
+        )
+    print(
+        "Checkpoint selection: "
+        f"eligible from epoch {checkpoint_selection_start_epoch + 1}; "
+        "ranked by count MAE, count accuracy, knot F1, then loss.",
+        flush=True,
+    )
+    if args.epochs <= args.teacher_forcing_warmup_epochs + 1:
+        print(
+            "WARNING: this run ends before predicted-count teacher forcing is "
+            "meaningfully exercised; use more epochs for deployment training.",
+            flush=True,
+        )
 
     def teacher_forcing_schedule(epoch: int) -> float:
         if epoch < args.teacher_forcing_warmup_epochs:
@@ -233,6 +331,7 @@ def main() -> None:
         checkpoint_path=args.output,
         stage_name="interactive_dynamic",
         teacher_forcing_schedule=teacher_forcing_schedule,
+        checkpoint_selection_start_epoch=checkpoint_selection_start_epoch,
     )
 
     checkpoint = torch.load(args.output, map_location="cpu", weights_only=True)
@@ -252,8 +351,11 @@ def main() -> None:
         "resample_train_each_epoch": args.resample_train_each_epoch,
         "teacher_forcing_final": args.teacher_forcing_final,
         "teacher_forcing_warmup_epochs": args.teacher_forcing_warmup_epochs,
+        "checkpoint_selection_start_epoch": checkpoint_selection_start_epoch,
         "weight_decay": args.weight_decay,
         "structure_attention_heads": args.structure_attention_heads,
+        "structure_count_mode": args.structure_count_mode,
+        "min_internal_knots": min_legal_internal_knots,
         "canonical_knot_tolerance": args.canonical_knot_tolerance,
         "lambda_true_params": args.lambda_true_params,
         "lambda_parameter_prior": args.lambda_parameter_prior,

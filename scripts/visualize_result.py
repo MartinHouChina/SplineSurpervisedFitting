@@ -138,6 +138,13 @@ def main() -> None:
     figure, axes = plt.subplots(1, 2, figsize=(12, 5))
     ax_curve, ax_structure = axes
     ax_curve.scatter(observed[:, 0], observed[:, 1], s=13, label="samples")
+    ax_curve.scatter(
+        observed[[0, -1], 0],
+        observed[[0, -1], 1],
+        s=55,
+        marker="x",
+        label="sample endpoints",
+    )
     ax_curve.plot(
         forward_curve[:, 0], forward_curve[:, 1], "--", label="network surrogate"
     )
@@ -157,12 +164,17 @@ def main() -> None:
         probabilities = output["count_probabilities"][0].detach().numpy()
         counts = list(range(len(probabilities)))
         predicted_count = int(output["predicted_knot_count"][0])
+        mode_count = int(
+            output.get(
+                "count_mode_knot_count", output["predicted_knot_count"]
+            )[0]
+        )
         deployed_count = deployed.retained_count
         colors = [
             "tab:orange"
             if count == deployed_count
             else "tab:green"
-            if count == predicted_count
+            if count == mode_count
             else "tab:blue"
             for count in counts
         ]
@@ -173,7 +185,7 @@ def main() -> None:
             "StructureHead" if structure_mode == "interactive_dynamic" else "CountHead"
         )
         ax_structure.set_title(
-            f"{head_name} K={predicted_count} | deployed K={deployed_count} "
+            f"{head_name} mode={mode_count} | median/deployed K={deployed_count} "
             f"({count_selection})"
         )
         ax_structure.set_xticks(counts)
@@ -208,6 +220,10 @@ def main() -> None:
     print(f"  checkpoint best epoch: {checkpoint.get('epoch', 'not recorded')}")
     if count_conditioned:
         print(f"  predicted knot count: {int(output['predicted_knot_count'][0])}")
+        print(
+            "  posterior mode knot count: "
+            f"{int(output.get('count_mode_knot_count', output['predicted_knot_count'])[0])}"
+        )
         print(f"  expected knot count: {float(output['expected_knot_count'][0]):.6f}")
         print(f"  count probabilities: {output['count_probabilities'][0].tolist()}")
         print(f"  deployment count selection: {count_selection}")
@@ -228,6 +244,11 @@ def main() -> None:
     print(f"  total objective: {float(losses['loss']):.9e}")
     print(f"  network fit loss: {float(losses['fit_loss']):.9e}")
     print(f"  standard B-spline refit loss: {float(deployed.fit_mse):.9e}")
+    print(
+        "  endpoint distances: "
+        f"start={float((deployed.reconstructed_points[0] - points[0, 0]).norm()):.9e}, "
+        f"end={float((deployed.reconstructed_points[-1] - points[0, -1]).norm()):.9e}"
+    )
     print(f"Saved figure to: {args.output}")
 
 
