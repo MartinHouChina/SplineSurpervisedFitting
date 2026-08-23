@@ -16,7 +16,11 @@ INDEPENDENT_QUERY_V2_OBJECTIVE_VERSION = (
 PREVIOUS_OBJECTIVE_VERSION = "independent_query_two_stage_hard_concrete_v3"
 COUNT_CONDITIONED_V4_OBJECTIVE_VERSION = "count_conditioned_structured_knots_v4"
 COUNT_CONDITIONED_V5_OBJECTIVE_VERSION = "canonical_ordinal_count_conditioned_v5"
+# Public compatibility name used by historical scripts/tests.  Do not retarget
+# it: changing its meaning would silently reinterpret existing v6 checkpoints.
 CURRENT_OBJECTIVE_VERSION = "interactive_structure_dynamic_knots_v6"
+CANDIDATE_PRUNING_OBJECTIVE_VERSION = "candidate_pruning_minimal_rms_v7"
+LATEST_OBJECTIVE_VERSION = CANDIDATE_PRUNING_OBJECTIVE_VERSION
 
 
 LEGACY_LOSS_CONFIG: dict[str, Any] = {
@@ -144,6 +148,28 @@ COUNT_CONDITIONED_V5_LOSS_CONFIG: dict[str, Any] = {
     "count_loss": "ordinal_binary_cross_entropy",
 }
 
+CANDIDATE_PRUNING_LOSS_CONFIG: dict[str, Any] = {
+    "weights": {
+        "fit": 0.25,
+        "threshold_violation": 5.0,
+        "true_parameter": 5e-2,
+        "candidate_coverage": 5.0,
+        "candidate_repulsion": 5e-2,
+        "keep": 2.5e-1,
+        "remove_action": 1.0,
+        "knot_position": 2.0,
+        "count_consistency": 0.0,
+        "deletion_cost": 5e-2,
+    },
+    "knot_position_beta": 0.01,
+    "candidate_match_tolerance": 0.02,
+    "fit_tolerance": 5e-3,
+    "positive_keep_weight": 2.0,
+    "exact_deletion_supervision": True,
+    "deletion_smoothness_weight": 1e-6,
+    "deletion_control_ridge": 0.0,
+}
+
 
 def migrate_model_config(
     checkpoint: Mapping[str, Any],
@@ -159,7 +185,9 @@ def migrate_model_config(
     config = dict(checkpoint["model_config"])
     if "structure_mode" not in config:
         objective_version = checkpoint.get("objective_version")
-        if objective_version == CURRENT_OBJECTIVE_VERSION:
+        if objective_version == CANDIDATE_PRUNING_OBJECTIVE_VERSION:
+            config["structure_mode"] = "candidate_pruning"
+        elif objective_version == CURRENT_OBJECTIVE_VERSION:
             config["structure_mode"] = "interactive_dynamic"
         elif objective_version in {
             COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
@@ -179,6 +207,9 @@ def migrate_model_config(
     )
     config.setdefault("count_query_count", 4)
     config.setdefault("structure_attention_heads", 4)
+    if config["structure_mode"] == "candidate_pruning":
+        config.setdefault("pruning_residual_bandwidth", 0.05)
+        config.setdefault("pruning_initial_keep_probability", 0.9)
     if config["structure_mode"] == "interactive_dynamic":
         # v6 checkpoints written before categorical count prediction contain
         # stop_head/stop_bias tensors. Missing metadata must therefore rebuild
@@ -212,7 +243,11 @@ def migrate_model_config(
         (
             "chord_derivatives"
             if checkpoint.get("objective_version")
-            in {CURRENT_OBJECTIVE_VERSION, COUNT_CONDITIONED_V5_OBJECTIVE_VERSION}
+            in {
+                CANDIDATE_PRUNING_OBJECTIVE_VERSION,
+                CURRENT_OBJECTIVE_VERSION,
+                COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
+            }
             else "raw_differences"
         ),
     )
@@ -267,6 +302,7 @@ def migrate_model_config(
             # projection-orthogonality objective (or its historical default).
             needs_derivative = checkpoint.get("objective_version") not in {
                 CURRENT_OBJECTIVE_VERSION,
+                CANDIDATE_PRUNING_OBJECTIVE_VERSION,
                 COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
                 COUNT_CONDITIONED_V4_OBJECTIVE_VERSION,
                 PREVIOUS_OBJECTIVE_VERSION,
@@ -289,6 +325,7 @@ def migrate_loss_config(
     current_objective = objective_version == CURRENT_OBJECTIVE_VERSION
     no_orthogonal_objective = objective_version in {
         CURRENT_OBJECTIVE_VERSION,
+        CANDIDATE_PRUNING_OBJECTIVE_VERSION,
         COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
         COUNT_CONDITIONED_V4_OBJECTIVE_VERSION,
         PREVIOUS_OBJECTIVE_VERSION,
@@ -299,6 +336,8 @@ def migrate_loss_config(
     if assumed:
         if legacy:
             default_config = LEGACY_LOSS_CONFIG
+        elif objective_version == CANDIDATE_PRUNING_OBJECTIVE_VERSION:
+            default_config = CANDIDATE_PRUNING_LOSS_CONFIG
         elif current_objective:
             default_config = CURRENT_OBJECTIVE_LOSS_CONFIG
         elif objective_version == COUNT_CONDITIONED_V5_OBJECTIVE_VERSION:
@@ -318,6 +357,14 @@ def migrate_loss_config(
         config = deepcopy(default_config)
     else:
         config = deepcopy(checkpoint["loss_config"])
+        if objective_version == CANDIDATE_PRUNING_OBJECTIVE_VERSION:
+            weights = config.setdefault("weights", {})
+            for name, value in CANDIDATE_PRUNING_LOSS_CONFIG["weights"].items():
+                weights.setdefault(name, value)
+            for name, value in CANDIDATE_PRUNING_LOSS_CONFIG.items():
+                if name != "weights":
+                    config.setdefault(name, value)
+            return config, assumed
         weights = config.setdefault("weights", {})
         weights.setdefault(
             "l0",
@@ -345,7 +392,7 @@ def migrate_loss_config(
 def build_model_from_checkpoint(
     checkpoint: Mapping[str, Any],
 ) -> tuple[SplineFittingNetwork, dict[str, Any], bool]:
-    """Construct v6 or a strictly migrated historical model from metadata."""
+    """Construct v7, v6, or a strictly migrated historical model."""
     config, legacy = migrate_model_config(checkpoint)
     model = SplineFittingNetwork(**config)
     model.load_state_dict(checkpoint["model_state_dict"])

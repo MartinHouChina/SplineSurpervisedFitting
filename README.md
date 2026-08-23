@@ -1,154 +1,146 @@
-# Interactive Structure B-Spline Fitting
+# Minimum-Complexity B-Spline Fitting
 
-本项目从有序采样点预测开放三次 B 样条的点参数、内部节点数量、内部节点位置和控制点。
+本项目从有序二维或三维点云拟合开放三次 B 样条。当前主版本是
+`candidate_pruning_minimal_rms_v7`：目标不再是猜测生成器原本用了多少节点，而是
 
-## 状态说明
+\[
+\min |U|\quad\text{s.t.}\quad
+\operatorname{RMS}(C_U,Q)\le\varepsilon .
+\]
 
-- **当前可运行版本：v6 categorical。** 使用 `InteractiveStructureHead + DynamicKnotDecoder`；旧 v6 hazard checkpoint 仍可严格加载。
-- **下一阶段规划：候选生成 + Boehm 消冗/精修。** 它仍以点云作为唯一外部部署输入，但在模型内部先生成高召回冗余候选，再通过交互消冗头选择和精修节点。该框架目前只有设计文档，尚未实现，详见 [候选生成与 Boehm 消冗框架](docs/proposal_pruning_framework.md)。
+其中 RMS 是归一化坐标中的平均欧氏距离。v6 及更早 checkpoint 仍可严格加载。
 
-当前 v6 主路径为：
+## 当前工作流
 
 ```text
-几何编码
-  → 点参数预测
-  → 交互式结构 query 直接分类节点数量分布
-  → 在合法范围内用后验中位数决定 K
-  → K>0 时动态解码器只运行 K+1 个 interval query；K=0 时跳过
-  → 得到恰好 K 个严格有序节点
-  → 固定首尾端点后重拟合标准 B 样条控制点
+有序点云 Q [B,M,D]
+  → GeometryEncoder
+      local_features [B,M,H], global_features [B,H]
+  → ParameterHead
+      0=t0<t1<...<t(M-1)=1
+  → CandidateKnotHead
+      固定 Kc 个严格有序、高召回候选节点
+  → 全候选截断幂代理拟合
+      节点系数能量、精确列删除目标增量、局部残差、左右间距
+  → InteractivePruningHead
+      候选 self-attention、remove/STOP、keep 诊断、位置精修
+  → 标准 B 样条逐节点硬剔除
+      每次删除后完整重拟合控制点
+      仅当真实 RMS≤ε 时接受
+  → 最终节点向量、控制点和覆盖首尾端点的拟合曲线
 ```
 
-当前 v6 主路径中没有：
+最终节点数来自硬剔除轨迹，不使用 `CountHead`、BIC、Hard-Concrete 或一次性的
+`keep_probability >= 0.5`。学习到的 keep 概率只用于诊断；即使分类头判断错误，也不能绕过
+部署阶段的 RMS 检查。
 
-- 独立 CountHead；
-- Activity threshold 或 Hard-Concrete；
-- 固定候选节点删除；
-- 全部数量分支枚举；
-- BIC 或第二次数量选择。
+截断幂基只用于网络内部提取“每个候选节点的独立贡献”并提供可微拟合代理；最终导出的曲线
+始终由标准开放 B 样条基重拟合。
 
-## 实际数据流
+## 数据集
 
-```text
-points [B,M,D]
-  ↓
-GeometryEncoder
-  ├─ local_features  [B,M,H]
-  └─ global_features [B,H]
-  ↓
-ParameterHead(local_features, global_features)
-  ↓
-params [B,M]
-  ↓
-InteractiveStructureHead(global_features, local_features, params)
-  ├─ structure_query_features [B,Kmax,H]
-  ├─ count_probabilities [B,Kmax+1]
-  ├─ count_mode_knot_count [B]（诊断）
-  └─ predicted_knot_count [B]（后验中位数）
-  ↓
-DynamicKnotDecoder(..., selected_count)
-  ├─ selected_count>0 时只计算 selected_count+1 个区间 query
-  ├─ selected_count=0 时跳过位置解码
-  ├─ internal_knots [B,Kmax]
-  └─ knot_mask [B,Kmax]
-  ↓
-标准开放三次 B 样条重拟合（严格通过首尾输入点）
-```
-
-训练前期 `selected_count` 使用 canonical 真实数量，后期按 teacher-forcing 比例混入网络预测数量；验证和部署始终使用 `predicted_knot_count`。
-
-## 节点数量如何产生
-
-`Kmax` 个结构 query 先对带参数位置编码的局部特征做 cross-attention，再通过 self-attention 交换结构证据。汇聚后的 token 经分类器直接产生数量 logits；低于数据集合法最小数量的类别被屏蔽，再做 softmax：
-
-\[
-P(K=0),P(K=1),\ldots,P(K=K_{max}).
-\]
-
-部署使用后验中位数，而不是对平坦分布很敏感的 argmax：
-
-\[
-\widehat K=\min\left\{k:\sum_{r=0}^{k}P(K=r)\ge 0.5\right\}.
-\]
-
-`argmax` 众数仍以 `count_mode_knot_count` 输出，仅用于诊断。旧 hazard checkpoint 也采用合法范围掩码和同一中位数规则，因此无需重训即可避免非法的 0 节点预测。
-
-## 节点位置如何产生
-
-预测 \(K\) 后，若 \(K>0\)，动态解码器只取前 \(K+1\) 个共享 interval query，生成 \(K+1\) 个正区间。取前 \(K\) 个前缀和得到节点，因此天然满足；\(K=0\) 时无需预测位置：
-
-\[
-0<u_1<\cdots<u_K<1.
-\]
-
-一个 batch 中不同样本具有不同数量时，代码按 `selected_count` 分组计算，再填充回 `[B,Kmax]` 张量。填充不代表计算了其他数量分支。
-
-## 默认数据
+默认 v7 配置如下：
 
 | 项目 | 默认值 |
 |---|---:|
-| 训练 / 验证样本 | 10000 / 1000 |
-| 训练 / 验证 / 测试 seed | 42 / 10000 / 20000 |
-| 每条曲线采样点 | 64 |
-| 源控制点数量 | 5–10 |
-| 最大内部节点数 | 6 |
-| 噪声标准差 | 0.001 |
-| canonical 节点删除容差 | 0.005 RMS |
+| 训练 / 验证样本 | 10000 / 2000 |
+| 训练 / 验证 / 独立测试 seed | 42 / 10000 / 20000 |
+| 每条曲线采样点 | 192 |
+| 源控制点 | 8–24 |
+| 源内部节点 | 4–20 |
+| 候选预算 `Kc` | 28 |
+| 坐标噪声标准差 | 0.001 |
+| 默认 RMS 阈值 `ε` | 0.005 |
 
-canonical 节点删除只用于构造监督标签，不参与网络部署。
+每条曲线先中心化并按最大半径归一化。监督节点不是随机器任意生成的源表示，而是从源节点
+开始逐个尝试删除、重新拟合控制点，并在同一 RMS 阈值下得到的 canonical 表示。该过程是
+确定性的贪心消冗；它保证返回结果满足阈值并沿当前删除路径不可再删，但不宣称组合意义上的
+全局最少。
 
-默认训练集每个 epoch 按确定性新 seed 重新生成，验证集保持固定。前 5 个 epoch 完全使用真实数量训练位置头，随后将 teacher-forcing 比例线性降到 0.5。checkpoint 只在退火已经开始后参与选优，并优先比较数量 MAE，避免再次保存尚未经历部署数量路径的早期权重。
-
-训练 4–20 个源内部节点时，不要直接沿用默认在线 canonical 删除；请使用 `--min-control-points 8 --max-control-points 24 --max-knots 20 --canonical-knot-tolerance 0 --structure-count-mode categorical --resample-train-each-epoch`。完整命令见 [训练流程](docs/training_pipeline.md#4–20-个源内部节点)。
-
-## 运行
+## 训练
 
 ```powershell
-python scripts/train.py `
-  --epochs 100 `
-  --output outputs/interactive_dynamic_v6.pt
+python scripts/train_candidate_pruning.py `
+  --epochs 150 `
+  --candidate-pretrain-epochs 20 `
+  --train-size 10000 `
+  --val-size 2000 `
+  --batch-size 16 `
+  --min-control-points 8 `
+  --max-control-points 24 `
+  --candidate-knots 28 `
+  --num-points 192 `
+  --fit-tolerance 0.005 `
+  --candidate-match-tolerance 0.02 `
+  --output outputs/candidate_pruning_v7.pt
 ```
+
+训练分两段：先优化参数、候选覆盖、位置和全候选拟合，再联合训练候选消冗与位置精修。
+高节点数 canonical 标签生成较慢，因此训练集默认固定并缓存；只有明确接受重复标签生成成本时
+才启用 `--resample-train-each-epoch`。
+
+脚本同时保存：
+
+- `candidate_pruning_v7.pt`：按候选召回、最近节点误差、安全删除动作和节点匹配选出的最佳权重；
+- `candidate_pruning_v7_last.pt`：最后一个 epoch，便于排查选优偏差。
+
+旧的 `scripts/train.py` 保留用于复现实验 v6，不是 v7 主入口。
+
+## 评估与可视化
 
 ```powershell
 python scripts/evaluate_checkpoint.py `
-  --checkpoint outputs/interactive_dynamic_v6.pt `
+  --checkpoint outputs/candidate_pruning_v7.pt `
+  --num-samples 2000 `
   --seed 20000 `
-  --json-output outputs/interactive_dynamic_v6_evaluation.json
+  --fit-tolerance 0.005 `
+  --json-output outputs/candidate_pruning_v7_evaluation.json
 ```
 
 ```powershell
 python scripts/visualize_result.py `
-  --checkpoint outputs/interactive_dynamic_v6.pt `
+  --checkpoint outputs/candidate_pruning_v7.pt `
   --sample-index 0 `
-  --output outputs/interactive_dynamic_v6_sample_000.png
+  --fit-tolerance 0.005 `
+  --pruning-view comparison `
+  --dpi 600 `
+  --output outputs/candidate_pruning_v7_sample_000.png
 ```
+
+`--pruning-view` 支持 `all`（全部候选）、`learned`（keep 概率阈值）、`hard`
+（RMS 硬剔除，默认）和 `comparison`（同图对照三者）。三种结果都会重新拟合为标准
+B 样条；`network surrogate` 只作为训练代理诊断。
+
+评估时至少同时检查：候选 recall@0.01/0.02、最终阈值满足率、最终节点数、标准 B 样条
+RMS/P95、端点误差和最终节点匹配。单独的 precision 或低训练代理损失不足以说明结构正确。
+
+## 用户点云推演
+
+输入必须沿曲线方向有序，支持 CSV、TXT、XYZ、JSON、NPY、PT/PTH：
+
+```powershell
+python scripts/fit_point_cloud.py `
+  --checkpoint outputs/candidate_pruning_v7.pt `
+  --point-cloud data/my_curve.csv `
+  --fit-tolerance 0.005 `
+  --json-output outputs/my_curve_fit.json `
+  --figure-output outputs/my_curve_fit.png
+```
+
+网络读取重采样后的序列，但最终参数会插值回全部原始点，硬剔除和控制点重拟合也在全部原始
+点上执行。重采样不会增加几何信息；输入点明显少于训练密度时，脚本会给出警告。
+
+## 验证
 
 ```powershell
 python -m pytest -q
 ```
 
-用户自己的点云必须沿曲线方向有序，支持 CSV、TXT、XYZ、JSON、NPY 和 PT：
-
-```powershell
-python scripts/fit_point_cloud.py `
-  --checkpoint outputs/interactive_dynamic_v6.pt `
-  --point-cloud data/my_curve.csv `
-  --json-output outputs/my_curve_fit.json `
-  --figure-output outputs/my_curve_fit.png
-```
-
-CSV 每行是一个点，例如二维数据为 `x,y`。脚本先按弦长重采样供网络预测，再把预测参数插值回全部原始点并执行最终控制点重拟合；输出控制点会恢复到原坐标系。若原始点远少于训练点数，或预测控制点数超过原始观测数，脚本会明确警告，因为线性重采样不会增加几何信息。
-
 ## 文档
 
-- [下一阶段：候选生成与 Boehm 消冗框架](docs/proposal_pruning_framework.md)
-- [模型内部投喂顺序](docs/architecture.md)
-- [数据生成与训练流程](docs/training_pipeline.md)
-- [部署与指标解释](docs/deployment_pipeline.md)
+- [模型数据流](docs/architecture.md)
+- [数据与训练流程](docs/training_pipeline.md)
+- [部署、硬剔除与指标](docs/deployment_pipeline.md)
+- [候选生成与消冗设计说明](docs/proposal_pruning_framework.md)
 - [数学定义](docs/math_formulation.md)
-- [结构演化记录](docs/pruning_redesign.md)
 - [文件索引](docs/file_guide.md)
-
-## 兼容性
-
-当前 objective 名称仍为 `interactive_structure_dynamic_knots_v6`，具体数量实现由 checkpoint 中的 `structure_count_mode` 区分。缺少该字段的旧 v6 权重按 hazard 布局严格恢复；新训练默认 categorical。v5、v4、v3 及更早 checkpoint 仍按各自历史结构加载。

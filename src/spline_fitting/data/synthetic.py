@@ -150,9 +150,18 @@ def fit_control_points_for_internal_knots(
     internal_knots: torch.Tensor,
     *,
     degree: int = 3,
-    ridge: float = 1e-7,
+    smoothness_weight: float = 1e-6,
+    ridge: float = 0.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Refit control points and return ``(control_points, RMS distance)``."""
+    """Endpoint-constrained B-spline refit used by canonical label pruning.
+
+    This intentionally uses a least-squares factorization instead of normal
+    equations.  The same endpoint convention is used by v7 deployment, so a
+    training deletion and a deployed deletion are judged on the same curve
+    domain rather than on two subtly different solvers.
+    """
+    if smoothness_weight < 0.0 or ridge < 0.0:
+        raise ValueError("smoothness_weight and ridge must be non-negative")
     knot_vector = torch.cat(
         [
             torch.zeros(
@@ -171,12 +180,58 @@ def fit_control_points_for_internal_knots(
         degree,
         num_control_points,
     )
-    normal = basis.transpose(0, 1) @ basis
-    normal = normal + ridge * torch.eye(
-        num_control_points, device=points.device, dtype=points.dtype
-    )
-    right_hand_side = basis.transpose(0, 1) @ points
-    control_points = torch.linalg.solve(normal, right_hand_side)
+    control_points = points.new_zeros(num_control_points, points.shape[-1])
+    control_points[0] = points[0]
+    control_points[-1] = points[-1]
+    if num_control_points > 2:
+        interior_basis = basis[:, 1:-1]
+        right_hand_side = (
+            points
+            - basis[:, :1] * control_points[:1]
+            - basis[:, -1:] * control_points[-1:]
+        )
+        if smoothness_weight > 0.0:
+            difference = points.new_zeros(
+                num_control_points - 2,
+                num_control_points,
+            )
+            row = torch.arange(num_control_points - 2, device=points.device)
+            difference[row, row] = 1.0
+            difference[row, row + 1] = -2.0
+            difference[row, row + 2] = 1.0
+            fixed_control = torch.stack(
+                [control_points[0], control_points[-1]], dim=0
+            )
+            fixed_difference = torch.stack(
+                [difference[:, 0], difference[:, -1]], dim=-1
+            )
+            smooth_scale = smoothness_weight**0.5
+            interior_basis = torch.cat(
+                [interior_basis, smooth_scale * difference[:, 1:-1]],
+                dim=0,
+            )
+            right_hand_side = torch.cat(
+                [
+                    right_hand_side,
+                    -smooth_scale * (fixed_difference @ fixed_control),
+                ],
+                dim=0,
+            )
+        if ridge > 0.0:
+            ridge_rows = ridge**0.5 * torch.eye(
+                num_control_points - 2,
+                device=points.device,
+                dtype=points.dtype,
+            )
+            interior_basis = torch.cat([interior_basis, ridge_rows], dim=0)
+            right_hand_side = torch.cat(
+                [right_hand_side, points.new_zeros(num_control_points - 2, points.shape[-1])],
+                dim=0,
+            )
+        control_points[1:-1] = torch.linalg.lstsq(
+            interior_basis,
+            right_hand_side,
+        ).solution
     reconstructed = basis @ control_points
     rms_distance = (
         (reconstructed - points).pow(2).sum(dim=-1).mean().sqrt()
@@ -191,7 +246,8 @@ def canonicalize_internal_knots(
     *,
     degree: int = 3,
     error_tolerance: float = 5e-3,
-    ridge: float = 1e-7,
+    smoothness_weight: float = 1e-6,
+    ridge: float = 0.0,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Greedily remove redundant knots under a geometric RMS tolerance.
 
@@ -208,6 +264,7 @@ def canonicalize_internal_knots(
         points,
         retained,
         degree=degree,
+        smoothness_weight=smoothness_weight,
         ridge=ridge,
     )
     # A zero tolerance is the explicit "preserve source representation" mode.
@@ -227,6 +284,7 @@ def canonicalize_internal_knots(
                 points,
                 candidate,
                 degree=degree,
+                smoothness_weight=smoothness_weight,
                 ridge=ridge,
             )
             if best_rms is None or bool(candidate_rms < best_rms):

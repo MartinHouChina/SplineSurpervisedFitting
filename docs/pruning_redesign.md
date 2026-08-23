@@ -35,7 +35,7 @@ v5 引入：
 
 ## v6：交互式结构预测与动态节点解码
 
-当前主流程是 v6：
+历史 v6 主流程为：
 
 ```text
 带参数位置编码的局部特征
@@ -56,21 +56,22 @@ v5 引入：
 
 因此 v6 的节点位置 query 计算只覆盖所选数量，不再枚举全部数量分支。结构 query 仍包含一次 \(K_{max}\) 规模的 cross-attention 和 \(O(K_{max}^2)\) self-attention。
 
-## 下一阶段规划：高召回候选生成与 Boehm 消冗
+## v7：高召回候选生成与阈值硬消冗
 
-v6 仍让结构数量和连续节点位置强耦合：数量错误会改变解码长度，interval 前缀和误差还会向后累计。下一阶段计划改为：
+v6 仍让结构数量和连续节点位置强耦合：数量错误会改变解码长度，interval 前缀和误差还会向后累计。v7 已改为：
 
 ```text
 点云
   → CandidateKnotHead 生成固定预算的高召回候选
   → 冗余 B 样条拟合
-  → InteractivePruningHead 判断 keep/remove 并精修位置
-  → 最终节点数量由保留数产生
+  → InteractivePruningHead 读取截断幂贡献，预测 remove/STOP 并精修位置
+  → 标准 B 样条逐节点重拟合，RMS≤ε 才接受删除
+  → 最终节点数量由硬删除轨迹产生
 ```
 
-Boehm 插入只用于构造消冗头的明确监督，不用于要求候选头复现随机插入位置。候选头由真实最简节点的热力图、位置 offset 和单向 coverage 监督。
+Boehm 插入可用于后续离线消冗增强，但不要求候选头复现随机插入位置。当前候选头由 canonical 真值的单向 coverage、位置监督和拟合监督训练。
 
-部署外部输入仍只有点云；候选节点和冗余控制点均在系统内部生成。该方案目前是设计计划，不属于 v6 已实现代码，详见 [proposal_pruning_framework.md](proposal_pruning_framework.md)。
+部署外部输入仍只有点云；候选节点和冗余控制点均在系统内部生成。该方案已作为独立 v7 objective 实现，详见 [proposal_pruning_framework.md](proposal_pruning_framework.md)。
 
 ## 版本对比
 
@@ -80,6 +81,6 @@ Boehm 插入只用于构造消冗头的明确监督，不用于要求候选头�
 | v4 | categorical CountHead | 源表示 | 数量专属分支 | argmax |
 | v5 | ordinal CountHead | canonical | 全数量条件分支 | BIC + prior |
 | v6 | 交互式 categorical 分布 + 合法范围 | canonical/源表示 | 仅所选数量动态解码 | posterior median |
-| 规划框架 | keep probability 总量 | 最简节点 + Boehm 可删除性 | 候选选择与局部精修 | 单次 pruning |
+| v7 | 无 CountHead；remove/STOP 仅作建议 | 阈值 canonical + 真实删除 RMS | 固定高召回候选与局部精修 | 逐节点标准 B 样条硬验证 |
 
 统一报告节点数量 accuracy/MAE、节点 Precision/Recall/F1、匹配 MAE、标准 B 样条 RMS、控制点数量和推理时间。

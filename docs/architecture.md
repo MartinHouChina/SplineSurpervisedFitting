@@ -1,264 +1,141 @@
-# v6 模型内部投喂顺序
+# v7 模型数据流
 
-> 本文记录当前已经实现并可运行的 v6。下一阶段的候选生成与 Boehm 消冗架构见 [proposal_pruning_framework.md](proposal_pruning_framework.md)，两者不要混作同一 checkpoint 结构。
+## 1. 输入与参数化
 
-## 1. 完整 forward
-
-```python
-# 输入点只先进入几何编码器
-local_features, global_features = encoder(points)
-
-# 参数头读取局部特征和全局特征
-parameter_output = parameter_head(local_features, global_features)
-params = parameter_output["params"]
-
-# 交互式结构头读取参数化局部几何，直接预测最终数量分布
-structure_output = structure_head(
-    global_features,
-    local_features,
-    params,
-)
-predicted_count = structure_output["predicted_knot_count"]
-
-# 训练取真实数量；验证和部署取网络预测数量
-selected_count = true_count if training else predicted_count
-
-# K>0 时只解码 selected_count 对应的 K+1 个区间 query；K=0 时跳过
-knot_output = knot_head(
-    global_features,
-    local_features,
-    params,
-    structure_output["structure_query_features"],
-    selected_count,
-)
-
-# 使用所选节点进行训练代理拟合
-design = build_design_matrix(params, internal_knots, knot_mask)
-coefficients = solve_coefficients(design, points)
-reconstructed_points = design @ coefficients
-```
-
-依赖关系：
+唯一外部输入是沿曲线方向排列的点：
 
 ```text
-points
-  ↓
-GeometryEncoder
-  ├─ local_features ─┬─ ParameterHead ─→ params
-  └─ global_features ┘                    │
-                                         ↓
-                              InteractiveStructureHead
-                                ├─ P(K)
-                                └─ structure_query_features
-                                         │
-                 true K（仅训练）或 predicted K
-                                         ↓
-                                DynamicKnotDecoder
-                                         ↓
-                                  K 个有序节点
+points: [B,M,D], D∈{2,3}
 ```
 
-## 2. GeometryEncoder
-
-输入：
-
-```text
-points: [B,M,D]
-```
-
-编码器使用坐标、弦长归一化一阶导数和二阶导数，输出：
+`GeometryEncoder` 读取坐标、弦长归一化一阶差分和二阶差分，输出：
 
 ```text
 local_features:  [B,M,H]
 global_features: [B,H]
 ```
 
-## 3. ParameterHead
-
-ParameterHead 不读取原始点。它把全局特征复制到每个采样位置，与局部特征拼接：
+`ParameterHead(local_features, global_features)` 预测 `M-1` 个正间隔，归一化并累加为：
 
 ```text
-local_features:   [B,M,H]
-global_expanded:  [B,M,H]
-fused:            [B,M,2H]
+params: [B,M]
+0=t0<t1<...<t(M-1)=1
 ```
 
-MLP 对前 `M-1` 个位置预测原始参数间隔：
+参数头先运行，随后 `params`、局部特征和全局特征同时提供给候选节点路径。没有“先预测节点
+个数，再按个数预测位置”的串联瓶颈。
 
-```text
-raw_parameter_gaps: [B,M-1]
-```
-
-间隔经 softmax、最小间隔约束和累加得到：
-
-\[
-0=t_0<t_1<\cdots<t_{M-1}=1.
-\]
-
-输出 `params:[B,M]` 被后续两个模块共同使用。
-
-## 4. InteractiveStructureHead
-
-### 4.1 Cross-attention
-
-构造带参数位置编码的 memory：
-
-\[
-F_{memory}=F_{local}+\operatorname{PE}(t).
-\]
-
-一次性使用 `Kmax` 个结构 query：
-
-\[
-Z=\operatorname{CrossAttention}(Q_{structure},F_{memory}).
-\]
-
-这里的 `Kmax` 个 query 是数量判断所需的局部结构探测器，不是最终输出的候选节点。
-
-### 4.2 Query self-attention
-
-结构 query 之间交换信息：
-
-\[
-\widetilde Z=\operatorname{SelfAttention}(Z).
-\]
-
-它允许模型判断不同局部几何证据是互补还是冗余。
-
-### 4.3 直接数量分类与合法范围
-
-交互 token 汇聚后由 MLP 直接输出 `Kmax+1` 个数量 logits。若数据配置声明最小合法数量为 \(K_{min}\)，则先屏蔽 \(k<K_{min}\) 的类别，再计算：
-
-\[
-p_k=\operatorname{softmax}(\ell)_k,
-\qquad k\in[K_{min},K_{max}].
-\]
-
-部署数量取后验中位数，它最小化期望绝对数量误差：
-
-\[
-\widehat K=\min\left\{k:\sum_{r=0}^{k}p_r\ge 0.5\right\}.
-\]
-
-这避免了宽而平坦的分布被微小的端点概率差通过 argmax 放大为 `0/Kmax`。输出：
-
-```text
-structure_query_features:          [B,Kmax,H]
-count_probabilities:               [B,Kmax+1]
-count_mode_knot_count:             [B]
-predicted_knot_count:              [B]
-```
-
-这里没有独立 CountHead，也没有对 activity 做阈值删除。`count_mode_knot_count` 是 argmax 诊断值，动态解码器使用 `predicted_knot_count`。旧 v6 hazard checkpoint 会恢复原 stop/survival 参数布局，但在部署前同样执行合法范围掩码和后验中位数决策。
-
-## 5. DynamicKnotDecoder
+## 2. CandidateKnotHead
 
 输入：
 
 ```text
-global_features
-local_features
+global_features [B,H]
+local_features  [B,M,H]
+params          [B,M]
+```
+
+局部特征先加入参数位置编码。`Kc+1` 个带均匀锚点的 interval query 对它做
+cross-attention，并预测 `Kc+1` 个正区间：
+
+\[
+\Delta_j=\delta+igl[1-(K_c+1)\delta\bigr]\operatorname{softmax}(a)_j.
+\]
+
+前缀和给出固定预算的候选：
+
+\[
+c_j=\sum_{r=0}^{j-1}\Delta_r,qquad
+0<c_1<\cdots<c_{K_c}<1.
+\]
+
+输出：
+
+```text
+candidate_knots  [B,Kc]
+candidate_tokens [B,Kc,H]
+candidate_intervals [B,Kc+1]
+```
+
+该头的目标是高召回，不负责直接给出最终数量。
+
+## 3. 截断幂贡献特征
+
+所有候选先保持开启，构造三次截断幂设计矩阵：
+
+\[
+\Phi=[1,t,t^2,t^3,(t-c_1)_+^3,\ldots,(t-c_{K_c})_+^3].
+\]
+
+正则化最小二乘得到系数和代理重建。每个候选提取：
+
+```text
+coefficient_energy                 [B,Kc]
+analytic_drop_objective_delta      [B,Kc]
+candidate_local_residual           [B,Kc]
+left/right spacing                 [B,Kc,2]
+candidate position                 [B,Kc]
+```
+
+其中 `analytic_drop_objective_delta` 是从正规矩阵逆对角和节点系数计算的精确“删除该列后的
+二次目标增量”。它适合作为廉价的结构证据，但不是部署阶段的几何 RMS 判定。
+
+这些解析量在进入消冗头前停止梯度，避免对线性系统求解二阶梯度。候选位置仍从覆盖、位置和
+全候选拟合损失获得梯度。
+
+## 4. InteractivePruningHead
+
+消冗头融合候选 token、位置编码和上述解析特征，再用候选 self-attention 判断节点间的替代、
+相邻和互补关系。输出：
+
+```text
+keep_probability          [B,Kc]      # 辅助诊断
+remove_stop_logits        [B,Kc+1]    # Kc 个删除动作 + STOP
+predicted_deletion_cost   [B,Kc]      # 辅助排序/回归
+position_residual         [B,Kc]
+refined_candidate_knots   [B,Kc]
+```
+
+位置残差最多使用左右可用间距的 45%，因此精修后节点仍严格有序。STOP 是显式动作；最终零
+节点是合法结果，不需要 CountHead 的 `K=0` 类。
+
+训练 forward 使用全部精修候选进行拟合，不把 keep 概率乘进设计矩阵。这样拟合梯度不会再次
+把所有 keep 概率推向 1。
+
+## 5. 训练输出与部署输出不同
+
+训练阶段的 `reconstructed_points` 是截断幂代理，目的是给参数和候选位置提供稳定梯度。
+
+部署阶段读取：
+
+```text
 params
-structure_query_features
-selected_count
+refined_candidate_knots
 ```
 
-最终节点 query 同时读取：
+随后对标准开放三次 B 样条执行逐节点删除和完整控制点重拟合。每次删除只有在实际欧氏
+RMS 不超过 `fit_tolerance` 时才接受。最终节点数是硬删除轨迹的长度，而不是：
 
-- 带参数位置编码的局部几何 token；
-- 经过交互的 structure query token；
-- 全局曲线特征；
-- `Embedding(K)`。
+- CountHead 输出；
+- keep 概率之和；
+- 固定 0.5 阈值；
+- BIC。
 
-### 5.1 只计算所需数量
+## 6. 计算量
 
-假设一个 batch 的 `selected_count` 为：
-
-```text
-[2,2,4,3,4,2]
-```
-
-解码器按数量分组：
-
-```text
-K=2：样本 0,1,5 → 每条使用 3 个 interval query
-K=3：样本 3     → 使用 4 个 interval query
-K=4：样本 2,4   → 每条使用 5 个 interval query
-```
-
-不会计算 K=0、1、5、6 的节点表示，也不会产生 `branch_internal_knots`。
-
-输出仍填充成 batch 定宽形式：
-
-```text
-internal_knots: [B,Kmax]
-knot_mask:      [B,Kmax]
-```
-
-填充只用于张量存储。例如 K=3：
-
-```text
-internal_knots = [u1,u2,u3,0,0,0]
-knot_mask      = [1, 1, 1, 0,0,0]
-```
-
-### 5.2 有序节点生成
-
-给定正整数 K，只取前 `K+1` 个共享 interval query，输出正区间；K=0 时直接返回空节点向量：
+网络部分主要复杂度为：
 
 \[
-\Delta_j=\delta+[1-(K+1)\delta]\operatorname{softmax}(a)_j.
+O(BK_cM)+O(BK_c^2).
 \]
 
-节点为前缀和：
+默认 `Kc=28` 时，固定候选计算用于换取真实节点的高召回。部署硬验证更昂贵：贪心路径每轮
+尝试所有剩余单节点删除，逻辑上最多评估 `Kc(Kc+1)/2` 个删除状态。实现把同一轮状态合并成
+批量 Cox–de Boor 和批量最小二乘，只单独物化本轮获胜拟合。它不在反向传播中，并以可审计
+的阈值保证换取这部分计算。
 
-\[
-u_j=\sum_{r=0}^{j-1}\Delta_r,\qquad j=1,\ldots,K.
-\]
+## 7. 兼容路径
 
-因此节点天然严格有序。
-
-## 6. 计算复杂度
-
-结构头固定使用 `Kmax` 个 query：cross-attention 复杂度为 \(O(BK_{max}M)\)，query self-attention 为 \(O(BK_{max}^2)\)。位置解码在 K>0 时只使用每条曲线的 `K+1` 个 query，K=0 时不运行，其主要注意力复杂度为：
-
-\[
-O\left(\sum_{b:K_b>0}(K_b+1)(M+K_{max})\right).
-\]
-
-因此节点位置解码不再枚举全部数量分支。结构 query 的 self-attention 仍为 \(O(K_{max}^2)\)；当 `Kmax=20` 时是固定的 400 个 query-pair，但不适合无限增大 `Kmax`。
-
-## 7. 训练代理
-
-动态节点通过 `knot_mask` 构造截断幂基：
-
-\[
-\Phi=[1,t,t^2,t^3,m_j(t-u_j)_+^3].
-\]
-
-forward 内可微求解线性系数并产生 `reconstructed_points`。该曲线用于训练拟合损失，不是最终导出的标准 B 样条控制多边形。
-
-## 8. 训练、验证、部署的数量来源
-
-| 阶段 | selected_count | 说明 |
-|---|---|---|
-| 训练前期 | canonical 真实数量 | 稳定监督动态位置解码器 |
-| 训练后期 | 按 teacher-forcing 比例混合真实数量和预测数量 | 缩小训练与部署的输入差异 |
-| 验证 | `posterior median(count_probabilities)` | 不使用 teacher count |
-| 部署 | `posterior median(count_probabilities)` | 最终且唯一的数量决策 |
-
-部署流程见 [deployment_pipeline.md](deployment_pipeline.md)。
-
-## 9. 下一阶段接口变化（尚未实现）
-
-规划框架保留 `GeometryEncoder + ParameterHead`，将 v6 的结构数量头和动态 interval 解码器替换为：
-
-```text
-CandidateKnotHead
-  → 固定预算 Kc 的高召回候选节点
-  → 冗余控制点求解
-  → InteractivePruningHead
-  → keep probability + position residual
-```
-
-数量由保留节点数自然产生，不再先预测 K；Boehm 插入仅用于训练消冗头，部署外部输入仍只有点云。完整接口和监督定义见 [候选生成与 Boehm 消冗框架](proposal_pruning_framework.md)。
+`SplineFittingNetwork` 仍保留 `interactive_dynamic`、`count_conditioned` 和
+`hard_concrete`，用于加载 v6/v5/更早 checkpoint。v7 使用独立 objective version 和模块
+参数布局，不会把旧权重静默迁移成新结构。

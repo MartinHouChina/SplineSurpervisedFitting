@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -22,9 +23,61 @@ from spline_fitting.data.point_cloud_io import (
     resample_ordered_point_cloud,
 )
 from spline_fitting.evaluation.bspline_inference import (
+    HardGatedBSplineFit,
     refit_model_output_as_bsplines,
     select_count_conditioned_output_by_bic,
 )
+from spline_fitting.evaluation.minimal_knot_pruning import (
+    MinimalKnotPruningResult,
+    prune_knots_to_rms_tolerance,
+)
+
+
+def resolve_fit_tolerance(
+    checkpoint: dict[str, object], explicit_tolerance: float | None
+) -> float:
+    """Resolve the normalized geometric RMS limit used by v7 deployment."""
+    if explicit_tolerance is not None:
+        value = explicit_tolerance
+    else:
+        deployment = checkpoint.get("deployment_config", {})
+        dataset = checkpoint.get("dataset_config", {})
+        if isinstance(deployment, dict) and "error_tolerance" in deployment:
+            value = deployment["error_tolerance"]
+        elif isinstance(dataset, dict) and "canonical_knot_tolerance" in dataset:
+            value = dataset["canonical_knot_tolerance"]
+        else:
+            value = 5e-3
+    tolerance = float(value)
+    if not math.isfinite(tolerance) or tolerance < 0.0:
+        raise ValueError("fit tolerance must be finite and non-negative")
+    return tolerance
+
+
+def pruning_result_as_deployed_fit(
+    result: MinimalKnotPruningResult,
+    *,
+    sample_index: int = 0,
+) -> HardGatedBSplineFit:
+    """Adapt an auditable hard-pruning result to the legacy fit interface."""
+    retained_indices = list(range(result.initial_count))
+    for step in result.accepted_steps:
+        retained_indices.pop(step.removed_index)
+    retained_mask = torch.zeros(
+        result.initial_count,
+        dtype=torch.bool,
+        device=result.initial_internal_knots.device,
+    )
+    if retained_indices:
+        retained_mask[retained_indices] = True
+    return HardGatedBSplineFit(
+        sample_index=sample_index,
+        candidate_count=result.initial_count,
+        retained_count=result.final_count,
+        retained_mask=retained_mask,
+        hard_gate=retained_mask,
+        spline=result.final_fit,
+    )
 
 
 def _plot_result(
@@ -91,6 +144,16 @@ def main() -> None:
     parser.add_argument("--smoothness-weight", type=float, default=1e-6)
     parser.add_argument("--control-ridge", type=float, default=0.0)
     parser.add_argument(
+        "--fit-tolerance",
+        type=float,
+        default=None,
+        help=(
+            "Normalized RMS limit for candidate_pruning. Defaults to "
+            "deployment_config.error_tolerance, then the dataset canonical "
+            "knot tolerance stored in the checkpoint."
+        ),
+    )
+    parser.add_argument(
         "--count-selection", choices=("auto", "network", "bic"), default="auto"
     )
     parser.add_argument("--count-prior-weight", type=float, default=1.0)
@@ -101,6 +164,10 @@ def main() -> None:
         parser.error("--num-points must be at least four")
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
+    try:
+        fit_tolerance = resolve_fit_tolerance(checkpoint, args.fit_tolerance)
+    except (TypeError, ValueError) as error:
+        parser.error(str(error))
     model, model_config, legacy_checkpoint = build_model_from_checkpoint(checkpoint)
     point_dim = int(model_config.get("point_dim", 2))
     source_points = load_ordered_point_cloud(args.point_cloud, point_dim=point_dim)
@@ -171,16 +238,33 @@ def main() -> None:
             output["params"][0],
             source_chord.to(device),
         )
-        full_resolution_output = dict(deployment_output)
-        full_resolution_output["params"] = source_parameters.unsqueeze(0)
         full_resolution_points = source_normalized_points.unsqueeze(0).to(device)
-        deployed = refit_model_output_as_bsplines(
-            full_resolution_output,
-            full_resolution_points,
-            degree=model.degree,
-            smoothness_weight=args.smoothness_weight,
-            control_ridge=args.control_ridge,
-        )[0]
+        pruning_result: MinimalKnotPruningResult | None = None
+        if structure_mode == "candidate_pruning":
+            # The learned keep probability is diagnostic only.  Actual
+            # deployment starts from every proposed knot, refits on the
+            # original-resolution point cloud, and verifies every deletion.
+            pruning_result = prune_knots_to_rms_tolerance(
+                source_parameters,
+                full_resolution_points[0],
+                output["internal_knots"][0],
+                error_tolerance=fit_tolerance,
+                degree=model.degree,
+                smoothness_weight=args.smoothness_weight,
+                control_ridge=args.control_ridge,
+                interpolate_endpoints=True,
+            )
+            deployed = pruning_result_as_deployed_fit(pruning_result)
+        else:
+            full_resolution_output = dict(deployment_output)
+            full_resolution_output["params"] = source_parameters.unsqueeze(0)
+            deployed = refit_model_output_as_bsplines(
+                full_resolution_output,
+                full_resolution_points,
+                degree=model.degree,
+                smoothness_weight=args.smoothness_weight,
+                control_ridge=args.control_ridge,
+            )[0]
 
     scale = normalized["scale"].cpu()
     center = normalized["center"].cpu()
@@ -210,7 +294,7 @@ def main() -> None:
     )
 
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
         "checkpoint": str(args.checkpoint),
         "point_cloud": str(args.point_cloud),
         "point_count": int(source_points.shape[0]),
@@ -219,6 +303,11 @@ def main() -> None:
         "reversed": bool(args.reverse_points),
         "structure_mode": structure_mode,
         "count_selection": count_selection,
+        "deployment_method": (
+            "hard_standard_bspline_rms_pruning"
+            if structure_mode == "candidate_pruning"
+            else "legacy_structure_selection"
+        ),
         "degree": int(model.degree),
         "predicted_internal_knot_count": int(deployed.retained_count),
         "predicted_internal_knots": deployed.retained_internal_knots.cpu().tolist(),
@@ -244,6 +333,35 @@ def main() -> None:
             normalized_end_distance * float(scale)
         ),
     }
+    if pruning_result is not None:
+        report["fit_tolerance_normalized"] = fit_tolerance
+        report["fit_tolerance_original_scale"] = fit_tolerance * float(scale)
+        report["candidate_internal_knot_count"] = pruning_result.initial_count
+        report["candidate_internal_knots"] = (
+            pruning_result.initial_internal_knots.cpu().tolist()
+        )
+        report["candidate_fit_rmse_normalized"] = float(
+            pruning_result.initial_fit.fit_rmse.cpu()
+        )
+        report["fit_tolerance_satisfied"] = pruning_result.threshold_satisfied
+        report["accepted_deletion_count"] = len(pruning_result.accepted_steps)
+        report["removed_knots_in_order"] = pruning_result.removed_knots.cpu().tolist()
+        report["rms_trajectory_normalized"] = (
+            pruning_result.rms_trajectory.cpu().tolist()
+        )
+        rejected_step = next(
+            (step for step in pruning_result.steps if not step.accepted), None
+        )
+        report["first_rejected_deletion"] = (
+            {
+                "knot": float(rejected_step.removed_knot.cpu()),
+                "candidate_rmse_normalized": float(
+                    rejected_step.candidate_rmse.cpu()
+                ),
+            }
+            if rejected_step is not None
+            else None
+        )
     if "count_probabilities" in output:
         report["count_probabilities"] = (
             output["count_probabilities"][0].detach().cpu().tolist()
@@ -255,6 +373,14 @@ def main() -> None:
         )
     if "activity" in output:
         report["activity"] = output["activity"][0].detach().cpu().tolist()
+    if "keep_probability" in output:
+        report["keep_probability_diagnostic"] = (
+            output["keep_probability"][0].detach().cpu().tolist()
+        )
+    if "analytic_drop_objective_delta" in output:
+        report["analytic_drop_objective_delta_diagnostic"] = (
+            output["analytic_drop_objective_delta"][0].detach().cpu().tolist()
+        )
 
     if args.json_output is not None:
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
@@ -269,6 +395,21 @@ def main() -> None:
     print(f"  points / dimension: {source_points.shape[0]} / {source_points.shape[1]}")
     print(f"  resampled model points: {model_points.shape[0]}")
     print(f"  predicted internal knots: {deployed.retained_count}")
+    if pruning_result is not None:
+        print(
+            "  hard RMS pruning: "
+            f"{pruning_result.initial_count} candidates -> "
+            f"{pruning_result.final_count} retained"
+        )
+        print(f"  normalized fit threshold: {fit_tolerance:.9e}")
+        print(
+            "  threshold satisfied: "
+            f"{pruning_result.threshold_satisfied}"
+        )
+        print(
+            "  normalized RMS trajectory: "
+            f"{pruning_result.rms_trajectory.cpu().tolist()}"
+        )
     if "count_probabilities" in output:
         print(
             "  posterior mode internal knots (diagnostic): "

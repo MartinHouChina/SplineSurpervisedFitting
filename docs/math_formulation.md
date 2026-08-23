@@ -1,19 +1,21 @@
-# v6 数学形式
+# v7 数学定义
 
-> 本文前半部分是当前已实现的 v6 数学定义；末尾“规划框架”只定义下一阶段目标，尚未对应现有 checkpoint。
+## 1. 目标与 canonical 标签
 
-## Canonical 监督
-
-从源节点集合 \(U_0\) 开始，在几何 RMS 容差 \(\varepsilon\) 下贪心删除节点：
+对有序点集 (Q=\{q_i\}_{i=1}^M)，目标是：
 
 \[
-U^*=\operatorname{GreedyRemove}(U_0),\qquad
-\operatorname{RMS}(C_{U^*},Q)\le\varepsilon.
+\min_U |U|\quad\text{s.t.}\quad
+R(U)=\sqrt{\frac1M\sum_i\|C_U(t_i)-q_i\|_2^2}\le\varepsilon.
 \]
 
-监督数量为 \(K^*=|U^*|\)，默认 \(\varepsilon=0.005\)。
+训练标签从源节点 (U_0) 开始做确定性单节点贪心删除：
 
-## 点参数
+\[
+U^*=\operatorname{GreedyRemove}(U_0;R,\varepsilon).
+\]
+
+## 2. 点参数
 
 ParameterHead 预测正间隔并累加：
 
@@ -21,154 +23,99 @@ ParameterHead 预测正间隔并累加：
 t_0=0,\qquad t_i=\sum_{r<i}\Delta t_r,\qquad t_{M-1}=1.
 \]
 
-## 交互式结构数量分布
+## 3. 固定预算候选
 
-结构 query 对 \(F_{local}+\operatorname{PE}(t)\) 做 cross-attention，再做 query self-attention。汇聚特征经分类 MLP 得到数量 logits \(\ell_k\)。对数据集合法范围 \([K_{min},K_{max}]\)：
-
-\[
-p_k=\frac{\exp \ell_k}{\sum_{r=K_{min}}^{K_{max}}\exp \ell_r},
-\qquad p_k=0\ \text{if}\ k<K_{min}.
-\]
-
-训练目标为：
+CandidateKnotHead 预测 (K_c+1) 个带最小间隔 (delta) 的正区间：
 
 \[
-L_{structure}=-\log p_{K^*}.
-\]
-
-部署使用后验中位数，它是绝对数量误差下的 Bayes 估计：
-
-\[
-\widehat K=\min\left\{k:\sum_{r=0}^{k}p_r\ge 0.5\right\}.
-\]
-
-后验众数 \(\arg\max_kp_k\) 仍被记录用于置信度诊断。旧 v6 hazard checkpoint 保留原 survival 参数化以兼容权重，但在决策前同样应用合法范围掩码和后验中位数。
-
-## 动态节点解码
-
-给定正整数数量 \(K\)，只运行 \(K+1\) 个 interval query；\(K=0\) 时无需位置解码。正区间为：
-
-\[
-\Delta_j^{(K)}=\delta+
-[1-(K+1)\delta]
-\frac{\exp a_j^{(K)}}{\sum_r\exp a_r^{(K)}}.
-\]
-
-节点位置为：
-
-\[
-u_j^{(K)}=\sum_{r=0}^{j-1}\Delta_r^{(K)},
-\qquad j=1,\ldots,K.
-\]
-
-节点位置监督：
-
-\[
-L_{knot}=\frac1{K^*}\sum_{j=1}^{K^*}
-\operatorname{SmoothL1}(u_j^{(K^*)},u_j^*).
-\]
-
-## 可微拟合代理
-
-\[
-\Phi=[1,t,t^2,t^3,m_j(t-u_j)_+^3],
+\Delta_j=\delta+
+[1-(K_c+1)\delta]\operatorname{softmax}(a)_j,
 \]
 
 \[
-D^*=\arg\min_D\|\Phi D-Q\|_F^2
-+\lambda_{poly}\|D_{poly}\|_F^2
-+\lambda_{knot}\|D_{knot}\|_F^2.
+c_j=\sum_{r=0}^{j-1}\Delta_r,qquad j=1,\ldots,K_c.
 \]
 
-总损失为：
+因此 (0<c_1<\cdots<c_{K_c}<1)。真实节点到候选的单向覆盖为：
 
 \[
-L=L_{fit}+0.05L_t+0.005L_{structure}
-+0.05L_{knot}.
+L_{cover}=\frac1{|U^*|}\sum_{u\in U^*}
+\frac{\min_j|u-c_j|}{\tau_{match}}.
 \]
 
-## 标准 B 样条部署
+## 4. 截断幂代理与节点贡献
 
-部署只使用 \(\widehat K\) 对应的节点并执行一次控制点重拟合：
+\[
+\Phi=[1,t,t^2,t^3,(t-c_1)_+^3,\ldots,(t-c_{K_c})_+^3],
+\]
+
+\[
+D^*=\arg\min_D\|\Phi D-Q\|_F^2+D^T\Lambda D.
+\]
+
+令 (A=\Phi^T\Phi+\Lambda)，第 (j) 个节点列系数为 (d_j)。删除该列后的正则
+二次目标增量可写为：
+
+\[
+\Delta J_j=\frac{\|d_j\|_2^2}{(A^{-1})_{jj}}.
+\]
+
+消冗头同时读取 (Delta J_j)、(|d_j|^2)、局部残差和左右间距。
+
+## 5. remove/STOP
+
+消冗头输出 (K_c+1) 个动作概率。对当前状态真实可安全删除集合
+
+\[
+\mathcal S=\{j:R(U\setminus u_j)\le\varepsilon\},
+\]
+
+多正例动作损失为：
+
+\[
+L_{action}=
+\begin{cases}
+-\log\sum_{j\in\mathcal S}P(a=j),&\mathcal S\ne\varnothing,\\
+-\log P(a=\mathrm{STOP}),&\mathcal S=\varnothing.
+\end{cases}
+\]
+
+删除代价使用阈值归一化对数更容易解释：
+
+\[
+r_j=\log\frac{R(U\setminus u_j)+\eta}{\varepsilon+\eta}.
+\]
+
+(r_j<0) 表示安全，(r_j>0) 表示会越过阈值。解析截断幂增量是输入特征；标准
+B 样条删除 RMS 才是阈值监督和部署判据。
+
+## 6. 归一化拟合损失
+
+记全候选截断幂代理的平均欧氏平方误差为 (L_{fit}^{raw})：
+
+\[
+L_{fit}=\frac{L_{fit}^{raw}}{\varepsilon^2},
+\qquad
+L_{violation}=\max\left(0,
+\frac{\sqrt{L_{fit}^{raw}}}{\varepsilon}-1\right)^2.
+\]
+
+训练设计矩阵始终打开全部候选，keep 概率不接收拟合梯度。
+
+## 7. 标准 B 样条硬部署
+
+对每次候选删除，重新求解：
 
 \[
 P^*=\arg\min_P\|BP-Q\|_F^2
-+\lambda_s\|D_2P\|_F^2+\lambda_r\|P\|_F^2.
++\lambda_s\|D_2P\|_F^2+\lambda_r\|P\|_F^2,
 \]
 
-默认附加硬约束：
+并施加：
 
 \[
-P_0=Q_0,\qquad P_{n-1}=Q_{M-1},
+P_0=Q_0,\qquad P_{n-1}=Q_{M-1}.
 \]
 
-对开放夹持 B 样条即 \(C(0)=Q_0,C(1)=Q_{M-1}\)。实现只求解内部控制点，并把固定端点对数据项和平滑项的贡献移到右端。
-
-不存在 BIC、第二次数量选择或节点阈值删除。
-
-## 规划框架：候选生成与消冗
-
-### 候选热力图
-
-给定真实最简节点 \(U^*=\{u_j^*\}\) 和参数网格 \(g_i\)：
-
-\[
-y_i=\max_j\exp\left[-\frac{(g_i-u_j^*)^2}{2\sigma^2}\right],
-\]
-
-\[
-L_{heatmap}=\operatorname{FocalBCE}(s_i,y_i).
-\]
-
-正样本位置残差和单向覆盖损失为：
-
-\[
-L_{offset}=\operatorname{SmoothL1}(\widehat\delta_i,u_j^*-g_i),
-\]
-
-\[
-L_{cover}=\frac1{K^*}\sum_j\min_i|u_j^*-c_i|.
-\]
-
-多余候选是允许的，因此不采用对称 Chamfer Loss。候选坍缩由：
-
-\[
-L_{rep}=\sum_{i<j}\max(0,d_{min}-|c_i-c_j|)^2
-\]
-
-抑制。
-
-### Boehm 消冗监督
-
-\[
-(U^*,P^*)\xrightarrow{\mathrm{Boehm}}(\widetilde U,\widetilde P),
-\qquad
-C(t;U^*,P^*)=C(t;\widetilde U,\widetilde P).
-\]
-
-原始必要节点标签为 1，插入且可删除节点标签为 0。删除误差定义为：
-
-\[
-E_{del,j}=L_{fit}(\widetilde U\setminus\widetilde u_j)-L_{fit}(\widetilde U).
-\]
-
-消冗头输出保留概率 \(p_j\) 和位置残差 \(\delta_j\)：
-
-\[
-\widehat K=\sum_j\mathbf 1[p_j\ge\tau],
-\qquad
-u_j^{final}=c_j+\delta_j.
-\]
-
-数量一致性和规划总目标为：
-
-\[
-L_{count}=\left|\sum_jp_j-K^*\right|,
-\]
-
-\[
-L=L_{proposal}+\lambda_kL_{keep}+\lambda_nL_{count}
-+\lambda_dL_{delete}+\lambda_rL_{refine}+\lambda_fL_{fit}.
-\]
-
-该设计不使用独立 CountHead；Boehm 只生成消冗监督，部署输入仍为点云。完整训练与部署边界见 [proposal_pruning_framework.md](proposal_pruning_framework.md)。
+本轮只接受真实 RMS 最低且不超过 (arepsilon) 的删除。最终节点数是接受删除后的集合大小，
+与 keep 阈值或 CountHead 无关。

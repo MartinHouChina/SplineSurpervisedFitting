@@ -11,11 +11,13 @@ from ..spline.differentiable_solver import (
 )
 from ..spline.truncated_power_basis import build_design_matrix
 from .activity_head import ActivityHead
+from .candidate_knot_head import CandidateKnotHead
 from .count_conditioned_knot_head import CountConditionedKnotHead
 from .count_head import CountHead
 from .dynamic_knot_decoder import DynamicKnotDecoder
 from .geometry_encoder import GeometryEncoder
 from .interactive_structure_head import InteractiveStructureHead
+from .interactive_pruning_head import InteractivePruningHead
 from .knot_head import KnotHead
 from .parameter_head import ParameterHead
 
@@ -65,12 +67,15 @@ class SplineFittingNetwork(nn.Module):
         structure_attention_heads: int = 4,
         structure_count_mode: str = "categorical",
         min_internal_knots: int = 0,
+        pruning_residual_bandwidth: float = 0.05,
+        pruning_initial_keep_probability: float = 0.9,
     ) -> None:
         super().__init__()
         if structure_mode not in {
             "hard_concrete",
             "count_conditioned",
             "interactive_dynamic",
+            "candidate_pruning",
         }:
             raise ValueError(
                 "unsupported structure_mode"
@@ -81,6 +86,9 @@ class SplineFittingNetwork(nn.Module):
         self.lambda_knot = lambda_knot
         self.gate_eps = gate_eps
         self.gate_mode = gate_mode
+        if pruning_residual_bandwidth <= 0.0:
+            raise ValueError("pruning_residual_bandwidth must be positive")
+        self.pruning_residual_bandwidth = float(pruning_residual_bandwidth)
         # In the supervised-existence objective, curve fitting must not teach
         # the structural classifier to open every useful basis column. The
         # sampled Hard-Concrete value is still used numerically by the solver;
@@ -100,7 +108,8 @@ class SplineFittingNetwork(nn.Module):
         if geometry_feature_mode is None:
             geometry_feature_mode = (
                 "chord_derivatives"
-                if self.structure_mode in {"count_conditioned", "interactive_dynamic"}
+                if self.structure_mode
+                in {"count_conditioned", "interactive_dynamic", "candidate_pruning"}
                 else "raw_differences"
             )
         self.encoder = GeometryEncoder(
@@ -112,7 +121,20 @@ class SplineFittingNetwork(nn.Module):
         self.parameter_head = ParameterHead(
             hidden_dim, min_parameter_gap, gap_parameterization=gap_parameterization
         )
-        if self.structure_mode == "interactive_dynamic":
+        if self.structure_mode == "candidate_pruning":
+            self.candidate_head = CandidateKnotHead(
+                hidden_dim,
+                max_internal_knots,
+                min_gap=min_knot_gap,
+                attention_heads=structure_attention_heads,
+            )
+            self.pruning_head = InteractivePruningHead(
+                hidden_dim,
+                attention_heads=structure_attention_heads,
+                min_gap=min_knot_gap,
+                initial_keep_probability=pruning_initial_keep_probability,
+            )
+        elif self.structure_mode == "interactive_dynamic":
             self.structure_head = InteractiveStructureHead(
                 hidden_dim,
                 max_internal_knots,
@@ -190,6 +212,137 @@ class SplineFittingNetwork(nn.Module):
                 use_pilot_importance=use_pilot_importance,
                 pilot_importance_gain=activity_pilot_importance_gain,
             )
+
+    def _candidate_local_residual(
+        self,
+        params: torch.Tensor,
+        candidate_knots: torch.Tensor,
+        point_residual: torch.Tensor,
+    ) -> torch.Tensor:
+        """Pool geometric residual around every candidate parameter."""
+        distance = (
+            params.unsqueeze(-1) - candidate_knots.unsqueeze(1)
+        ).abs()
+        weights = torch.exp(
+            -0.5 * (distance / self.pruning_residual_bandwidth).square()
+        )
+        return (
+            weights * point_residual.unsqueeze(-1)
+        ).sum(dim=1) / weights.sum(dim=1).clamp_min(1e-8)
+
+    def _forward_candidate_pruning(
+        self,
+        points: torch.Tensor,
+        local_features: torch.Tensor,
+        global_features: torch.Tensor,
+        parameter_output: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]:
+        """Propose all knots, measure their fit contribution, then interact."""
+        params = parameter_output["params"]
+        candidate_output = self.candidate_head(
+            global_features,
+            local_features,
+            params,
+        )
+        candidates = candidate_output["candidate_knots"]
+        all_open = torch.ones_like(candidates)
+
+        pilot_basis = build_design_matrix(
+            params=params,
+            internal_knots=candidates,
+            activity=all_open,
+            degree=self.degree,
+            eps=0.0,
+            gate_transform="direct",
+        )
+        pilot_solver = solve_coefficients(
+            design_matrix=pilot_basis["design_matrix"],
+            points=points,
+            degree=self.degree,
+            lambda_poly=self.lambda_poly,
+            lambda_knot=self.lambda_knot,
+        )
+        pilot_reconstruction = reconstruct_from_design(
+            pilot_basis["design_matrix"],
+            pilot_solver["coefficients"],
+        )
+
+        # These are measured structural descriptors.  Stopping their gradient
+        # avoids second-order inverse-system derivatives while the proposal
+        # positions still receive direct coverage, position and fit gradients.
+        with torch.no_grad():
+            analytic_delta = coefficient_drop_objective_delta(
+                pilot_solver["coefficients"].detach(),
+                pilot_solver["normal_matrix"].detach(),
+                first_column=self.degree + 1,
+            )
+            knot_coefficients = pilot_solver["coefficients"][
+                :, self.degree + 1 :
+            ].detach()
+            coefficient_energy = knot_coefficients.square().sum(dim=-1)
+            point_residual = (
+                pilot_reconstruction.detach() - points.detach()
+            ).norm(dim=-1)
+            local_residual = self._candidate_local_residual(
+                params.detach(),
+                candidates.detach(),
+                point_residual,
+            )
+
+        pruning_output = self.pruning_head(
+            candidate_output["candidate_tokens"],
+            candidates,
+            coefficient_energy=coefficient_energy,
+            deletion_delta=analytic_delta,
+            residual_features=local_residual,
+        )
+        refined_knots = pruning_output["refined_candidate_knots"]
+        fit_activity_gate = torch.ones_like(refined_knots)
+        basis_output = build_design_matrix(
+            params=params,
+            internal_knots=refined_knots,
+            activity=fit_activity_gate,
+            degree=self.degree,
+            eps=0.0,
+            gate_transform="direct",
+        )
+        solver_output = solve_coefficients(
+            design_matrix=basis_output["design_matrix"],
+            points=points,
+            degree=self.degree,
+            lambda_poly=self.lambda_poly,
+            lambda_knot=self.lambda_knot,
+        )
+        reconstructed = reconstruct_from_design(
+            basis_output["design_matrix"], solver_output["coefficients"]
+        )
+        keep_probability = pruning_output["keep_probability"]
+        knot_mask = keep_probability >= 0.5
+        return {
+            "local_features": local_features,
+            "global_features": global_features,
+            **parameter_output,
+            **candidate_output,
+            **pruning_output,
+            # Compatibility aliases used by Trainer and diagnostics.  The
+            # mask is only a learned diagnostic; hard deployment pruning does
+            # not trust this 0.5 threshold.
+            "internal_knots": refined_knots,
+            "activity": keep_probability,
+            "activity_probability_logits": pruning_output["keep_logits"],
+            "activity_gate": knot_mask.to(points.dtype),
+            "knot_mask": knot_mask,
+            "fit_activity_gate": fit_activity_gate,
+            "expected_knot_count": keep_probability.sum(dim=-1),
+            "predicted_knot_count": knot_mask.sum(dim=-1),
+            "analytic_drop_objective_delta": analytic_delta,
+            "coefficient_energy": coefficient_energy,
+            "candidate_local_residual": local_residual,
+            "pilot_reconstructed_points": pilot_reconstruction,
+            **basis_output,
+            **solver_output,
+            "reconstructed_points": reconstructed,
+        }
 
     def _pilot_knot_importance(
         self,
@@ -282,6 +435,13 @@ class SplineFittingNetwork(nn.Module):
     ) -> dict[str, torch.Tensor]:
         local_features, global_features = self.encoder(points)
         parameter_output = self.parameter_head(local_features, global_features)
+        if self.structure_mode == "candidate_pruning":
+            return self._forward_candidate_pruning(
+                points,
+                local_features,
+                global_features,
+                parameter_output,
+            )
         if self.structure_mode == "interactive_dynamic":
             count_output = self.structure_head(
                 global_features,

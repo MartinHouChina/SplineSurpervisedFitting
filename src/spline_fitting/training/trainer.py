@@ -82,6 +82,22 @@ class Trainer:
                 if matched > 0.0
                 else float("nan")
             )
+        candidate_required = {
+            "candidate_match_count",
+            "candidate_target_count",
+            "candidate_nearest_error_sum",
+        }
+        if candidate_required.issubset(metrics):
+            matched = metrics["candidate_match_count"]
+            target = metrics["candidate_target_count"]
+            metrics["candidate_recall"] = (
+                matched / target if target > 0.0 else 1.0
+            )
+            metrics["candidate_nearest_mae"] = (
+                metrics["candidate_nearest_error_sum"] / target
+                if target > 0.0
+                else 0.0
+            )
         return metrics
 
     def _run_epoch(
@@ -317,7 +333,19 @@ class Trainer:
 
             history.append(record)
             displayed_metrics = val_metrics if val_loader is not None else train_metrics
-            if getattr(self.model, "structure_mode", None) in {
+            structure_mode = getattr(self.model, "structure_mode", None)
+            if structure_mode == "candidate_pruning":
+                structure_report = (
+                    f"coverage={displayed_metrics['candidate_coverage_loss']:.4f} | "
+                    f"candidate_R@{self.knot_match_tolerance:.3f}="
+                    f"{displayed_metrics.get('candidate_recall', 0.0):.3f} | "
+                    f"nearest_MAE={displayed_metrics.get('candidate_nearest_mae', 0.0):.4f} | "
+                    f"safe_action={displayed_metrics.get('safe_action_top1', 0.0):.3f} | "
+                    f"false_STOP={displayed_metrics.get('false_stop_rate', 0.0):.3f} | "
+                    f"keep={displayed_metrics['hard_active_count']:.2f}/"
+                    f"{displayed_metrics['candidate_knot_count']:.0f}"
+                )
+            elif structure_mode in {
                 "count_conditioned",
                 "interactive_dynamic",
             }:
@@ -353,11 +381,47 @@ class Trainer:
                 f"temperature={gate_temperature if gate_temperature is not None else float('nan'):.3f}"
             )
 
-            structured_count_model = getattr(self.model, "structure_mode", None) in {
+            structure_mode = getattr(self.model, "structure_mode", None)
+            structured_count_model = structure_mode in {
                 "count_conditioned",
                 "interactive_dynamic",
             }
-            if structured_count_model:
+            if structure_mode == "candidate_pruning":
+                current_candidate_recall = selection_metrics.get(
+                    "candidate_recall", 0.0
+                )
+                current_candidate_mae = selection_metrics.get(
+                    "candidate_nearest_mae", float("inf")
+                )
+                if current_candidate_recall != current_candidate_recall:
+                    current_candidate_recall = 0.0
+                if current_candidate_mae != current_candidate_mae:
+                    current_candidate_mae = float("inf")
+                current_safe_action = selection_metrics.get(
+                    "safe_action_top1", 0.0
+                )
+                current_unsafe_action = selection_metrics.get(
+                    "unsafe_delete_rate", 1.0
+                )
+                current_false_stop = selection_metrics.get(
+                    "false_stop_rate", 1.0
+                )
+                current_rank = (
+                    current_candidate_recall,
+                    -current_candidate_mae,
+                    current_safe_action,
+                    -current_unsafe_action,
+                    -current_false_stop,
+                    current_knot_match_f1,
+                    current_knot_match_precision,
+                    -current_knot_matched_mae,
+                    -current_val,
+                )
+                selection_metric_name = (
+                    "candidate_recall_mae_then_safe_action_knot_f1_loss"
+                )
+                selection_value = current_candidate_recall
+            elif structured_count_model:
                 current_count_mae = selection_metrics.get(
                     "count_absolute_error", float("inf")
                 )
@@ -423,6 +487,18 @@ class Trainer:
                         ),
                         "best_count_mae": selection_metrics.get(
                             "count_absolute_error", float("nan")
+                        ),
+                        "best_candidate_recall": selection_metrics.get(
+                            "candidate_recall", float("nan")
+                        ),
+                        "best_candidate_nearest_mae": selection_metrics.get(
+                            "candidate_nearest_mae", float("nan")
+                        ),
+                        "best_safe_action_top1": selection_metrics.get(
+                            "safe_action_top1", float("nan")
+                        ),
+                        "best_false_stop_rate": selection_metrics.get(
+                            "false_stop_rate", float("nan")
                         ),
                         "metrics": record,
                         "history": list(history),

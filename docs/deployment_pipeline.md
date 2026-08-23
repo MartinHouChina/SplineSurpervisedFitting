@@ -1,243 +1,166 @@
-# v6 部署与结果解释
-
-> 本文描述当前已实现的 v6 部署。规划中的候选生成/消冗模型仍保持点云单输入，但内部数据流不同，见 [proposal_pruning_framework.md](proposal_pruning_framework.md#8-点云单输入部署)。
-
-v6 部署只有一次节点数量决策：InteractiveStructureHead 数量分布的后验中位数。没有 BIC、阈值剪枝或全部数量分支枚举。
+# v7 部署、硬剔除与指标
 
 ## 1. 部署输入
 
+用户只提供沿曲线方向有序的二维或三维点云。无需初始节点、控制点、Boehm 插入结果或真实
+节点数。
+
 ```text
-points: [B,M,D]
+ordered points [M,D]
 ```
 
-实际数据需要：
+点集按训练规则归一化。网络输入会重采样到 checkpoint 记录的长度；最终硬剔除和控制点
+重拟合使用全部原始点。
 
-- 点沿曲线方向有序；
-- 使用与训练一致的中心化和尺度归一化；
-- 保存 `center` 和 `scale`，用于恢复最终控制点坐标。
-
-## 2. 网络推理
-
-部署不提供真实数量：
-
-```python
-with torch.no_grad():
-    output = model(points)
-```
-
-内部顺序：
+## 2. 网络阶段
 
 ```text
 points
   → GeometryEncoder
-  → ParameterHead 得到 params
-  → InteractiveStructureHead 得到 P(K)
-  → 屏蔽数据集范围外的非法 K
-  → predicted_knot_count = posterior_median P(K)
-  → predicted K>0 时 DynamicKnotDecoder 只运行 K+1 个 query；K=0 时跳过
-  → 得到 predicted K 个有序节点
+  → ParameterHead: params
+  → CandidateKnotHead: Kc 个候选
+  → 截断幂贡献特征
+  → InteractivePruningHead: 位置精修、删除建议和 keep 诊断
 ```
 
-关键输出：
+部署从网络读取 `params` 和全部 `refined_candidate_knots`。不按 keep 的 0.5 阈值先删，也不
+读取 CountHead。
+
+## 3. 标准 B 样条硬剔除
+
+给定当前节点集合 `U`：
+
+1. 分别构造 `U\{u_j}`；
+2. 对每个方案重新建立标准开放三次 B 样条基；
+3. 固定 `P0=Q0`、`Pn=Qlast`，重新求解其余全部控制点；
+4. 计算平均欧氏 RMS；
+5. 选择本轮 RMS 最低的单节点删除；
+6. 只有该 RMS `≤ ε` 才接受，否则停止；
+7. 重复直到停止或达到 `min_internal_knots`。
+
+同一轮的所有单节点删除用批量 Cox–de Boor 和批量最小二乘计算；这只减少运行开销，不改变
+“检查全部剩余节点并选真实 RMS 最低者”的规则。
+
+因此每个已接受步骤都有实际几何误差证据。输出包含：
 
 ```text
-params
-count_probabilities
-count_mode_knot_count
-predicted_knot_count
-internal_knots
-knot_mask
-decoded_interval_query_count
+initial/final knots
+initial/final standard B-spline fit
+每轮被删除的节点和值
+每轮所有候选删除 RMS
+RMS trajectory
+threshold_satisfied
 ```
 
-其中：
+这是贪心单节点删除。它保证最终拟合满足阈值，并沿该路径无法再安全删除一个节点；它不保证
+在所有节点子集上找到组合全局最少解。
 
-```text
-decoded_interval_query_count = (
-    predicted_knot_count + 1 if predicted_knot_count > 0 else 0
-)
-```
+## 4. 端点覆盖
 
-它可以直接验证动态解码器没有计算全部数量分支。
-
-## 3. Batch 中的变长节点
-
-假设预测数量为：
-
-```text
-[2,4,2]
-```
-
-解码器实际执行：
-
-```text
-K=2 组：两条样本，各运行 3 个 interval query
-K=4 组：一条样本，运行 5 个 interval query
-```
-
-输出为定宽张量：
-
-```text
-internal_knots = [
-  [u1,u2,0, 0],
-  [u1,u2,u3,u4],
-  [u1,u2,0, 0],
-]
-
-knot_mask = [
-  [1,1,0,0],
-  [1,1,1,1],
-  [1,1,0,0],
-]
-```
-
-标准部署提取：
-
-```python
-valid_knots = internal_knots[knot_mask]
-```
-
-定宽填充只是 batch 存储格式，不产生额外分支计算。
-
-## 4. 标准 B 样条重拟合
-
-对每条曲线只执行一次重拟合。内部节点为：
+最终控制点求解严格施加：
 
 \[
-U_{int}=[u_1,\ldots,u_{\widehat K}].
+P_0=Q_0,\qquad P_{n-1}=Q_{M-1}.
 \]
 
-构造开放三次节点向量：
+因此开放 B 样条覆盖输入首尾点。平滑项只约束未知内部控制点，并正确把固定端点项移到右端；
+ridge 也只作用于未知量。
 
-\[
-U=[0,0,0,0,U_{int},1,1,1,1].
-\]
-
-根据预测参数建立标准 B 样条基矩阵。默认固定首尾控制点：
-
-\[
-P_0=Q_0,\qquad P_{n-1}=Q_{M-1},
-\]
-
-因此开放 B 样条严格满足 \(C(0)=Q_0\) 和 \(C(1)=Q_{M-1}\)。其余控制点求解：
-
-\[
-P^*=\arg\min_P
-\|BP-Q\|_F^2+
-\lambda_s\|D_2P\|_F^2+
-\lambda_r\|P\|_F^2.
-\]
-
-最终得到：
-
-- 标准开放节点向量；
-- \(\widehat K+4\) 个三次 B 样条控制点；
-- 控制多边形；
-- 标准 B 样条重建曲线；
-- 拟合 RMS。
-
-`fit_point_cloud.py` 的网络仍读取训练长度的重采样序列，但最终会把预测参数插值回全部原始有序点，再用全部原始点重拟合控制点。
-
-网络 forward 内的截断幂曲线只是训练代理，标准 B 样条重拟合结果才是部署输出。
-
-## 5. 评估命令
+## 5. Checkpoint 评估
 
 ```powershell
 python scripts/evaluate_checkpoint.py `
-  --checkpoint outputs/interactive_dynamic_v6.pt `
-  --num-samples 128 `
+  --checkpoint outputs/candidate_pruning_v7.pt `
+  --num-samples 2000 `
   --seed 20000 `
-  --batch-size 32 `
-  --json-output outputs/interactive_dynamic_v6_evaluation.json
+  --batch-size 16 `
+  --fit-tolerance 0.005 `
+  --json-output outputs/candidate_pruning_v7_evaluation.json
 ```
 
-对于 v6，`--count-selection auto` 和 `--count-selection network` 等价。显式使用 `--count-selection bic` 会报错，因为 v6 不生成全部数量分支。
+未显式给出 `--fit-tolerance` 时，脚本优先读取
+`checkpoint.deployment_config.error_tolerance`，再读取数据集 canonical tolerance。
 
-这里默认 `seed=20000` 是独立测试集。`seed=10000` 对应训练过程中使用的验证集，只适合复核验证结果，不能作为最终测试成绩。
+重点指标分三组：
 
-## 6. 指标解释
+### 候选能力
 
-### Network forward model
+- true→candidate recall@0.005/0.01/0.02；
+- 最近候选 MAE；
+- 全候选标准 B 样条 RMS 与阈值满足率。
 
-这里报告截断幂训练代理的联合目标和拟合误差，不是最终标准 B 样条误差。
+候选阶段已经不满足阈值时，问题在参数头、候选漏点或候选位置，不应归因于剔除规则。
 
-### Supervised knot count
+### 最终硬部署
 
-- `network count accuracy`：预测数量与 canonical 数量完全相等的比例；
-- `network count MAE`：节点数量绝对误差；
-- `expected count mean`：数量概率分布期望；
-- `network count histogram`：预测数量分布。
-- `categorical/hazard mode histogram`：argmax 众数，仅用于观察后验是否仍有边界倾向；
-- `mean posterior entropy` 和 `mean maximum class probability`：数量分布置信度。
+- 最终阈值满足率；
+- RMS mean/P95/max；
+- 最终节点数 mean/min/max 与直方图；
+- 删除数量和 RMS 轨迹；
+- 端点 RMS/max；
+- 控制点数量。
 
-v6 只有一次数量决策，因此 deployment count 与 network count 相同。
+### 真值节点诊断
 
-### Standard B-spline deployment
+- match precision/recall/F1；
+- matched MAE；
+- 参数 RMSE。
 
-- 最终内部节点数量；
-- 标准 B 样条重拟合 loss/RMS；
-- RMS 的 P95 和最大值，用于发现少量严重失败；
-- 首尾点 RMS 和最大误差；默认端点约束下应接近 0；
-- 平均控制点数量；
-- 零节点和最大节点比例。
+应同时报告多个匹配容差。宽容差加上大量近均匀候选会自然提高 precision，不能单看
+`match@0.02 precision` 判断节点向量恢复是否准确。
 
-### Ground-truth diagnostics
+learned keep 概率、remove/STOP 和删除代价只作为网络诊断，与最终硬保留集合分开报告。
 
-在共享参数域和指定容差下匹配预测节点与 canonical 节点：
-
-- precision：预测节点中正确匹配的比例；
-- recall：canonical 节点中被找到的比例；
-- F1：precision 和 recall 的调和平均；
-- matched MAE：成功匹配节点的位置误差。
-
-低拟合 RMS 不代表节点结构正确，必须同时检查数量和节点匹配指标。
-
-## 7. 可视化
+## 6. 可视化
 
 ```powershell
 python scripts/visualize_result.py `
-  --checkpoint outputs/interactive_dynamic_v6.pt `
+  --checkpoint outputs/candidate_pruning_v7.pt `
   --seed 20000 `
   --sample-index 0 `
-  --output outputs/interactive_dynamic_v6_sample_000.png
+  --fit-tolerance 0.005 `
+  --pruning-view comparison `
+  --dpi 600 `
+  --output outputs/candidate_pruning_v7_sample_000.png
 ```
 
-左图显示采样点、端点、训练代理、标准 B 样条和控制多边形；右图显示数量分布、argmax 众数和最终后验中位数数量。
+`--pruning-view` 的四种取值如下：
 
-## 8. 用户自选点云
+- `all`：保留全部候选节点并重新拟合标准 B 样条；
+- `learned`：按 `keep_probability >= activity_threshold` 选节点后重新拟合；
+- `hard`：从全部候选开始执行 RMS 硬剔除，是默认部署视图；
+- `comparison`：一张图并列显示上述三种标准 B 样条结果及节点决策。
 
-点云必须按照曲线方向排列，支持 `.csv`、`.txt`、`.xyz`、`.json`、`.npy`、`.pt` 和 `.pth`：
+`learned` 是网络剔除能力的诊断，不具备 RMS 硬保证；`hard` 不会先套用 learned mask。
+`--dpi` 控制 PNG 分辨率，论文图片建议使用 600。
+
+## 7. 用户点云
 
 ```powershell
 python scripts/fit_point_cloud.py `
-  --checkpoint outputs/interactive_dynamic_v6.pt `
+  --checkpoint outputs/candidate_pruning_v7.pt `
   --point-cloud data/my_curve.csv `
+  --fit-tolerance 0.005 `
   --json-output outputs/my_curve_fit.json `
   --figure-output outputs/my_curve_fit.png
 ```
 
-CSV 每行一个点：二维为 `x,y`，三维为 `x,y,z`。输入维度必须与 checkpoint 一致，至少需要 4 个点。脚本默认按弦长重采样到 checkpoint 记录的训练点数，也可用 `--num-points` 显式指定；重采样只用于网络输入，最终控制点使用全部原始点重拟合。脚本没有节点真值，因此不报告 precision/recall。若点序相反，可增加 `--reverse-points`。
+支持 `.csv`、`.txt`、`.xyz`、`.json`、`.npy`、`.pt` 和 `.pth`。CSV 每行一个点：二维为
+`x,y`，三维为 `x,y,z`。点序相反时使用 `--reverse-points`。
 
-若原始点数量远低于训练密度，重采样不能补回缺失几何；若预测控制点数大于原始观测数，线性系统在数据意义下也欠定。脚本会对这两种情况报警，此时很低的训练点 RMS 不能证明曲线泛化正确。
+处理顺序：
 
-## 9. 恢复实际坐标
+```text
+加载并检查维度
+  → 可选反转点序
+  → 归一化
+  → 仅为网络重采样
+  → 推理 params 和候选
+  → 按弦长把 params 插值回所有原始点
+  → 在所有原始点上逐节点硬剔除
+  → 在所有原始点上最终重拟合
+  → 控制点恢复到原坐标系
+```
 
-输入归一化为：
-
-\[
-q_{norm}=\frac{q-center}{scale}.
-\]
-
-得到控制点后恢复：
-
-\[
-P=P_{norm}\cdot scale+center.
-\]
-
-节点参数位于 \([0,1]\)，不需要尺度恢复。
-
-## 10. 规划框架的部署边界
-
-规划框架部署时用户仍只提供有序点云，不提供 Boehm 节点、真实节点或初始控制点。系统内部依次完成候选节点生成、冗余控制点求解、节点消冗和最终重拟合。
-
-Boehm 算法只用于训练数据构造。若训练时使用精确 Boehm 冗余表示，而部署时直接使用候选头输出，必须在联合微调阶段混入真实候选头样本，避免训练/部署分布不一致。
+稀疏点经线性重采样不会增加信息。若原始点显著少于训练点数，或最终控制点数接近/超过原始
+观测数，低训练输入 RMS 不能证明真实曲线泛化正确，脚本会明确警告。

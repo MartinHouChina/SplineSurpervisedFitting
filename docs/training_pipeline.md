@@ -1,289 +1,181 @@
-# 数据生成与训练流程
+# v7 数据与训练流程
 
-> 第 1–8 节记录当前已实现的 v6。第 9 节概述下一阶段候选生成与 Boehm 消冗训练协议；该部分尚未进入代码。
+## 1. 优化目标
 
-## 1. 数据生成
-
-每条源曲线按以下步骤生成：
-
-1. 从 5–10 中随机选择源控制点数量；
-2. 生成平滑随机控制多边形；
-3. 生成非均匀开放三次 B 样条节点向量；
-4. 生成非均匀采样参数 `true_params`；
-5. 计算有序采样点并加入坐标噪声；
-6. 对采样点做中心化和尺度归一化。
-
-默认划分：
-
-| 划分 | 数量 | seed | 用途 |
-|---|---:|---:|---|
-| train | 10000/epoch | 42 加 epoch 偏移 | 参数更新；默认每个 epoch 重新生成 |
-| validation | 1000 | 10000 | 固定不变，用于 checkpoint 选择 |
-| test/evaluation | 命令指定，默认 128 | 20000 | 与训练、验证独立的最终报告 |
-
-## 2. Canonical 标签生成
-
-随机生成器使用的源节点数不是可靠监督目标，因为同一条 B 样条曲线可以通过节点插入获得更冗余的等价表示。
-
-因此数据集对源内部节点执行贪心删除：
-
-```text
-从完整源节点集合开始
-  → 分别尝试删除每一个剩余节点
-  → 对每种删除结果重新最小二乘求控制点
-  → 找到重拟合 RMS 最小的删除方案
-  → 若 RMS ≤ canonical_knot_tolerance，则接受删除
-  → 否则停止
-```
-
-默认容差：
-
-```text
-canonical_knot_tolerance = 0.005
-```
-
-最终剩余节点构成：
-
-```text
-true_internal_knots
-true_internal_knot_mask
-true_knot_vector
-true_control_points
-```
-
-同时保留以下诊断字段：
-
-```text
-source_internal_knot_count
-source_num_control_points
-canonical_fit_rms
-```
-
-注意：这里删除的是数据标签中的源节点，不是网络预测节点。
-
-样本在当前 epoch 内缓存。默认训练集切换 epoch 时清空缓存并使用新的确定性 seed 重新生成；验证集不切换 epoch，因此始终固定。
-
-## 3. 单个训练 batch
-
-Trainer 从 batch 中读取：
-
-```text
-points
-chord_params
-true_params
-true_internal_knots
-true_internal_knot_mask
-```
-
-真实节点数量由 mask 计算：
+训练和部署共享同一个归一化欧氏 RMS 阈值 `ε`：
 
 \[
-K^*=\sum_j\mathbf 1[\text{true knot slot }j\text{ valid}].
+\min |U|\quad \text{s.t.}\quad
+\sqrt{\frac1M\sum_i\|C_U(t_i)-q_i\|_2^2}\le\varepsilon.
 \]
 
-训练 forward 根据当前 teacher-forcing 比例选择数量来源：
+源文件里原本有多少节点不是学习目标。Boehm 插入可以在不改变曲线的情况下增加节点，因此
+恢复任意源节点数既不可辨识，也不等于最简表示。
 
-```python
-output = model(
-    points,
-    true_internal_knot_count=true_count,
-    teacher_forcing_ratio=current_ratio,
-)
-```
+## 2. 一条训练样本如何生成
 
-完整步骤：
+1. 在给定范围内随机选择控制点数；三次样条的源内部节点数为 `控制点数-4`。
+2. 生成平滑随机控制多边形和非均匀开放节点向量。
+3. 生成严格递增的非均匀参数，并采样二维或三维曲线。
+4. 加入坐标噪声。
+5. 对点集做中心化和最大半径归一化。
+6. 从源内部节点开始，逐轮尝试删除每一个节点，并用端点约束的标准 B 样条最小二乘重新求解
+   全部控制点。
+7. 选择本轮 RMS 最低的删除；仅当 RMS 不超过 `ε` 时接受。重复直到不可继续删除。
 
-1. GeometryEncoder 产生局部和全局特征；
-2. ParameterHead 预测严格递增 `params`；
-3. InteractiveStructureHead 用 cross-attention 和 self-attention 预测数量分布；
-4. DynamicKnotDecoder 前期接收真实 \(K^*\)，后期逐渐混入网络预测数量；
-5. 当所选 \(K>0\) 时，动态解码器只运行 \(K+1\) 个 interval query 并生成 \(K\) 个有序节点；\(K=0\) 时跳过位置解码；
-6. 构造截断幂设计矩阵；
-7. forward 内可微求解线性拟合系数；
-8. 计算联合损失；
-9. 反向传播、梯度裁剪并执行 AdamW 更新。
-
-teacher count 只决定动态位置解码器运行多少个 interval query，不会替代结构数量监督。InteractiveStructureHead 仍然产生数量概率并计算 categorical cross-entropy。默认前 5 个 epoch 的 teacher-forcing 比例为 1，之后线性降低到 0.5；未使用 teacher 的样本按网络预测数量解码，从而减小训练与验证之间的 exposure gap。
-
-## 4. 损失函数
-
-默认总目标：
-
-\[
-L=L_{fit}+0.05L_t+0.005L_{structure}
-+0.05L_{knot}.
-\]
-
-| 损失 | 具体作用 |
-|---|---|
-| `fit_loss` | 截断幂代理重建点与输入点的均方欧氏距离 |
-| `true_parameter_loss` | 预测参数与真实采样参数的 MSE |
-| `count_loss` | 合法数量类别上的 categorical cross-entropy |
-| `over_count_loss` | 历史兼容项；新训练默认权重为 0 |
-| `knot_position_loss` | 所选真实数量表示与 canonical 有序节点的 Smooth-L1 |
-
-位置损失不需要 Hungarian matching：预测节点和 canonical 节点都已经严格有序、数量相同，可直接逐位置比较。
-
-## 5. 为什么使用渐进 teacher forcing
-
-如果训练一开始就使用错误的预测数量：
-
-- 节点位置张量与真值数量不同；
-- 位置损失难以定义；
-- 结构数量头的早期错误会让动态解码器收到错误的 query 数量。
-
-因此训练前期使用 teacher-conditioned 解码，使数量学习和条件位置学习分别获得稳定监督；后期逐渐使用预测数量，让动态解码器适应部署时可能出现的数量误差。
-
-这不代表验证结果使用了真值。验证阶段调用 `model(points)`，完全使用网络自己的数量预测。
-
-## 6. 验证流程
-
-每个验证 batch 执行：
-
-```python
-output = model(points)
-```
-
-此时：
-
-1. InteractiveStructureHead 预测 `predicted_knot_count`；
-2. DynamicKnotDecoder 在预测 `K>0` 时只运行对应的 `K+1` 个 interval query；预测 `K=0` 时跳过；
-3. 计算预测数量下的拟合和结构指标；
-4. 在共享参数域下，用容差 0.05 匹配预测节点与 canonical 节点。
-
-checkpoint 只在 teacher-forcing 已开始退火后参与排序，默认顺序：
-
-1. 数量 MAE 更低；
-2. 数量准确率更高；
-3. 节点匹配 F1 和 precision 更高；
-4. 匹配节点 MAE 更低；
-5. 最后比较总验证损失。
-
-这避免了严格节点容差偶然选择仍处于 100% teacher forcing 的早期权重。验证和部署的数量决策均为合法范围内的后验中位数；argmax 众数只作为诊断输出。
-
-## 7. 启动训练
-
-默认训练：
-
-```powershell
-python scripts/train.py `
-  --epochs 100 `
-  --output outputs/interactive_dynamic_v6.pt
-```
-
-常用参数：
+最终返回：
 
 ```text
---train-size                   训练样本数，默认 10000
---val-size                     验证样本数，默认 1000
---batch-size                   默认 32
---hidden-dim                   默认 128
---max-knots                    默认 6
---canonical-knot-tolerance     默认 0.005
---structure-attention-heads    默认 4
---structure-count-mode         默认 categorical；hazard 仅用于历史实验
---train-seed                   默认 42
---val-seed                     默认 10000
---resample-train-each-epoch    默认启用；每个 epoch 生成新训练曲线
---teacher-forcing-final        默认 0.5
---teacher-forcing-warmup-epochs 默认 5
---checkpoint-selection-start-epoch 默认在 teacher-forcing 开始退火后
---weight-decay                 默认 1e-4
---lambda-count                 默认 0.005
---lambda-over-count            默认 0
---lambda-knot-position         默认 0.05
---lambda-true-params           默认 0.05
+points                       [M,D]
+chord_params                 [M]
+true_params                  [M]
+true_internal_knots          [Ksource_max]
+true_internal_knot_mask      [Ksource_max]
+true_control_points          padded
+source_internal_knot_count   scalar
+canonical_fit_rms            scalar
+center, scale
 ```
 
-小规模功能检查：
+canonical 是确定性贪心标签，不是全局组合最优证明。
 
-```powershell
-python scripts/train.py `
-  --epochs 2 `
-  --train-size 128 `
-  --val-size 64 `
-  --hidden-dim 32 `
-  --output outputs/v6_debug.pt
+## 3. 默认 4–20 节点实验
+
+| 配置 | 值 |
+|---|---:|
+| 源控制点 | 8–24 |
+| 源内部节点 | 4–20 |
+| 候选节点 `Kc` | 28 |
+| 点数 | 192 |
+| 噪声标准差 | 0.001 |
+| RMS 阈值 | 0.005 |
+| 训练 / 验证 seed | 42 / 10000 |
+
+canonical 删除后允许得到 0–20 个节点，因为“源范围为 4–20”和“阈值下最简数量”是两个
+不同概念。不要再把最小合法预测数量强制夹到 4。
+
+高 K canonical 化需要大量标准 B 样条重拟合。训练集默认固定并在当前进程中缓存；验证集
+始终固定。`--resample-train-each-epoch` 会每个 epoch 重新支付标签生成成本，通常不建议。
+
+## 4. 两阶段训练
+
+### 4.1 候选预训练
+
+默认前 20 个 epoch 不训练 keep、remove/STOP 和删除代价输出，只优化：
+
+- 真实参数监督；
+- true→candidate 单向覆盖；
+- 候选间轻量排斥；
+- 匹配节点的位置精修；
+- 全候选截断幂拟合；
+- 超过 `ε` 的全候选拟合惩罚。
+
+单向覆盖允许额外候选存在，直接对应“先保证召回，再消冗”。
+
+### 4.2 联合训练
+
+联合阶段增加：
+
+- canonical keep 辅助 BCE；
+- 多正例 remove/STOP 动作损失；
+- 删除代价回归；
+- 候选 self-attention 与位置精修。
+
+若多个候选均可视为冗余，动作损失优化这些正确删除动作的总概率：
+
+\[
+L_{action}=-\log\sum_{j\in\mathcal S}P(a=j).
+\]
+
+没有可删除动作时监督 STOP。`count_consistency` 默认权重为 0；它不是最终数量来源。
+
+截断幂删除增量只作为廉价输入特征。训练实现还使用标准 B 样条单节点删除 RMS 教师来监督
+删除是否跨越阈值；部署时仍会重新计算，不信任网络预测。
+
+## 5. 损失尺度
+
+覆盖误差除以候选匹配容差，拟合误差除以 `ε²`，避免数值约为 `1e-4` 的拟合项被分类项
+淹没：
+
+\[
+L_{fit}=\frac{\operatorname{MSE}_{Euclidean}}{\varepsilon^2},\qquad
+L_{violation}=\max(0,\operatorname{RMS}/\varepsilon-1)^2.
+\]
+
+默认联合权重：
+
+| 项 | 权重 |
+|---|---:|
+| normalized fit | 0.25 |
+| threshold violation | 5.0 |
+| true parameters | 0.05 |
+| candidate coverage | 5.0 |
+| candidate repulsion | 0.05 |
+| keep auxiliary | 0.25 |
+| remove/STOP | 1.0 |
+| refined knot position | 2.0 |
+| deletion cost | 0.05 |
+| count consistency | 0.0 |
+
+## 6. Checkpoint 选择
+
+v7 不再以 `count_acc` 选权重。当前字典序为：
+
+```text
+candidate recall
+→ candidate nearest MAE
+→ safe-action top-1 / unsafe-delete / false-STOP
+→ learned keep 集合的节点 F1/precision/MAE（诊断）
+→ validation loss
 ```
 
-小规模命令仅用于检查代码链路，不代表正式性能。
+最佳权重和最后权重分别保存，防止再次出现早期 checkpoint 被单一指标误选而无法复核的问题。
+最终模型仍必须用独立 seed 的硬部署指标验收。
 
-### 4–20 个源内部节点
-
-三次 B 样条的内部节点数等于控制点数减 4，因此 4–20 个源节点对应 8–24 个控制点。在线 canonical 贪心删除在该范围非常慢，并且删除后的数量不保证仍为 4–20。若实验目标是先训练精确的“源节点 4–20”范围，应关闭 canonical 删除并使用快速路径：
+## 7. 正式训练命令
 
 ```powershell
-python scripts/train.py `
+python scripts/train_candidate_pruning.py `
   --epochs 150 `
+  --candidate-pretrain-epochs 20 `
   --train-size 10000 `
   --val-size 2000 `
   --batch-size 16 `
   --log-every-batches 20 `
   --min-control-points 8 `
   --max-control-points 24 `
-  --max-knots 20 `
+  --candidate-knots 28 `
   --num-points 192 `
-  --canonical-knot-tolerance 0 `
-  --structure-count-mode categorical `
-  --resample-train-each-epoch `
-  --teacher-forcing-warmup-epochs 10 `
-  --teacher-forcing-final 0.25 `
-  --lambda-over-count 0 `
-  --knot-match-tolerance 0.02 `
-  --output outputs/knot_4_20_categorical.pt
+  --fit-tolerance 0.005 `
+  --candidate-match-tolerance 0.02 `
+  --output outputs/candidate_pruning_v7.pt
 ```
 
-`canonical-knot-tolerance=0` 会直接使用生成器的源节点和归一化源控制点，不执行逐节点最小二乘删除，因此应保留每 epoch 重采样来减少对固定曲线的记忆。该模式速度快、数量范围准确，并自动把合法预测范围设为 4–20。
+小规模链路检查：
 
-但“源节点数量”并不是由点云唯一决定的：Boehm 插入可增加节点而不改变曲线。categorical 修复解决的是概率分解与非法边界塌缩，不保证任意源表示都可被精确反演。若目标是几何上可辨识的最简结构，应使用 canonical 标签或第 9 节的冗余输入消冗任务。
-
-## 8. checkpoint 内容
-
-checkpoint 保存：
-
-- `model_state_dict`；
-- `model_config`；
-- `dataset_config`；
-- `loss_config`；
-- `training_config`；
-- 最佳 epoch 和结构指标；
-- 完整训练历史；
-- objective version。
-
-评估脚本优先使用 checkpoint 内的数据配置，保证标签容差和训练设置一致。
-
-## 9. 规划中的候选生成与 Boehm 消冗训练
-
-下一阶段不再要求一个节点头同时决定数量和全部连续位置，而是分为共享编码器下的两个头：
-
-```text
-CandidateKnotHead：由真实最简节点监督，优化候选覆盖率
-InteractivePruningHead：由 Boehm 冗余和删除误差监督，优化保留精度
+```powershell
+python scripts/train_candidate_pruning.py `
+  --epochs 2 `
+  --candidate-pretrain-epochs 1 `
+  --train-size 32 `
+  --val-size 16 `
+  --num-points 64 `
+  --min-control-points 4 `
+  --max-control-points 8 `
+  --candidate-knots 8 `
+  --hidden-dim 32 `
+  --encoder-layers 1 `
+  --output outputs/candidate_pruning_smoke.pt
 ```
 
-### 9.1 标签与输入分离
+该命令只验证代码链路，不代表模型精度。
 
-```text
-无噪声最简样条 → 真实节点标签 U*
-无噪声最简样条 + Boehm插入 → 消冗监督
-独立加入噪声/非均匀采样 → 网络点云输入 Q
-```
+## 8. 建议验收项
 
-随机 Boehm 插入位置不能作为 CandidateKnotHead 的回归标签，因为插入不改变点云且位置不由几何决定。候选头只学习覆盖真实最简节点。
-
-### 9.2 三阶段训练
-
-1. **候选预训练**：热力图、offset、单向 coverage 和轻量 repulsion；以 `candidate recall@0.02` 为 checkpoint 主指标。
-2. **消冗预训练**：输入精确及扰动 Boehm 冗余表示，监督 keep/remove、删除误差和位置精修。
-3. **联合微调**：逐步从 Boehm 理想候选切换到 CandidateKnotHead 真实输出，同时优化最终节点 F1 和标准 B 样条拟合。
-
-### 9.3 4–20 节点建议
-
-```text
-真实节点范围：4–20
-候选预算 Kc：24或28
-点云采样数：128–192，推荐192
-主匹配容差：0.01和0.02
-```
-
-最终数量来自 keep probability 的保留数量，不使用独立 CountHead。详细损失、token 特征和混合比例见 [proposal_pruning_framework.md](proposal_pruning_framework.md)。
+- candidate recall@0.02 ≥ 0.98；
+- candidate recall@0.01 ≥ 0.90；
+- 全候选标准 B 样条阈值满足率 ≥ 0.99；
+- 硬剔除后阈值满足率 ≥ 0.99；
+- 端点最大误差 < `1e-6`；
+- 报告最终 RMS mean/P95/max 与节点数分布；
+- 同时报告 match@0.005/0.01/0.02，避免宽容差和冗余节点虚增 precision。
