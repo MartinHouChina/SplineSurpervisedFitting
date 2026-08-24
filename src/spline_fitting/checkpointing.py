@@ -7,12 +7,8 @@ from .models.spline_network import SplineFittingNetwork
 
 
 CROSS_ATTENTION_OBJECTIVE_VERSION = "cross_attention_true_params_hard_concrete_v1"
-INDEPENDENT_QUERY_V1_OBJECTIVE_VERSION = (
-    "independent_query_supervised_hard_concrete_v1"
-)
-INDEPENDENT_QUERY_V2_OBJECTIVE_VERSION = (
-    "independent_query_supervised_hard_concrete_v2"
-)
+INDEPENDENT_QUERY_V1_OBJECTIVE_VERSION = "independent_query_supervised_hard_concrete_v1"
+INDEPENDENT_QUERY_V2_OBJECTIVE_VERSION = "independent_query_supervised_hard_concrete_v2"
 PREVIOUS_OBJECTIVE_VERSION = "independent_query_two_stage_hard_concrete_v3"
 COUNT_CONDITIONED_V4_OBJECTIVE_VERSION = "count_conditioned_structured_knots_v4"
 COUNT_CONDITIONED_V5_OBJECTIVE_VERSION = "canonical_ordinal_count_conditioned_v5"
@@ -20,7 +16,8 @@ COUNT_CONDITIONED_V5_OBJECTIVE_VERSION = "canonical_ordinal_count_conditioned_v5
 # it: changing its meaning would silently reinterpret existing v6 checkpoints.
 CURRENT_OBJECTIVE_VERSION = "interactive_structure_dynamic_knots_v6"
 CANDIDATE_PRUNING_OBJECTIVE_VERSION = "candidate_pruning_minimal_rms_v7"
-LATEST_OBJECTIVE_VERSION = CANDIDATE_PRUNING_OBJECTIVE_VERSION
+ONE_SHOT_PRUNING_OBJECTIVE_VERSION = "candidate_pruning_one_shot_teacher_v8"
+LATEST_OBJECTIVE_VERSION = ONE_SHOT_PRUNING_OBJECTIVE_VERSION
 
 
 LEGACY_LOSS_CONFIG: dict[str, Any] = {
@@ -170,6 +167,33 @@ CANDIDATE_PRUNING_LOSS_CONFIG: dict[str, Any] = {
     "deletion_control_ridge": 0.0,
 }
 
+ONE_SHOT_PRUNING_LOSS_CONFIG: dict[str, Any] = {
+    "weights": {
+        **CANDIDATE_PRUNING_LOSS_CONFIG["weights"],
+        "fit": 0.0,
+        "threshold_violation": 0.0,
+        "true_parameter": 0.0,
+        "candidate_coverage": 0.0,
+        "candidate_repulsion": 0.0,
+        "keep": 1.0,
+        "remove_action": 0.0,
+        "deletion_cost": 0.0,
+        "teacher_risk": 0.5,
+        "teacher_count": 2.0,
+        "complexity": 0.25,
+    },
+    **{
+        key: value
+        for key, value in CANDIDATE_PRUNING_LOSS_CONFIG.items()
+        if key != "weights"
+    },
+    "positive_keep_weight": 1.0,
+    "one_shot_teacher": True,
+    "straight_through_keep_gate": True,
+    "surrogate_selection_role": "diagnostic_only",
+    "teacher_mask_loss": "unweighted_bce_plus_soft_dice",
+}
+
 
 def migrate_model_config(
     checkpoint: Mapping[str, Any],
@@ -185,7 +209,9 @@ def migrate_model_config(
     config = dict(checkpoint["model_config"])
     if "structure_mode" not in config:
         objective_version = checkpoint.get("objective_version")
-        if objective_version == CANDIDATE_PRUNING_OBJECTIVE_VERSION:
+        if objective_version == ONE_SHOT_PRUNING_OBJECTIVE_VERSION:
+            config["structure_mode"] = "candidate_pruning_one_shot"
+        elif objective_version == CANDIDATE_PRUNING_OBJECTIVE_VERSION:
             config["structure_mode"] = "candidate_pruning"
         elif objective_version == CURRENT_OBJECTIVE_VERSION:
             config["structure_mode"] = "interactive_dynamic"
@@ -198,8 +224,7 @@ def migrate_model_config(
             config["structure_mode"] = "hard_concrete"
     config.setdefault("count_attention_heads", 4)
     is_v5 = (
-        checkpoint.get("objective_version")
-        == COUNT_CONDITIONED_V5_OBJECTIVE_VERSION
+        checkpoint.get("objective_version") == COUNT_CONDITIONED_V5_OBJECTIVE_VERSION
     )
     config.setdefault(
         "count_head_mode",
@@ -207,7 +232,10 @@ def migrate_model_config(
     )
     config.setdefault("count_query_count", 4)
     config.setdefault("structure_attention_heads", 4)
-    if config["structure_mode"] == "candidate_pruning":
+    if config["structure_mode"] in {
+        "candidate_pruning",
+        "candidate_pruning_one_shot",
+    }:
         config.setdefault("pruning_residual_bandwidth", 0.05)
         config.setdefault("pruning_initial_keep_probability", 0.9)
     if config["structure_mode"] == "interactive_dynamic":
@@ -245,15 +273,14 @@ def migrate_model_config(
             if checkpoint.get("objective_version")
             in {
                 CANDIDATE_PRUNING_OBJECTIVE_VERSION,
+                ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
                 CURRENT_OBJECTIVE_VERSION,
                 COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
             }
             else "raw_differences"
         ),
     )
-    legacy = (
-        config["structure_mode"] == "hard_concrete" and "gate_mode" not in config
-    )
+    legacy = config["structure_mode"] == "hard_concrete" and "gate_mode" not in config
     if legacy:
         config["gate_mode"] = "legacy_soft"
         config["activity_use_local_context"] = False
@@ -286,13 +313,12 @@ def migrate_model_config(
         # v1 and all earlier checkpoints allowed fit gradients through the
         # gate. Incomplete v2/v3 configs receive stop-gradient behavior;
         # historical resumed training keeps its exact optimization semantics.
-        config["detach_activity_gate_for_fit"] = (
-            checkpoint.get("objective_version")
-            in {
-                PREVIOUS_OBJECTIVE_VERSION,
-                INDEPENDENT_QUERY_V2_OBJECTIVE_VERSION,
-            }
-        )
+        config["detach_activity_gate_for_fit"] = checkpoint.get(
+            "objective_version"
+        ) in {
+            PREVIOUS_OBJECTIVE_VERSION,
+            INDEPENDENT_QUERY_V2_OBJECTIVE_VERSION,
+        }
     if "compute_first_derivative" not in config:
         saved_weights = checkpoint.get("loss_config", {}).get("weights", {})
         if "orthogonal" in saved_weights:
@@ -303,6 +329,7 @@ def migrate_model_config(
             needs_derivative = checkpoint.get("objective_version") not in {
                 CURRENT_OBJECTIVE_VERSION,
                 CANDIDATE_PRUNING_OBJECTIVE_VERSION,
+                ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
                 COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
                 COUNT_CONDITIONED_V4_OBJECTIVE_VERSION,
                 PREVIOUS_OBJECTIVE_VERSION,
@@ -326,6 +353,7 @@ def migrate_loss_config(
     no_orthogonal_objective = objective_version in {
         CURRENT_OBJECTIVE_VERSION,
         CANDIDATE_PRUNING_OBJECTIVE_VERSION,
+        ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
         COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
         COUNT_CONDITIONED_V4_OBJECTIVE_VERSION,
         PREVIOUS_OBJECTIVE_VERSION,
@@ -336,6 +364,8 @@ def migrate_loss_config(
     if assumed:
         if legacy:
             default_config = LEGACY_LOSS_CONFIG
+        elif objective_version == ONE_SHOT_PRUNING_OBJECTIVE_VERSION:
+            default_config = ONE_SHOT_PRUNING_LOSS_CONFIG
         elif objective_version == CANDIDATE_PRUNING_OBJECTIVE_VERSION:
             default_config = CANDIDATE_PRUNING_LOSS_CONFIG
         elif current_objective:
@@ -357,11 +387,19 @@ def migrate_loss_config(
         config = deepcopy(default_config)
     else:
         config = deepcopy(checkpoint["loss_config"])
-        if objective_version == CANDIDATE_PRUNING_OBJECTIVE_VERSION:
+        if objective_version in {
+            CANDIDATE_PRUNING_OBJECTIVE_VERSION,
+            ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+        }:
+            defaults = (
+                ONE_SHOT_PRUNING_LOSS_CONFIG
+                if objective_version == ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+                else CANDIDATE_PRUNING_LOSS_CONFIG
+            )
             weights = config.setdefault("weights", {})
-            for name, value in CANDIDATE_PRUNING_LOSS_CONFIG["weights"].items():
+            for name, value in defaults["weights"].items():
                 weights.setdefault(name, value)
-            for name, value in CANDIDATE_PRUNING_LOSS_CONFIG.items():
+            for name, value in defaults.items():
                 if name != "weights":
                     config.setdefault(name, value)
             return config, assumed

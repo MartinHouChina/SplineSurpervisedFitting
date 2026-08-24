@@ -54,6 +54,78 @@ def resolve_fit_tolerance(
     return tolerance
 
 
+def candidate_mode_flags(
+    checkpoint: dict[str, object], model_config: dict[str, object]
+) -> tuple[bool, bool]:
+    structure = str(model_config.get("structure_mode", "")).lower()
+    objective = str(checkpoint.get("objective_version", "")).lower()
+    one_shot = (
+        structure == "candidate_pruning_one_shot"
+        or "candidate_pruning_one_shot" in objective
+    )
+    return one_shot or structure == "candidate_pruning", one_shot
+
+
+def one_shot_selection(
+    output: dict[str, torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor, str]:
+    probabilities = output["keep_probability"]
+    if probabilities.shape != output["internal_knots"].shape:
+        raise ValueError("keep_probability and internal_knots must share [B,K]")
+    if "learned_keep_mask" in output:
+        mask = output["learned_keep_mask"]
+        if mask.shape != probabilities.shape:
+            raise ValueError("learned_keep_mask must share shape [B,K]")
+        if mask.dtype != torch.bool:
+            if mask.is_floating_point() and not torch.isfinite(mask).all():
+                raise ValueError("learned_keep_mask must contain only finite values")
+            if not torch.all((mask == 0) | (mask == 1)):
+                raise ValueError("learned_keep_mask must be Boolean or strictly 0/1")
+        mask = mask.to(torch.bool)
+        source = "learned_keep_mask"
+    else:
+        mask = probabilities >= 0.5
+        source = "keep_probability>=0.5_fallback"
+    adaptive = output.get("adaptive_keep_threshold")
+    if adaptive is None:
+        adaptive = output.get("adaptive_keep_logit_threshold")
+    if adaptive is None:
+        adaptive = probabilities.new_full((probabilities.shape[0],), float("nan"))
+    else:
+        adaptive = adaptive.reshape(probabilities.shape[0], -1)
+        if adaptive.shape[1] != 1:
+            raise ValueError("adaptive_keep_threshold must have one value per curve")
+        adaptive = adaptive[:, 0]
+    return mask, adaptive, source
+
+
+def refit_one_shot_full_resolution(
+    output: dict[str, torch.Tensor],
+    parameters: torch.Tensor,
+    points: torch.Tensor,
+    *,
+    degree: int,
+    smoothness_weight: float,
+    control_ridge: float,
+) -> tuple[HardGatedBSplineFit, torch.Tensor, torch.Tensor, str]:
+    """Apply v8's learned mask and refit exactly once at source resolution."""
+    mask, adaptive_threshold, source = one_shot_selection(output)
+    selected_output = {
+        "params": parameters.unsqueeze(0),
+        "internal_knots": output["internal_knots"],
+        "knot_mask": mask,
+    }
+    deployed = refit_model_output_as_bsplines(
+        selected_output,
+        points,
+        degree=degree,
+        smoothness_weight=smoothness_weight,
+        control_ridge=control_ridge,
+        interpolate_endpoints=True,
+    )[0]
+    return deployed, mask[0], adaptive_threshold[0], source
+
+
 def pruning_result_as_deployed_fit(
     result: MinimalKnotPruningResult,
     *,
@@ -101,7 +173,9 @@ def _plot_result(
         axis.plot(*control_points.T, "o-", alpha=0.5, label="control polygon")
     else:
         figure, axis = plt.subplots(figsize=(8, 6))
-        axis.scatter(source_points[:, 0], source_points[:, 1], s=14, label="input points")
+        axis.scatter(
+            source_points[:, 0], source_points[:, 1], s=14, label="input points"
+        )
         axis.scatter(
             source_points[[0, -1], 0],
             source_points[[0, -1], 1],
@@ -140,7 +214,15 @@ def main() -> None:
         default=None,
         help="Model input length; defaults to the checkpoint training length.",
     )
-    parser.add_argument("--activity-threshold", type=float, default=None)
+    parser.add_argument(
+        "--activity-threshold",
+        type=float,
+        default=None,
+        help=(
+            "Historical activity threshold. For v8 it is ignored by deployment; "
+            "the learned mask (or centered keep probability >= 0.5 fallback) is used."
+        ),
+    )
     parser.add_argument("--smoothness-weight", type=float, default=1e-6)
     parser.add_argument("--control-ridge", type=float, default=0.0)
     parser.add_argument(
@@ -148,9 +230,10 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Normalized RMS limit for candidate_pruning. Defaults to "
-            "deployment_config.error_tolerance, then the dataset canonical "
-            "knot tolerance stored in the checkpoint."
+            "Normalized RMS limit for v7 hard candidate pruning. For v8 it is "
+            "reporting-only: it measures satisfaction and never changes the learned "
+            "one-shot mask. Defaults to deployment_config.error_tolerance, then the "
+            "dataset canonical knot tolerance stored in the checkpoint."
         ),
     )
     parser.add_argument(
@@ -191,9 +274,9 @@ def main() -> None:
     model_points = resample_ordered_point_cloud(source_points, model_point_count)
     normalized = normalize_ordered_point_cloud(model_points)
     source_chord = normalize_ordered_point_cloud(source_points)["chord_params"]
-    source_normalized_points = (
-        source_points - normalized["center"]
-    ) / normalized["scale"]
+    source_normalized_points = (source_points - normalized["center"]) / normalized[
+        "scale"
+    ]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     points = normalized["points"].unsqueeze(0).to(device)
     model.to(device).eval()
@@ -205,6 +288,9 @@ def main() -> None:
     )
     model.set_activity_threshold(threshold)
     structure_mode = model_config.get("structure_mode", "hard_concrete")
+    candidate_pruning, candidate_one_shot = candidate_mode_flags(
+        checkpoint, model_config
+    )
     count_selection = args.count_selection
     if count_selection == "auto":
         count_selection = (
@@ -228,9 +314,9 @@ def main() -> None:
             )
         elif legacy_checkpoint:
             deployment_output = dict(output)
-            deployment_output["activity_gate"] = (
-                output["activity"] >= threshold
-            ).to(output["activity"].dtype)
+            deployment_output["activity_gate"] = (output["activity"] >= threshold).to(
+                output["activity"].dtype
+            )
         else:
             deployment_output = output
         source_parameters = interpolate_parameters_by_chord(
@@ -240,7 +326,24 @@ def main() -> None:
         )
         full_resolution_points = source_normalized_points.unsqueeze(0).to(device)
         pruning_result: MinimalKnotPruningResult | None = None
-        if structure_mode == "candidate_pruning":
+        one_shot_mask: torch.Tensor | None = None
+        adaptive_keep_threshold: torch.Tensor | None = None
+        one_shot_selection_source: str | None = None
+        if candidate_one_shot:
+            (
+                deployed,
+                one_shot_mask,
+                adaptive_keep_threshold,
+                one_shot_selection_source,
+            ) = refit_one_shot_full_resolution(
+                output,
+                source_parameters,
+                full_resolution_points,
+                degree=model.degree,
+                smoothness_weight=args.smoothness_weight,
+                control_ridge=args.control_ridge,
+            )
+        elif candidate_pruning:
             # The learned keep probability is diagnostic only.  Actual
             # deployment starts from every proposed knot, refits on the
             # original-resolution point cloud, and verifies every deletion.
@@ -283,18 +386,14 @@ def main() -> None:
             flush=True,
         )
     normalized_start_distance = float(
-        (
-            deployed.reconstructed_points[0] - full_resolution_points[0, 0]
-        ).norm().cpu()
+        (deployed.reconstructed_points[0] - full_resolution_points[0, 0]).norm().cpu()
     )
     normalized_end_distance = float(
-        (
-            deployed.reconstructed_points[-1] - full_resolution_points[0, -1]
-        ).norm().cpu()
+        (deployed.reconstructed_points[-1] - full_resolution_points[0, -1]).norm().cpu()
     )
 
     report = {
-        "schema_version": 3,
+        "schema_version": 4,
         "checkpoint": str(args.checkpoint),
         "point_cloud": str(args.point_cloud),
         "point_count": int(source_points.shape[0]),
@@ -302,10 +401,14 @@ def main() -> None:
         "point_dim": int(source_points.shape[1]),
         "reversed": bool(args.reverse_points),
         "structure_mode": structure_mode,
-        "count_selection": count_selection,
+        "count_selection": (
+            "learned_one_shot_mask" if candidate_one_shot else count_selection
+        ),
         "deployment_method": (
-            "hard_standard_bspline_rms_pruning"
-            if structure_mode == "candidate_pruning"
+            "learned_one_shot_mask_single_standard_bspline_refit"
+            if candidate_one_shot
+            else "hard_standard_bspline_rms_pruning"
+            if candidate_pruning
             else "legacy_structure_selection"
         ),
         "degree": int(model.degree),
@@ -333,6 +436,35 @@ def main() -> None:
             normalized_end_distance * float(scale)
         ),
     }
+    if candidate_one_shot:
+        assert one_shot_mask is not None
+        assert adaptive_keep_threshold is not None
+        adaptive_value = float(adaptive_keep_threshold.detach().cpu())
+        report["candidate_internal_knot_count"] = int(
+            output["internal_knots"].shape[-1]
+        )
+        report["candidate_internal_knots"] = (
+            output["internal_knots"][0].detach().cpu().tolist()
+        )
+        report["learned_keep_mask"] = one_shot_mask.detach().cpu().tolist()
+        report["one_shot_selection_source"] = one_shot_selection_source
+        report["keep_probability_cutoff"] = 0.5
+        report["activity_threshold_cli_used_for_selection"] = False
+        report["fit_tolerance_used_for_selection"] = False
+        report["adaptive_keep_logit_threshold"] = (
+            adaptive_value if math.isfinite(adaptive_value) else None
+        )
+        report["fit_tolerance_normalized"] = fit_tolerance
+        report["fit_tolerance_original_scale"] = fit_tolerance * float(scale)
+        report["fit_tolerance_satisfied"] = (
+            float(deployed.fit_rmse.cpu()) <= fit_tolerance
+        )
+        report["standard_refit_count"] = 1
+        report["deployment_standard_refit_count"] = 1
+        report["model_forward_internal_proxy_solves_counted_as_deployment_refits"] = (
+            False
+        )
+        report["hard_pruning_used"] = False
     if pruning_result is not None:
         report["fit_tolerance_normalized"] = fit_tolerance
         report["fit_tolerance_original_scale"] = fit_tolerance * float(scale)
@@ -355,9 +487,7 @@ def main() -> None:
         report["first_rejected_deletion"] = (
             {
                 "knot": float(rejected_step.removed_knot.cpu()),
-                "candidate_rmse_normalized": float(
-                    rejected_step.candidate_rmse.cpu()
-                ),
+                "candidate_rmse_normalized": float(rejected_step.candidate_rmse.cpu()),
             }
             if rejected_step is not None
             else None
@@ -367,9 +497,7 @@ def main() -> None:
             output["count_probabilities"][0].detach().cpu().tolist()
         )
         report["posterior_mode_internal_knot_count"] = int(
-            output.get(
-                "count_mode_knot_count", output["predicted_knot_count"]
-            )[0]
+            output.get("count_mode_knot_count", output["predicted_knot_count"])[0]
         )
     if "activity" in output:
         report["activity"] = output["activity"][0].detach().cpu().tolist()
@@ -395,6 +523,28 @@ def main() -> None:
     print(f"  points / dimension: {source_points.shape[0]} / {source_points.shape[1]}")
     print(f"  resampled model points: {model_points.shape[0]}")
     print(f"  predicted internal knots: {deployed.retained_count}")
+    if candidate_one_shot:
+        assert one_shot_mask is not None
+        assert adaptive_keep_threshold is not None
+        print(
+            "  one-shot learned selection: "
+            f"{int(output['internal_knots'].shape[-1])} candidates -> "
+            f"{deployed.retained_count} retained"
+        )
+        print(f"  selection source: {one_shot_selection_source}")
+        print(
+            "  adaptive raw-importance logit beta: "
+            f"{float(adaptive_keep_threshold.detach().cpu()):.9e}"
+        )
+        print("  final keep-probability cutoff: 0.5")
+        print(f"  normalized fit tolerance: {fit_tolerance:.9e}")
+        print(
+            f"  tolerance satisfied: {float(deployed.fit_rmse.cpu()) <= fit_tolerance}"
+        )
+        print(
+            "  deployment standard B-spline refits: 1; hard pruning: False "
+            "(network-forward proxy solves are not counted as deployment refits)"
+        )
     if pruning_result is not None:
         print(
             "  hard RMS pruning: "
@@ -402,10 +552,7 @@ def main() -> None:
             f"{pruning_result.final_count} retained"
         )
         print(f"  normalized fit threshold: {fit_tolerance:.9e}")
-        print(
-            "  threshold satisfied: "
-            f"{pruning_result.threshold_satisfied}"
-        )
+        print(f"  threshold satisfied: {pruning_result.threshold_satisfied}")
         print(
             "  normalized RMS trajectory: "
             f"{pruning_result.rms_trajectory.cpu().tolist()}"

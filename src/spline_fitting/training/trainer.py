@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
+import sys
+import time
 from typing import Callable
 
 import torch
 from torch.utils.data import DataLoader
 
+from ..evaluation.bspline_inference import refit_hard_gated_bspline_batch
 from ..evaluation.knot_diagnostics import activity_statistics, match_internal_knots
 
 
@@ -23,6 +26,8 @@ class Trainer:
         activity_threshold: float = 0.5,
         knot_match_tolerance: float = 0.05,
         log_every_batches: int = 25,
+        deployment_pass_rate_target: float = 0.97,
+        show_progress: bool = True,
     ) -> None:
         self.model = model.to(device)
         self.loss_fn = loss_fn.to(device)
@@ -36,6 +41,45 @@ class Trainer:
         if knot_match_tolerance < 0.0:
             raise ValueError("knot_match_tolerance must be non-negative")
         self.knot_match_tolerance = float(knot_match_tolerance)
+        if not 0.0 <= deployment_pass_rate_target <= 1.0:
+            raise ValueError("deployment_pass_rate_target must lie in [0, 1]")
+        self.deployment_pass_rate_target = float(deployment_pass_rate_target)
+        self.show_progress = bool(show_progress)
+
+    @staticmethod
+    def _format_eta(seconds: float) -> str:
+        if seconds == float("inf") or seconds < 0.0:
+            return "--:--"
+        total_seconds = int(round(seconds))
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+        return (
+            f"{hours:d}:{minutes:02d}:{secs:02d}"
+            if hours
+            else f"{minutes:02d}:{secs:02d}"
+        )
+
+    @classmethod
+    def _progress_line(
+        cls,
+        *,
+        phase: str,
+        completed: int,
+        total: int,
+        loss: float,
+        elapsed: float,
+        width: int = 28,
+    ) -> str:
+        fraction = completed / max(total, 1)
+        filled = min(width, max(0, int(round(width * fraction))))
+        rate = completed / elapsed if elapsed > 0.0 else 0.0
+        eta = (total - completed) / rate if rate > 0.0 else float("inf")
+        bar = "#" * filled + "-" * (width - filled)
+        return (
+            f"  {phase:<10} [{bar}] {completed:>4}/{total:<4} "
+            f"{100.0 * fraction:6.2f}% | loss={loss:.6f} | "
+            f"{rate:5.2f} batch/s | ETA {cls._format_eta(eta)}"
+        )
 
     @staticmethod
     def _mean_metrics(accumulator: dict[str, float], samples: int) -> dict[str, float]:
@@ -90,13 +134,9 @@ class Trainer:
         if candidate_required.issubset(metrics):
             matched = metrics["candidate_match_count"]
             target = metrics["candidate_target_count"]
-            metrics["candidate_recall"] = (
-                matched / target if target > 0.0 else 1.0
-            )
+            metrics["candidate_recall"] = matched / target if target > 0.0 else 1.0
             metrics["candidate_nearest_mae"] = (
-                metrics["candidate_nearest_error_sum"] / target
-                if target > 0.0
-                else 0.0
+                metrics["candidate_nearest_error_sum"] / target if target > 0.0 else 0.0
             )
         return metrics
 
@@ -108,11 +148,15 @@ class Trainer:
         activity_scale: float,
         binary_scale: float,
         teacher_forcing_ratio: float = 1.0,
+        compute_deployment_metrics: bool = False,
     ) -> dict[str, float]:
         self.model.train(training)
         totals: dict[str, float] = defaultdict(float)
 
         phase = "train" if training else "validation"
+        total_batches = len(loader)
+        progress_started_at = time.perf_counter()
+        interactive_progress = self.show_progress and sys.stdout.isatty()
         for batch_index, batch in enumerate(loader, start=1):
             points = batch["points"].to(self.device)
             chord_params = batch["chord_params"].to(self.device)
@@ -130,6 +174,11 @@ class Trainer:
                 if true_internal_knot_mask is not None
                 else None
             )
+            teacher_kwargs = {
+                key: value.to(self.device)
+                for key, value in batch.items()
+                if key.startswith("teacher_") and isinstance(value, torch.Tensor)
+            }
 
             with torch.set_grad_enabled(training):
                 teacher_count = (
@@ -142,9 +191,7 @@ class Trainer:
                 output = self.model(
                     points,
                     true_internal_knot_count=teacher_count,
-                    teacher_forcing_ratio=(
-                        teacher_forcing_ratio if training else 0.0
-                    ),
+                    teacher_forcing_ratio=(teacher_forcing_ratio if training else 0.0),
                 )
                 losses = self.loss_fn(
                     output,
@@ -157,6 +204,7 @@ class Trainer:
                     activity_scale=activity_scale,
                     binary_scale=binary_scale,
                     activity_threshold=self.activity_threshold,
+                    **teacher_kwargs,
                 )
                 if "knot_mask" in output:
                     knot_mask_float = output["knot_mask"].to(points.dtype)
@@ -185,6 +233,48 @@ class Trainer:
                     self.optimizer.step()
 
             batch_size = points.shape[0]
+            deployment_metrics: dict[str, torch.Tensor] = {}
+            if compute_deployment_metrics:
+                if training:
+                    raise ValueError("deployment metrics are validation-only")
+                if getattr(self.model, "structure_mode", None) != (
+                    "candidate_pruning_one_shot"
+                ):
+                    raise ValueError(
+                        "deployment metrics require candidate_pruning_one_shot"
+                    )
+                hard_mask = output.get("learned_keep_mask", output.get("knot_mask"))
+                if hard_mask is None:
+                    raise KeyError("one-shot output is missing learned_keep_mask")
+                deployed = refit_hard_gated_bspline_batch(
+                    parameters=output["params"],
+                    candidate_knots=output["internal_knots"],
+                    hard_gates=hard_mask,
+                    points=points,
+                    degree=int(getattr(self.model, "degree", 3)),
+                    smoothness_weight=float(
+                        getattr(self.loss_fn, "deletion_smoothness_weight", 1e-6)
+                    ),
+                    control_ridge=float(
+                        getattr(self.loss_fn, "deletion_control_ridge", 0.0)
+                    ),
+                    interpolate_endpoints=True,
+                )
+                deployment_rms = torch.stack(
+                    [item.fit_rmse.to(points) for item in deployed]
+                )
+                fit_tolerance = float(getattr(self.loss_fn, "fit_tolerance", 5e-3))
+                deployment_metrics = {
+                    "deployment_bspline_rms": deployment_rms.mean(),
+                    "deployment_retained_knot_count": hard_mask.to(
+                        points.dtype
+                    ).sum(dim=-1).mean(),
+                    "deployment_threshold_satisfied_rate": (
+                        deployment_rms <= fit_tolerance
+                    )
+                    .to(points.dtype)
+                    .mean(),
+                }
             geometric_metrics: dict[str, torch.Tensor] = {}
             if true_internal_knots is not None and true_internal_knot_mask is not None:
                 matched_count = 0
@@ -196,7 +286,9 @@ class Trainer:
                     retained_mask = output["activity"] >= self.activity_threshold
                 for sample_index in range(batch_size):
                     match = match_internal_knots(
-                        output["internal_knots"][sample_index, retained_mask[sample_index]],
+                        output["internal_knots"][
+                            sample_index, retained_mask[sample_index]
+                        ],
                         true_internal_knots[
                             sample_index, true_internal_knot_mask[sample_index]
                         ],
@@ -224,6 +316,7 @@ class Trainer:
             actual_gate = actual_gate.to(points.dtype)
             metrics = {
                 **losses,
+                **deployment_metrics,
                 **geometric_metrics,
                 "activity_mass": knot_metrics["activity_mass"].mean(),
                 "hard_active_count": knot_metrics["hard_active_count"].mean(),
@@ -237,12 +330,24 @@ class Trainer:
             for key, value in metrics.items():
                 totals[key] += float(value.detach().cpu()) * batch_size
 
-            if self.log_every_batches and (
+            if interactive_progress:
+                progress = self._progress_line(
+                    phase=phase,
+                    completed=batch_index,
+                    total=total_batches,
+                    loss=float(losses["loss"].detach().cpu()),
+                    elapsed=max(time.perf_counter() - progress_started_at, 1e-9),
+                )
+                # Padding erases stale characters when ETA or throughput shrinks.
+                print(f"\r{progress:<120}", end="", flush=True)
+                if batch_index == total_batches:
+                    print(flush=True)
+            elif self.log_every_batches and (
                 batch_index % self.log_every_batches == 0
-                or batch_index == len(loader)
+                or batch_index == total_batches
             ):
                 print(
-                    f"  {phase} batches: {batch_index}/{len(loader)} | "
+                    f"  {phase} batches: {batch_index}/{total_batches} | "
                     f"loss={float(losses['loss'].detach().cpu()):.6f}",
                     flush=True,
                 )
@@ -264,11 +369,11 @@ class Trainer:
         checkpoint_path: str | Path | None = None,
         epoch_offset: int = 0,
         stage_name: str = "joint",
+        deployment_validation: bool = False,
     ) -> list[dict[str, float]]:
         if checkpoint_selection_start_epoch < 0:
             raise ValueError("checkpoint_selection_start_epoch must be non-negative")
         history: list[dict[str, float]] = []
-        best_val = float("inf")
         best_knot_match_f1 = float("-inf")
         best_knot_match_precision = float("-inf")
         best_knot_matched_mae = float("inf")
@@ -292,7 +397,9 @@ class Trainer:
                 else 1.0
             )
             if not 0.0 <= teacher_forcing_ratio <= 1.0:
-                raise ValueError("teacher forcing schedule must return a value in [0, 1]")
+                raise ValueError(
+                    "teacher forcing schedule must return a value in [0, 1]"
+                )
             if gate_temperature is not None and hasattr(
                 self.model, "set_gate_temperature"
             ):
@@ -313,7 +420,14 @@ class Trainer:
                 "train/teacher_forcing_ratio": teacher_forcing_ratio,
             }
             if val_loader is not None:
-                val_metrics = self._run_epoch(val_loader, False, l0_scale, 1.0, 1.0)
+                val_metrics = self._run_epoch(
+                    val_loader,
+                    False,
+                    l0_scale,
+                    1.0,
+                    1.0,
+                    compute_deployment_metrics=deployment_validation,
+                )
                 record.update({f"val/{k}": v for k, v in val_metrics.items()})
                 current_val = val_metrics["loss"]
                 selection_metrics = val_metrics
@@ -334,7 +448,10 @@ class Trainer:
             history.append(record)
             displayed_metrics = val_metrics if val_loader is not None else train_metrics
             structure_mode = getattr(self.model, "structure_mode", None)
-            if structure_mode == "candidate_pruning":
+            if structure_mode in {
+                "candidate_pruning",
+                "candidate_pruning_one_shot",
+            }:
                 structure_report = (
                     f"coverage={displayed_metrics['candidate_coverage_loss']:.4f} | "
                     f"candidate_R@{self.knot_match_tolerance:.3f}="
@@ -345,6 +462,23 @@ class Trainer:
                     f"keep={displayed_metrics['hard_active_count']:.2f}/"
                     f"{displayed_metrics['candidate_knot_count']:.0f}"
                 )
+                if structure_mode == "candidate_pruning_one_shot":
+                    if "deployment_threshold_satisfied_rate" in displayed_metrics:
+                        structure_report += (
+                            f" | deploy_pass="
+                            f"{displayed_metrics['deployment_threshold_satisfied_rate']:.3f}"
+                            f" | deploy_RMS="
+                            f"{displayed_metrics['deployment_bspline_rms']:.5f}"
+                        )
+                    else:
+                        structure_report += (
+                            f" | surrogate_pass="
+                            f"{displayed_metrics.get('surrogate_threshold_satisfied_rate', 0.0):.3f}"
+                        )
+                    structure_report += (
+                        f" | mask_acc={displayed_metrics.get('teacher_mask_accuracy', 0.0):.3f}"
+                        f" | beta={displayed_metrics.get('adaptive_keep_threshold_mean', 0.0):.3f}"
+                    )
             elif structure_mode in {
                 "count_conditioned",
                 "interactive_dynamic",
@@ -386,7 +520,10 @@ class Trainer:
                 "count_conditioned",
                 "interactive_dynamic",
             }
-            if structure_mode == "candidate_pruning":
+            if structure_mode in {
+                "candidate_pruning",
+                "candidate_pruning_one_shot",
+            }:
                 current_candidate_recall = selection_metrics.get(
                     "candidate_recall", 0.0
                 )
@@ -397,37 +534,103 @@ class Trainer:
                     current_candidate_recall = 0.0
                 if current_candidate_mae != current_candidate_mae:
                     current_candidate_mae = float("inf")
-                current_safe_action = selection_metrics.get(
-                    "safe_action_top1", 0.0
-                )
-                current_unsafe_action = selection_metrics.get(
-                    "unsafe_delete_rate", 1.0
-                )
-                current_false_stop = selection_metrics.get(
-                    "false_stop_rate", 1.0
-                )
-                current_rank = (
-                    current_candidate_recall,
-                    -current_candidate_mae,
-                    current_safe_action,
-                    -current_unsafe_action,
-                    -current_false_stop,
-                    current_knot_match_f1,
-                    current_knot_match_precision,
-                    -current_knot_matched_mae,
-                    -current_val,
-                )
-                selection_metric_name = (
-                    "candidate_recall_mae_then_safe_action_knot_f1_loss"
-                )
-                selection_value = current_candidate_recall
+                current_safe_action = selection_metrics.get("safe_action_top1", 0.0)
+                current_unsafe_action = selection_metrics.get("unsafe_delete_rate", 1.0)
+                current_false_stop = selection_metrics.get("false_stop_rate", 1.0)
+                if stage_name == "candidate_pretrain":
+                    current_rank = (
+                        current_candidate_recall,
+                        -current_candidate_mae,
+                        current_knot_match_f1,
+                        -current_val,
+                    )
+                    selection_metric_name = "candidate_recall_mae_then_knot_f1_loss"
+                    selection_value = current_candidate_recall
+                elif structure_mode == "candidate_pruning_one_shot":
+                    current_pass_rate = selection_metrics.get(
+                        "deployment_threshold_satisfied_rate", 0.0
+                    )
+                    current_deployment_rms = selection_metrics.get(
+                        "deployment_bspline_rms", float("inf")
+                    )
+                    current_mask_accuracy = selection_metrics.get(
+                        "teacher_mask_accuracy", 0.0
+                    )
+                    current_mask_f1 = selection_metrics.get("existence_f1", 0.0)
+                    current_count_mae = selection_metrics.get(
+                        "count_absolute_error", float("inf")
+                    )
+                    current_retained_count = selection_metrics.get(
+                        "deployment_retained_knot_count",
+                        selection_metrics.get("hard_active_count", float("inf")),
+                    )
+                    pass_constraint_satisfied = (
+                        current_pass_rate >= self.deployment_pass_rate_target
+                    )
+                    if pass_constraint_satisfied:
+                        # Constrained deployment objective: once the required
+                        # standard-B-spline pass rate is met, fewer knots are
+                        # always preferred.  This prevents the former
+                        # all-candidates solution from winning merely by
+                        # increasing its pass rate by a few tenths of a percent.
+                        current_rank = (
+                            1.0,
+                            -current_retained_count,
+                            current_mask_f1,
+                            -current_count_mae,
+                            -current_deployment_rms,
+                            current_mask_accuracy,
+                            current_candidate_recall,
+                            -current_candidate_mae,
+                            current_knot_match_f1,
+                            -current_val,
+                        )
+                    else:
+                        # Until feasibility is reached, improve the real
+                        # deployment pass rate first.  Complexity becomes the
+                        # next tie-breaker, never a substitute for feasibility.
+                        current_rank = (
+                            0.0,
+                            current_pass_rate,
+                            -current_deployment_rms,
+                            -current_retained_count,
+                            current_mask_f1,
+                            -current_count_mae,
+                            current_mask_accuracy,
+                            current_candidate_recall,
+                            -current_candidate_mae,
+                            current_knot_match_f1,
+                            -current_val,
+                        )
+                    selection_metric_name = (
+                        "constrained_min_knots_at_target_pass_then_mask_count_rms"
+                    )
+                    selection_value = (
+                        current_retained_count
+                        if pass_constraint_satisfied
+                        else current_pass_rate
+                    )
+                else:
+                    current_rank = (
+                        current_candidate_recall,
+                        -current_candidate_mae,
+                        current_safe_action,
+                        -current_unsafe_action,
+                        -current_false_stop,
+                        current_knot_match_f1,
+                        current_knot_match_precision,
+                        -current_knot_matched_mae,
+                        -current_val,
+                    )
+                    selection_metric_name = (
+                        "candidate_recall_mae_then_safe_action_knot_f1_loss"
+                    )
+                    selection_value = current_candidate_recall
             elif structured_count_model:
                 current_count_mae = selection_metrics.get(
                     "count_absolute_error", float("inf")
                 )
-                current_count_accuracy = selection_metrics.get(
-                    "count_accuracy", 0.0
-                )
+                current_count_accuracy = selection_metrics.get("count_accuracy", 0.0)
                 if current_count_mae != current_count_mae:
                     current_count_mae = float("inf")
                 if current_count_accuracy != current_count_accuracy:
@@ -451,9 +654,7 @@ class Trainer:
                     -current_knot_matched_mae,
                     -current_val,
                 )
-                selection_metric_name = (
-                    "knot_match_f1_then_precision_mae_loss"
-                )
+                selection_metric_name = "knot_match_f1_then_precision_mae_loss"
                 selection_value = current_knot_match_f1
             if (
                 checkpoint_path is not None
@@ -461,7 +662,6 @@ class Trainer:
                 and (best_rank is None or current_rank > best_rank)
             ):
                 best_rank = current_rank
-                best_val = current_val
                 best_knot_match_f1 = current_knot_match_f1
                 best_knot_match_precision = current_knot_match_precision
                 best_knot_matched_mae = current_knot_matched_mae
@@ -475,13 +675,12 @@ class Trainer:
                         "best_val": current_val,
                         "selection_metric": selection_metric_name,
                         "selection_value": selection_value,
+                        "selection_rank": list(current_rank),
                         "best_knot_match_f1": best_knot_match_f1,
                         "best_knot_match_precision": best_knot_match_precision,
                         "best_knot_matched_mae": best_knot_matched_mae,
                         "knot_match_tolerance": self.knot_match_tolerance,
-                        "best_existence_f1": selection_metrics.get(
-                            "existence_f1", 0.0
-                        ),
+                        "best_existence_f1": selection_metrics.get("existence_f1", 0.0),
                         "best_count_accuracy": selection_metrics.get(
                             "count_accuracy", 0.0
                         ),
@@ -499,6 +698,32 @@ class Trainer:
                         ),
                         "best_false_stop_rate": selection_metrics.get(
                             "false_stop_rate", float("nan")
+                        ),
+                        "best_threshold_satisfied_rate": selection_metrics.get(
+                            "deployment_threshold_satisfied_rate", float("nan")
+                        ),
+                        "best_deployment_bspline_rms": selection_metrics.get(
+                            "deployment_bspline_rms", float("nan")
+                        ),
+                        "best_deployment_retained_knot_count": (
+                            selection_metrics.get(
+                                "deployment_retained_knot_count", float("nan")
+                            )
+                        ),
+                        "deployment_pass_rate_target": (
+                            self.deployment_pass_rate_target
+                        ),
+                        "best_deployment_pass_constraint_satisfied": (
+                            selection_metrics.get(
+                                "deployment_threshold_satisfied_rate", 0.0
+                            )
+                            >= self.deployment_pass_rate_target
+                        ),
+                        "best_teacher_mask_accuracy": selection_metrics.get(
+                            "teacher_mask_accuracy", float("nan")
+                        ),
+                        "best_teacher_mask_f1": selection_metrics.get(
+                            "existence_f1", float("nan")
                         ),
                         "metrics": record,
                         "history": list(history),

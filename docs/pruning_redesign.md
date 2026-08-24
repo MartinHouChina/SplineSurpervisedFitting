@@ -73,6 +73,18 @@ Boehm 插入可用于后续离线消冗增强，但不要求候选头复现随�
 
 部署外部输入仍只有点云；候选节点和冗余控制点均在系统内部生成。该方案已作为独立 v7 objective 实现，详见 [proposal_pruning_framework.md](proposal_pruning_framework.md)。
 
+## v8：离线硬教师与一次性 LearnedKeep
+
+v8 保留 v7 的高召回候选和可解释贡献特征，但把昂贵的逐节点硬验证移到训练前的离线教师：
+
+```text
+离线：固定候选 → Hard-RMS 贪心删除 → mask / final-risk / count 缓存
+在线：一次网络前向 → 自适应 KeepMask 与位置双向交互 → 一次标准 B 样条 refit
+```
+
+验证选优使用真实的一次性标准 B 样条 RMS。默认部署不运行贪心搜索，因此提供测试分布上的
+统计阈值满足率；若必须逐样本硬保证，仍可显式调用 v7 式 Hard-RMS 回退。
+
 ## 版本对比
 
 | 版本 | 数量机制 | 节点标签 | 位置解码 | 部署决策 |
@@ -82,5 +94,6 @@ Boehm 插入可用于后续离线消冗增强，但不要求候选头复现随�
 | v5 | ordinal CountHead | canonical | 全数量条件分支 | BIC + prior |
 | v6 | 交互式 categorical 分布 + 合法范围 | canonical/源表示 | 仅所选数量动态解码 | posterior median |
 | v7 | 无 CountHead；remove/STOP 仅作建议 | 阈值 canonical + 真实删除 RMS | 固定高召回候选与局部精修 | 逐节点标准 B 样条硬验证 |
+| v8 | 曲线自适应一次性 KeepMask | 离线 Hard-RMS 最终 mask/risk/count | 固定次数位置↔Keep 反馈 | 一次 mask + 一次标准 B 样条 refit |
 
 统一报告节点数量 accuracy/MAE、节点 Precision/Recall/F1、匹配 MAE、标准 B 样条 RMS、控制点数量和推理时间。

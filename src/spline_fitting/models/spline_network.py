@@ -76,11 +76,11 @@ class SplineFittingNetwork(nn.Module):
             "count_conditioned",
             "interactive_dynamic",
             "candidate_pruning",
+            "candidate_pruning_one_shot",
         }:
-            raise ValueError(
-                "unsupported structure_mode"
-            )
+            raise ValueError("unsupported structure_mode")
         self.structure_mode = structure_mode
+        self._force_open_candidate_gate = False
         self.degree = degree
         self.lambda_poly = lambda_poly
         self.lambda_knot = lambda_knot
@@ -109,7 +109,12 @@ class SplineFittingNetwork(nn.Module):
             geometry_feature_mode = (
                 "chord_derivatives"
                 if self.structure_mode
-                in {"count_conditioned", "interactive_dynamic", "candidate_pruning"}
+                in {
+                    "count_conditioned",
+                    "interactive_dynamic",
+                    "candidate_pruning",
+                    "candidate_pruning_one_shot",
+                }
                 else "raw_differences"
             )
         self.encoder = GeometryEncoder(
@@ -121,7 +126,10 @@ class SplineFittingNetwork(nn.Module):
         self.parameter_head = ParameterHead(
             hidden_dim, min_parameter_gap, gap_parameterization=gap_parameterization
         )
-        if self.structure_mode == "candidate_pruning":
+        if self.structure_mode in {
+            "candidate_pruning",
+            "candidate_pruning_one_shot",
+        }:
             self.candidate_head = CandidateKnotHead(
                 hidden_dim,
                 max_internal_knots,
@@ -133,6 +141,7 @@ class SplineFittingNetwork(nn.Module):
                 attention_heads=structure_attention_heads,
                 min_gap=min_knot_gap,
                 initial_keep_probability=pruning_initial_keep_probability,
+                one_shot_adaptive=(self.structure_mode == "candidate_pruning_one_shot"),
             )
         elif self.structure_mode == "interactive_dynamic":
             self.structure_head = InteractiveStructureHead(
@@ -220,15 +229,13 @@ class SplineFittingNetwork(nn.Module):
         point_residual: torch.Tensor,
     ) -> torch.Tensor:
         """Pool geometric residual around every candidate parameter."""
-        distance = (
-            params.unsqueeze(-1) - candidate_knots.unsqueeze(1)
-        ).abs()
+        distance = (params.unsqueeze(-1) - candidate_knots.unsqueeze(1)).abs()
         weights = torch.exp(
             -0.5 * (distance / self.pruning_residual_bandwidth).square()
         )
-        return (
-            weights * point_residual.unsqueeze(-1)
-        ).sum(dim=1) / weights.sum(dim=1).clamp_min(1e-8)
+        return (weights * point_residual.unsqueeze(-1)).sum(dim=1) / weights.sum(
+            dim=1
+        ).clamp_min(1e-8)
 
     def _forward_candidate_pruning(
         self,
@@ -280,9 +287,9 @@ class SplineFittingNetwork(nn.Module):
                 :, self.degree + 1 :
             ].detach()
             coefficient_energy = knot_coefficients.square().sum(dim=-1)
-            point_residual = (
-                pilot_reconstruction.detach() - points.detach()
-            ).norm(dim=-1)
+            point_residual = (pilot_reconstruction.detach() - points.detach()).norm(
+                dim=-1
+            )
             local_residual = self._candidate_local_residual(
                 params.detach(),
                 candidates.detach(),
@@ -295,9 +302,28 @@ class SplineFittingNetwork(nn.Module):
             coefficient_energy=coefficient_energy,
             deletion_delta=analytic_delta,
             residual_features=local_residual,
+            global_features=global_features,
         )
         refined_knots = pruning_output["refined_candidate_knots"]
-        fit_activity_gate = torch.ones_like(refined_knots)
+        keep_probability = pruning_output["keep_probability"]
+        learned_keep_mask = pruning_output.get(
+            "final_hard_keep_mask", keep_probability >= 0.5
+        )
+        if self._force_open_candidate_gate:
+            fit_activity_gate = torch.ones_like(refined_knots)
+        elif self.structure_mode == "candidate_pruning_one_shot":
+            # A hard forward mask with a straight-through probability gradient
+            # makes every truncated-power knot contribution independently
+            # switchable while deployment remains a truly discrete subset.
+            fit_activity_gate = pruning_output.get(
+                "final_hard_st_keep_gate",
+                learned_keep_mask.to(keep_probability.dtype)
+                + keep_probability
+                - keep_probability.detach(),
+            )
+        else:
+            # v7 keeps the learned mask diagnostic-only and fits all proposals.
+            fit_activity_gate = torch.ones_like(refined_knots)
         basis_output = build_design_matrix(
             params=params,
             internal_knots=refined_knots,
@@ -316,8 +342,7 @@ class SplineFittingNetwork(nn.Module):
         reconstructed = reconstruct_from_design(
             basis_output["design_matrix"], solver_output["coefficients"]
         )
-        keep_probability = pruning_output["keep_probability"]
-        knot_mask = keep_probability >= 0.5
+        knot_mask = learned_keep_mask
         return {
             "local_features": local_features,
             "global_features": global_features,
@@ -332,6 +357,7 @@ class SplineFittingNetwork(nn.Module):
             "activity_probability_logits": pruning_output["keep_logits"],
             "activity_gate": knot_mask.to(points.dtype),
             "knot_mask": knot_mask,
+            "learned_keep_mask": knot_mask,
             "fit_activity_gate": fit_activity_gate,
             "expected_knot_count": keep_probability.sum(dim=-1),
             "predicted_knot_count": knot_mask.sum(dim=-1),
@@ -397,6 +423,8 @@ class SplineFittingNetwork(nn.Module):
         """Force actual design-matrix gates open, e.g. during warm-up."""
         if hasattr(self, "activity_head"):
             self.activity_head.set_force_open_gates(enabled)
+        if self.structure_mode == "candidate_pruning_one_shot":
+            self._force_open_candidate_gate = bool(enabled)
 
     def set_activity_threshold(self, value: float) -> None:
         """Set the fixed probability threshold used by deterministic gates."""
@@ -421,10 +449,13 @@ class SplineFittingNetwork(nn.Module):
             raise ValueError("teacher and predicted knot counts must share shape [B]")
         if teacher_forcing_ratio == 1.0:
             return teacher_count
-        use_teacher = torch.rand(
-            predicted_count.shape,
-            device=predicted_count.device,
-        ) < teacher_forcing_ratio
+        use_teacher = (
+            torch.rand(
+                predicted_count.shape,
+                device=predicted_count.device,
+            )
+            < teacher_forcing_ratio
+        )
         return torch.where(use_teacher, teacher_count, predicted_count)
 
     def forward(
@@ -435,7 +466,10 @@ class SplineFittingNetwork(nn.Module):
     ) -> dict[str, torch.Tensor]:
         local_features, global_features = self.encoder(points)
         parameter_output = self.parameter_head(local_features, global_features)
-        if self.structure_mode == "candidate_pruning":
+        if self.structure_mode in {
+            "candidate_pruning",
+            "candidate_pruning_one_shot",
+        }:
             return self._forward_candidate_pruning(
                 points,
                 local_features,
@@ -462,9 +496,7 @@ class SplineFittingNetwork(nn.Module):
             )
             fit_activity_gate = knot_output["knot_mask"].to(points.dtype)
             pilot_delta = torch.zeros_like(knot_output["internal_knots"])
-            normalized_importance = torch.zeros_like(
-                knot_output["internal_knots"]
-            )
+            normalized_importance = torch.zeros_like(knot_output["internal_knots"])
             activity_output: dict[str, torch.Tensor] = {}
         elif self.structure_mode == "count_conditioned":
             count_output = self.count_head(
@@ -485,9 +517,7 @@ class SplineFittingNetwork(nn.Module):
             )
             fit_activity_gate = knot_output["knot_mask"].to(points.dtype)
             pilot_delta = torch.zeros_like(knot_output["internal_knots"])
-            normalized_importance = torch.zeros_like(
-                knot_output["internal_knots"]
-            )
+            normalized_importance = torch.zeros_like(knot_output["internal_knots"])
             activity_output: dict[str, torch.Tensor] = {}
         else:
             count_output = {}
@@ -504,9 +534,7 @@ class SplineFittingNetwork(nn.Module):
                 )
             else:
                 pilot_delta = torch.zeros_like(knot_output["internal_knots"])
-                normalized_importance = torch.zeros_like(
-                    knot_output["internal_knots"]
-                )
+                normalized_importance = torch.zeros_like(knot_output["internal_knots"])
             activity_output = self.activity_head(
                 global_features,
                 knot_output["internal_knots"],

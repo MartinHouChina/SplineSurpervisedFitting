@@ -80,9 +80,12 @@ class CandidateKnotHeadTests(unittest.TestCase):
 class InteractivePruningHeadTests(unittest.TestCase):
     def _inputs(self) -> tuple[torch.Tensor, ...]:
         tokens = torch.randn(2, 6, 16, requires_grad=True)
-        positions = torch.tensor(
-            [[0.08, 0.22, 0.40, 0.58, 0.76, 0.92]]
-        ).expand(2, -1).clone().requires_grad_()
+        positions = (
+            torch.tensor([[0.08, 0.22, 0.40, 0.58, 0.76, 0.92]])
+            .expand(2, -1)
+            .clone()
+            .requires_grad_()
+        )
         coefficient_energy = torch.rand(2, 6, requires_grad=True)
         deletion_delta = torch.rand(2, 6, requires_grad=True)
         residual_features = torch.randn(2, 6, 2, requires_grad=True)
@@ -131,6 +134,357 @@ class InteractivePruningHeadTests(unittest.TestCase):
         self.assertGreater(float(residual.grad.abs().sum()), 0.0)
         self.assertGreater(float(head.keep_head.weight.grad.abs().sum()), 0.0)
 
+    def test_one_shot_threshold_is_curve_adaptive_and_receives_gradients(self) -> None:
+        torch.manual_seed(19)
+        head = InteractivePruningHead(
+            hidden_dim=16,
+            residual_feature_dim=1,
+            attention_heads=4,
+            min_gap=0.01,
+            one_shot_adaptive=True,
+        )
+        # Keep all knot-local evidence identical between samples.  Only the
+        # optional curve-level descriptor can then change beta.
+        tokens = torch.randn(1, 5, 16).expand(2, -1, -1).clone().requires_grad_()
+        positions = torch.tensor([[0.1, 0.28, 0.47, 0.69, 0.9]]).expand(2, -1)
+        energy = torch.rand(1, 5).expand(2, -1)
+        delta = torch.rand(1, 5).expand(2, -1)
+        residual = torch.rand(1, 5).expand(2, -1)
+        global_features = torch.zeros(2, 16, requires_grad=True)
+        with torch.no_grad():
+            global_features[1, 0] = 5.0
+            first = head.adaptive_threshold_head[0]
+            last = head.adaptive_threshold_head[-1]
+            first.weight.zero_()
+            first.weight.copy_(torch.eye(16))
+            first.bias.zero_()
+            last.weight.zero_()
+            last.weight[0, 0] = 1.0
+            last.bias.zero_()
+
+        output = head(
+            tokens,
+            positions,
+            coefficient_energy=energy,
+            deletion_delta=delta,
+            residual_features=residual,
+            global_features=global_features,
+        )
+        torch.testing.assert_close(
+            output["preliminary_raw_importance"][0],
+            output["preliminary_raw_importance"][1],
+        )
+        self.assertFalse(
+            torch.allclose(
+                output["adaptive_keep_threshold"][0],
+                output["adaptive_keep_threshold"][1],
+            )
+        )
+        self.assertFalse(
+            torch.allclose(
+                output["keep_probability"][0],
+                output["keep_probability"][1],
+            )
+        )
+        torch.testing.assert_close(
+            output["keep_probability"],
+            torch.sigmoid(
+                output["raw_importance"]
+                - output["adaptive_keep_threshold"].unsqueeze(-1)
+            ),
+        )
+
+        loss = (
+            output["keep_probability"].mean()
+            + output["refined_candidate_positions"].square().mean()
+        )
+        loss.backward()
+        self.assertGreater(
+            float(head.adaptive_threshold_head[-1].weight.grad.abs().sum()),
+            0.0,
+        )
+        self.assertGreater(float(global_features.grad.abs().sum()), 0.0)
+
+    def test_provisional_position_feeds_back_into_final_keep_decision(self) -> None:
+        torch.manual_seed(41)
+        hidden_dim = 16
+        head = InteractivePruningHead(
+            hidden_dim=hidden_dim,
+            residual_feature_dim=1,
+            attention_heads=4,
+            min_gap=0.01,
+            one_shot_adaptive=True,
+        ).eval()
+        with torch.no_grad():
+            # Make the named feedback path deterministic and strongly
+            # sensitive to its provisional-position state block.
+            feedback_in = head.position_to_keep_feedback[0]
+            feedback_out = head.position_to_keep_feedback[-1]
+            feedback_in.weight.zero_()
+            feedback_in.bias.zero_()
+            feedback_in.weight[:, hidden_dim : 2 * hidden_dim].copy_(
+                torch.eye(hidden_dim)
+            )
+            feedback_out.weight.copy_(torch.eye(hidden_dim))
+            feedback_out.bias.zero_()
+            head.keep_head.weight.zero_()
+            head.keep_head.weight[0, 0] = 1.0
+            head.keep_head.bias.zero_()
+            head.adaptive_threshold_head[-1].weight.zero_()
+            head.adaptive_threshold_head[-1].bias.zero_()
+            head.position_residual_head.weight.zero_()
+
+        tokens = torch.randn(1, 6, hidden_dim)
+        positions = torch.tensor([[0.08, 0.22, 0.40, 0.58, 0.76, 0.92]])
+        keyword_inputs = {
+            "coefficient_energy": torch.rand(1, 6),
+            "deletion_delta": torch.rand(1, 6),
+            "residual_features": torch.rand(1, 6),
+        }
+        with torch.no_grad():
+            head.position_residual_head.bias.fill_(-4.0)
+            shifted_left = head(tokens, positions, **keyword_inputs)
+            head.position_residual_head.bias.fill_(4.0)
+            shifted_right = head(tokens, positions, **keyword_inputs)
+
+        # The preliminary decision precedes position decoding and is exactly
+        # unchanged; the second keep decision must see the proposed motion.
+        torch.testing.assert_close(
+            shifted_left["preliminary_keep_probability"],
+            shifted_right["preliminary_keep_probability"],
+        )
+        self.assertGreater(
+            float(
+                (
+                    shifted_left["provisional_candidate_positions"]
+                    - shifted_right["provisional_candidate_positions"]
+                )
+                .abs()
+                .max()
+            ),
+            1e-3,
+        )
+        self.assertGreater(
+            float(
+                (
+                    shifted_left["final_keep_probability"]
+                    - shifted_right["final_keep_probability"]
+                )
+                .abs()
+                .max()
+            ),
+            1e-4,
+        )
+
+        head.zero_grad(set_to_none=True)
+        head.position_residual_head.bias.data.fill_(0.5)
+        differentiable = head(tokens, positions, **keyword_inputs)
+        differentiable["final_keep_probability"].mean().backward()
+        self.assertGreater(
+            float(head.position_residual_head.bias.grad.abs().sum()),
+            0.0,
+        )
+        self.assertGreater(
+            float(head.position_to_keep_feedback[-1].weight.grad.abs().sum()),
+            0.0,
+        )
+
+    def test_final_keep_context_is_hard_forward_and_st_backward(self) -> None:
+        torch.manual_seed(67)
+        head = InteractivePruningHead(
+            hidden_dim=16,
+            residual_feature_dim=1,
+            attention_heads=4,
+            min_gap=0.01,
+            one_shot_adaptive=True,
+        )
+        with torch.no_grad():
+            head.keep_head.weight.zero_()
+            head.keep_head.weight[0, 0] = 8.0
+            head.keep_head.bias.zero_()
+            head.adaptive_threshold_head[-1].weight.zero_()
+            head.adaptive_threshold_head[-1].bias.zero_()
+
+        positions = torch.tensor([[0.08, 0.22, 0.40, 0.58, 0.76, 0.92]]).expand(2, -1)
+        output = head(
+            torch.randn(2, 6, 16),
+            positions,
+            coefficient_energy=torch.rand(2, 6),
+            deletion_delta=torch.rand(2, 6),
+            residual_features=torch.rand(2, 6),
+        )
+        hard_mask = output["final_hard_keep_mask"]
+        self.assertTrue(torch.all(hard_mask.any(dim=-1)))
+        self.assertTrue(torch.all((~hard_mask).any(dim=-1)))
+        expected_context = torch.stack(
+            [
+                output["final_decision_tokens"][index, hard_mask[index]].mean(dim=0)
+                for index in range(hard_mask.shape[0])
+            ]
+        )
+        torch.testing.assert_close(
+            output["final_hard_st_keep_context"], expected_context
+        )
+        torch.testing.assert_close(
+            output["final_hard_st_keep_gate"], hard_mask.to(torch.float32)
+        )
+
+        output["final_hard_st_keep_context"].square().mean().backward()
+        self.assertGreater(
+            float(head.adaptive_threshold_head[-1].bias.grad.abs().sum()),
+            0.0,
+        )
+        self.assertGreater(float(head.keep_head.weight.grad.abs().sum()), 0.0)
+
+    def test_all_false_keep_mask_is_finite_and_keeps_original_positions(self) -> None:
+        torch.manual_seed(71)
+        head = InteractivePruningHead(
+            hidden_dim=16,
+            residual_feature_dim=1,
+            attention_heads=4,
+            min_gap=0.01,
+            one_shot_adaptive=True,
+        )
+        with torch.no_grad():
+            head.keep_head.weight.zero_()
+            head.keep_head.bias.zero_()
+            head.adaptive_threshold_head[-1].weight.zero_()
+            head.adaptive_threshold_head[-1].bias.fill_(4.0)
+            head.position_residual_head.weight.zero_()
+            head.position_residual_head.bias.fill_(1.0)
+
+        positions = torch.tensor([[0.10, 0.28, 0.47, 0.69, 0.90]])
+        output = head(
+            torch.randn(1, 5, 16),
+            positions,
+            coefficient_energy=torch.rand(1, 5),
+            deletion_delta=torch.rand(1, 5),
+            residual_features=torch.rand(1, 5),
+        )
+        self.assertFalse(bool(output["final_hard_keep_mask"].any()))
+        torch.testing.assert_close(
+            output["final_hard_st_keep_gate"],
+            torch.zeros_like(output["final_hard_st_keep_gate"]),
+        )
+        torch.testing.assert_close(
+            output["final_hard_st_keep_context"],
+            torch.zeros_like(output["final_hard_st_keep_context"]),
+        )
+        torch.testing.assert_close(output["refined_candidate_positions"], positions)
+        for name in (
+            "final_hard_st_keep_context",
+            "position_refinement_tokens",
+            "position_residual",
+            "refined_candidate_positions",
+        ):
+            self.assertTrue(torch.all(torch.isfinite(output[name])), name)
+
+        output["refined_candidate_positions"].sum().backward()
+        self.assertGreater(
+            float(head.adaptive_threshold_head[-1].bias.grad.abs().sum()),
+            0.0,
+        )
+
+    def test_soft_keep_state_changes_position_update(self) -> None:
+        torch.manual_seed(29)
+        head = InteractivePruningHead(
+            hidden_dim=16,
+            residual_feature_dim=1,
+            attention_heads=4,
+            min_gap=0.01,
+            one_shot_adaptive=True,
+        ).eval()
+        with torch.no_grad():
+            # A nonzero residual makes the keep gate's influence observable
+            # independently of random initialization.
+            head.position_residual_head.weight.zero_()
+            head.position_residual_head.bias.fill_(1.0)
+        tokens = torch.randn(1, 5, 16)
+        positions = torch.tensor([[0.1, 0.28, 0.47, 0.69, 0.9]])
+        keyword_inputs = {
+            "coefficient_energy": torch.rand(1, 5),
+            "deletion_delta": torch.rand(1, 5),
+            "residual_features": torch.rand(1, 5),
+        }
+        with torch.no_grad():
+            head.adaptive_threshold_head[-1].weight.zero_()
+            head.adaptive_threshold_head[-1].bias.fill_(-8.0)
+            mostly_kept = head(tokens, positions, **keyword_inputs)
+            head.adaptive_threshold_head[-1].bias.fill_(8.0)
+            mostly_removed = head(tokens, positions, **keyword_inputs)
+
+        self.assertGreater(
+            float(mostly_kept["keep_probability"].mean()),
+            float(mostly_removed["keep_probability"].mean()),
+        )
+        self.assertFalse(
+            torch.allclose(
+                mostly_kept["position_residual"],
+                mostly_removed["position_residual"],
+            )
+        )
+        self.assertFalse(
+            torch.allclose(
+                mostly_kept["refined_candidate_positions"],
+                mostly_removed["refined_candidate_positions"],
+            )
+        )
+
+    def test_legacy_mode_has_exact_v7_parameter_layout(self) -> None:
+        legacy = InteractivePruningHead(
+            hidden_dim=16,
+            residual_feature_dim=1,
+            attention_heads=4,
+            one_shot_adaptive=False,
+        )
+        state = legacy.state_dict()
+        self.assertFalse(any("adaptive_threshold" in key for key in state))
+        self.assertFalse(any("keep_context" in key for key in state))
+        self.assertFalse(any("position_to_keep_feedback" in key for key in state))
+
+        restored = InteractivePruningHead(
+            hidden_dim=16,
+            residual_feature_dim=1,
+            attention_heads=4,
+        )
+        restored.load_state_dict(state, strict=True)
+
+    def test_early_one_shot_v8_state_strictly_loads_without_feedback_keys(
+        self,
+    ) -> None:
+        torch.manual_seed(83)
+        source = InteractivePruningHead(
+            hidden_dim=16,
+            residual_feature_dim=1,
+            attention_heads=4,
+            one_shot_adaptive=True,
+        )
+        early_v8_state = {
+            key: value.clone()
+            for key, value in source.state_dict().items()
+            if "position_to_keep_feedback" not in key
+        }
+        torch.manual_seed(89)
+        restored = InteractivePruningHead(
+            hidden_dim=16,
+            residual_feature_dim=1,
+            attention_heads=4,
+            one_shot_adaptive=True,
+        )
+        expected_feedback = {
+            key: value.clone()
+            for key, value in restored.position_to_keep_feedback.state_dict().items()
+        }
+        restored.load_state_dict(early_v8_state, strict=True)
+
+        for key, expected in source.state_dict().items():
+            if "position_to_keep_feedback" not in key:
+                torch.testing.assert_close(restored.state_dict()[key], expected)
+        for key, expected in expected_feedback.items():
+            torch.testing.assert_close(
+                restored.position_to_keep_feedback.state_dict()[key], expected
+            )
+
     def test_position_refinement_cannot_cross_neighbors(self) -> None:
         head = InteractivePruningHead(
             hidden_dim=16,
@@ -157,7 +511,61 @@ class InteractivePruningHeadTests(unittest.TestCase):
         self.assertTrue(torch.all(refined < 1.0))
         self.assertTrue(torch.all(refined[:, 1:] - refined[:, :-1] >= 0.01 - 1e-6))
 
-    def test_extreme_analytic_features_remain_finite_and_mask_is_respected(self) -> None:
+    def test_one_shot_random_extreme_updates_remain_strictly_ordered(self) -> None:
+        hidden_dim = 16
+        num_candidates = 12
+        min_gap = 0.005
+        available_interval_mass = 1.0 - (num_candidates + 1) * min_gap
+        for seed in range(10):
+            torch.manual_seed(100 + seed)
+            head = InteractivePruningHead(
+                hidden_dim=hidden_dim,
+                residual_feature_dim=1,
+                attention_heads=4,
+                min_gap=min_gap,
+                max_position_fraction=0.45,
+                one_shot_adaptive=True,
+            ).eval()
+            with torch.no_grad():
+                # Exercise saturated keep decisions and maximally bounded
+                # moves in both directions under random extreme weights.
+                head.keep_head.weight.normal_(std=100.0)
+                head.keep_head.bias.uniform_(-100.0, 100.0)
+                head.adaptive_threshold_head[-1].weight.normal_(std=100.0)
+                head.adaptive_threshold_head[-1].bias.uniform_(-100.0, 100.0)
+                head.position_to_keep_feedback[-1].weight.normal_(std=100.0)
+                head.position_to_keep_feedback[-1].bias.uniform_(-100.0, 100.0)
+                head.position_residual_head.weight.normal_(std=1000.0)
+                head.position_residual_head.bias.uniform_(-1000.0, 1000.0)
+
+            interval_weights = torch.softmax(
+                8.0 * torch.randn(3, num_candidates + 1), dim=-1
+            )
+            intervals = min_gap + available_interval_mass * interval_weights
+            positions = intervals[:, :-1].cumsum(dim=-1)
+            output = head(
+                torch.randn(3, num_candidates, hidden_dim),
+                positions,
+                coefficient_energy=1e6 * torch.rand(3, num_candidates),
+                deletion_delta=1e6 * torch.randn(3, num_candidates),
+                residual_features=1e6 * torch.randn(3, num_candidates),
+            )
+            for name in (
+                "provisional_candidate_positions",
+                "refined_candidate_positions",
+            ):
+                refined = output[name]
+                self.assertTrue(torch.all(torch.isfinite(refined)), (seed, name))
+                self.assertTrue(torch.all(refined > 0.0), (seed, name))
+                self.assertTrue(torch.all(refined < 1.0), (seed, name))
+                self.assertTrue(
+                    torch.all(refined[:, 1:] - refined[:, :-1] >= min_gap - 1e-6),
+                    (seed, name),
+                )
+
+    def test_extreme_analytic_features_remain_finite_and_mask_is_respected(
+        self,
+    ) -> None:
         head = InteractivePruningHead(
             hidden_dim=16,
             residual_feature_dim=1,
@@ -181,9 +589,7 @@ class InteractivePruningHeadTests(unittest.TestCase):
         ):
             self.assertTrue(torch.all(torch.isfinite(output[name])), name)
         self.assertEqual(float(output["keep_probabilities"][0, 2].detach()), 0.0)
-        self.assertEqual(
-            float(output["predicted_deletion_cost"][0, 2].detach()), 0.0
-        )
+        self.assertEqual(float(output["predicted_deletion_cost"][0, 2].detach()), 0.0)
         self.assertEqual(float(output["position_residual"][0, 2].detach()), 0.0)
 
 

@@ -32,6 +32,12 @@ def main() -> None:
         default=25,
         help="Print within-epoch progress; use 0 to disable.",
     )
+    parser.add_argument(
+        "--progress",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Show live train/validation batch progress bars in an interactive terminal.",
+    )
     parser.add_argument("--train-size", type=int, default=10000)
     parser.add_argument("--val-size", type=int, default=1000)
     parser.add_argument("--train-seed", type=int, default=42)
@@ -261,6 +267,7 @@ def main() -> None:
         device,
         knot_match_tolerance=args.knot_match_tolerance,
         log_every_batches=args.log_every_batches,
+        show_progress=args.progress,
     )
 
     print(

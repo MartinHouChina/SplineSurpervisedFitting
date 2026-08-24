@@ -23,6 +23,9 @@ def _metrics(
     knot_matched_mae: float = 0.02,
     count_accuracy: float = 0.0,
     count_mae: float = 0.0,
+    deployment_pass: float = 0.0,
+    deployment_rms: float = 1.0,
+    retained_count: float = 2.0,
 ) -> dict[str, float]:
     return {
         "loss": loss,
@@ -30,7 +33,7 @@ def _metrics(
         "existence_loss": 0.5,
         "knot_position_loss": 0.1,
         "expected_active_count": 2.0,
-        "hard_active_count": 2.0,
+        "hard_active_count": retained_count,
         "candidate_knot_count": 3.0,
         "gate_nonzero_count": 2.0,
         "existence_f1": existence_f1,
@@ -40,10 +43,36 @@ def _metrics(
         "knot_match_f1": knot_match_f1,
         "knot_match_precision": knot_match_precision,
         "knot_matched_mae": knot_matched_mae,
+        "candidate_coverage_loss": 0.1,
+        "candidate_recall": 0.9,
+        "candidate_nearest_mae": 0.01,
+        "safe_action_top1": 0.0,
+        "false_stop_rate": 0.0,
+        "unsafe_delete_rate": 0.0,
+        "teacher_mask_accuracy": 0.8,
+        "adaptive_keep_threshold_mean": 0.1,
+        "deployment_threshold_satisfied_rate": deployment_pass,
+        "deployment_bspline_rms": deployment_rms,
+        "deployment_retained_knot_count": retained_count,
     }
 
 
 class TrainerSelectionTests(unittest.TestCase):
+    def test_progress_line_reports_phase_percentage_rate_and_eta(self) -> None:
+        line = Trainer._progress_line(
+            phase="validation",
+            completed=25,
+            total=100,
+            loss=0.125,
+            elapsed=5.0,
+        )
+
+        self.assertIn("validation", line)
+        self.assertIn("25.00%", line)
+        self.assertIn("loss=0.125000", line)
+        self.assertIn("5.00 batch/s", line)
+        self.assertIn("ETA 00:15", line)
+
     def test_mean_metrics_uses_global_knot_match_counts(self) -> None:
         metrics = Trainer._mean_metrics(
             {
@@ -131,6 +160,126 @@ class TrainerSelectionTests(unittest.TestCase):
         )
         self.assertAlmostEqual(checkpoint["selection_value"], 1.0)
         self.assertAlmostEqual(checkpoint["best_count_mae"], 1.0)
+
+    def test_one_shot_checkpoint_minimizes_knots_after_pass_constraint(self) -> None:
+        model = torch.nn.Linear(1, 1)
+        model.structure_mode = "candidate_pruning_one_shot"
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        trainer = Trainer(model, torch.nn.Identity(), optimizer, torch.device("cpu"))
+        loader = DataLoader(TensorDataset(torch.zeros(1, 1)), batch_size=1)
+        epoch_metrics = [
+            _metrics(
+                0.1,
+                0.95,
+                0.8,
+                deployment_pass=0.99,
+                deployment_rms=0.003,
+                retained_count=28.0,
+            ),
+            _metrics(
+                0.1,
+                0.95,
+                0.8,
+                deployment_pass=0.99,
+                deployment_rms=0.003,
+                retained_count=28.0,
+            ),
+            _metrics(
+                0.3,
+                0.70,
+                0.6,
+                deployment_pass=0.97,
+                deployment_rms=0.004,
+                retained_count=10.0,
+            ),
+            _metrics(
+                0.3,
+                0.70,
+                0.6,
+                deployment_pass=0.97,
+                deployment_rms=0.004,
+                retained_count=10.0,
+            ),
+            _metrics(
+                0.2,
+                0.90,
+                0.7,
+                deployment_pass=0.96,
+                deployment_rms=0.0045,
+                retained_count=5.0,
+            ),
+            _metrics(
+                0.2,
+                0.90,
+                0.7,
+                deployment_pass=0.96,
+                deployment_rms=0.0045,
+                retained_count=5.0,
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint_path = Path(directory) / "best.pt"
+            with patch.object(trainer, "_run_epoch", side_effect=epoch_metrics):
+                trainer.fit(
+                    loader,
+                    loader,
+                    epochs=3,
+                    checkpoint_path=checkpoint_path,
+                    deployment_validation=True,
+                )
+            checkpoint = torch.load(
+                checkpoint_path, map_location="cpu", weights_only=True
+            )
+
+        self.assertEqual(checkpoint["epoch"], 2)
+        self.assertEqual(
+            checkpoint["selection_metric"],
+            "constrained_min_knots_at_target_pass_then_mask_count_rms",
+        )
+        self.assertAlmostEqual(checkpoint["selection_value"], 10.0)
+        self.assertAlmostEqual(checkpoint["best_deployment_bspline_rms"], 0.004)
+        self.assertAlmostEqual(
+            checkpoint["best_deployment_retained_knot_count"], 10.0
+        )
+        self.assertTrue(checkpoint["best_deployment_pass_constraint_satisfied"])
+
+    def test_one_shot_checkpoint_maximizes_pass_before_feasible(self) -> None:
+        model = torch.nn.Linear(1, 1)
+        model.structure_mode = "candidate_pruning_one_shot"
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        trainer = Trainer(
+            model,
+            torch.nn.Identity(),
+            optimizer,
+            torch.device("cpu"),
+            deployment_pass_rate_target=0.97,
+        )
+        loader = DataLoader(TensorDataset(torch.zeros(1, 1)), batch_size=1)
+        epoch_metrics = [
+            _metrics(0.1, 0.8, 0.8, deployment_pass=0.8, retained_count=8.0),
+            _metrics(0.1, 0.8, 0.8, deployment_pass=0.8, retained_count=8.0),
+            _metrics(0.2, 0.7, 0.7, deployment_pass=0.9, retained_count=20.0),
+            _metrics(0.2, 0.7, 0.7, deployment_pass=0.9, retained_count=20.0),
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint_path = Path(directory) / "best.pt"
+            with patch.object(trainer, "_run_epoch", side_effect=epoch_metrics):
+                trainer.fit(
+                    loader,
+                    loader,
+                    epochs=2,
+                    checkpoint_path=checkpoint_path,
+                    deployment_validation=True,
+                )
+            checkpoint = torch.load(
+                checkpoint_path, map_location="cpu", weights_only=True
+            )
+
+        self.assertEqual(checkpoint["epoch"], 2)
+        self.assertAlmostEqual(checkpoint["selection_value"], 0.9)
+        self.assertFalse(checkpoint["best_deployment_pass_constraint_satisfied"])
 
 
 if __name__ == "__main__":

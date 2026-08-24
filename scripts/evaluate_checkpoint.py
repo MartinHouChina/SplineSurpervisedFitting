@@ -64,6 +64,90 @@ def resolve_fit_tolerance(
     return tolerance
 
 
+def candidate_mode_flags(
+    checkpoint: dict[str, object], model_config: dict[str, object]
+) -> tuple[bool, bool]:
+    """Return ``(candidate_family, one_shot_v8)`` using stable features."""
+    structure = str(model_config.get("structure_mode", "")).lower()
+    objective = str(checkpoint.get("objective_version", "")).lower()
+    one_shot = (
+        structure == "candidate_pruning_one_shot"
+        or "candidate_pruning_one_shot" in objective
+    )
+    candidate_family = one_shot or structure == "candidate_pruning"
+    return candidate_family, one_shot
+
+
+def one_shot_selection(
+    output: dict[str, torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor, str]:
+    """Read the v8 learned decision without applying a second threshold.
+
+    ``keep_probability`` is already centered by the learned adaptive logit
+    threshold, so its neutral deployment cutoff is 0.5.  The separately
+    reported ``adaptive_keep_threshold`` lives in raw-importance space.
+    """
+    required = ("internal_knots", "keep_probability")
+    missing = [name for name in required if name not in output]
+    if missing:
+        raise KeyError("one-shot output is missing: " + ", ".join(missing))
+    probabilities = output["keep_probability"]
+    if probabilities.shape != output["internal_knots"].shape:
+        raise ValueError("keep_probability and internal_knots must share [B,K]")
+    if "learned_keep_mask" in output:
+        mask = output["learned_keep_mask"]
+        if mask.shape != probabilities.shape:
+            raise ValueError("learned_keep_mask must share shape [B,K]")
+        if mask.dtype != torch.bool:
+            if mask.is_floating_point() and not torch.isfinite(mask).all():
+                raise ValueError("learned_keep_mask must contain only finite values")
+            if not torch.all((mask == 0) | (mask == 1)):
+                raise ValueError("learned_keep_mask must be Boolean or strictly 0/1")
+        mask = mask.to(torch.bool)
+        source = "learned_keep_mask"
+    else:
+        mask = probabilities >= 0.5
+        source = "keep_probability>=0.5_fallback"
+
+    adaptive = output.get("adaptive_keep_threshold")
+    if adaptive is None:
+        adaptive = output.get("adaptive_keep_logit_threshold")
+    if adaptive is None:
+        adaptive = probabilities.new_full((probabilities.shape[0],), float("nan"))
+    else:
+        adaptive = adaptive.reshape(probabilities.shape[0], -1)
+        if adaptive.shape[1] != 1:
+            raise ValueError("adaptive_keep_threshold must have one value per curve")
+        adaptive = adaptive[:, 0]
+    return mask, adaptive, source
+
+
+def refit_one_shot_output_batch(
+    output: dict[str, torch.Tensor],
+    points: torch.Tensor,
+    *,
+    degree: int,
+    smoothness_weight: float,
+    control_ridge: float,
+) -> tuple[list[HardGatedBSplineFit], torch.Tensor, torch.Tensor, str]:
+    """Apply the learned v8 mask, then perform one standard B-spline refit."""
+    mask, adaptive_threshold, source = one_shot_selection(output)
+    selected_output = {
+        "params": output["params"],
+        "internal_knots": output["internal_knots"],
+        "knot_mask": mask,
+    }
+    deployed = refit_model_output_as_bsplines(
+        selected_output,
+        points,
+        degree=degree,
+        smoothness_weight=smoothness_weight,
+        control_ridge=control_ridge,
+        interpolate_endpoints=True,
+    )
+    return deployed, mask, adaptive_threshold, source
+
+
 def _pruning_result_as_deployed_fit(
     result: MinimalKnotPruningResult,
     sample_index: int,
@@ -119,7 +203,9 @@ def prune_candidate_output_batch(
     return deployed, results
 
 
-def candidate_loss_from_checkpoint(checkpoint: dict[str, object]) -> CandidatePruningLoss:
+def candidate_loss_from_checkpoint(
+    checkpoint: dict[str, object], *, disable_exact_teacher: bool = False
+) -> CandidatePruningLoss:
     config = checkpoint.get("loss_config", {})
     config = config if isinstance(config, dict) else {}
     raw_weights = config.get("weights", {})
@@ -131,21 +217,18 @@ def candidate_loss_from_checkpoint(checkpoint: dict[str, object]) -> CandidatePr
     return CandidatePruningLoss(
         weights,
         knot_position_beta=float(config.get("knot_position_beta", 0.01)),
-        candidate_match_tolerance=float(
-            config.get("candidate_match_tolerance", 0.02)
-        ),
+        candidate_match_tolerance=float(config.get("candidate_match_tolerance", 0.02)),
         fit_tolerance=float(config.get("fit_tolerance", 5e-3)),
         repulsion_distance=config.get("repulsion_distance"),
         positive_keep_weight=float(config.get("positive_keep_weight", 2.0)),
-        exact_deletion_supervision=bool(
-            config.get("exact_deletion_supervision", True)
+        exact_deletion_supervision=(
+            bool(config.get("exact_deletion_supervision", True))
+            and not disable_exact_teacher
         ),
         deletion_smoothness_weight=float(
             config.get("deletion_smoothness_weight", 1e-6)
         ),
-        deletion_control_ridge=float(
-            config.get("deletion_control_ridge", 0.0)
-        ),
+        deletion_control_ridge=float(config.get("deletion_control_ridge", 0.0)),
     )
 
 
@@ -162,7 +245,15 @@ def main() -> None:
         default=20000,
         help="Independent synthetic test seed (training defaults: train=42, val=10000).",
     )
-    parser.add_argument("--activity-threshold", type=float, default=None)
+    parser.add_argument(
+        "--activity-threshold",
+        type=float,
+        default=None,
+        help=(
+            "Historical activity threshold. For v8 it is ignored by deployment; "
+            "the learned mask (or centered keep probability >= 0.5 fallback) is used."
+        ),
+    )
     parser.add_argument(
         "--threshold-sweep",
         type=float,
@@ -177,9 +268,18 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Normalized RMS bound for candidate_pruning. Defaults to the "
-            "checkpoint deployment error tolerance, then canonical label "
-            "tolerance."
+            "Normalized RMS bound for v7 hard candidate pruning. For v8 it is "
+            "reporting-only: it measures threshold satisfaction and never changes "
+            "the learned one-shot mask. Defaults to the checkpoint deployment "
+            "error tolerance, then canonical label tolerance."
+        ),
+    )
+    parser.add_argument(
+        "--run-hard-diagnostic",
+        action="store_true",
+        help=(
+            "For v8 only, additionally run the offline greedy hard-pruning "
+            "teacher for comparison. It never replaces one-shot deployment."
         ),
     )
     parser.add_argument(
@@ -211,7 +311,12 @@ def main() -> None:
     model.set_activity_threshold(threshold)
     model.to(device).eval()
     structure_mode = model_config.get("structure_mode", "hard_concrete")
-    candidate_pruning = structure_mode == "candidate_pruning"
+    candidate_pruning, candidate_one_shot = candidate_mode_flags(
+        checkpoint, model_config
+    )
+    candidate_hard_v7 = candidate_pruning and not candidate_one_shot
+    if args.run_hard_diagnostic and not candidate_one_shot:
+        parser.error("--run-hard-diagnostic requires a v8 one-shot checkpoint")
     count_conditioned = structure_mode in {
         "count_conditioned",
         "interactive_dynamic",
@@ -235,7 +340,8 @@ def main() -> None:
     dataset_config.setdefault(
         "canonical_knot_tolerance",
         5e-3
-        if checkpoint.get("objective_version")
+        if candidate_pruning
+        or checkpoint.get("objective_version")
         in {
             CANDIDATE_PRUNING_OBJECTIVE_VERSION,
             CURRENT_OBJECTIVE_VERSION,
@@ -255,7 +361,10 @@ def main() -> None:
         raw_loss_config = checkpoint.get("loss_config", {})
         loss_config = raw_loss_config if isinstance(raw_loss_config, dict) else {}
         assumed_loss_config = not bool(loss_config)
-        loss_fn = candidate_loss_from_checkpoint(checkpoint).to(device)
+        loss_fn = candidate_loss_from_checkpoint(
+            checkpoint,
+            disable_exact_teacher=candidate_one_shot,
+        ).to(device)
     else:
         loss_config, assumed_loss_config = migrate_loss_config(
             checkpoint, legacy=legacy_checkpoint
@@ -277,10 +386,7 @@ def main() -> None:
     activity_values: list[torch.Tensor] = []
     activity_ranges: list[torch.Tensor] = []
     sweep_counts: dict[float, list[torch.Tensor]] = (
-        {
-            value: []
-            for value in sorted(set(args.threshold_sweep + [threshold]))
-        }
+        {value: [] for value in sorted(set(args.threshold_sweep + [threshold]))}
         if not count_conditioned and not candidate_pruning
         else {}
     )
@@ -318,6 +424,13 @@ def main() -> None:
     }
     keep_probability_values: list[torch.Tensor] = []
     keep_probability_ranges: list[torch.Tensor] = []
+    learned_keep_masks: list[torch.Tensor] = []
+    one_shot_adaptive_thresholds: list[torch.Tensor] = []
+    one_shot_selection_sources: set[str] = set()
+    one_shot_threshold_satisfied: list[bool] = []
+    one_shot_hard_diagnostic_counts: list[int] = []
+    one_shot_hard_diagnostic_rms: list[float] = []
+    one_shot_hard_diagnostic_satisfied: list[bool] = []
 
     with torch.no_grad():
         for batch in loader:
@@ -354,14 +467,13 @@ def main() -> None:
                 expected_counts.append(batch_expected)
                 count_entropies.append(
                     -(
-                        batch_probabilities
-                        * batch_probabilities.clamp_min(1e-12).log()
+                        batch_probabilities * batch_probabilities.clamp_min(1e-12).log()
                     ).sum(dim=-1)
                 )
-                count_max_probabilities.append(
-                    batch_probabilities.amax(dim=-1)
-                )
-                for target, predicted in zip(batch_true.tolist(), batch_predicted.tolist()):
+                count_max_probabilities.append(batch_probabilities.amax(dim=-1))
+                for target, predicted in zip(
+                    batch_true.tolist(), batch_predicted.tolist()
+                ):
                     count_confusion[target, predicted] += 1
                 if count_selection == "bic":
                     deployment_output, _ = select_count_conditioned_output_by_bic(
@@ -378,8 +490,7 @@ def main() -> None:
                 keep_probability_values.append(keep_probability.cpu())
                 keep_probability_ranges.append(
                     (
-                        keep_probability.amax(dim=-1)
-                        - keep_probability.amin(dim=-1)
+                        keep_probability.amax(dim=-1) - keep_probability.amin(dim=-1)
                     ).cpu()
                 )
                 deployment_output = output
@@ -388,9 +499,7 @@ def main() -> None:
                     # ``internal_knots`` is the pruning head's refined full
                     # candidate set.  These proposal diagnostics deliberately
                     # precede any hard deletion.
-                    refined_candidates = output["internal_knots"][
-                        index
-                    ].detach().cpu()
+                    refined_candidates = output["internal_knots"][index].detach().cpu()
                     for proposal_tolerance in candidate_recall_tolerances:
                         proposal_matching = match_internal_knots(
                             refined_candidates,
@@ -420,13 +529,13 @@ def main() -> None:
                     )
                 if legacy_checkpoint:
                     deployment_output = dict(output)
-                    deployment_output["activity_gate"] = (
-                        activity >= threshold
-                    ).to(activity.dtype)
+                    deployment_output["activity_gate"] = (activity >= threshold).to(
+                        activity.dtype
+                    )
                 else:
                     deployment_output = output
 
-            if candidate_pruning:
+            if candidate_hard_v7:
                 deployed, pruning_batch = prune_candidate_output_batch(
                     output,
                     points,
@@ -452,6 +561,43 @@ def main() -> None:
                         pruning_first_rejected_rms.append(
                             float(rejected.candidate_rmse)
                         )
+            elif candidate_one_shot:
+                (
+                    deployed,
+                    learned_mask,
+                    adaptive_threshold,
+                    selection_source,
+                ) = refit_one_shot_output_batch(
+                    output,
+                    points,
+                    degree=model.degree,
+                    smoothness_weight=args.smoothness_weight,
+                    control_ridge=args.control_ridge,
+                )
+                learned_keep_masks.append(learned_mask.cpu())
+                one_shot_adaptive_thresholds.append(adaptive_threshold.cpu())
+                one_shot_selection_sources.add(selection_source)
+                one_shot_threshold_satisfied.extend(
+                    float(item.fit_rmse) <= fit_tolerance for item in deployed
+                )
+                if args.run_hard_diagnostic:
+                    _, diagnostic_batch = prune_candidate_output_batch(
+                        output,
+                        points,
+                        error_tolerance=fit_tolerance,
+                        degree=model.degree,
+                        smoothness_weight=args.smoothness_weight,
+                        control_ridge=args.control_ridge,
+                    )
+                    one_shot_hard_diagnostic_counts.extend(
+                        item.final_count for item in diagnostic_batch
+                    )
+                    one_shot_hard_diagnostic_rms.extend(
+                        float(item.final_fit.fit_rmse) for item in diagnostic_batch
+                    )
+                    one_shot_hard_diagnostic_satisfied.extend(
+                        item.threshold_satisfied for item in diagnostic_batch
+                    )
             else:
                 deployed = refit_model_output_as_bsplines(
                     deployment_output,
@@ -474,20 +620,14 @@ def main() -> None:
                 control_count = int(item.control_points.shape[0])
                 bspline_control_counts.append(control_count)
                 if item.spline.solver_rank is not None:
-                    bspline_rank_deficient.append(item.spline.solver_rank < control_count)
-                bspline_start_endpoint_distances.append(
-                    float(
-                        (
-                            item.reconstructed_points[0] - points[index, 0]
-                        ).norm()
+                    bspline_rank_deficient.append(
+                        item.spline.solver_rank < control_count
                     )
+                bspline_start_endpoint_distances.append(
+                    float((item.reconstructed_points[0] - points[index, 0]).norm())
                 )
                 bspline_end_endpoint_distances.append(
-                    float(
-                        (
-                            item.reconstructed_points[-1] - points[index, -1]
-                        ).norm()
-                    )
+                    float((item.reconstructed_points[-1] - points[index, -1]).norm())
                 )
 
             parameter_difference = output["params"].cpu() - batch["true_params"]
@@ -532,6 +672,11 @@ def main() -> None:
             * mean_losses["count_consistency_loss"],
             "deletion_cost": loss_fn.weights.deletion_cost
             * mean_losses["deletion_cost_loss"],
+            "teacher_risk": loss_fn.weights.teacher_risk
+            * mean_losses["teacher_risk_loss"],
+            "teacher_count": loss_fn.weights.teacher_count
+            * mean_losses["teacher_count_loss"],
+            "complexity": loss_fn.weights.complexity * mean_losses["complexity_loss"],
         }
     else:
         weighted_components = {
@@ -544,13 +689,11 @@ def main() -> None:
             * mean_losses["parameter_prior_loss"],
             "true_parameter": loss_fn.weights.true_parameter
             * mean_losses["true_parameter_loss"],
-            "existence": loss_fn.weights.existence
-            * mean_losses["existence_loss"],
+            "existence": loss_fn.weights.existence * mean_losses["existence_loss"],
             "knot_position": loss_fn.weights.knot_position
             * mean_losses["knot_position_loss"],
             "count": loss_fn.weights.count * mean_losses["count_loss"],
-            "over_count": loss_fn.weights.over_count
-            * mean_losses["over_count_loss"],
+            "over_count": loss_fn.weights.over_count * mean_losses["over_count_loss"],
         }
     precision = total_matched / total_predicted if total_predicted else 0.0
     recall = total_matched / total_true if total_true else 0.0
@@ -558,6 +701,8 @@ def main() -> None:
     knot_mae = matched_error_sum / total_matched if total_matched else float("nan")
     bspline_fit_mean = sum(bspline_fit_losses) / len(bspline_fit_losses)
     bspline_rms_values = torch.tensor(bspline_fit_losses).sqrt()
+    bspline_rms_mean = float(bspline_rms_values.mean())
+    bspline_rms_pooled = math.sqrt(bspline_fit_mean)
     bspline_rms_p95 = float(torch.quantile(bspline_rms_values, 0.95))
     bspline_rms_max = float(bspline_rms_values.max())
     bspline_coordinate_mean = sum(bspline_coordinate_losses) / len(
@@ -583,7 +728,9 @@ def main() -> None:
         expected_count_tensor = torch.cat(expected_counts)
         count_entropy_tensor = torch.cat(count_entropies)
         count_max_probability_tensor = torch.cat(count_max_probabilities)
-        count_accuracy = float((predicted_count_tensor == true_count_tensor).float().mean())
+        count_accuracy = float(
+            (predicted_count_tensor == true_count_tensor).float().mean()
+        )
         count_mae = float(
             (predicted_count_tensor - true_count_tensor).abs().float().mean()
         )
@@ -609,14 +756,17 @@ def main() -> None:
     elif candidate_pruning:
         all_keep_probability = torch.cat(keep_probability_values)
         all_keep_ranges = torch.cat(keep_probability_ranges)
-        network_keep_count = (
-            all_keep_probability >= threshold
-        ).sum(dim=-1).to(torch.long)
+        if candidate_one_shot:
+            network_keep_count = (
+                torch.cat(learned_keep_masks).sum(dim=-1).to(torch.long)
+            )
+        else:
+            network_keep_count = (
+                (all_keep_probability >= threshold).sum(dim=-1).to(torch.long)
+            )
         predicted_count_tensor = retained
         count_accuracy = float((retained == true_count_tensor).float().mean())
-        count_mae = float(
-            (retained - true_count_tensor).abs().float().mean()
-        )
+        count_mae = float((retained - true_count_tensor).abs().float().mean())
         expected_count_mean = float(all_keep_probability.sum(dim=-1).mean())
         network_histogram = _histogram(network_keep_count, candidate_count)
         mode_histogram = None
@@ -627,8 +777,12 @@ def main() -> None:
         deployment_count_accuracy = count_accuracy
         deployment_count_mae = count_mae
         activity_report = {
-            "role": "diagnostic_only_not_used_for_deployment",
-            "threshold": threshold,
+            "role": (
+                "one_shot_deployment_selector"
+                if candidate_one_shot
+                else "diagnostic_only_not_used_for_deployment"
+            ),
+            "threshold": 0.5 if candidate_one_shot else threshold,
             "minimum": float(all_keep_probability.min()),
             "maximum": float(all_keep_probability.max()),
             "mean_within_curve_range": float(all_keep_ranges.mean()),
@@ -689,6 +843,16 @@ def main() -> None:
         {
             "method": "greedy_single_deletion_standard_bspline_refit",
             "fit_tolerance_normalized_rms": fit_tolerance,
+            "retained_count_mean": float(retained.float().mean()),
+            "retained_count_min": int(retained.min()),
+            "retained_count_max": int(retained.max()),
+            # Compatibility key: v7 historically used pooled RMS here.
+            "refit_rms_mean": bspline_rms_pooled,
+            "refit_rms_mean_curve": bspline_rms_mean,
+            "refit_rms_pooled": bspline_rms_pooled,
+            "refit_rms_mean_compatibility_semantics": "pooled_rms",
+            "refit_rms_p95": bspline_rms_p95,
+            "refit_rms_max": bspline_rms_max,
             "threshold_satisfied_fraction": (
                 sum(pruning_threshold_satisfied)
                 / max(len(pruning_threshold_satisfied), 1)
@@ -701,19 +865,96 @@ def main() -> None:
                 / max(len(pruning_accepted_deletions), 1)
             ),
             "first_rejected_deletion_rms_mean": (
-                sum(pruning_first_rejected_rms)
-                / len(pruning_first_rejected_rms)
+                sum(pruning_first_rejected_rms) / len(pruning_first_rejected_rms)
                 if pruning_first_rejected_rms
                 else None
             ),
             "learned_keep_probability_role": "diagnostic_only",
         }
-        if candidate_pruning
+        if candidate_hard_v7
+        else None
+    )
+    adaptive_threshold_values = (
+        torch.cat(one_shot_adaptive_thresholds)
+        if one_shot_adaptive_thresholds
+        else torch.empty(0)
+    )
+    finite_adaptive_thresholds = adaptive_threshold_values[
+        torch.isfinite(adaptive_threshold_values)
+    ]
+    one_shot_report = (
+        {
+            "method": "learned_mask_then_single_standard_bspline_refit",
+            "selection_sources": sorted(one_shot_selection_sources),
+            "keep_probability_cutoff": 0.5,
+            "activity_threshold_cli_used_for_selection": False,
+            "fit_tolerance_used_for_selection": False,
+            "adaptive_keep_logit_threshold_mean": (
+                float(finite_adaptive_thresholds.mean())
+                if finite_adaptive_thresholds.numel()
+                else None
+            ),
+            "adaptive_keep_logit_threshold_min": (
+                float(finite_adaptive_thresholds.min())
+                if finite_adaptive_thresholds.numel()
+                else None
+            ),
+            "adaptive_keep_logit_threshold_max": (
+                float(finite_adaptive_thresholds.max())
+                if finite_adaptive_thresholds.numel()
+                else None
+            ),
+            "fit_tolerance_normalized_rms": fit_tolerance,
+            "retained_count_mean": float(retained.float().mean()),
+            "retained_count_min": int(retained.min()),
+            "retained_count_max": int(retained.max()),
+            # Compatibility key: v8 introduced this as mean per-curve RMS.
+            "refit_rms_mean": bspline_rms_mean,
+            "refit_rms_mean_curve": bspline_rms_mean,
+            "refit_rms_pooled": bspline_rms_pooled,
+            "refit_rms_mean_compatibility_semantics": "mean_curve_rms",
+            "refit_rms_p95": bspline_rms_p95,
+            "refit_rms_max": bspline_rms_max,
+            "threshold_satisfied_fraction": (
+                sum(one_shot_threshold_satisfied)
+                / max(len(one_shot_threshold_satisfied), 1)
+            ),
+            "standard_refits_per_sample": 1,
+            "deployment_standard_refits_per_sample": 1,
+            "model_forward_internal_proxy_solves_counted_as_deployment_refits": False,
+            "offline_diagnostic_refits_counted_as_deployment_refits": False,
+            "hard_pruning_used_for_deployment": False,
+            "loss_time_exact_teacher_executed": False,
+            "objective_role": "inference_proxy_teacher_terms_unavailable",
+            "offline_hard_diagnostic_requested": bool(args.run_hard_diagnostic),
+            "offline_hard_diagnostic": (
+                {
+                    "role": "teacher_diagnostic_only",
+                    "retained_count_mean": sum(one_shot_hard_diagnostic_counts)
+                    / len(one_shot_hard_diagnostic_counts),
+                    "rms_mean": sum(one_shot_hard_diagnostic_rms)
+                    / len(one_shot_hard_diagnostic_rms),
+                    "rms_mean_curve": sum(one_shot_hard_diagnostic_rms)
+                    / len(one_shot_hard_diagnostic_rms),
+                    "rms_pooled": math.sqrt(
+                        sum(value * value for value in one_shot_hard_diagnostic_rms)
+                        / len(one_shot_hard_diagnostic_rms)
+                    ),
+                    "threshold_satisfied_fraction": sum(
+                        one_shot_hard_diagnostic_satisfied
+                    )
+                    / len(one_shot_hard_diagnostic_satisfied),
+                }
+                if one_shot_hard_diagnostic_counts
+                else None
+            ),
+        }
+        if candidate_one_shot
         else None
     )
 
     report = {
-        "schema_version": 10,
+        "schema_version": 11,
         "checkpoint": str(args.checkpoint),
         "checkpoint_epoch": checkpoint.get("epoch"),
         "checkpoint_selection_metric": checkpoint.get("selection_metric"),
@@ -730,8 +971,10 @@ def main() -> None:
         "count_selection": (
             count_selection
             if count_conditioned
+            else "learned_one_shot_mask"
+            if candidate_one_shot
             else "hard_rms_pruning"
-            if candidate_pruning
+            if candidate_hard_v7
             else "threshold"
         ),
         "count_prior_weight": args.count_prior_weight if count_conditioned else None,
@@ -756,8 +999,9 @@ def main() -> None:
         "activity_diagnostics": activity_report,
         "threshold_sweep": threshold_report,
         "minimal_knot_pruning": pruning_report,
+        "one_shot_deployment": one_shot_report,
         "candidate_proposal_definition": (
-            "refined output['internal_knots'] before hard deletion"
+            "refined output['internal_knots'] before deployment selection"
             if candidate_pruning
             else None
         ),
@@ -773,6 +1017,17 @@ def main() -> None:
         ),
         "zero_knot_fraction": float((retained == 0).float().mean()),
         "all_knot_fraction": float((retained == candidate_count).float().mean()),
+        "network_objective_role": (
+            "inference_proxy_teacher_terms_unavailable"
+            if candidate_one_shot
+            else "evaluation_objective"
+        ),
+        "network_objective_comparable_to_training_validation": not candidate_one_shot,
+        "network_inference_proxy_objective": (
+            mean_losses["loss"] if candidate_one_shot else None
+        ),
+        # Compatibility key retained for existing report consumers. For v8 its
+        # role is described by ``network_objective_role`` above.
         "network_total_objective": mean_losses["loss"],
         "network_forward_fit_loss": mean_losses["fit_loss"],
         "network_forward_rms_euclidean": math.sqrt(mean_losses["fit_loss"]),
@@ -780,7 +1035,10 @@ def main() -> None:
             mean_losses["fit_loss"] / dataset_config["point_dim"]
         ),
         "standard_bspline_refit_loss": bspline_fit_mean,
-        "standard_bspline_refit_rms_euclidean": math.sqrt(bspline_fit_mean),
+        # Compatibility key: historically this was pooled RMS.
+        "standard_bspline_refit_rms_euclidean": bspline_rms_pooled,
+        "standard_bspline_refit_rms_euclidean_pooled": bspline_rms_pooled,
+        "standard_bspline_refit_rms_euclidean_mean_curve": bspline_rms_mean,
         "standard_bspline_refit_rms_euclidean_p95": bspline_rms_p95,
         "standard_bspline_refit_rms_euclidean_max": bspline_rms_max,
         "standard_bspline_coordinate_rmse": math.sqrt(bspline_coordinate_mean),
@@ -788,9 +1046,7 @@ def main() -> None:
         "standard_bspline_endpoint_max_distance": endpoint_max,
         "standard_bspline_control_count_mean": sum(bspline_control_counts)
         / len(bspline_control_counts),
-        "standard_bspline_augmented_objective_mean": sum(
-            bspline_augmented_objectives
-        )
+        "standard_bspline_augmented_objective_mean": sum(bspline_augmented_objectives)
         / len(bspline_augmented_objectives),
         "standard_bspline_rank_deficient_fraction": (
             sum(bspline_rank_deficient) / len(bspline_rank_deficient)
@@ -826,7 +1082,11 @@ def main() -> None:
         print("  WARNING: loss_config was absent; compatible defaults were assumed.")
 
     print("\nNetwork forward model")
-    print(f"  total objective: {mean_losses['loss']:.9e}")
+    if candidate_one_shot:
+        print("  objective role: inference proxy (teacher terms unavailable)")
+        print(f"  inference proxy objective: {mean_losses['loss']:.9e}")
+    else:
+        print(f"  total objective: {mean_losses['loss']:.9e}")
     print(f"  fit loss (mean squared Euclidean): {mean_losses['fit_loss']:.9e}")
     print(f"  RMS Euclidean distance: {math.sqrt(mean_losses['fit_loss']):.9e}")
     print("  weighted objective components:")
@@ -855,8 +1115,8 @@ def main() -> None:
         print(f"  deployment count MAE: {deployment_count_mae:.3f}")
         print(f"  deployment count histogram: {hard_histogram}")
     elif candidate_pruning:
-        print("\nHigh-recall candidates and learned pruning diagnostics")
-        print("  proposal set: refined candidates before hard deletion")
+        print("\nHigh-recall candidate diagnostics")
+        print("  proposal set: refined candidates before deployment selection")
         for tolerance in candidate_recall_tolerances:
             metric = candidate_proposal_metrics[f"{tolerance:.3f}"]
             mae_text = (
@@ -868,25 +1128,75 @@ def main() -> None:
                 f"  candidate recall@{tolerance:.3f}: "
                 f"{metric['recall']:.3f}, matched MAE={mae_text}"
             )
-        print(
-            "  learned keep probability mass mean (diagnostic only): "
-            f"{expected_count_mean:.3f}"
-        )
-        print(f"  thresholded keep diagnostic histogram: {network_histogram}")
-        print("\nHard minimum-complexity deployment")
-        print(f"  normalized RMS threshold: {fit_tolerance:.9e}")
-        print(
-            "  threshold-satisfied fraction: "
-            f"{pruning_report['threshold_satisfied_fraction']:.3f}"
-        )
-        print(
-            "  candidate initial RMS mean: "
-            f"{pruning_report['initial_candidate_fit_rms_mean']:.9e}"
-        )
-        print(
-            "  accepted deletions mean: "
-            f"{pruning_report['accepted_deletions_mean']:.3f}"
-        )
+        if candidate_one_shot:
+            print(
+                "  learned keep probability mass mean (deployment): "
+                f"{expected_count_mean:.3f}"
+            )
+            print(f"  learned one-shot count histogram: {network_histogram}")
+            print("\nOne-shot standard B-spline deployment")
+            print("  selection: learned_keep_mask (fallback p >= 0.5)")
+            print(
+                "  adaptive raw-importance logit beta mean/min/max: "
+                f"{one_shot_report['adaptive_keep_logit_threshold_mean']}/"
+                f"{one_shot_report['adaptive_keep_logit_threshold_min']}/"
+                f"{one_shot_report['adaptive_keep_logit_threshold_max']}"
+            )
+            print(f"  normalized RMS tolerance: {fit_tolerance:.9e}")
+            print(
+                "  tolerance role: reporting only; it does not change the learned mask"
+            )
+            print(
+                "  one-shot K mean/min/max: "
+                f"{one_shot_report['retained_count_mean']:.3f}/"
+                f"{one_shot_report['retained_count_min']}/"
+                f"{one_shot_report['retained_count_max']}"
+            )
+            print(
+                "  one-shot refit mean-curve RMS/P95/max: "
+                f"{one_shot_report['refit_rms_mean']:.9e}/"
+                f"{one_shot_report['refit_rms_p95']:.9e}/"
+                f"{one_shot_report['refit_rms_max']:.9e}"
+            )
+            print(f"  one-shot pooled RMS: {one_shot_report['refit_rms_pooled']:.9e}")
+            print(
+                "  threshold-satisfied fraction: "
+                f"{one_shot_report['threshold_satisfied_fraction']:.3f}"
+            )
+            print("  hard pruning used for deployment: False")
+            print(
+                "  deployment standard B-spline refits per sample: 1 "
+                "(network-forward proxy solves are excluded)"
+            )
+            if one_shot_report["offline_hard_diagnostic"] is not None:
+                diagnostic = one_shot_report["offline_hard_diagnostic"]
+                print(
+                    "  offline hard teacher diagnostic only: "
+                    f"K mean={diagnostic['retained_count_mean']:.3f}, "
+                    f"RMS mean={diagnostic['rms_mean']:.9e}, "
+                    "threshold-satisfied fraction="
+                    f"{diagnostic['threshold_satisfied_fraction']:.3f}"
+                )
+        else:
+            print(
+                "  learned keep probability mass mean (diagnostic only): "
+                f"{expected_count_mean:.3f}"
+            )
+            print(f"  thresholded keep diagnostic histogram: {network_histogram}")
+            print("\nHard minimum-complexity deployment")
+            print(f"  normalized RMS threshold: {fit_tolerance:.9e}")
+            print(
+                "  threshold-satisfied fraction: "
+                f"{pruning_report['threshold_satisfied_fraction']:.3f}"
+            )
+            print(
+                "  candidate initial RMS mean: "
+                f"{pruning_report['initial_candidate_fit_rms_mean']:.9e}"
+            )
+            print(
+                "  accepted deletions mean: "
+                f"{pruning_report['accepted_deletions_mean']:.3f}"
+            )
     else:
         print("\nHistorical threshold-gated structure")
         print(f"  threshold: {threshold:.3f}")
@@ -904,7 +1214,8 @@ def main() -> None:
     print(f"  zero-knot fraction: {report['zero_knot_fraction']:.3f}")
     print(f"  all-knot fraction: {report['all_knot_fraction']:.3f}")
     print(f"  refit loss: {bspline_fit_mean:.9e}")
-    print(f"  refit RMS distance: {math.sqrt(bspline_fit_mean):.9e}")
+    print(f"  refit pooled RMS distance: {bspline_rms_pooled:.9e}")
+    print(f"  refit mean-curve RMS distance: {bspline_rms_mean:.9e}")
     print(f"  refit RMS distance P95/max: {bspline_rms_p95:.9e}/{bspline_rms_max:.9e}")
     print(f"  endpoint RMS distance: {endpoint_rmse:.9e}")
     print(f"  endpoint max distance: {endpoint_max:.9e}")

@@ -57,6 +57,51 @@ def resolve_fit_tolerance(
     return tolerance
 
 
+def candidate_mode_flags(
+    checkpoint: dict[str, object], model_config: dict[str, object]
+) -> tuple[bool, bool]:
+    structure = str(model_config.get("structure_mode", "")).lower()
+    objective = str(checkpoint.get("objective_version", "")).lower()
+    one_shot = (
+        structure == "candidate_pruning_one_shot"
+        or "candidate_pruning_one_shot" in objective
+    )
+    return one_shot or structure == "candidate_pruning", one_shot
+
+
+def one_shot_selection(
+    output: dict[str, torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor, str]:
+    probabilities = output["keep_probability"]
+    if probabilities.shape != output["internal_knots"].shape:
+        raise ValueError("keep_probability and internal_knots must share [B,K]")
+    if "learned_keep_mask" in output:
+        mask = output["learned_keep_mask"]
+        if mask.shape != probabilities.shape:
+            raise ValueError("learned_keep_mask must share shape [B,K]")
+        if mask.dtype != torch.bool:
+            if mask.is_floating_point() and not torch.isfinite(mask).all():
+                raise ValueError("learned_keep_mask must contain only finite values")
+            if not torch.all((mask == 0) | (mask == 1)):
+                raise ValueError("learned_keep_mask must be Boolean or strictly 0/1")
+        mask = mask.to(torch.bool)
+        source = "learned_keep_mask"
+    else:
+        mask = probabilities >= 0.5
+        source = "keep_probability>=0.5_fallback"
+    adaptive = output.get("adaptive_keep_threshold")
+    if adaptive is None:
+        adaptive = output.get("adaptive_keep_logit_threshold")
+    if adaptive is None:
+        adaptive = probabilities.new_full((probabilities.shape[0],), float("nan"))
+    else:
+        adaptive = adaptive.reshape(probabilities.shape[0], -1)
+        if adaptive.shape[1] != 1:
+            raise ValueError("adaptive_keep_threshold must have one value per curve")
+        adaptive = adaptive[:, 0]
+    return mask, adaptive, source
+
+
 def pruning_result_as_deployed_fit(
     result: MinimalKnotPruningResult,
 ) -> HardGatedBSplineFit:
@@ -117,7 +162,9 @@ def refit_candidate_mask_as_deployed_fit(
     )
 
 
-def candidate_loss_from_checkpoint(checkpoint: dict[str, object]) -> CandidatePruningLoss:
+def candidate_loss_from_checkpoint(
+    checkpoint: dict[str, object], *, disable_exact_teacher: bool = False
+) -> CandidatePruningLoss:
     config = checkpoint.get("loss_config", {})
     config = config if isinstance(config, dict) else {}
     raw_weights = config.get("weights", {})
@@ -129,26 +176,25 @@ def candidate_loss_from_checkpoint(checkpoint: dict[str, object]) -> CandidatePr
     return CandidatePruningLoss(
         weights,
         knot_position_beta=float(config.get("knot_position_beta", 0.01)),
-        candidate_match_tolerance=float(
-            config.get("candidate_match_tolerance", 0.02)
-        ),
+        candidate_match_tolerance=float(config.get("candidate_match_tolerance", 0.02)),
         fit_tolerance=float(config.get("fit_tolerance", 5e-3)),
         repulsion_distance=config.get("repulsion_distance"),
         positive_keep_weight=float(config.get("positive_keep_weight", 2.0)),
-        exact_deletion_supervision=bool(
-            config.get("exact_deletion_supervision", True)
+        exact_deletion_supervision=(
+            bool(config.get("exact_deletion_supervision", True))
+            and not disable_exact_teacher
         ),
         deletion_smoothness_weight=float(
             config.get("deletion_smoothness_weight", 1e-6)
         ),
-        deletion_control_ridge=float(
-            config.get("deletion_control_ridge", 0.0)
-        ),
+        deletion_control_ridge=float(config.get("deletion_control_ridge", 0.0)),
     )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Visualize one fitted B-spline sample.")
+    parser = argparse.ArgumentParser(
+        description="Visualize one fitted B-spline sample."
+    )
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sample-index", type=int, default=0)
@@ -158,22 +204,35 @@ def main() -> None:
         default=20000,
         help="Synthetic test seed; use 10000 only to inspect validation samples.",
     )
-    parser.add_argument("--activity-threshold", type=float, default=None)
+    parser.add_argument(
+        "--activity-threshold",
+        type=float,
+        default=None,
+        help=(
+            "Historical activity threshold. For v8 it is ignored by deployment; "
+            "the learned mask (or centered keep probability >= 0.5 fallback) is used."
+        ),
+    )
     parser.add_argument("--smoothness-weight", type=float, default=1e-6)
     parser.add_argument("--control-ridge", type=float, default=0.0)
     parser.add_argument(
         "--fit-tolerance",
         type=float,
         default=None,
-        help="Normalized RMS limit for hard candidate deletion.",
+        help=(
+            "Normalized RMS reference for one-shot satisfaction reporting "
+            "and optional offline hard diagnostics. It never changes the v8 "
+            "learned mask."
+        ),
     )
     parser.add_argument(
         "--pruning-view",
         choices=("all", "learned", "hard", "comparison"),
-        default="hard",
+        default=None,
         help=(
             "Candidate-pruning visualization: all candidates, learned "
-            "keep-probability threshold, hard RMS pruning, or all three."
+            "one-shot mask, offline hard RMS teacher, or comparison. "
+            "Defaults to learned for v8 and hard for v7."
         ),
     )
     parser.add_argument(
@@ -206,10 +265,15 @@ def main() -> None:
     model.set_activity_threshold(threshold)
     model.eval()
     structure_mode = model_config.get("structure_mode", "hard_concrete")
-    if structure_mode != "candidate_pruning" and args.pruning_view != "hard":
+    candidate_pruning, candidate_one_shot = candidate_mode_flags(
+        checkpoint, model_config
+    )
+    if args.pruning_view is None:
+        args.pruning_view = "learned" if candidate_one_shot else "hard"
+    if not candidate_pruning and args.pruning_view != "hard":
         parser.error(
             "--pruning-view all/learned/comparison requires a "
-            "candidate_pruning checkpoint"
+            "candidate-pruning checkpoint"
         )
     count_conditioned = structure_mode in {
         "count_conditioned",
@@ -234,7 +298,8 @@ def main() -> None:
     dataset_config.setdefault(
         "canonical_knot_tolerance",
         5e-3
-        if checkpoint.get("objective_version")
+        if candidate_pruning
+        or checkpoint.get("objective_version")
         in {
             CANDIDATE_PRUNING_OBJECTIVE_VERSION,
             CURRENT_OBJECTIVE_VERSION,
@@ -262,18 +327,34 @@ def main() -> None:
             )
         elif legacy_checkpoint:
             deployment_output = dict(output)
-            deployment_output["activity_gate"] = (
-                output["activity"] >= threshold
-            ).to(output["activity"].dtype)
+            deployment_output["activity_gate"] = (output["activity"] >= threshold).to(
+                output["activity"].dtype
+            )
         else:
             deployment_output = output
         pruning_result: MinimalKnotPruningResult | None = None
         candidate_fits: dict[str, HardGatedBSplineFit] = {}
-        if structure_mode == "candidate_pruning":
+        adaptive_keep_threshold: torch.Tensor | None = None
+        learned_selection_source: str | None = None
+        if candidate_pruning:
             candidate_knots = output["internal_knots"][0]
             all_mask = torch.ones_like(candidate_knots, dtype=torch.bool)
-            learned_mask = output["keep_probability"][0] >= threshold
+            if candidate_one_shot:
+                learned_masks, adaptive_thresholds, learned_selection_source = (
+                    one_shot_selection(output)
+                )
+                learned_mask = learned_masks[0]
+                adaptive_keep_threshold = adaptive_thresholds[0]
+            else:
+                learned_mask = output["keep_probability"][0] >= threshold
+            requested_views = (
+                {"all", "learned", "hard"}
+                if args.pruning_view == "comparison"
+                else {args.pruning_view}
+            )
             for name, mask in (("all", all_mask), ("learned", learned_mask)):
+                if name not in requested_views:
+                    continue
                 candidate_fits[name] = refit_candidate_mask_as_deployed_fit(
                     output["params"][0],
                     points[0],
@@ -283,7 +364,7 @@ def main() -> None:
                     smoothness_weight=args.smoothness_weight,
                     control_ridge=args.control_ridge,
                 )
-            if args.pruning_view in {"hard", "comparison"}:
+            if "hard" in requested_views:
                 pruning_result = prune_knots_to_rms_tolerance(
                     output["params"][0],
                     points[0],
@@ -294,12 +375,10 @@ def main() -> None:
                     control_ridge=args.control_ridge,
                     interpolate_endpoints=True,
                 )
-                candidate_fits["hard"] = pruning_result_as_deployed_fit(
-                    pruning_result
-                )
-            primary_view = (
-                "hard" if args.pruning_view == "comparison" else args.pruning_view
-            )
+                candidate_fits["hard"] = pruning_result_as_deployed_fit(pruning_result)
+            primary_view = args.pruning_view
+            if primary_view == "comparison":
+                primary_view = "learned" if candidate_one_shot else "hard"
             deployed = candidate_fits[primary_view]
         else:
             deployed = refit_model_output_as_bsplines(
@@ -310,8 +389,11 @@ def main() -> None:
                 control_ridge=args.control_ridge,
             )[0]
 
-    if structure_mode == "candidate_pruning":
-        loss_fn = candidate_loss_from_checkpoint(checkpoint)
+    if candidate_pruning:
+        loss_fn = candidate_loss_from_checkpoint(
+            checkpoint,
+            disable_exact_teacher=candidate_one_shot,
+        )
     else:
         loss_config, _ = migrate_loss_config(checkpoint, legacy=legacy_checkpoint)
         loss_fn = SplineFittingLoss(
@@ -372,10 +454,7 @@ def main() -> None:
         )
         axis.legend(fontsize="small")
 
-    comparison_view = (
-        structure_mode == "candidate_pruning"
-        and args.pruning_view == "comparison"
-    )
+    comparison_view = candidate_pruning and args.pruning_view == "comparison"
     if comparison_view:
         figure, axes = plt.subplots(2, 2, figsize=(13, 10))
         ax_all, ax_learned, ax_hard, ax_structure = axes.ravel()
@@ -389,15 +468,27 @@ def main() -> None:
         plot_curve(
             ax_learned,
             candidate_fits["learned"],
-            title=f"(b) Learned keep (p >= {threshold:.2f})",
-            spline_label="learned-pruned B-spline",
+            title=(
+                "(b) One-shot learned deployment"
+                if candidate_one_shot
+                else f"(b) Learned keep (p >= {threshold:.2f})"
+            ),
+            spline_label="one-shot learned B-spline",
             show_network=False,
         )
         plot_curve(
             ax_hard,
             candidate_fits["hard"],
-            title=f"(c) Hard RMS pruning (epsilon={fit_tolerance:.2e})",
-            spline_label="hard-pruned B-spline",
+            title=(
+                f"(c) Offline hard teacher (epsilon={fit_tolerance:.2e})"
+                if candidate_one_shot
+                else f"(c) Hard RMS pruning (epsilon={fit_tolerance:.2e})"
+            ),
+            spline_label=(
+                "offline teacher B-spline"
+                if candidate_one_shot
+                else "hard-pruned B-spline"
+            ),
             show_network=False,
         )
         curve_axes = (ax_all, ax_learned, ax_hard)
@@ -417,11 +508,19 @@ def main() -> None:
     else:
         figure, axes = plt.subplots(1, 2, figsize=(12, 5))
         ax_curve, ax_structure = axes
-        if structure_mode == "candidate_pruning":
+        if candidate_pruning:
             view_titles = {
                 "all": "All candidates",
-                "learned": f"Learned keep (p >= {threshold:.2f})",
-                "hard": f"Hard RMS pruning (epsilon={fit_tolerance:.2e})",
+                "learned": (
+                    "One-shot learned deployment"
+                    if candidate_one_shot
+                    else f"Learned keep (p >= {threshold:.2f})"
+                ),
+                "hard": (
+                    f"Offline hard teacher (epsilon={fit_tolerance:.2e})"
+                    if candidate_one_shot
+                    else f"Hard RMS pruning (epsilon={fit_tolerance:.2e})"
+                ),
             }
             spline_labels = {
                 "all": "all-candidate B-spline",
@@ -448,9 +547,7 @@ def main() -> None:
         probabilities = output["count_probabilities"][0].detach().numpy()
         counts = list(range(len(probabilities)))
         mode_count = int(
-            output.get(
-                "count_mode_knot_count", output["predicted_knot_count"]
-            )[0]
+            output.get("count_mode_knot_count", output["predicted_knot_count"])[0]
         )
         deployed_count = deployed.retained_count
         colors = [
@@ -472,7 +569,7 @@ def main() -> None:
             f"({count_selection})"
         )
         ax_structure.set_xticks(counts)
-    elif structure_mode == "candidate_pruning":
+    elif candidate_pruning:
         keep_probability = output["keep_probability"][0].detach().numpy()
         knots = output["internal_knots"][0].detach().numpy()
         if args.pruning_view == "all":
@@ -480,21 +577,60 @@ def main() -> None:
             selection_description = "selected in all-candidate fit"
         elif args.pruning_view == "learned":
             displayed_mask = candidate_fits["learned"].retained_mask
-            selection_description = f"learned p >= {threshold:.2f}"
+            selection_description = (
+                "learned adaptive one-shot mask"
+                if candidate_one_shot
+                else f"learned p >= {threshold:.2f}"
+            )
         else:
             displayed_mask = candidate_fits["hard"].retained_mask
-            selection_description = "retained by hard RMS pruning"
+            selection_description = (
+                "offline hard teacher"
+                if candidate_one_shot
+                else "retained by hard RMS pruning"
+            )
         kept = displayed_mask.cpu().numpy()
         colors = ["tab:orange" if value else "tab:blue" for value in kept]
-        ax_structure.bar(range(len(keep_probability)), keep_probability, color=colors)
-        ax_structure.axhline(threshold, color="black", linestyle="--")
+        raw_importance_tensor = output.get(
+            "keep_importance_logits",
+            output.get("raw_keep_importance", output.get("raw_importance")),
+        )
+        if candidate_one_shot and raw_importance_tensor is not None:
+            structure_values = raw_importance_tensor[0].detach().numpy()
+            adaptive_value = float(adaptive_keep_threshold)
+            ax_structure.bar(
+                range(len(structure_values)), structure_values, color=colors
+            )
+            if math.isfinite(adaptive_value):
+                ax_structure.axhline(
+                    adaptive_value,
+                    color="black",
+                    linestyle="--",
+                    label="adaptive logit beta",
+                )
+            structure_ylabel = "raw learned keep-importance logit"
+        else:
+            structure_values = keep_probability
+            ax_structure.bar(
+                range(len(structure_values)), structure_values, color=colors
+            )
+            decision_cutoff = 0.5 if candidate_one_shot else threshold
+            ax_structure.axhline(decision_cutoff, color="black", linestyle="--")
+            structure_ylabel = (
+                "threshold-centered keep probability"
+                if candidate_one_shot
+                else "learned keep probability (diagnostic only)"
+            )
         if comparison_view:
-            learned_indices = torch.nonzero(
-                candidate_fits["learned"].retained_mask, as_tuple=False
-            ).squeeze(-1).cpu().numpy()
+            learned_indices = (
+                torch.nonzero(candidate_fits["learned"].retained_mask, as_tuple=False)
+                .squeeze(-1)
+                .cpu()
+                .numpy()
+            )
             ax_structure.scatter(
                 learned_indices,
-                keep_probability[learned_indices],
+                structure_values[learned_indices],
                 marker="D",
                 facecolors="none",
                 edgecolors="tab:green",
@@ -506,12 +642,13 @@ def main() -> None:
             range(len(knots)), [f"{value:.3f}" for value in knots], rotation=45
         )
         ax_structure.set_xlabel(f"candidate knot (orange = {selection_description})")
-        ax_structure.set_ylabel("learned keep probability (diagnostic only)")
+        ax_structure.set_ylabel(structure_ylabel)
         if comparison_view:
             ax_structure.set_title(
                 "(d) Candidate decisions\n"
                 f"learned K={candidate_fits['learned'].retained_count} | "
                 f"hard K={candidate_fits['hard'].retained_count}"
+                + (" (offline diagnostic)" if candidate_one_shot else "")
             )
         else:
             ax_structure.set_title(
@@ -543,6 +680,14 @@ def main() -> None:
         true_knots,
         tolerance=0.05,
     )
+    selected_fit_is_deployment = (
+        not candidate_pruning
+        or (candidate_one_shot and args.pruning_view in {"learned", "comparison"})
+        or (not candidate_one_shot and args.pruning_view in {"hard", "comparison"})
+    )
+    selected_fit_role = (
+        "deployment" if selected_fit_is_deployment else "selected offline diagnostic"
+    )
     print("Spline structure report")
     print(f"  checkpoint: {args.checkpoint}")
     print(f"  structure mode: {structure_mode}")
@@ -556,46 +701,97 @@ def main() -> None:
         print(f"  expected knot count: {float(output['expected_knot_count'][0]):.6f}")
         print(f"  count probabilities: {output['count_probabilities'][0].tolist()}")
         print(f"  deployment count selection: {count_selection}")
-    elif structure_mode == "candidate_pruning":
+    elif candidate_pruning:
         print(f"  pruning view: {args.pruning_view}")
-        print(f"  learned keep threshold: {threshold:.4f}")
-        for name, fit in candidate_fits.items():
+        if candidate_one_shot:
+            assert adaptive_keep_threshold is not None
+            if selected_fit_is_deployment:
+                print("  selected result role: v8 learned one-shot deployment")
+            else:
+                print(
+                    f"  selected result role: offline {args.pruning_view} diagnostic; "
+                    "not the v8 deployment result"
+                )
+                print(
+                    "  v8 deployment policy: learned one-shot mask followed by one "
+                    "standard B-spline refit (not executed in this selected view)"
+                )
+            print(f"  learned selection source: {learned_selection_source}")
+            print("  final threshold-centered keep-probability cutoff: 0.5")
             print(
-                f"  {name} standard B-spline: K={fit.retained_count}, "
+                "  adaptive raw-importance logit beta: "
+                f"{float(adaptive_keep_threshold):.6f}"
+            )
+            print(
+                "  fit tolerance is reporting-only for learned deployment; "
+                "it does not change the mask"
+            )
+            if selected_fit_is_deployment:
+                print(
+                    "  deployment standard B-spline refits: 1 "
+                    "(network-forward proxy solves are excluded)"
+                )
+        else:
+            print(f"  learned keep threshold: {threshold:.4f}")
+        for name, fit in candidate_fits.items():
+            role = (
+                " (offline diagnostic only)"
+                if candidate_one_shot and name in {"all", "hard"}
+                else " (deployment)"
+                if candidate_one_shot and name == "learned"
+                else ""
+            )
+            print(
+                f"  {name} standard B-spline{role}: K={fit.retained_count}, "
                 f"RMS={float(fit.fit_rmse):.9e}"
             )
         if pruning_result is not None:
-            print(f"  hard-pruning RMS threshold: {fit_tolerance:.9e}")
+            print(
+                "  hard-pruning RMS threshold"
+                + (" (offline teacher only)" if candidate_one_shot else "")
+                + f": {fit_tolerance:.9e}"
+            )
             print(
                 "  hard candidates -> retained: "
                 f"{pruning_result.initial_count} -> {pruning_result.final_count}"
             )
             print(f"  threshold satisfied: {pruning_result.threshold_satisfied}")
-            print(
-                "  RMS trajectory: "
-                f"{pruning_result.rms_trajectory.cpu().tolist()}"
-            )
+            print(f"  RMS trajectory: {pruning_result.rms_trajectory.cpu().tolist()}")
         print(
-            "  learned keep probabilities (diagnostic only): "
-            f"{output['keep_probability'][0].detach().cpu().tolist()}"
+            (
+                "  threshold-centered keep probabilities "
+                "(v8 learned deployment selector): "
+                if candidate_one_shot
+                else "  learned keep probabilities (diagnostic only): "
+            )
+            + f"{output['keep_probability'][0].detach().cpu().tolist()}"
         )
     else:
         print(f"  activity threshold: {threshold:.4f}")
-    print(f"  retained internal knots: {deployed.retained_count}")
+    print(f"  {selected_fit_role} retained internal knots: {deployed.retained_count}")
     print(
-        "  retained knot values: "
+        f"  {selected_fit_role} retained knot values: "
         + ", ".join(
             f"{value:.6f}" for value in deployed.retained_internal_knots.tolist()
         )
     )
     print(f"  true internal knots: {true_knots.tolist()}")
     print(
-        f"  match@0.05: precision={matching.precision:.3f}, "
+        f"  {selected_fit_role} match@0.05: precision={matching.precision:.3f}, "
         f"recall={matching.recall:.3f}, F1={matching.f1:.3f}"
     )
-    print(f"  total objective: {float(losses['loss']):.9e}")
+    if candidate_one_shot:
+        print(
+            "  inference proxy objective (teacher terms unavailable): "
+            f"{float(losses['loss']):.9e}"
+        )
+    else:
+        print(f"  total objective: {float(losses['loss']):.9e}")
     print(f"  network fit loss: {float(losses['fit_loss']):.9e}")
-    print(f"  standard B-spline refit loss: {float(deployed.fit_mse):.9e}")
+    print(
+        f"  {selected_fit_role} standard B-spline refit loss: "
+        f"{float(deployed.fit_mse):.9e}"
+    )
     print(
         "  endpoint distances: "
         f"start={float((deployed.reconstructed_points[0] - points[0, 0]).norm()):.9e}, "
