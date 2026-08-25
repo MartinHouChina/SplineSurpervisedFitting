@@ -69,6 +69,11 @@ class SplineFittingNetwork(nn.Module):
         min_internal_knots: int = 0,
         pruning_residual_bandwidth: float = 0.05,
         pruning_initial_keep_probability: float = 0.9,
+        one_shot_fixed_proposal_geometry: bool = False,
+        one_shot_selection_policy: str = "threshold",
+        one_shot_safety_sigma: float = 0.0,
+        one_shot_selector_layers: int = 1,
+        one_shot_coverage_bins: int = 0,
     ) -> None:
         super().__init__()
         if structure_mode not in {
@@ -142,6 +147,14 @@ class SplineFittingNetwork(nn.Module):
                 min_gap=min_knot_gap,
                 initial_keep_probability=pruning_initial_keep_probability,
                 one_shot_adaptive=(self.structure_mode == "candidate_pruning_one_shot"),
+                one_shot_fixed_proposal_geometry=(
+                    one_shot_fixed_proposal_geometry
+                    and self.structure_mode == "candidate_pruning_one_shot"
+                ),
+                one_shot_selection_policy=one_shot_selection_policy,
+                one_shot_safety_sigma=one_shot_safety_sigma,
+                one_shot_selector_layers=one_shot_selector_layers,
+                one_shot_coverage_bins=one_shot_coverage_bins,
             )
         elif self.structure_mode == "interactive_dynamic":
             self.structure_head = InteractiveStructureHead(

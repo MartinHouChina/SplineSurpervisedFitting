@@ -1,4 +1,4 @@
-# v8 数学定义
+# v10 数学定义
 
 ## 1. 目标
 
@@ -69,45 +69,59 @@ s_j^*=\sigma\!\left(
 
 ## 5. 一次性双向交互
 
-模型在一次固定前向中执行两次轻量判定，不包含数据相关循环：
+模型先确定不依赖 KeepMask 的 proposal 位置，再执行一次固定选择，不包含数据相关循环：
 
 ```text
 基础候选 token
-  → preliminary importance / beta / keep
-  → provisional keep-aware position
-  → position-to-keep feedback
+  → proposal-only ordered position
+  → 固定位置编码 + 解析贡献
+  → 两层 selector self-attention
   → final importance / beta / keep
-  → hard-ST KeepMask context
-  → final position
+  → probability-mass Top-K + coverage anchors
 ```
 
 最终概率和 mask 为
 
 \[
 p_j=\sigma(r_j-\beta),\qquad
-m_j=\mathbf 1[p_j\ge0.5].
+\widehat K=\left\lceil\sum_jp_j+s\sqrt{\sum_jp_j(1-p_j)}\right\rceil.
 \]
 
-位置上下文的前向值只汇聚 \(m_j=1\) 的候选，反向使用
-\(m_j+p_j-\operatorname{stopgrad}(p_j)\)。预备位置会反馈修正最终 keep；最终 keep 又决定最终
-位置，因此选择和位置在同一固定前向内双向耦合。位移最多使用相邻可用 slack 的 0.45，故
-精修后仍严格有序。
+最终 mask 在覆盖锚点后选择 raw importance 最高的 \(\widehat K\) 个槽位。固定 proposal 位置参与
+selector 的位置编码，但 \(m_j\) 不再进入位置解码器。因此 KeepMask
+变化不会使离线 Hard-RMS 教师绑定的槽位发生漂移。位移最多使用相邻可用 slack 的 0.45，故
+proposal 精修后仍严格有序。第二次 surrogate solve 仍使用
+\(m_j+p_j-\operatorname{stopgrad}(p_j)\)，但默认不参与 selector 选优。
 
 ## 6. 训练损失与选优
 
 候选预训练使用拟合、阈值违约和覆盖监督。固定 proposal 后，一次性选择器使用：
 
 \[
-L_{select}=L_{mask}^{BCE+Dice}+L_{risk}
-+L_{count}^{hard\text{-}ST}+L_{position}+L_{complexity}.
+L_{select}=L_{mask}^{BCE+Dice}+L_{risk}+L_{rank}+L_{CDF}+L_{critical}
++L_{count}^{hard\text{-}ST}+L_{complexity}.
 \]
+
+其中
+
+\[
+L_{rank}=\operatorname{mean}_{i\in K^+,j\in K^-}
+\operatorname{softplus}(\delta-r_i+r_j)
+\]
+
+直接要求Hard-RMS教师保留节点的重要性logit高于被删除节点，降低节点数接近但选错位置的情况。
+canonical 位置监督只用于 proposal 预训练；教师生成后的蒸馏不再用第二套位置目标改变槽位。
+
+`CDF` 项比较预测与教师节点质量沿有序候选轴的累计分布，是一维 Wasserstein 距离；
+`critical` 项只作用于 Hard-RMS 最终保留节点，并按 final-state risk 加权，直接抑制致命漏检。
 
 其中 hard-ST 数量在前向使用部署二值 mask，反向使用概率梯度。截断幂 `fit` 和 `violation`
 仍作为诊断量，但默认权重为零，防止代理拟合通过打开全部基列来支配选择器。不可满足阈值的
 教师样本不参与 count/complexity 项。
 
-checkpoint 选优不使用代理 pass-rate，而是在验证集对一次性 mask 执行一次标准 B 样条重拟合，
-求解“验证通过率达到目标时平均节点数最少”的约束问题；未达到目标时优先提高真实通过率。
+checkpoint 选优不使用代理 pass-rate，而是在验证集对一次性 mask 执行一次标准 B 样条重拟合。
+尚未达到目标满足率时改善真实 pass/mean/P95；达到目标后最小化平均节点数，并以真实 fit 和
+最终节点 recall/F1 作 tie-break。
 
 ## 7. 标准 B 样条部署
 
@@ -124,6 +138,6 @@ P^*=\arg\min_P\|BP-Q\|_F^2
 P_0=Q_0,\qquad P_{n-1}=Q_{M-1}.
 \]
 
-默认 v8 部署不再运行逐节点 Hard-RMS 搜索，因此 \(R(U)\le\varepsilon\) 是独立测试分布上的
+默认 v10 部署不再运行逐节点 Hard-RMS 搜索，因此 \(R(U)\le\varepsilon\) 是独立测试分布上的
 统计满足率，不是每条新曲线的硬保证。必须逐样本保证时，应显式运行离线 hard diagnostic 或
 采用 v7 的硬验证回退。

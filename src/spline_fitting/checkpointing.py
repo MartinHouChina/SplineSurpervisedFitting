@@ -17,7 +17,11 @@ COUNT_CONDITIONED_V5_OBJECTIVE_VERSION = "canonical_ordinal_count_conditioned_v5
 CURRENT_OBJECTIVE_VERSION = "interactive_structure_dynamic_knots_v6"
 CANDIDATE_PRUNING_OBJECTIVE_VERSION = "candidate_pruning_minimal_rms_v7"
 ONE_SHOT_PRUNING_OBJECTIVE_VERSION = "candidate_pruning_one_shot_teacher_v8"
-LATEST_OBJECTIVE_VERSION = ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION = "candidate_pruning_fixed_proposal_teacher_v9"
+V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION = (
+    "candidate_pruning_structured_feasible_teacher_v10"
+)
+LATEST_OBJECTIVE_VERSION = V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
 
 
 LEGACY_LOSS_CONFIG: dict[str, Any] = {
@@ -179,8 +183,10 @@ ONE_SHOT_PRUNING_LOSS_CONFIG: dict[str, Any] = {
         "remove_action": 0.0,
         "deletion_cost": 0.0,
         "teacher_risk": 0.5,
+        "teacher_ranking": 1.0,
         "teacher_count": 2.0,
         "complexity": 0.25,
+        "knot_position": 4.0,
     },
     **{
         key: value
@@ -188,10 +194,38 @@ ONE_SHOT_PRUNING_LOSS_CONFIG: dict[str, Any] = {
         if key != "weights"
     },
     "positive_keep_weight": 1.0,
+    "candidate_match_tolerance": 0.01,
+    "teacher_ranking_margin": 1.0,
     "one_shot_teacher": True,
     "straight_through_keep_gate": True,
     "surrogate_selection_role": "diagnostic_only",
     "teacher_mask_loss": "unweighted_bce_plus_soft_dice",
+}
+
+V9_ONE_SHOT_PRUNING_LOSS_CONFIG: dict[str, Any] = {
+    **deepcopy(ONE_SHOT_PRUNING_LOSS_CONFIG),
+    "weights": {
+        **ONE_SHOT_PRUNING_LOSS_CONFIG["weights"],
+        # Candidate localization is completed before teacher generation.
+        # Distillation must not move slots away from cached Hard-RMS labels.
+        "knot_position": 0.0,
+    },
+    "fixed_proposal_geometry": True,
+    "selector_adapter": "position_aware_self_attention",
+}
+
+V10_FEASIBLE_ONE_SHOT_PRUNING_LOSS_CONFIG: dict[str, Any] = {
+    **deepcopy(V9_ONE_SHOT_PRUNING_LOSS_CONFIG),
+    "weights": {
+        **V9_ONE_SHOT_PRUNING_LOSS_CONFIG["weights"],
+        "teacher_distribution": 2.0,
+        "teacher_critical_recall": 1.0,
+        "teacher_count": 4.0,
+        "complexity": 0.1,
+    },
+    "positive_keep_weight": 2.0,
+    "teacher_mask_loss": ("weighted_bce_plus_soft_dice_plus_cdf_plus_critical_recall"),
+    "selection_policy": "mass_topk",
 }
 
 
@@ -207,9 +241,13 @@ def migrate_model_config(
     if "model_config" not in checkpoint:
         raise KeyError("checkpoint is missing model_config")
     config = dict(checkpoint["model_config"])
+    objective_version = checkpoint.get("objective_version")
     if "structure_mode" not in config:
-        objective_version = checkpoint.get("objective_version")
-        if objective_version == ONE_SHOT_PRUNING_OBJECTIVE_VERSION:
+        if objective_version in {
+            ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+            V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+            V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+        }:
             config["structure_mode"] = "candidate_pruning_one_shot"
         elif objective_version == CANDIDATE_PRUNING_OBJECTIVE_VERSION:
             config["structure_mode"] = "candidate_pruning"
@@ -238,6 +276,33 @@ def migrate_model_config(
     }:
         config.setdefault("pruning_residual_bandwidth", 0.05)
         config.setdefault("pruning_initial_keep_probability", 0.9)
+        config.setdefault(
+            "one_shot_fixed_proposal_geometry",
+            objective_version
+            in {
+                V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+                V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+            },
+        )
+        config.setdefault(
+            "one_shot_selection_policy",
+            "mass_topk"
+            if objective_version == V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+            else "threshold",
+        )
+        config.setdefault("one_shot_safety_sigma", 0.0)
+        config.setdefault(
+            "one_shot_selector_layers",
+            2
+            if objective_version == V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+            else 1,
+        )
+        config.setdefault(
+            "one_shot_coverage_bins",
+            4
+            if objective_version == V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+            else 0,
+        )
     if config["structure_mode"] == "interactive_dynamic":
         # v6 checkpoints written before categorical count prediction contain
         # stop_head/stop_bias tensors. Missing metadata must therefore rebuild
@@ -274,6 +339,8 @@ def migrate_model_config(
             in {
                 CANDIDATE_PRUNING_OBJECTIVE_VERSION,
                 ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+                V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+                V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
                 CURRENT_OBJECTIVE_VERSION,
                 COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
             }
@@ -330,6 +397,8 @@ def migrate_model_config(
                 CURRENT_OBJECTIVE_VERSION,
                 CANDIDATE_PRUNING_OBJECTIVE_VERSION,
                 ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+                V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+                V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
                 COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
                 COUNT_CONDITIONED_V4_OBJECTIVE_VERSION,
                 PREVIOUS_OBJECTIVE_VERSION,
@@ -354,6 +423,8 @@ def migrate_loss_config(
         CURRENT_OBJECTIVE_VERSION,
         CANDIDATE_PRUNING_OBJECTIVE_VERSION,
         ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+        V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+        V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
         COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
         COUNT_CONDITIONED_V4_OBJECTIVE_VERSION,
         PREVIOUS_OBJECTIVE_VERSION,
@@ -364,6 +435,10 @@ def migrate_loss_config(
     if assumed:
         if legacy:
             default_config = LEGACY_LOSS_CONFIG
+        elif objective_version == V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION:
+            default_config = V10_FEASIBLE_ONE_SHOT_PRUNING_LOSS_CONFIG
+        elif objective_version == V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION:
+            default_config = V9_ONE_SHOT_PRUNING_LOSS_CONFIG
         elif objective_version == ONE_SHOT_PRUNING_OBJECTIVE_VERSION:
             default_config = ONE_SHOT_PRUNING_LOSS_CONFIG
         elif objective_version == CANDIDATE_PRUNING_OBJECTIVE_VERSION:
@@ -390,11 +465,21 @@ def migrate_loss_config(
         if objective_version in {
             CANDIDATE_PRUNING_OBJECTIVE_VERSION,
             ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+            V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+            V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
         }:
             defaults = (
-                ONE_SHOT_PRUNING_LOSS_CONFIG
-                if objective_version == ONE_SHOT_PRUNING_OBJECTIVE_VERSION
-                else CANDIDATE_PRUNING_LOSS_CONFIG
+                V10_FEASIBLE_ONE_SHOT_PRUNING_LOSS_CONFIG
+                if objective_version == V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+                else (
+                    V9_ONE_SHOT_PRUNING_LOSS_CONFIG
+                    if objective_version == V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+                    else (
+                        ONE_SHOT_PRUNING_LOSS_CONFIG
+                        if objective_version == ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+                        else CANDIDATE_PRUNING_LOSS_CONFIG
+                    )
+                )
             )
             weights = config.setdefault("weights", {})
             for name, value in defaults["weights"].items():

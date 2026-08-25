@@ -14,7 +14,9 @@ from torch.utils.data import DataLoader
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from spline_fitting.checkpointing import ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+from spline_fitting.checkpointing import (
+    V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+)
 from spline_fitting.data.synthetic import SyntheticCubicBSplineDataset
 from spline_fitting.losses import CandidatePruningLoss, CandidatePruningLossWeights
 from spline_fitting.models import SplineFittingNetwork
@@ -98,7 +100,7 @@ def _checkpoint_with_metadata(
             "model_config": model_config,
             "dataset_config": dataset_config,
             "dataset_type": "synthetic_open_cubic_bspline",
-            "objective_version": ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+            "objective_version": V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
             "loss_config": loss_config,
             "training_config": training_config,
             "deployment_config": deployment_config,
@@ -262,12 +264,26 @@ def _set_one_shot_trainable(
     """Freeze proposal geometry and expose only cache-compatible head modules."""
     for parameter in model.parameters():
         parameter.requires_grad_(False)
-    module_names = [
-        "keep_head",
-        "adaptive_threshold_head",
-        "position_to_keep_feedback",
-    ]
-    if calibrate_positions:
+    module_names = ["keep_head", "adaptive_threshold_head"]
+    fixed_geometry = bool(
+        getattr(model.pruning_head, "one_shot_fixed_proposal_geometry", False)
+    )
+    if fixed_geometry:
+        module_names.extend(
+            [
+                "one_shot_selector_attention",
+                "one_shot_selector_attention_norm",
+                "one_shot_selector_feed_forward",
+                "one_shot_selector_output_norm",
+                "one_shot_selector_extra_attention",
+                "one_shot_selector_extra_attention_norm",
+                "one_shot_selector_extra_feed_forward",
+                "one_shot_selector_extra_output_norm",
+            ]
+        )
+    else:
+        module_names.append("position_to_keep_feedback")
+    if calibrate_positions and not fixed_geometry:
         module_names.extend(
             [
                 "keep_context_projection",
@@ -302,7 +318,7 @@ def _reset_one_shot_selector_to_neutral(
     """
     head = model.pruning_head
     if not getattr(head, "one_shot_adaptive", False):
-        raise ValueError("neutral selector reset requires a v8 one-shot head")
+        raise ValueError("neutral selector reset requires an adaptive one-shot head")
     if not 0.5 < initial_probability < 1.0:
         raise ValueError("initial_probability must lie strictly in (0.5, 1)")
     initial_logit = torch.logit(torch.tensor(initial_probability)).item()
@@ -341,14 +357,16 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--selector-calibration-epochs",
         "--keep-position-calibration-epochs",
         "--joint-finetune-epochs",
         dest="keep_position_calibration_epochs",
         type=int,
-        default=10,
+        default=0,
         help=(
-            "Final low-learning-rate one-shot-head calibration epochs. The "
-            "proposal backbone remains frozen so cached teacher slots stay valid."
+            "Optional final low-learning-rate selector calibration epochs. In "
+            "v10 proposal positions remain frozen; this option never calibrates "
+            "or moves teacher-bound knot locations."
         ),
     )
     parser.add_argument("--batch-size", type=int, default=16)
@@ -384,7 +402,7 @@ def main() -> None:
             "labels, offline teacher pruning and the one-shot training target."
         ),
     )
-    parser.add_argument("--candidate-match-tolerance", type=float, default=0.02)
+    parser.add_argument("--candidate-match-tolerance", type=float, default=0.01)
     parser.add_argument("--min-knot-gap", type=float, default=1e-3)
     parser.add_argument("--pruning-residual-bandwidth", type=float, default=0.05)
     parser.add_argument("--lambda-poly", type=float, default=1e-6)
@@ -430,7 +448,7 @@ def main() -> None:
         "--lambda-remove-action",
         type=float,
         default=0.0,
-        help="Compatibility option; v8 one-shot training does not use sequential actions.",
+        help="Compatibility option; v10 one-shot training does not use sequential actions.",
     )
     parser.add_argument("--lambda-knot-position", type=float, default=2.0)
     parser.add_argument(
@@ -440,9 +458,46 @@ def main() -> None:
         help="Compatibility option; offline teacher risk replaces this v7 term.",
     )
     parser.add_argument("--lambda-teacher-risk", type=float, default=0.5)
-    parser.add_argument("--lambda-teacher-count", type=float, default=2.0)
-    parser.add_argument("--lambda-complexity", type=float, default=0.25)
-    parser.add_argument("--positive-keep-weight", type=float, default=1.0)
+    parser.add_argument("--lambda-teacher-ranking", type=float, default=1.0)
+    parser.add_argument("--lambda-teacher-distribution", type=float, default=2.0)
+    parser.add_argument("--lambda-teacher-critical-recall", type=float, default=1.0)
+    parser.add_argument("--teacher-ranking-margin", type=float, default=1.0)
+    parser.add_argument("--lambda-teacher-count", type=float, default=4.0)
+    parser.add_argument("--lambda-complexity", type=float, default=0.1)
+    parser.add_argument("--positive-keep-weight", type=float, default=2.0)
+    parser.add_argument(
+        "--one-shot-selection-policy",
+        choices=("threshold", "mass_topk"),
+        default="mass_topk",
+        help=(
+            "Discrete LearnedKeep construction. mass_topk derives cardinality "
+            "from probability mass and selects a global top-K subset."
+        ),
+    )
+    parser.add_argument(
+        "--one-shot-safety-sigma",
+        type=float,
+        default=0.5,
+        help=(
+            "Bernoulli uncertainty reserve used by mass_topk. It adds sigma*std "
+            "to probability mass before rounding the retained count."
+        ),
+    )
+    parser.add_argument(
+        "--one-shot-selector-layers",
+        type=int,
+        default=2,
+        help="Number of position-aware candidate interaction blocks.",
+    )
+    parser.add_argument(
+        "--one-shot-coverage-bins",
+        type=int,
+        default=4,
+        help=(
+            "Reserve the highest-probability candidate in each parameter-domain "
+            "bin before filling the remaining mass_topk budget; zero disables it."
+        ),
+    )
     parser.add_argument(
         "--initial-keep-probability",
         type=float,
@@ -458,9 +513,9 @@ def main() -> None:
         type=float,
         default=0.97,
         help=(
-            "Validation constraint for checkpoint selection. Among checkpoints "
-            "at or above this real standard-B-spline pass rate, the one with "
-            "the fewest retained knots is preferred."
+            "Validation feasibility target. Before reaching it v10 ranks by "
+            "real standard-B-spline pass rate and mean/P95 RMS; afterwards it "
+            "minimizes retained knots, with fit and localization as tie-breakers."
         ),
     )
     parser.add_argument(
@@ -480,7 +535,7 @@ def main() -> None:
         default=True,
         help=(
             "Generate exact standard-B-spline Hard-RMS labels offline. "
-            "Disabling this is unsupported by the v8 one-shot objective."
+            "Disabling this is unsupported by the v10 one-shot objective."
         ),
     )
     parser.add_argument("--teacher-risk-temperature", type=float, default=0.1)
@@ -503,13 +558,13 @@ def main() -> None:
         default=False,
         help=(
             "Regenerate curves each epoch. Unsupported with an index-aligned "
-            "offline teacher cache; keep this disabled for v8."
+            "offline teacher cache; keep this disabled for v10."
         ),
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=ROOT / "outputs" / "candidate_pruning_one_shot_v8.pt",
+        default=ROOT / "outputs" / "candidate_pruning_one_shot_v10.pt",
     )
     args = parser.parse_args()
 
@@ -539,7 +594,7 @@ def main() -> None:
     if args.teacher_risk_temperature <= 0.0 or args.teacher_batch_size <= 0:
         parser.error("teacher temperature and batch size must be positive")
     if not args.exact_deletion_supervision:
-        parser.error("v8 requires --exact-deletion-supervision for offline labels")
+        parser.error("v10 requires --exact-deletion-supervision for offline labels")
     if args.resample_train_each_epoch:
         parser.error("offline teacher labels require --no-resample-train-each-epoch")
     if args.candidate_match_tolerance <= 0.0:
@@ -571,6 +626,9 @@ def main() -> None:
         args.lambda_knot_position,
         args.lambda_deletion_cost,
         args.lambda_teacher_risk,
+        args.lambda_teacher_ranking,
+        args.lambda_teacher_distribution,
+        args.lambda_teacher_critical_recall,
         args.lambda_teacher_count,
         args.lambda_complexity,
     )
@@ -580,6 +638,14 @@ def main() -> None:
         parser.error("--deployment-pass-rate-target must lie in [0, 1]")
     if not 0.5 < args.initial_keep_probability < 1.0:
         parser.error("--initial-keep-probability must lie strictly in (0.5, 1)")
+    if args.teacher_ranking_margin < 0.0:
+        parser.error("--teacher-ranking-margin must be non-negative")
+    if args.one_shot_safety_sigma < 0.0:
+        parser.error("--one-shot-safety-sigma must be non-negative")
+    if args.one_shot_selector_layers < 1:
+        parser.error("--one-shot-selector-layers must be positive")
+    if args.one_shot_coverage_bins < 0:
+        parser.error("--one-shot-coverage-bins must be non-negative")
 
     torch.manual_seed(args.train_seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -632,6 +698,11 @@ def main() -> None:
         "geometry_feature_mode": "chord_derivatives",
         "pruning_residual_bandwidth": args.pruning_residual_bandwidth,
         "pruning_initial_keep_probability": args.initial_keep_probability,
+        "one_shot_fixed_proposal_geometry": True,
+        "one_shot_selection_policy": args.one_shot_selection_policy,
+        "one_shot_safety_sigma": args.one_shot_safety_sigma,
+        "one_shot_selector_layers": args.one_shot_selector_layers,
+        "one_shot_coverage_bins": args.one_shot_coverage_bins,
         "compute_first_derivative": False,
     }
     model = SplineFittingNetwork(**model_config)
@@ -647,6 +718,9 @@ def main() -> None:
         count_consistency=0.0,
         deletion_cost=0.0,
         teacher_risk=args.lambda_teacher_risk,
+        teacher_ranking=args.lambda_teacher_ranking,
+        teacher_distribution=args.lambda_teacher_distribution,
+        teacher_critical_recall=args.lambda_teacher_critical_recall,
         teacher_count=args.lambda_teacher_count,
         complexity=args.lambda_complexity,
     )
@@ -671,6 +745,7 @@ def main() -> None:
         true_parameter=0.0,
         candidate_coverage=0.0,
         candidate_repulsion=0.0,
+        knot_position=0.0,
     )
 
     def make_loss(
@@ -687,6 +762,7 @@ def main() -> None:
             exact_deletion_supervision=exact_deletion_supervision,
             deletion_smoothness_weight=1e-6,
             deletion_control_ridge=0.0,
+            teacher_ranking_margin=args.teacher_ranking_margin,
         )
 
     optimizer = torch.optim.AdamW(
@@ -704,7 +780,8 @@ def main() -> None:
     )
 
     print(
-        "v8 objective: one-shot minimum-complexity prediction distilled from "
+        "v10 objective: structured-feasible fixed-proposal one-shot prediction "
+        "distilled from "
         f"an offline Hard-RMS teacher at epsilon={args.fit_tolerance:g}",
         flush=True,
     )
@@ -897,13 +974,13 @@ def main() -> None:
         calibration_path = args.output.with_name(
             args.output.stem + "_calibrated" + args.output.suffix
         )
-        histories["one_shot_keep_position_calibration"] = trainer.fit(
+        histories["one_shot_selector_calibration"] = trainer.fit(
             teacher_train_loader,
             teacher_val_loader,
             args.keep_position_calibration_epochs,
             checkpoint_path=calibration_path,
             epoch_offset=args.candidate_pretrain_epochs + distill_epochs,
-            stage_name="one_shot_keep_position_calibration",
+            stage_name="one_shot_selector_calibration",
             deployment_validation=True,
         )
         candidate_checkpoints.append(calibration_path)
@@ -928,10 +1005,19 @@ def main() -> None:
         "deletion_smoothness_weight": 1e-6,
         "deletion_control_ridge": 0.0,
         "one_shot_teacher": True,
+        "fixed_proposal_geometry": True,
+        "selector_adapter": "position_aware_self_attention",
+        "selector_layers": args.one_shot_selector_layers,
         "straight_through_keep_gate": True,
         "surrogate_selection_role": "diagnostic_only",
-        "teacher_mask_loss": "unweighted_bce_plus_soft_dice",
+        "teacher_mask_loss": (
+            "weighted_bce_plus_soft_dice_plus_cdf_plus_critical_recall"
+        ),
+        "selection_policy": args.one_shot_selection_policy,
+        "selection_safety_sigma": args.one_shot_safety_sigma,
+        "selection_coverage_bins": args.one_shot_coverage_bins,
         "teacher_risk_temperature": args.teacher_risk_temperature,
+        "teacher_ranking_margin": args.teacher_ranking_margin,
         "count_consistency_is_deployment_rule": False,
         "analytic_deletion_cost_is_auxiliary_only": True,
     }
@@ -945,7 +1031,8 @@ def main() -> None:
             else None
         ),
         "one_shot_distillation_epochs": distill_epochs,
-        "keep_position_calibration_epochs": args.keep_position_calibration_epochs,
+        "selector_calibration_epochs": args.keep_position_calibration_epochs,
+        "keep_position_calibration_epochs": 0,
         "joint_finetune_epochs": 0,
         "train_size": args.train_size,
         "val_size": args.val_size,
@@ -965,9 +1052,16 @@ def main() -> None:
         "proposal_learning_rate": args.lr,
         "selector_learning_rate": args.selector_lr,
         "selector_checkpoint_warmup_epochs": effective_selector_warmup,
+        "selection_policy": args.one_shot_selection_policy,
+        "selection_safety_sigma": args.one_shot_safety_sigma,
+        "selection_coverage_bins": args.one_shot_coverage_bins,
     }
     deployment_config: dict[str, object] = {
-        "selection_rule": "one_shot_adaptive_keep_then_single_refit",
+        "selection_rule": (
+            "v10_probability_mass_topk_then_single_refit"
+            if args.one_shot_selection_policy == "mass_topk"
+            else "v10_adaptive_threshold_then_single_refit"
+        ),
         "error_tolerance": args.fit_tolerance,
         "min_internal_knots": 0,
         "smoothness_weight": 1e-6,
@@ -975,8 +1069,14 @@ def main() -> None:
         "interpolate_endpoints": True,
         "network_forward_passes": 1,
         "standard_bspline_refits": 1,
-        "learned_keep_threshold_is_final": True,
+        "learned_keep_threshold_is_final": (
+            args.one_shot_selection_policy == "threshold"
+        ),
+        "learned_keep_selection_policy": args.one_shot_selection_policy,
+        "uncertainty_safety_sigma": args.one_shot_safety_sigma,
+        "parameter_domain_coverage_bins": args.one_shot_coverage_bins,
         "hard_rms_pruning_at_deployment": False,
+        "proposal_geometry_frozen_after_teacher": True,
         "threshold_guarantee": "statistical_not_per_sample_exact",
         "checkpoint_selection": (
             "min_retained_knots_subject_to_validation_pass_rate_target"
@@ -1003,7 +1103,7 @@ def main() -> None:
         "stage": "one_shot_training_last",
         "selection_metric": "last_epoch_not_selected",
         "history": histories[
-            "one_shot_keep_position_calibration"
+            "one_shot_selector_calibration"
             if args.keep_position_calibration_epochs
             else "one_shot_distillation"
         ],
@@ -1019,7 +1119,7 @@ def main() -> None:
     )
     torch.save(last, last_path)
     print(
-        f"Selected epoch {best['epoch']} | one-shot threshold pass="
+        f"Selected epoch {best['epoch']} | one-shot deployment pass="
         f"{best.get('best_threshold_satisfied_rate', float('nan')):.3f} | "
         f"K={best.get('best_deployment_retained_knot_count', float('nan')):.2f} | "
         f"teacher mask F1="

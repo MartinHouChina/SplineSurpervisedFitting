@@ -295,3 +295,17 @@ def test_v8_reports_distinguish_proxy_rms_and_offline_view_semantics() -> None:
     assert '"learned_one_shot_mask" if candidate_one_shot' in fit_source
     assert "selected offline diagnostic" in visualize_source
     assert "teacher terms unavailable" in visualize_source
+
+
+def test_comparison_figure_contains_four_curve_panels_knots_and_timing() -> None:
+    module = _load_script("visualize_result")
+    source = (ROOT / "scripts" / "visualize_result.py").read_text(encoding="utf-8")
+    knot_vector = torch.tensor([0.0, 0.0, 0.0, 0.0, 0.25, 0.75, 1.0, 1.0, 1.0, 1.0])
+
+    assert module.compact_knot_vector(knot_vector, 3) == ("U=[0x4, 0.250, 0.750, 1x4]")
+    assert '"--timing-repeats"' in source
+    assert "(a) Original/source data" in source
+    assert "(b) Redundant all-candidate fit" in source
+    assert "(c) Learned one-shot deployment" in source
+    assert "(d) Offline Hard-RMS deletion" in source
+    assert "internal knots C(u)" in source

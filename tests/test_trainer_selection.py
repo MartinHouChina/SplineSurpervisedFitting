@@ -25,6 +25,7 @@ def _metrics(
     count_mae: float = 0.0,
     deployment_pass: float = 0.0,
     deployment_rms: float = 1.0,
+    deployment_rms_p95: float | None = None,
     retained_count: float = 2.0,
 ) -> dict[str, float]:
     return {
@@ -53,6 +54,9 @@ def _metrics(
         "adaptive_keep_threshold_mean": 0.1,
         "deployment_threshold_satisfied_rate": deployment_pass,
         "deployment_bspline_rms": deployment_rms,
+        "deployment_bspline_rms_p95": (
+            deployment_rms if deployment_rms_p95 is None else deployment_rms_p95
+        ),
         "deployment_retained_knot_count": retained_count,
     }
 
@@ -239,9 +243,7 @@ class TrainerSelectionTests(unittest.TestCase):
         )
         self.assertAlmostEqual(checkpoint["selection_value"], 10.0)
         self.assertAlmostEqual(checkpoint["best_deployment_bspline_rms"], 0.004)
-        self.assertAlmostEqual(
-            checkpoint["best_deployment_retained_knot_count"], 10.0
-        )
+        self.assertAlmostEqual(checkpoint["best_deployment_retained_knot_count"], 10.0)
         self.assertTrue(checkpoint["best_deployment_pass_constraint_satisfied"])
 
     def test_one_shot_checkpoint_maximizes_pass_before_feasible(self) -> None:
@@ -280,6 +282,77 @@ class TrainerSelectionTests(unittest.TestCase):
         self.assertEqual(checkpoint["epoch"], 2)
         self.assertAlmostEqual(checkpoint["selection_value"], 0.9)
         self.assertFalse(checkpoint["best_deployment_pass_constraint_satisfied"])
+
+    def test_v9_checkpoint_minimizes_complexity_after_real_fit_constraint(self) -> None:
+        model = torch.nn.Linear(1, 1)
+        model.structure_mode = "candidate_pruning_one_shot"
+        model.pruning_head = torch.nn.Module()
+        model.pruning_head.one_shot_fixed_proposal_geometry = True
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        trainer = Trainer(model, torch.nn.Identity(), optimizer, torch.device("cpu"))
+        loader = DataLoader(TensorDataset(torch.zeros(1, 1)), batch_size=1)
+        epoch_metrics = [
+            _metrics(
+                0.2,
+                0.7,
+                0.5,
+                deployment_pass=0.98,
+                deployment_rms=0.003,
+                deployment_rms_p95=0.004,
+                retained_count=14.0,
+            ),
+            _metrics(
+                0.2,
+                0.7,
+                0.5,
+                deployment_pass=0.98,
+                deployment_rms=0.003,
+                deployment_rms_p95=0.004,
+                retained_count=14.0,
+            ),
+            _metrics(
+                0.1,
+                0.8,
+                0.7,
+                deployment_pass=0.97,
+                deployment_rms=0.004,
+                deployment_rms_p95=0.0048,
+                retained_count=8.0,
+            ),
+            _metrics(
+                0.1,
+                0.8,
+                0.7,
+                deployment_pass=0.97,
+                deployment_rms=0.004,
+                deployment_rms_p95=0.0048,
+                retained_count=8.0,
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint_path = Path(directory) / "best.pt"
+            with patch.object(trainer, "_run_epoch", side_effect=epoch_metrics):
+                trainer.fit(
+                    loader,
+                    loader,
+                    epochs=2,
+                    checkpoint_path=checkpoint_path,
+                    deployment_validation=True,
+                )
+            checkpoint = torch.load(
+                checkpoint_path, map_location="cpu", weights_only=True
+            )
+
+        # Both epochs satisfy the real deployment constraint, so v9 selects
+        # the lower-complexity mask despite its slightly worse RMS/pass rate.
+        self.assertEqual(checkpoint["epoch"], 2)
+        self.assertEqual(
+            checkpoint["selection_metric"],
+            "v9_constrained_standard_bspline_min_knots_rms_p95_recall",
+        )
+        self.assertAlmostEqual(checkpoint["selection_value"], 8.0)
+        self.assertAlmostEqual(checkpoint["best_deployment_bspline_rms_p95"], 0.0048)
 
 
 if __name__ == "__main__":

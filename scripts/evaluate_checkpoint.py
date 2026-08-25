@@ -67,7 +67,7 @@ def resolve_fit_tolerance(
 def candidate_mode_flags(
     checkpoint: dict[str, object], model_config: dict[str, object]
 ) -> tuple[bool, bool]:
-    """Return ``(candidate_family, one_shot_v8)`` using stable features."""
+    """Return ``(candidate_family, one_shot)`` using stable features."""
     structure = str(model_config.get("structure_mode", "")).lower()
     objective = str(checkpoint.get("objective_version", "")).lower()
     one_shot = (
@@ -81,7 +81,7 @@ def candidate_mode_flags(
 def one_shot_selection(
     output: dict[str, torch.Tensor],
 ) -> tuple[torch.Tensor, torch.Tensor, str]:
-    """Read the v8 learned decision without applying a second threshold.
+    """Read the learned one-shot decision without applying a second threshold.
 
     ``keep_probability`` is already centered by the learned adaptive logit
     threshold, so its neutral deployment cutoff is 0.5.  The separately
@@ -130,7 +130,7 @@ def refit_one_shot_output_batch(
     smoothness_weight: float,
     control_ridge: float,
 ) -> tuple[list[HardGatedBSplineFit], torch.Tensor, torch.Tensor, str]:
-    """Apply the learned v8 mask, then perform one standard B-spline refit."""
+    """Apply the learned one-shot mask, then perform one standard B-spline refit."""
     mask, adaptive_threshold, source = one_shot_selection(output)
     selected_output = {
         "params": output["params"],
@@ -229,6 +229,7 @@ def candidate_loss_from_checkpoint(
             config.get("deletion_smoothness_weight", 1e-6)
         ),
         deletion_control_ridge=float(config.get("deletion_control_ridge", 0.0)),
+        teacher_ranking_margin=float(config.get("teacher_ranking_margin", 1.0)),
     )
 
 
@@ -250,7 +251,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Historical activity threshold. For v8 it is ignored by deployment; "
+            "Historical activity threshold. For v8-v10 it is ignored by deployment; "
             "the learned mask (or centered keep probability >= 0.5 fallback) is used."
         ),
     )
@@ -268,7 +269,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Normalized RMS bound for v7 hard candidate pruning. For v8 it is "
+            "Normalized RMS bound for v7 hard candidate pruning. For v8-v10 it is "
             "reporting-only: it measures threshold satisfaction and never changes "
             "the learned one-shot mask. Defaults to the checkpoint deployment "
             "error tolerance, then canonical label tolerance."
@@ -278,8 +279,35 @@ def main() -> None:
         "--run-hard-diagnostic",
         action="store_true",
         help=(
-            "For v8 only, additionally run the offline greedy hard-pruning "
+            "For v8-v10 only, additionally run the offline greedy hard-pruning "
             "teacher for comparison. It never replaces one-shot deployment."
+        ),
+    )
+    parser.add_argument(
+        "--one-shot-selection-policy",
+        choices=("checkpoint", "threshold", "mass_topk"),
+        default="checkpoint",
+        help=(
+            "Override the LearnedKeep mask policy for a one-shot checkpoint. "
+            "checkpoint preserves the policy recorded by the model."
+        ),
+    )
+    parser.add_argument(
+        "--one-shot-safety-sigma",
+        type=float,
+        default=None,
+        help=(
+            "Override the mass_topk Bernoulli uncertainty reserve. The model's "
+            "checkpoint value is used when omitted."
+        ),
+    )
+    parser.add_argument(
+        "--one-shot-coverage-bins",
+        type=int,
+        default=None,
+        help=(
+            "Override the number of parameter-domain coverage anchors used by "
+            "mass_topk. The checkpoint value is used when omitted."
         ),
     )
     parser.add_argument(
@@ -295,6 +323,10 @@ def main() -> None:
         parser.error("sample and batch sizes must be positive")
     if args.knot_tolerance < 0.0:
         parser.error("--knot-tolerance must be non-negative")
+    if args.one_shot_safety_sigma is not None and args.one_shot_safety_sigma < 0.0:
+        parser.error("--one-shot-safety-sigma must be non-negative")
+    if args.one_shot_coverage_bins is not None and args.one_shot_coverage_bins < 0:
+        parser.error("--one-shot-coverage-bins must be non-negative")
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     try:
@@ -314,9 +346,24 @@ def main() -> None:
     candidate_pruning, candidate_one_shot = candidate_mode_flags(
         checkpoint, model_config
     )
+    if candidate_one_shot:
+        if args.one_shot_selection_policy != "checkpoint":
+            model.pruning_head.one_shot_selection_policy = (
+                args.one_shot_selection_policy
+            )
+        if args.one_shot_safety_sigma is not None:
+            model.pruning_head.one_shot_safety_sigma = args.one_shot_safety_sigma
+        if args.one_shot_coverage_bins is not None:
+            model.pruning_head.one_shot_coverage_bins = args.one_shot_coverage_bins
+    elif (
+        args.one_shot_selection_policy != "checkpoint"
+        or args.one_shot_safety_sigma is not None
+        or args.one_shot_coverage_bins is not None
+    ):
+        parser.error("one-shot selection overrides require a one-shot checkpoint")
     candidate_hard_v7 = candidate_pruning and not candidate_one_shot
     if args.run_hard_diagnostic and not candidate_one_shot:
-        parser.error("--run-hard-diagnostic requires a v8 one-shot checkpoint")
+        parser.error("--run-hard-diagnostic requires a v8-v10 one-shot checkpoint")
     count_conditioned = structure_mode in {
         "count_conditioned",
         "interactive_dynamic",
@@ -674,6 +721,12 @@ def main() -> None:
             * mean_losses["deletion_cost_loss"],
             "teacher_risk": loss_fn.weights.teacher_risk
             * mean_losses["teacher_risk_loss"],
+            "teacher_ranking": loss_fn.weights.teacher_ranking
+            * mean_losses["teacher_ranking_loss"],
+            "teacher_distribution": loss_fn.weights.teacher_distribution
+            * mean_losses["teacher_distribution_loss"],
+            "teacher_critical_recall": loss_fn.weights.teacher_critical_recall
+            * mean_losses["teacher_critical_recall_loss"],
             "teacher_count": loss_fn.weights.teacher_count
             * mean_losses["teacher_count_loss"],
             "complexity": loss_fn.weights.complexity * mean_losses["complexity_loss"],
@@ -886,6 +939,15 @@ def main() -> None:
         {
             "method": "learned_mask_then_single_standard_bspline_refit",
             "selection_sources": sorted(one_shot_selection_sources),
+            "selection_policy": getattr(
+                model.pruning_head, "one_shot_selection_policy", "threshold"
+            ),
+            "selection_safety_sigma": float(
+                getattr(model.pruning_head, "one_shot_safety_sigma", 0.0)
+            ),
+            "selection_coverage_bins": int(
+                getattr(model.pruning_head, "one_shot_coverage_bins", 0)
+            ),
             "keep_probability_cutoff": 0.5,
             "activity_threshold_cli_used_for_selection": False,
             "fit_tolerance_used_for_selection": False,
@@ -1135,7 +1197,12 @@ def main() -> None:
             )
             print(f"  learned one-shot count histogram: {network_histogram}")
             print("\nOne-shot standard B-spline deployment")
-            print("  selection: learned_keep_mask (fallback p >= 0.5)")
+            print(
+                "  selection: learned_keep_mask | policy="
+                f"{one_shot_report['selection_policy']} | safety_sigma="
+                f"{one_shot_report['selection_safety_sigma']:.3f} | coverage_bins="
+                f"{one_shot_report['selection_coverage_bins']}"
+            )
             print(
                 "  adaptive raw-importance logit beta mean/min/max: "
                 f"{one_shot_report['adaptive_keep_logit_threshold_mean']}/"

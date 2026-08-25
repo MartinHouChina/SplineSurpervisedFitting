@@ -1,4 +1,4 @@
-# v8 模型与数据流
+# v10 模型与数据流
 
 ## 1. 输入与目标
 
@@ -8,7 +8,7 @@
 points [B,M,D], D∈{2,3}
 ```
 
-目标是在归一化 RMS 阈值 `ε` 下预测尽量少的内部节点。v8 没有 CountHead；最终节点数是 final KeepMask 中 `True` 的数量。
+目标是在归一化 RMS 阈值 `ε` 下预测尽量少的内部节点。v10 没有 CountHead；最终节点数由 LearnedKeep 概率质量和不确定性共同确定。
 
 ## 2. 编码与参数化
 
@@ -81,75 +81,53 @@ left/right spacing            [B,Kc,2]
 
 这些量是便宜的结构证据，不是标准 B 样条 RMS 保证。解析贡献在送入选择头前停止梯度，以避免对线性求解器求二阶梯度。
 
-## 5. InteractivePruningHead：固定双向链路
+## 5. InteractivePruningHead：v10 结构化可行选择器
 
-候选 token、位置编码和解析证据先融合，再通过 candidate self-attention 建模相邻、替代和冗余关系。随后在一次 `forward` 内按固定次数执行：
+v10 保留 v9 的固定 proposal 几何，并增强 LearnedKeep 的集合选择：
 
 ```text
-base tokens
-  → preliminary raw importance / β / p
-  → preliminary soft keep context
-  → provisional ordered positions
-  → position encoding feedback
-  → final decision tokens
-  → final raw importance / β / p
-  → hard-ST KeepMask context
-  → final ordered positions
+base candidate tokens
+  → proposal-only position residual
+  → fixed refined positions
+  → 固定位置编码 + 解析贡献特征
+  → 两层独立 selector self-attention + FFN
+  → raw importance r 与曲线阈值 β
+  → probability-mass Top-K + coverage anchors
+  → 一次性 KeepMask
 ```
 
-这不是循环，也不会根据预测节点数改变计算次数。
+### 5.1 固定 proposal 几何
 
-### 5.1 Preliminary keep
+位置残差只读取 proposal token，不读取 keep 概率或 hard mask。残差最多使用单侧可用间距的
+45%，所以节点始终严格有序。离线教师生成后，编码器、参数头、候选头和位置残差头全部冻结；
+同一样本的 `refined_candidate_knots` 在整个蒸馏阶段保持不变。
 
-对 base token 预测第一组重要性和曲线级阈值：
+### 5.2 位置感知 selector adapter
 
-\[
-p_j^{(0)}=\sigma(r_j^{(0)}-\beta^{(0)}).
-\]
-
-用 `p^(0)` 汇聚 soft keep context，与每个 base token 交互后预测 provisional position residual。残差最多使用单侧可用间距的 45%，所以 provisional positions 严格有序。
-
-### 5.2 Position → keep 反馈
-
-将 provisional position 的正弦位置编码与原位置编码作差，再与 provisional token 融合。独立模块 `position_to_keep_feedback` 把该状态送回最终选择决策：
+独立 selector 将固定精修位置重新编码，并通过自己的候选 self-attention 学习替代、冗余和互补：
 
 \[
-r_j=f_{\mathrm{keep}}(z_j^{\mathrm{feedback}}),\qquad
-\beta=f_{\mathrm{threshold}}(z_{\mathrm{global}}^{\mathrm{feedback}}),
+r_j=f_{\mathrm{keep}}(z_j^{\mathrm{selector}}),\qquad
+\beta=f_{\mathrm{threshold}}(\operatorname{pool}(z^{\mathrm{selector}})),
 \]
 
 \[
 p_j=\sigma(r_j-\beta),\qquad
-m_j=\mathbf 1[p_j\ge0.5].
+\widehat K=\left\lceil\sum_jp_j+s\sqrt{\sum_jp_j(1-p_j)}\right\rceil.
 \]
 
-因此 provisional 位置会改变最终保留概率；最终保留状态也会反过来控制最终位置精修。
+从 raw importance 中选取最高的 `K̂` 个槽位。参数域覆盖锚点保证预测不坍缩到少数局部区间，
+剩余名额仍按 LearnedKeep 全局排序分配。节点位置参与 Keep 判断，但 Keep 不再反向移动教师
+绑定的位置。
 
-### 5.3 Final hard-ST context 与位置
+### 5.3 Straight-through mask
 
-训练使用 straight-through gate：
-
-\[
-g_j=m_j+p_j-\operatorname{stopgrad}(p_j).
-\]
-
-其前向值严格等于 hard mask，反向梯度来自 `p_j`。最终上下文为 hard-ST 加权汇聚；前向只包含被保留候选。若所有候选都被删除，安全分母使上下文为有限的零向量。
-
-最终位置残差以 `g_j` 调制：
-
-- 被删除候选前向不移动；
-- 被保留候选读取 hard KeepMask context 后精修；
-- 反向梯度仍可更新 keep 概率；
-- 每个残差仍受 45% 邻域 slack 限制，最终位置严格有序。
+训练仍使用 `g_j=m_j+p_j-stopgrad(p_j)`，使第二次截断幂 surrogate 的前向结构与部署 mask
+一致。v10 默认把 surrogate fit/violation 权重设为零；它只提供诊断，不参与 checkpoint 选优。
 
 主要诊断输出：
 
 ```text
-preliminary_raw_importance
-preliminary_adaptive_keep_threshold
-preliminary_keep_probability
-provisional_candidate_positions
-position_feedback_tokens
 final_raw_importance
 adaptive_keep_threshold
 final_keep_probability
@@ -159,7 +137,7 @@ final_hard_st_keep_context
 refined_candidate_knots
 ```
 
-旧键 `raw_importance`、`keep_probability` 和 `refined_candidate_knots` 表示最终状态。
+兼容键 `raw_importance`、`keep_probability` 和 `refined_candidate_knots` 表示最终状态。
 
 ## 6. 第二次截断幂代理求解
 
@@ -192,9 +170,12 @@ refined_candidate_knots
 O(BK_cM)+O(BK_c^2).
 \]
 
-固定双向链路增加的是常数次 head 计算，不增加候选数量或搜索循环。
+两层 selector adapter 增加固定 `Kc×Kc` 注意力；Top-K 与覆盖锚点只处理分数，不调用样条
+求解器，也不增加网络 forward 或部署 refit 次数。
 
-- `structure_mode=candidate_pruning_one_shot`：v8 固定双向 one-shot 路径。
+- 同时启用 `one_shot_selection_policy=mass_topk`：v10。
+- `structure_mode=candidate_pruning_one_shot` 且 `one_shot_fixed_proposal_geometry=True`、threshold mask：v9。
+- 同一 structure mode 且该标志为 `False`：v8 固定双向 one-shot 路径。
 - `structure_mode=candidate_pruning`：v7 历史路径。
-- `one_shot_adaptive=False` 不创建 v8 参数，v7 state layout 与数值路径保持不变。
+- `one_shot_adaptive=False` 不创建 one-shot 参数，v7 state layout 与数值路径保持不变。
 - 早期 v8 checkpoint 缺少 `position_to_keep_feedback` 参数时，可在 strict load 中注入该模块的构造初值。

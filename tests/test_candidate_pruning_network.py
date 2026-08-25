@@ -11,6 +11,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from spline_fitting.checkpointing import (
     CANDIDATE_PRUNING_OBJECTIVE_VERSION,
     ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+    V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+    V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
     build_model_from_checkpoint,
     migrate_loss_config,
 )
@@ -39,6 +41,19 @@ def _one_shot_model() -> SplineFittingNetwork:
         structure_mode="candidate_pruning_one_shot",
         structure_attention_heads=4,
         geometry_feature_mode="chord_derivatives",
+    )
+
+
+def _v9_model() -> SplineFittingNetwork:
+    return SplineFittingNetwork(
+        point_dim=2,
+        hidden_dim=32,
+        encoder_layers=1,
+        max_internal_knots=6,
+        structure_mode="candidate_pruning_one_shot",
+        structure_attention_heads=4,
+        geometry_feature_mode="chord_derivatives",
+        one_shot_fixed_proposal_geometry=True,
     )
 
 
@@ -140,6 +155,9 @@ def test_one_shot_network_uses_discrete_straight_through_mask_and_teacher_loss()
         count_consistency=0.0,
         deletion_cost=0.0,
         teacher_risk=0.5,
+        teacher_ranking=1.0,
+        teacher_distribution=1.0,
+        teacher_critical_recall=1.0,
         teacher_count=0.25,
         complexity=0.05,
     )
@@ -160,6 +178,10 @@ def test_one_shot_network_uses_discrete_straight_through_mask_and_teacher_loss()
     )
     assert torch.isfinite(losses["loss"])
     assert losses["teacher_risk_loss"] > 0
+    assert losses["teacher_ranking_loss"] > 0
+    assert losses["teacher_distribution_loss"] > 0
+    assert losses["teacher_critical_recall_loss"] > 0
+    assert losses["canonical_position_loss"] > 0
     assert losses["keep_dice_loss"] > 0
     torch.testing.assert_close(
         losses["structured_active_count"],
@@ -193,13 +215,17 @@ def test_one_shot_checkpoint_round_trip_and_default_loss_config() -> None:
     assert assumed
     assert loss_config["one_shot_teacher"] is True
     assert loss_config["weights"]["teacher_risk"] == 0.5
+    assert loss_config["weights"]["teacher_ranking"] == 1.0
     assert loss_config["weights"]["fit"] == 0.0
     assert loss_config["weights"]["threshold_violation"] == 0.0
     assert loss_config["weights"]["candidate_coverage"] == 0.0
     assert loss_config["weights"]["keep"] == 1.0
+    assert loss_config["weights"]["knot_position"] == 4.0
     assert loss_config["weights"]["teacher_count"] == 2.0
     assert loss_config["weights"]["complexity"] == 0.25
     assert loss_config["positive_keep_weight"] == 1.0
+    assert loss_config["teacher_ranking_margin"] == 1.0
+    assert loss_config["candidate_match_tolerance"] == 0.01
     points = torch.randn(2, 24, 2)
     with torch.no_grad():
         expected = reference(points)
@@ -208,3 +234,74 @@ def test_one_shot_checkpoint_round_trip_and_default_loss_config() -> None:
     torch.testing.assert_close(
         actual["adaptive_keep_threshold"], expected["adaptive_keep_threshold"]
     )
+
+
+def test_v9_checkpoint_round_trip_uses_fixed_geometry_selector() -> None:
+    reference = _v9_model().eval()
+    config = {
+        "point_dim": 2,
+        "hidden_dim": 32,
+        "encoder_layers": 1,
+        "max_internal_knots": 6,
+        "structure_mode": "candidate_pruning_one_shot",
+        "structure_attention_heads": 4,
+        "geometry_feature_mode": "chord_derivatives",
+        "one_shot_fixed_proposal_geometry": True,
+    }
+    checkpoint = {
+        "objective_version": V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+        "model_config": config,
+        "model_state_dict": reference.state_dict(),
+    }
+    restored, migrated, legacy = build_model_from_checkpoint(checkpoint)
+    assert not legacy
+    assert migrated["one_shot_fixed_proposal_geometry"] is True
+    loss_config, assumed = migrate_loss_config(checkpoint, legacy=legacy)
+    assert assumed
+    assert loss_config["fixed_proposal_geometry"] is True
+    assert loss_config["weights"]["knot_position"] == 0.0
+    points = torch.randn(2, 24, 2)
+    with torch.no_grad():
+        expected = reference(points)
+        actual = restored.eval()(points)
+    torch.testing.assert_close(actual["internal_knots"], expected["internal_knots"])
+    torch.testing.assert_close(actual["keep_probability"], expected["keep_probability"])
+
+
+def test_v10_checkpoint_uses_mass_topk_and_deeper_selector() -> None:
+    config = {
+        "point_dim": 2,
+        "hidden_dim": 32,
+        "encoder_layers": 1,
+        "max_internal_knots": 6,
+        "structure_mode": "candidate_pruning_one_shot",
+        "structure_attention_heads": 4,
+        "geometry_feature_mode": "chord_derivatives",
+        "one_shot_fixed_proposal_geometry": True,
+        "one_shot_selection_policy": "mass_topk",
+        "one_shot_safety_sigma": 0.5,
+        "one_shot_selector_layers": 2,
+        "one_shot_coverage_bins": 4,
+    }
+    reference = SplineFittingNetwork(**config).eval()
+    checkpoint = {
+        "objective_version": V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+        "model_config": config,
+        "model_state_dict": reference.state_dict(),
+    }
+
+    restored, migrated, legacy = build_model_from_checkpoint(checkpoint)
+    assert not legacy
+    assert migrated["one_shot_selection_policy"] == "mass_topk"
+    assert migrated["one_shot_selector_layers"] == 2
+    assert migrated["one_shot_coverage_bins"] == 4
+    loss_config, assumed = migrate_loss_config(checkpoint, legacy=legacy)
+    assert assumed
+    assert loss_config["weights"]["teacher_distribution"] == 2.0
+    assert loss_config["weights"]["teacher_critical_recall"] == 1.0
+    points = torch.randn(2, 24, 2)
+    with torch.no_grad():
+        expected = reference(points)
+        actual = restored.eval()(points)
+    torch.testing.assert_close(actual["keep_probability"], expected["keep_probability"])
+    assert torch.equal(actual["learned_keep_mask"], expected["learned_keep_mask"])

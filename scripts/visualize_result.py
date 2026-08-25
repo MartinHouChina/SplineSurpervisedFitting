@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import argparse
 import math
+import statistics
 import sys
+import textwrap
+import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple, TypeVar
 
 import matplotlib.pyplot as plt
 import torch
@@ -18,7 +23,10 @@ from spline_fitting.checkpointing import (
     build_model_from_checkpoint,
     migrate_loss_config,
 )
-from spline_fitting.data.synthetic import SyntheticCubicBSplineDataset
+from spline_fitting.data.synthetic import (
+    SyntheticCubicBSplineDataset,
+    bspline_basis_matrix,
+)
 from spline_fitting.evaluation.bspline_inference import (
     HardGatedBSplineFit,
     refit_bspline_control_points,
@@ -35,6 +43,71 @@ from spline_fitting.losses.candidate_pruning_loss import (
     CandidatePruningLossWeights,
 )
 from spline_fitting.losses.total_loss import LossWeights, SplineFittingLoss
+
+
+T = TypeVar("T")
+
+
+class CurveComparisonPanel(NamedTuple):
+    """Everything needed for one paper-ready curve comparison panel."""
+
+    dense_curve: torch.Tensor
+    reconstructed_points: torch.Tensor
+    control_points: torch.Tensor
+    internal_knots: torch.Tensor
+    knot_vector: torch.Tensor
+    fit_rmse: float
+    elapsed_ms: float
+    postprocess_ms: float
+    label: str
+
+    @property
+    def internal_knot_count(self) -> int:
+        return int(self.internal_knots.numel())
+
+
+def timed_call(function: Callable[[], T], *, repeats: int) -> tuple[T, float]:
+    """Return the final result and median wall time in milliseconds."""
+    if repeats <= 0:
+        raise ValueError("timing repeats must be positive")
+    durations: list[float] = []
+    result: T | None = None
+    for _ in range(repeats):
+        started_at = time.perf_counter()
+        result = function()
+        durations.append(1e3 * (time.perf_counter() - started_at))
+    assert result is not None
+    return result, float(statistics.median(durations))
+
+
+def fit_as_comparison_panel(
+    fit: HardGatedBSplineFit,
+    dense_params: torch.Tensor,
+    *,
+    elapsed_ms: float,
+    postprocess_ms: float,
+    label: str,
+) -> CurveComparisonPanel:
+    return CurveComparisonPanel(
+        dense_curve=fit.spline.evaluate(dense_params).detach().cpu(),
+        reconstructed_points=fit.reconstructed_points.detach().cpu(),
+        control_points=fit.control_points.detach().cpu(),
+        internal_knots=fit.retained_internal_knots.detach().cpu(),
+        knot_vector=fit.spline.knot_vector.detach().cpu(),
+        fit_rmse=float(fit.fit_rmse),
+        elapsed_ms=float(elapsed_ms),
+        postprocess_ms=float(postprocess_ms),
+        label=label,
+    )
+
+
+def compact_knot_vector(knot_vector: torch.Tensor, degree: int) -> str:
+    """Format a full open knot vector without hiding repeated endpoints."""
+    endpoint_repeat = degree + 1
+    internal = knot_vector[endpoint_repeat:-endpoint_repeat]
+    internal_text = ", ".join(f"{float(value):.3f}" for value in internal)
+    middle = f", {internal_text}, " if internal_text else ", "
+    return f"U=[0x{endpoint_repeat}{middle}1x{endpoint_repeat}]"
 
 
 def resolve_fit_tolerance(
@@ -188,6 +261,7 @@ def candidate_loss_from_checkpoint(
             config.get("deletion_smoothness_weight", 1e-6)
         ),
         deletion_control_ridge=float(config.get("deletion_control_ridge", 0.0)),
+        teacher_ranking_margin=float(config.get("teacher_ranking_margin", 1.0)),
     )
 
 
@@ -209,7 +283,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Historical activity threshold. For v8 it is ignored by deployment; "
+            "Historical activity threshold. For v8-v10 it is ignored by deployment; "
             "the learned mask (or centered keep probability >= 0.5 fallback) is used."
         ),
     )
@@ -221,7 +295,7 @@ def main() -> None:
         default=None,
         help=(
             "Normalized RMS reference for one-shot satisfaction reporting "
-            "and optional offline hard diagnostics. It never changes the v8 "
+            "and optional offline hard diagnostics. It never changes the v8-v10 "
             "learned mask."
         ),
     )
@@ -232,7 +306,7 @@ def main() -> None:
         help=(
             "Candidate-pruning visualization: all candidates, learned "
             "one-shot mask, offline hard RMS teacher, or comparison. "
-            "Defaults to learned for v8 and hard for v7."
+            "Defaults to learned for v8-v10 and hard for v7."
         ),
     )
     parser.add_argument(
@@ -242,12 +316,34 @@ def main() -> None:
         help="Raster output resolution (default: 300).",
     )
     parser.add_argument(
+        "--timing-repeats",
+        type=int,
+        default=1,
+        help=(
+            "Repeat forward/refit/pruning timing and report the median. Use 3-5 "
+            "for paper timing; default 1 keeps multi-sample plotting fast."
+        ),
+    )
+    parser.add_argument(
+        "--one-shot-selection-policy",
+        choices=("checkpoint", "threshold", "mass_topk"),
+        default="checkpoint",
+    )
+    parser.add_argument("--one-shot-safety-sigma", type=float, default=None)
+    parser.add_argument("--one-shot-coverage-bins", type=int, default=None)
+    parser.add_argument(
         "--count-selection", choices=("auto", "network", "bic"), default="auto"
     )
     parser.add_argument("--count-prior-weight", type=float, default=1.0)
     args = parser.parse_args()
     if args.dpi <= 0:
         parser.error("--dpi must be positive")
+    if args.timing_repeats <= 0:
+        parser.error("--timing-repeats must be positive")
+    if args.one_shot_safety_sigma is not None and args.one_shot_safety_sigma < 0.0:
+        parser.error("--one-shot-safety-sigma must be non-negative")
+    if args.one_shot_coverage_bins is not None and args.one_shot_coverage_bins < 0:
+        parser.error("--one-shot-coverage-bins must be non-negative")
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     try:
@@ -268,6 +364,21 @@ def main() -> None:
     candidate_pruning, candidate_one_shot = candidate_mode_flags(
         checkpoint, model_config
     )
+    if candidate_one_shot:
+        if args.one_shot_selection_policy != "checkpoint":
+            model.pruning_head.one_shot_selection_policy = (
+                args.one_shot_selection_policy
+            )
+        if args.one_shot_safety_sigma is not None:
+            model.pruning_head.one_shot_safety_sigma = args.one_shot_safety_sigma
+        if args.one_shot_coverage_bins is not None:
+            model.pruning_head.one_shot_coverage_bins = args.one_shot_coverage_bins
+    elif (
+        args.one_shot_selection_policy != "checkpoint"
+        or args.one_shot_safety_sigma is not None
+        or args.one_shot_coverage_bins is not None
+    ):
+        parser.error("one-shot selection overrides require a one-shot checkpoint")
     if args.pruning_view is None:
         args.pruning_view = "learned" if candidate_one_shot else "hard"
     if not candidate_pruning and args.pruning_view != "hard":
@@ -315,8 +426,16 @@ def main() -> None:
     )
     sample = dataset[args.sample_index]
     points = sample["points"].unsqueeze(0)
+
+    def run_model_forward() -> dict[str, torch.Tensor]:
+        with torch.no_grad():
+            return model(points)
+
+    output, network_forward_ms = timed_call(
+        run_model_forward,
+        repeats=args.timing_repeats,
+    )
     with torch.no_grad():
-        output = model(points)
         if count_conditioned and count_selection == "bic":
             deployment_output, _ = select_count_conditioned_output_by_bic(
                 output,
@@ -334,6 +453,7 @@ def main() -> None:
             deployment_output = output
         pruning_result: MinimalKnotPruningResult | None = None
         candidate_fits: dict[str, HardGatedBSplineFit] = {}
+        candidate_postprocess_ms: dict[str, float] = {}
         adaptive_keep_threshold: torch.Tensor | None = None
         learned_selection_source: str | None = None
         if candidate_pruning:
@@ -355,25 +475,31 @@ def main() -> None:
             for name, mask in (("all", all_mask), ("learned", learned_mask)):
                 if name not in requested_views:
                     continue
-                candidate_fits[name] = refit_candidate_mask_as_deployed_fit(
-                    output["params"][0],
-                    points[0],
-                    candidate_knots,
-                    mask,
-                    degree=model.degree,
-                    smoothness_weight=args.smoothness_weight,
-                    control_ridge=args.control_ridge,
+                candidate_fits[name], candidate_postprocess_ms[name] = timed_call(
+                    lambda mask=mask: refit_candidate_mask_as_deployed_fit(
+                        output["params"][0],
+                        points[0],
+                        candidate_knots,
+                        mask,
+                        degree=model.degree,
+                        smoothness_weight=args.smoothness_weight,
+                        control_ridge=args.control_ridge,
+                    ),
+                    repeats=args.timing_repeats,
                 )
             if "hard" in requested_views:
-                pruning_result = prune_knots_to_rms_tolerance(
-                    output["params"][0],
-                    points[0],
-                    candidate_knots,
-                    error_tolerance=fit_tolerance,
-                    degree=model.degree,
-                    smoothness_weight=args.smoothness_weight,
-                    control_ridge=args.control_ridge,
-                    interpolate_endpoints=True,
+                pruning_result, candidate_postprocess_ms["hard"] = timed_call(
+                    lambda: prune_knots_to_rms_tolerance(
+                        output["params"][0],
+                        points[0],
+                        candidate_knots,
+                        error_tolerance=fit_tolerance,
+                        degree=model.degree,
+                        smoothness_weight=args.smoothness_weight,
+                        control_ridge=args.control_ridge,
+                        interpolate_endpoints=True,
+                    ),
+                    repeats=args.timing_repeats,
                 )
                 candidate_fits["hard"] = pruning_result_as_deployed_fit(pruning_result)
             primary_view = args.pruning_view
@@ -415,6 +541,72 @@ def main() -> None:
     forward_curve = output["reconstructed_points"][0].detach().numpy()
     dense_params = torch.linspace(0.0, 1.0, 400, dtype=points.dtype)
 
+    source_control_key = (
+        "source_control_points"
+        if "source_control_points" in sample
+        else "true_control_points"
+    )
+    source_control_mask_key = (
+        "source_control_mask"
+        if "source_control_mask" in sample
+        else "true_control_mask"
+    )
+    source_knot_key = (
+        "source_knot_vector" if "source_knot_vector" in sample else "true_knot_vector"
+    )
+    source_knot_mask_key = (
+        "source_knot_mask" if "source_knot_mask" in sample else "true_knot_mask"
+    )
+    reference_controls = sample[source_control_key][
+        sample[source_control_mask_key].to(torch.bool)
+    ]
+    reference_knot_vector = sample[source_knot_key][
+        sample[source_knot_mask_key].to(torch.bool)
+    ]
+    if "source_knot_vector" in sample:
+        endpoint_multiplicity = model.degree + 1
+        reference_internal_knots = reference_knot_vector[
+            endpoint_multiplicity:-endpoint_multiplicity
+        ]
+    else:
+        reference_internal_knots = sample["true_internal_knots"][
+            sample["true_internal_knot_mask"].to(torch.bool)
+        ]
+
+    def evaluate_reference_curve() -> tuple[torch.Tensor, torch.Tensor]:
+        dense_basis = bspline_basis_matrix(
+            dense_params,
+            reference_knot_vector,
+            model.degree,
+            num_control_points=reference_controls.shape[0],
+        )
+        sample_basis = bspline_basis_matrix(
+            sample["true_params"],
+            reference_knot_vector,
+            model.degree,
+            num_control_points=reference_controls.shape[0],
+        )
+        return dense_basis @ reference_controls, sample_basis @ reference_controls
+
+    (reference_dense_curve, reference_reconstruction), reference_time_ms = timed_call(
+        evaluate_reference_curve,
+        repeats=args.timing_repeats,
+    )
+    reference_rmse = float(
+        (reference_reconstruction - points[0]).square().sum(dim=-1).mean().sqrt()
+    )
+    reference_panel = CurveComparisonPanel(
+        dense_curve=reference_dense_curve.detach().cpu(),
+        reconstructed_points=reference_reconstruction.detach().cpu(),
+        control_points=reference_controls.detach().cpu(),
+        internal_knots=reference_internal_knots.detach().cpu(),
+        knot_vector=reference_knot_vector.detach().cpu(),
+        fit_rmse=reference_rmse,
+        elapsed_ms=reference_time_ms,
+        postprocess_ms=reference_time_ms,
+        label="reference B-spline",
+    )
+
     def plot_curve(
         axis,
         fit: HardGatedBSplineFit,
@@ -454,44 +646,159 @@ def main() -> None:
         )
         axis.legend(fontsize="small")
 
+    def plot_comparison_panel(
+        axis,
+        panel: CurveComparisonPanel,
+        *,
+        title: str,
+        time_description: str,
+    ) -> None:
+        dense_curve = panel.dense_curve.numpy()
+        controls = panel.control_points.numpy()
+        axis.scatter(
+            observed[:, 0],
+            observed[:, 1],
+            s=11,
+            alpha=0.72,
+            label="sample points",
+            zorder=2,
+        )
+        axis.scatter(
+            observed[[0, -1], 0],
+            observed[[0, -1], 1],
+            s=52,
+            marker="x",
+            linewidths=1.8,
+            label="endpoints",
+            zorder=5,
+        )
+        axis.plot(
+            dense_curve[:, 0],
+            dense_curve[:, 1],
+            linewidth=1.8,
+            label=panel.label,
+            zorder=3,
+        )
+        axis.plot(
+            controls[:, 0],
+            controls[:, 1],
+            "o-",
+            markersize=4.5,
+            linewidth=1.0,
+            alpha=0.58,
+            label="control polygon",
+            zorder=1,
+        )
+        if panel.internal_knots.numel():
+            knot_basis = bspline_basis_matrix(
+                panel.internal_knots,
+                panel.knot_vector,
+                model.degree,
+                num_control_points=panel.control_points.shape[0],
+            )
+            knot_locations = (knot_basis @ panel.control_points).numpy()
+            axis.scatter(
+                knot_locations[:, 0],
+                knot_locations[:, 1],
+                s=30,
+                marker="D",
+                facecolors="none",
+                linewidths=1.1,
+                label="internal knots C(u)",
+                zorder=4,
+            )
+        axis.set_aspect("equal", adjustable="box")
+        axis.set_xlabel("x")
+        axis.set_ylabel("y")
+        axis.set_title(
+            f"{title}\nK={panel.internal_knot_count} | "
+            f"RMS={panel.fit_rmse:.4e} | {time_description}"
+        )
+        knot_text = compact_knot_vector(panel.knot_vector, model.degree)
+        axis.text(
+            0.5,
+            -0.16,
+            textwrap.fill(knot_text, width=92),
+            transform=axis.transAxes,
+            ha="center",
+            va="top",
+            fontsize=7.5,
+        )
+        axis.legend(fontsize=7.5, loc="best")
+
     comparison_view = candidate_pruning and args.pruning_view == "comparison"
     if comparison_view:
-        figure, axes = plt.subplots(2, 2, figsize=(13, 10))
-        ax_all, ax_learned, ax_hard, ax_structure = axes.ravel()
-        plot_curve(
+        comparison_panels = {
+            "reference": reference_panel,
+            "all": fit_as_comparison_panel(
+                candidate_fits["all"],
+                dense_params,
+                elapsed_ms=network_forward_ms + candidate_postprocess_ms["all"],
+                postprocess_ms=candidate_postprocess_ms["all"],
+                label="redundant all-candidate B-spline",
+            ),
+            "learned": fit_as_comparison_panel(
+                candidate_fits["learned"],
+                dense_params,
+                elapsed_ms=network_forward_ms + candidate_postprocess_ms["learned"],
+                postprocess_ms=candidate_postprocess_ms["learned"],
+                label="learned deployment B-spline",
+            ),
+            "hard": fit_as_comparison_panel(
+                candidate_fits["hard"],
+                dense_params,
+                elapsed_ms=network_forward_ms + candidate_postprocess_ms["hard"],
+                postprocess_ms=candidate_postprocess_ms["hard"],
+                label="Hard-RMS B-spline",
+            ),
+        }
+        figure, axes = plt.subplots(2, 2, figsize=(16, 12))
+        ax_reference, ax_all, ax_learned, ax_hard = axes.ravel()
+        plot_comparison_panel(
+            ax_reference,
+            comparison_panels["reference"],
+            title="(a) Original/source data",
+            time_description=f"CPU reference eval={reference_time_ms:.2f} ms",
+        )
+        plot_comparison_panel(
             ax_all,
-            candidate_fits["all"],
-            title="(a) All candidates",
-            spline_label="all-candidate B-spline",
-            show_network=True,
+            comparison_panels["all"],
+            title="(b) Redundant all-candidate fit",
+            time_description=(
+                f"CPU total={comparison_panels['all'].elapsed_ms:.2f} ms "
+                f"(net={network_forward_ms:.2f}, refit="
+                f"{comparison_panels['all'].postprocess_ms:.2f})"
+            ),
         )
-        plot_curve(
+        plot_comparison_panel(
             ax_learned,
-            candidate_fits["learned"],
+            comparison_panels["learned"],
             title=(
-                "(b) One-shot learned deployment"
+                "(c) Learned one-shot deployment"
                 if candidate_one_shot
-                else f"(b) Learned keep (p >= {threshold:.2f})"
+                else f"(c) Learned keep (p >= {threshold:.2f})"
             ),
-            spline_label="one-shot learned B-spline",
-            show_network=False,
+            time_description=(
+                f"CPU total={comparison_panels['learned'].elapsed_ms:.2f} ms "
+                f"(net={network_forward_ms:.2f}, refit="
+                f"{comparison_panels['learned'].postprocess_ms:.2f})"
+            ),
         )
-        plot_curve(
+        plot_comparison_panel(
             ax_hard,
-            candidate_fits["hard"],
+            comparison_panels["hard"],
             title=(
-                f"(c) Offline hard teacher (epsilon={fit_tolerance:.2e})"
+                f"(d) Offline Hard-RMS deletion (epsilon={fit_tolerance:.2e})"
                 if candidate_one_shot
-                else f"(c) Hard RMS pruning (epsilon={fit_tolerance:.2e})"
+                else f"(d) Hard-RMS pruning (epsilon={fit_tolerance:.2e})"
             ),
-            spline_label=(
-                "offline teacher B-spline"
-                if candidate_one_shot
-                else "hard-pruned B-spline"
+            time_description=(
+                f"CPU total={comparison_panels['hard'].elapsed_ms:.2f} ms "
+                f"(net={network_forward_ms:.2f}, prune="
+                f"{comparison_panels['hard'].postprocess_ms:.2f})"
             ),
-            show_network=False,
         )
-        curve_axes = (ax_all, ax_learned, ax_hard)
+        curve_axes = (ax_reference, ax_all, ax_learned, ax_hard)
         x_limits = [axis.get_xlim() for axis in curve_axes]
         y_limits = [axis.get_ylim() for axis in curve_axes]
         common_xlim = (
@@ -569,7 +876,7 @@ def main() -> None:
             f"({count_selection})"
         )
         ax_structure.set_xticks(counts)
-    elif candidate_pruning:
+    elif candidate_pruning and not comparison_view:
         keep_probability = output["keep_probability"][0].detach().numpy()
         knots = output["internal_knots"][0].detach().numpy()
         if args.pruning_view == "all":
@@ -655,7 +962,7 @@ def main() -> None:
                 f"{args.pruning_view.capitalize()} selection "
                 f"{len(knots)} -> {deployed.retained_count}"
             )
-    else:
+    elif not comparison_view:
         activity = output["activity"][0].detach().numpy()
         knots = output["internal_knots"][0].detach().numpy()
         kept = deployed.retained_mask.numpy()
@@ -669,7 +976,10 @@ def main() -> None:
         ax_structure.set_ylabel("existence probability")
         ax_structure.set_title("Historical threshold-gated structure")
 
-    figure.tight_layout()
+    if comparison_view:
+        figure.subplots_adjust(hspace=0.42, wspace=0.24, bottom=0.08, top=0.94)
+    else:
+        figure.tight_layout()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(args.output, dpi=args.dpi, bbox_inches="tight")
     plt.close(figure)
@@ -706,18 +1016,25 @@ def main() -> None:
         if candidate_one_shot:
             assert adaptive_keep_threshold is not None
             if selected_fit_is_deployment:
-                print("  selected result role: v8 learned one-shot deployment")
+                print("  selected result role: learned one-shot deployment")
             else:
                 print(
                     f"  selected result role: offline {args.pruning_view} diagnostic; "
-                    "not the v8 deployment result"
+                    "not the one-shot deployment result"
                 )
                 print(
-                    "  v8 deployment policy: learned one-shot mask followed by one "
+                    "  one-shot deployment policy: learned mask followed by one "
                     "standard B-spline refit (not executed in this selected view)"
                 )
             print(f"  learned selection source: {learned_selection_source}")
-            print("  final threshold-centered keep-probability cutoff: 0.5")
+            print(
+                "  selection policy: "
+                f"{getattr(model.pruning_head, 'one_shot_selection_policy', 'threshold')}"
+                " | safety sigma="
+                f"{getattr(model.pruning_head, 'one_shot_safety_sigma', 0.0):.3f}"
+                " | coverage bins="
+                f"{getattr(model.pruning_head, 'one_shot_coverage_bins', 0)}"
+            )
             print(
                 "  adaptive raw-importance logit beta: "
                 f"{float(adaptive_keep_threshold):.6f}"
@@ -745,6 +1062,29 @@ def main() -> None:
                 f"  {name} standard B-spline{role}: K={fit.retained_count}, "
                 f"RMS={float(fit.fit_rmse):.9e}"
             )
+            if name in candidate_postprocess_ms:
+                postprocess_name = "prune" if name == "hard" else "refit"
+                print(
+                    f"    CPU time: total="
+                    f"{network_forward_ms + candidate_postprocess_ms[name]:.3f} ms "
+                    f"(network={network_forward_ms:.3f} ms, "
+                    f"{postprocess_name}={candidate_postprocess_ms[name]:.3f} ms)"
+                )
+                print(
+                    "    knot vector: "
+                    + compact_knot_vector(fit.spline.knot_vector, model.degree)
+                )
+        if comparison_view:
+            print(
+                "  reference data: "
+                f"K={reference_panel.internal_knot_count}, "
+                f"RMS={reference_panel.fit_rmse:.9e}, "
+                f"evaluation={reference_panel.elapsed_ms:.3f} ms"
+            )
+            print(
+                "    knot vector: "
+                + compact_knot_vector(reference_panel.knot_vector, model.degree)
+            )
         if pruning_result is not None:
             print(
                 "  hard-pruning RMS threshold"
@@ -760,7 +1100,7 @@ def main() -> None:
         print(
             (
                 "  threshold-centered keep probabilities "
-                "(v8 learned deployment selector): "
+                "(learned one-shot deployment selector): "
                 if candidate_one_shot
                 else "  learned keep probabilities (diagnostic only): "
             )
@@ -775,7 +1115,7 @@ def main() -> None:
             f"{value:.6f}" for value in deployed.retained_internal_knots.tolist()
         )
     )
-    print(f"  true internal knots: {true_knots.tolist()}")
+    print(f"  canonical supervision internal knots: {true_knots.tolist()}")
     print(
         f"  {selected_fit_role} match@0.05: precision={matching.precision:.3f}, "
         f"recall={matching.recall:.3f}, F1={matching.f1:.3f}"

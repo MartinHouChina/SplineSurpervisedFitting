@@ -289,6 +289,81 @@ class InteractivePruningHeadTests(unittest.TestCase):
             0.0,
         )
 
+    def test_v9_keep_changes_cannot_move_fixed_proposal_geometry(self) -> None:
+        torch.manual_seed(89)
+        head = InteractivePruningHead(
+            hidden_dim=16,
+            residual_feature_dim=1,
+            attention_heads=4,
+            min_gap=0.01,
+            one_shot_adaptive=True,
+            one_shot_fixed_proposal_geometry=True,
+        ).eval()
+        positions = torch.tensor([[0.08, 0.22, 0.40, 0.58, 0.76, 0.92]])
+        inputs = {
+            "coefficient_energy": torch.rand(1, 6),
+            "deletion_delta": torch.rand(1, 6),
+            "residual_features": torch.rand(1, 6),
+        }
+        tokens = torch.randn(1, 6, 16)
+        with torch.no_grad():
+            head.keep_head.weight.zero_()
+            head.keep_head.bias.fill_(-8.0)
+            removed = head(tokens, positions, **inputs)
+            head.keep_head.bias.fill_(8.0)
+            retained = head(tokens, positions, **inputs)
+
+        self.assertFalse(torch.any(removed["final_hard_keep_mask"]))
+        self.assertTrue(torch.all(retained["final_hard_keep_mask"]))
+        torch.testing.assert_close(
+            removed["refined_candidate_positions"],
+            retained["refined_candidate_positions"],
+        )
+
+    def test_mass_topk_uses_probability_mass_as_structured_cardinality(self) -> None:
+        head = InteractivePruningHead(
+            hidden_dim=16,
+            attention_heads=4,
+            one_shot_adaptive=True,
+            one_shot_fixed_proposal_geometry=True,
+            one_shot_selection_policy="mass_topk",
+        )
+        probability = torch.tensor([[0.90, 0.80, 0.40, 0.30]])
+        mask, count, uncertainty = head._select_hard_keep_mask(
+            probability,
+            torch.ones_like(probability, dtype=torch.bool),
+            torch.tensor([[0.1, 0.3, 0.6, 0.9]]),
+        )
+
+        self.assertEqual(count.tolist(), [3])
+        self.assertEqual(mask.tolist(), [[True, True, True, False]])
+        self.assertGreater(float(uncertainty[0]), 0.0)
+
+    def test_mass_topk_coverage_anchors_prevent_parameter_domain_collapse(self) -> None:
+        head = InteractivePruningHead(
+            hidden_dim=16,
+            attention_heads=4,
+            one_shot_adaptive=True,
+            one_shot_fixed_proposal_geometry=True,
+            one_shot_selection_policy="mass_topk",
+            one_shot_coverage_bins=4,
+        )
+        positions = torch.tensor([[0.10, 0.20, 0.30, 0.45, 0.60, 0.70, 0.80, 0.90]])
+        probability = torch.tensor([[0.80, 0.75, 0.70, 0.65, 0.30, 0.25, 0.20, 0.15]])
+        mask, count, _ = head._select_hard_keep_mask(
+            probability,
+            torch.ones_like(probability, dtype=torch.bool),
+            positions,
+        )
+
+        self.assertEqual(count.tolist(), [4])
+        selected_positions = positions[mask]
+        self.assertTrue(torch.all(selected_positions[:-1] < selected_positions[1:]))
+        self.assertEqual(
+            torch.floor(selected_positions * 4).to(torch.long).tolist(),
+            [0, 1, 2, 3],
+        )
+
     def test_final_keep_context_is_hard_forward_and_st_backward(self) -> None:
         torch.manual_seed(67)
         head = InteractivePruningHead(

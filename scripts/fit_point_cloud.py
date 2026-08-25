@@ -108,7 +108,7 @@ def refit_one_shot_full_resolution(
     smoothness_weight: float,
     control_ridge: float,
 ) -> tuple[HardGatedBSplineFit, torch.Tensor, torch.Tensor, str]:
-    """Apply v8's learned mask and refit exactly once at source resolution."""
+    """Apply the learned one-shot mask and refit once at source resolution."""
     mask, adaptive_threshold, source = one_shot_selection(output)
     selected_output = {
         "params": parameters.unsqueeze(0),
@@ -219,7 +219,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Historical activity threshold. For v8 it is ignored by deployment; "
+            "Historical activity threshold. For v8-v10 it is ignored by deployment; "
             "the learned mask (or centered keep probability >= 0.5 fallback) is used."
         ),
     )
@@ -230,7 +230,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Normalized RMS limit for v7 hard candidate pruning. For v8 it is "
+            "Normalized RMS limit for v7 hard candidate pruning. For v8-v10 it is "
             "reporting-only: it measures satisfaction and never changes the learned "
             "one-shot mask. Defaults to deployment_config.error_tolerance, then the "
             "dataset canonical knot tolerance stored in the checkpoint."
@@ -240,11 +240,22 @@ def main() -> None:
         "--count-selection", choices=("auto", "network", "bic"), default="auto"
     )
     parser.add_argument("--count-prior-weight", type=float, default=1.0)
+    parser.add_argument(
+        "--one-shot-selection-policy",
+        choices=("checkpoint", "threshold", "mass_topk"),
+        default="checkpoint",
+    )
+    parser.add_argument("--one-shot-safety-sigma", type=float, default=None)
+    parser.add_argument("--one-shot-coverage-bins", type=int, default=None)
     args = parser.parse_args()
     if args.smoothness_weight < 0.0 or args.control_ridge < 0.0:
         parser.error("refit regularization weights must be non-negative")
     if args.num_points is not None and args.num_points < 4:
         parser.error("--num-points must be at least four")
+    if args.one_shot_safety_sigma is not None and args.one_shot_safety_sigma < 0.0:
+        parser.error("--one-shot-safety-sigma must be non-negative")
+    if args.one_shot_coverage_bins is not None and args.one_shot_coverage_bins < 0:
+        parser.error("--one-shot-coverage-bins must be non-negative")
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     try:
@@ -291,6 +302,21 @@ def main() -> None:
     candidate_pruning, candidate_one_shot = candidate_mode_flags(
         checkpoint, model_config
     )
+    if candidate_one_shot:
+        if args.one_shot_selection_policy != "checkpoint":
+            model.pruning_head.one_shot_selection_policy = (
+                args.one_shot_selection_policy
+            )
+        if args.one_shot_safety_sigma is not None:
+            model.pruning_head.one_shot_safety_sigma = args.one_shot_safety_sigma
+        if args.one_shot_coverage_bins is not None:
+            model.pruning_head.one_shot_coverage_bins = args.one_shot_coverage_bins
+    elif (
+        args.one_shot_selection_policy != "checkpoint"
+        or args.one_shot_safety_sigma is not None
+        or args.one_shot_coverage_bins is not None
+    ):
+        parser.error("one-shot selection overrides require a one-shot checkpoint")
     count_selection = args.count_selection
     if count_selection == "auto":
         count_selection = (
@@ -448,6 +474,15 @@ def main() -> None:
         )
         report["learned_keep_mask"] = one_shot_mask.detach().cpu().tolist()
         report["one_shot_selection_source"] = one_shot_selection_source
+        report["one_shot_selection_policy"] = getattr(
+            model.pruning_head, "one_shot_selection_policy", "threshold"
+        )
+        report["one_shot_safety_sigma"] = float(
+            getattr(model.pruning_head, "one_shot_safety_sigma", 0.0)
+        )
+        report["one_shot_coverage_bins"] = int(
+            getattr(model.pruning_head, "one_shot_coverage_bins", 0)
+        )
         report["keep_probability_cutoff"] = 0.5
         report["activity_threshold_cli_used_for_selection"] = False
         report["fit_tolerance_used_for_selection"] = False
@@ -533,10 +568,17 @@ def main() -> None:
         )
         print(f"  selection source: {one_shot_selection_source}")
         print(
+            "  selection policy: "
+            f"{getattr(model.pruning_head, 'one_shot_selection_policy', 'threshold')}"
+            " | safety sigma="
+            f"{getattr(model.pruning_head, 'one_shot_safety_sigma', 0.0):.3f}"
+            " | coverage bins="
+            f"{getattr(model.pruning_head, 'one_shot_coverage_bins', 0)}"
+        )
+        print(
             "  adaptive raw-importance logit beta: "
             f"{float(adaptive_keep_threshold.detach().cpu()):.9e}"
         )
-        print("  final keep-probability cutoff: 0.5")
         print(f"  normalized fit tolerance: {fit_tolerance:.9e}")
         print(
             f"  tolerance satisfied: {float(deployed.fit_rmse.cpu()) <= fit_tolerance}"

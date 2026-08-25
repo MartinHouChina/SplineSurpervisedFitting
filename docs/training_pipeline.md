@@ -1,4 +1,4 @@
-# v8 数据与训练流程
+# v10 数据与训练流程
 
 ## 1. 学习目标
 
@@ -10,7 +10,7 @@ K^*(\varepsilon)=
 \sqrt{\frac1M\sum_i\|C_U(t_i)-q_i\|_2^2}\le\varepsilon.
 \]
 
-源样条的节点数不是监督目标。同一条曲线可以通过 Boehm 插入得到不同但等价的节点表示，因此 v8 用标准 B 样条 Hard-RMS 删除轨迹构造固定候选集上的近似最简教师。
+源样条的节点数不是监督目标。同一条曲线可以通过 Boehm 插入得到不同但等价的节点表示，因此 v10 用标准 B 样条 Hard-RMS 删除轨迹构造固定候选集上的近似最简教师。
 
 ## 2. 基础数据
 
@@ -99,23 +99,31 @@ teacher_internal_knots / mask
 ```text
 keep_head
 adaptive_threshold_head
-position_to_keep_feedback
+one_shot_selector_attention
+one_shot_selector_feed_forward
+one_shot_selector_extra_attention
+one_shot_selector_extra_feed_forward
 ```
 
-编码器、参数头、候选头、解析特征路径、keep-context 和位置残差头均冻结，因此基础 proposal
-槽位与参数不会漂移；最终保留位置另由教师节点位置监督锚定。
+编码器、参数头、候选头、解析特征路径和位置残差头均冻结。selector adapter 是独立参数路径，
+只改变 Keep logits，不改变 `internal_knots`；因此教师缓存绑定的 proposal 槽位和位置不会漂移。
 
 学生在一次前向中学习：
 
 ```text
-preliminary keep
-  → provisional position
-  → position feedback
-  → final keep / β / p
+固定 proposal 位置 + 候选特征 + 解析贡献
+  → 两层 selector self-attention
+  → final raw importance / β / p
+  → 概率质量 Top-K + 不确定性余量 + 参数域覆盖锚点
+  → 一次性 KeepMask
 ```
 
-主要监督来自标准 B 样条 Hard-RMS 教师：hard mask 使用无偏置 BCE + soft Dice，另有
-final-state soft risk、Hard-ST 节点数、教师节点位置和复杂度项。Hard-ST 数量的前向值等于
+主要监督来自标准 B 样条 Hard-RMS 教师：hard mask 使用加权 BCE + soft Dice，另有
+final-state soft risk、保留节点logit高于删除节点logit的成对排序、Hard-ST节点数和复杂度项。
+v10 新增两项集合监督：预测/教师节点质量的累计分布距离约束参数域覆盖；关键保留节点的
+正类 softplus 损失对漏检施加更大代价。这样组合学习不再只依赖逐槽位分类准确率。
+canonical 位置监督只在 proposal 预训练阶段使用；教师生成后仅保留教师锚点一致性，不再引入
+第二套位置目标。Hard-ST数量的前向值等于
 实际二值节点数，反向使用概率梯度，避免“所有概率均低于 0.5，但概率和恰好正确”的漏洞。
 
 截断幂 surrogate 仍随 forward 计算并记录，但一次性选择阶段默认设置
@@ -123,20 +131,19 @@ final-state soft risk、Hard-ST 节点数、教师节点位置和复杂度项。
 KeepMask。标准 B 样条 refit 是离散运算，不直接反向传播；它通过离线教师标签提供监督，并在
 验证中作为真实部署指标。
 
-### 阶段 4：可选 keep-position 校准
+### 阶段 4：可选 selector 校准
 
-`--keep-position-calibration-epochs > 0` 时，以 `0.1×selector-lr` 继续训练：
+`--selector-calibration-epochs > 0` 时，以 `0.1×selector-lr` 继续训练：
 
 ```text
 keep_head
 adaptive_threshold_head
-position_to_keep_feedback
-keep_context_projection
-keep_context_norm
-position_residual_head
+one_shot_selector_attention
+one_shot_selector_feed_forward
 ```
 
-GeometryEncoder、ParameterHead 和 CandidateKnotHead 始终冻结。该阶段只校准 keep 与位置头的耦合，不是端到端 joint fine-tuning，也不会改变缓存绑定的 proposal 主干。
+GeometryEncoder、ParameterHead、CandidateKnotHead 和位置残差头始终冻结。该阶段只做低学习率
+selector 校准，不是端到端 joint fine-tuning，也不会改变缓存绑定的 proposal 几何。
 
 若总 epoch 为 `E`、候选预训练为 `Ep`、校准为 `Ec`，蒸馏 epoch 为：
 
@@ -144,7 +151,7 @@ GeometryEncoder、ParameterHead 和 CandidateKnotHead 始终冻结。该阶段�
 E_d=E-E_p-E_c\ge1.
 \]
 
-设置 `--keep-position-calibration-epochs 0` 即运行三阶段流程。
+设置 `--selector-calibration-epochs 0` 即运行三阶段流程，也是 v10 默认值。
 
 ## 4. 缓存完整性约束
 
@@ -187,16 +194,15 @@ one-shot final KeepMask
   → deployment RMS 与 RMS≤ε
 ```
 
-验证采用约束式选优。默认目标是：
+v10 checkpoint 选优不读取 surrogate fit，而只读取上述标准 B 样条结果：
 
 \[
-\min \mathbb E[K]\quad
-\text{s.t.}\quad
-P(R_{\mathrm{B\text{-}spline}}\le\varepsilon)\ge0.97.
+\min \mathbb E[K]\quad\text{s.t.}\quad
+P(R\le\varepsilon)\ge \rho.
 \]
 
-达到 `--deployment-pass-rate-target` 的 checkpoint 先按平均保留节点数排序，再比较教师 mask
-F1、教师数量 MAE 和真实部署 RMS；尚未达到约束时，优先提高真实标准 B 样条满足率。最初
+尚未达到 `--deployment-pass-rate-target` 时依次改善真实通过率、均值/P95 RMS；达到目标后
+优先平均节点数最少，再以通过率、mean/P95 RMS 和最终节点匹配作 tie-break。最初
 `--selector-checkpoint-warmup-epochs 10` 轮不参与选优，防止轻微保守初始化成为“全保留”的
 伪最佳结果。
 
@@ -217,7 +223,7 @@ validation [############################]   63/63   100.00% | loss=0.731200 | 5.
 python scripts/train_candidate_pruning.py `
   --epochs 150 `
   --candidate-pretrain-epochs 20 `
-  --keep-position-calibration-epochs 10 `
+  --selector-calibration-epochs 0 `
   --train-size 10000 `
   --val-size 2000 `
   --batch-size 16 `
@@ -227,28 +233,36 @@ python scripts/train_candidate_pruning.py `
   --candidate-knots 28 `
   --num-points 192 `
   --fit-tolerance 0.005 `
+  --candidate-match-tolerance 0.01 `
   --deployment-pass-rate-target 0.97 `
   --selector-lr 5e-4 `
   --selector-checkpoint-warmup-epochs 10 `
   --initial-keep-probability 0.55 `
-  --positive-keep-weight 1.0 `
+  --positive-keep-weight 2.0 `
   --lambda-keep 1.0 `
-  --lambda-teacher-count 2.0 `
-  --lambda-complexity 0.25 `
+  --lambda-teacher-ranking 1.0 `
+  --lambda-teacher-distribution 2.0 `
+  --lambda-teacher-critical-recall 1.0 `
+  --teacher-ranking-margin 1.0 `
+  --lambda-teacher-count 4.0 `
+  --lambda-complexity 0.1 `
+  --one-shot-selection-policy mass_topk `
+  --one-shot-safety-sigma 0.5 `
+  --one-shot-selector-layers 2 `
+  --one-shot-coverage-bins 4 `
   --lambda-one-shot-surrogate-fit 0 `
   --lambda-one-shot-surrogate-threshold 0 `
-  --candidate-match-tolerance 0.02 `
   --teacher-risk-temperature 0.1 `
   --teacher-batch-size 4 `
-  --teacher-cache-dir outputs/candidate_pruning_one_shot_v8_teacher `
+  --teacher-cache-dir outputs/candidate_pruning_one_shot_v10_teacher `
   --no-resample-train-each-epoch `
-  --output outputs/candidate_pruning_one_shot_v8.pt
+  --output outputs/candidate_pruning_one_shot_v10.pt
 ```
 
 首次运行会保存最佳 proposal：
 
 ```text
-outputs/candidate_pruning_one_shot_v8_proposal.pt
+outputs/candidate_pruning_one_shot_v10_proposal.pt
 ```
 
 使用同一数据、配置、proposal 和缓存继续实验：
@@ -257,8 +271,8 @@ outputs/candidate_pruning_one_shot_v8_proposal.pt
 python scripts/train_candidate_pruning.py `
   --epochs 130 `
   --candidate-pretrain-epochs 0 `
-  --proposal-checkpoint outputs/candidate_pruning_one_shot_v8_proposal.pt `
-  --keep-position-calibration-epochs 10 `
+  --proposal-checkpoint outputs/candidate_pruning_one_shot_v10_proposal.pt `
+  --selector-calibration-epochs 0 `
   --train-size 10000 `
   --val-size 2000 `
   --batch-size 16 `
@@ -267,10 +281,10 @@ python scripts/train_candidate_pruning.py `
   --candidate-knots 28 `
   --num-points 192 `
   --fit-tolerance 0.005 `
-  --teacher-cache-dir outputs/candidate_pruning_one_shot_v8_teacher `
+  --teacher-cache-dir outputs/candidate_pruning_one_shot_v10_teacher `
   --reuse-teacher-cache `
   --no-resample-train-each-epoch `
-  --output outputs/candidate_pruning_one_shot_v8.pt
+  --output outputs/candidate_pruning_one_shot_v10.pt
 ```
 
 小规模链路测试：
@@ -279,7 +293,7 @@ python scripts/train_candidate_pruning.py `
 python scripts/train_candidate_pruning.py `
   --epochs 4 `
   --candidate-pretrain-epochs 1 `
-  --keep-position-calibration-epochs 1 `
+  --selector-calibration-epochs 0 `
   --train-size 16 `
   --val-size 8 `
   --batch-size 4 `
@@ -291,7 +305,7 @@ python scripts/train_candidate_pruning.py `
   --encoder-layers 1 `
   --teacher-batch-size 2 `
   --no-resample-train-each-epoch `
-  --output outputs/candidate_pruning_one_shot_v8_smoke.pt
+  --output outputs/candidate_pruning_one_shot_v10_smoke.pt
 ```
 
-该命令只验证 proposal、缓存、蒸馏、校准和 checkpoint 链路，不代表精度。
+该命令只验证 proposal、缓存、蒸馏和 checkpoint 链路，不代表精度。

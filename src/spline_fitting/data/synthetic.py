@@ -51,7 +51,9 @@ def build_open_clamped_knot_vector(
         raise ValueError("min_span is too large for the requested knot count")
 
     uniform = torch.full((num_spans,), 1.0 / num_spans, dtype=dtype)
-    random_weights = torch.rand(num_spans, generator=generator, dtype=dtype).clamp_min(1e-6)
+    random_weights = torch.rand(num_spans, generator=generator, dtype=dtype).clamp_min(
+        1e-6
+    )
     random_weights = random_weights / random_weights.sum()
     mixed = (1.0 - nonuniformity) * uniform + nonuniformity * random_weights
 
@@ -97,8 +99,7 @@ def bspline_basis_matrix(
         count = knot_vector.numel() - order - 1
         left_den = knot_vector[order : order + count] - knot_vector[:count]
         right_den = (
-            knot_vector[order + 1 : order + 1 + count]
-            - knot_vector[1 : 1 + count]
+            knot_vector[order + 1 : order + 1 + count] - knot_vector[1 : 1 + count]
         )
 
         left_num = t - knot_vector[:count]
@@ -164,13 +165,9 @@ def fit_control_points_for_internal_knots(
         raise ValueError("smoothness_weight and ridge must be non-negative")
     knot_vector = torch.cat(
         [
-            torch.zeros(
-                degree + 1, device=points.device, dtype=points.dtype
-            ),
+            torch.zeros(degree + 1, device=points.device, dtype=points.dtype),
             internal_knots.to(device=points.device, dtype=points.dtype),
-            torch.ones(
-                degree + 1, device=points.device, dtype=points.dtype
-            ),
+            torch.ones(degree + 1, device=points.device, dtype=points.dtype),
         ]
     )
     num_control_points = int(internal_knots.numel()) + degree + 1
@@ -199,9 +196,7 @@ def fit_control_points_for_internal_knots(
             difference[row, row] = 1.0
             difference[row, row + 1] = -2.0
             difference[row, row + 2] = 1.0
-            fixed_control = torch.stack(
-                [control_points[0], control_points[-1]], dim=0
-            )
+            fixed_control = torch.stack([control_points[0], control_points[-1]], dim=0)
             fixed_difference = torch.stack(
                 [difference[:, 0], difference[:, -1]], dim=-1
             )
@@ -225,7 +220,10 @@ def fit_control_points_for_internal_knots(
             )
             interior_basis = torch.cat([interior_basis, ridge_rows], dim=0)
             right_hand_side = torch.cat(
-                [right_hand_side, points.new_zeros(num_control_points - 2, points.shape[-1])],
+                [
+                    right_hand_side,
+                    points.new_zeros(num_control_points - 2, points.shape[-1]),
+                ],
                 dim=0,
             )
         control_points[1:-1] = torch.linalg.lstsq(
@@ -233,9 +231,7 @@ def fit_control_points_for_internal_knots(
             right_hand_side,
         ).solution
     reconstructed = basis @ control_points
-    rms_distance = (
-        (reconstructed - points).pow(2).sum(dim=-1).mean().sqrt()
-    )
+    rms_distance = (reconstructed - points).pow(2).sum(dim=-1).mean().sqrt()
     return control_points, rms_distance
 
 
@@ -371,9 +367,7 @@ def generate_sampling_parameters(
     random_gaps = torch.rand(num_gaps, generator=generator, dtype=dtype).clamp_min(1e-5)
     random_gaps = random_gaps / random_gaps.sum()
     gaps = (1.0 - nonuniformity) * uniform + nonuniformity * random_gaps
-    parameters = torch.cat(
-        [torch.zeros(1, dtype=dtype), torch.cumsum(gaps, dim=0)]
-    )
+    parameters = torch.cat([torch.zeros(1, dtype=dtype), torch.cumsum(gaps, dim=0)])
     parameters[-1] = 1.0
     return parameters
 
@@ -575,16 +569,38 @@ class SyntheticCubicBSplineDataset(Dataset):
         if not self.return_ground_truth:
             return result
 
-        source_internal = sample.knot_vector[
-            sample.degree + 1 : -(sample.degree + 1)
-        ]
+        source_internal = sample.knot_vector[sample.degree + 1 : -(sample.degree + 1)]
+        source_control_points = (
+            (sample.control_points - center) / scale
+            if self.normalize
+            else sample.control_points.detach().clone()
+        )
+        source_control_count = source_control_points.shape[0]
+        padded_source_control = torch.zeros(
+            self.max_control_points,
+            self.point_dim,
+            dtype=self.dtype,
+        )
+        source_control_mask = torch.zeros(
+            self.max_control_points,
+            dtype=torch.bool,
+        )
+        padded_source_control[:source_control_count] = source_control_points
+        source_control_mask[:source_control_count] = True
+        padded_source_knots = torch.ones(
+            self.max_knot_vector_length,
+            dtype=self.dtype,
+        )
+        source_knot_mask = torch.zeros(
+            self.max_knot_vector_length,
+            dtype=torch.bool,
+        )
+        source_knot_length = sample.knot_vector.numel()
+        padded_source_knots[:source_knot_length] = sample.knot_vector
+        source_knot_mask[:source_knot_length] = True
         if self.canonical_knot_tolerance == 0.0:
             internal = source_internal.detach().clone()
-            control_points = (
-                (sample.control_points - center) / scale
-                if self.normalize
-                else sample.control_points.detach().clone()
-            )
+            control_points = source_control_points.detach().clone()
             source_reconstruction = evaluate_bspline_curve(
                 sample.parameters,
                 control_points,
@@ -637,6 +653,10 @@ class SyntheticCubicBSplineDataset(Dataset):
                 "true_control_mask": control_mask,
                 "true_knot_vector": padded_knots,
                 "true_knot_mask": knot_mask,
+                "source_control_points": padded_source_control,
+                "source_control_mask": source_control_mask,
+                "source_knot_vector": padded_source_knots,
+                "source_knot_mask": source_knot_mask,
                 "true_internal_knots": padded_internal,
                 "true_internal_knot_mask": internal_mask,
                 "num_control_points": num_control_points,

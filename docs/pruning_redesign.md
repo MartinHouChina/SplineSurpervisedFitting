@@ -85,6 +85,27 @@ v8 保留 v7 的高召回候选和可解释贡献特征，但把昂贵的逐节�
 验证选优使用真实的一次性标准 B 样条 RMS。默认部署不运行贪心搜索，因此提供测试分布上的
 统计阈值满足率；若必须逐样本硬保证，仍可显式调用 v7 式 Hard-RMS 回退。
 
+## v9：固定 proposal 几何与独立 selector
+
+v9 保留同一个离线 Hard-RMS 教师，但修复 v8 中 Keep—位置联动导致缓存槽位漂移的问题：
+
+```text
+离线：固定精修候选 → Hard-RMS 教师
+蒸馏：固定位置作为特征 → 独立 selector attention → 一次性 KeepMask
+部署：固定候选子集 → 一次标准 B 样条 refit
+```
+
+canonical 位置监督只发生在 proposal 预训练。教师生成后，selector 的任何更新都不会改变候选
+位置；checkpoint 在达到真实标准 B 样条目标通过率后优先最少节点，未达标时按
+pass/mean/P95 改善，最终节点匹配仅作 tie-break。
+
+## v10：结构化可行 LearnedKeep
+
+v10 针对 v9 “节点数量尚可但组合位置错误”的问题增加四项约束：两层 selector interaction、
+教师/预测节点质量的累计分布损失、关键保留节点漏检损失，以及概率质量 Top-K。部署时可用
+Bernoulli 不确定性余量增加少量安全节点，并用参数域覆盖锚点防止节点集中在局部区间。
+这些操作只构造一次 mask，不调用 B 样条搜索，仍保持一次网络前向和一次标准 refit。
+
 ## 版本对比
 
 | 版本 | 数量机制 | 节点标签 | 位置解码 | 部署决策 |
@@ -95,5 +116,7 @@ v8 保留 v7 的高召回候选和可解释贡献特征，但把昂贵的逐节�
 | v6 | 交互式 categorical 分布 + 合法范围 | canonical/源表示 | 仅所选数量动态解码 | posterior median |
 | v7 | 无 CountHead；remove/STOP 仅作建议 | 阈值 canonical + 真实删除 RMS | 固定高召回候选与局部精修 | 逐节点标准 B 样条硬验证 |
 | v8 | 曲线自适应一次性 KeepMask | 离线 Hard-RMS 最终 mask/risk/count | 固定次数位置↔Keep 反馈 | 一次 mask + 一次标准 B 样条 refit |
+| v9 | 独立位置感知一次性 KeepMask | 离线 Hard-RMS 最终 mask/risk/count | 教师绑定的固定 proposal 位置 | 一次 mask + 一次标准 B 样条 refit |
+| v10 | 概率质量 Top-K + 覆盖锚点 | v9 教师 + CDF 集合分布 + critical recall | 教师绑定的固定 proposal 位置 | 一次结构化 mask + 一次标准 B 样条 refit |
 
 统一报告节点数量 accuracy/MAE、节点 Precision/Recall/F1、匹配 MAE、标准 B 样条 RMS、控制点数量和推理时间。

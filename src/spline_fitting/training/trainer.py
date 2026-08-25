@@ -152,6 +152,7 @@ class Trainer:
     ) -> dict[str, float]:
         self.model.train(training)
         totals: dict[str, float] = defaultdict(float)
+        deployment_rms_values: list[torch.Tensor] = []
 
         phase = "train" if training else "validation"
         total_batches = len(loader)
@@ -263,12 +264,13 @@ class Trainer:
                 deployment_rms = torch.stack(
                     [item.fit_rmse.to(points) for item in deployed]
                 )
+                deployment_rms_values.append(deployment_rms.detach().cpu())
                 fit_tolerance = float(getattr(self.loss_fn, "fit_tolerance", 5e-3))
                 deployment_metrics = {
                     "deployment_bspline_rms": deployment_rms.mean(),
-                    "deployment_retained_knot_count": hard_mask.to(
-                        points.dtype
-                    ).sum(dim=-1).mean(),
+                    "deployment_retained_knot_count": hard_mask.to(points.dtype)
+                    .sum(dim=-1)
+                    .mean(),
                     "deployment_threshold_satisfied_rate": (
                         deployment_rms <= fit_tolerance
                     )
@@ -352,7 +354,13 @@ class Trainer:
                     flush=True,
                 )
 
-        return self._mean_metrics(totals, len(loader.dataset))
+        mean_metrics = self._mean_metrics(totals, len(loader.dataset))
+        if deployment_rms_values:
+            all_deployment_rms = torch.cat(deployment_rms_values)
+            mean_metrics["deployment_bspline_rms_p95"] = float(
+                torch.quantile(all_deployment_rms, 0.95)
+            )
+        return mean_metrics
 
     def fit(
         self,
@@ -469,6 +477,8 @@ class Trainer:
                             f"{displayed_metrics['deployment_threshold_satisfied_rate']:.3f}"
                             f" | deploy_RMS="
                             f"{displayed_metrics['deployment_bspline_rms']:.5f}"
+                            f" | P95="
+                            f"{displayed_metrics.get('deployment_bspline_rms_p95', displayed_metrics['deployment_bspline_rms']):.5f}"
                         )
                     else:
                         structure_report += (
@@ -553,6 +563,9 @@ class Trainer:
                     current_deployment_rms = selection_metrics.get(
                         "deployment_bspline_rms", float("inf")
                     )
+                    current_deployment_rms_p95 = selection_metrics.get(
+                        "deployment_bspline_rms_p95", float("inf")
+                    )
                     current_mask_accuracy = selection_metrics.get(
                         "teacher_mask_accuracy", 0.0
                     )
@@ -567,7 +580,67 @@ class Trainer:
                     pass_constraint_satisfied = (
                         current_pass_rate >= self.deployment_pass_rate_target
                     )
-                    if pass_constraint_satisfied:
+                    fixed_proposal = bool(
+                        getattr(
+                            getattr(self.model, "pruning_head", None),
+                            "one_shot_fixed_proposal_geometry",
+                            False,
+                        )
+                    )
+                    if fixed_proposal:
+                        # Fixed-proposal one-shot models select only with real
+                        # standard-B-spline
+                        # deployment quantities.  Before feasibility it
+                        # improves pass/RMS/P95.  Once the target pass rate is
+                        # reached, the original minimum-complexity objective
+                        # takes over so an all-keep checkpoint cannot win just
+                        # by over-satisfying the fit constraint.
+                        if pass_constraint_satisfied:
+                            current_rank = (
+                                1.0,
+                                -current_retained_count,
+                                current_pass_rate,
+                                -current_deployment_rms,
+                                -current_deployment_rms_p95,
+                                current_knot_match_f1,
+                                current_knot_match_precision,
+                                -current_knot_matched_mae,
+                                current_mask_f1,
+                                -current_count_mae,
+                                -current_val,
+                            )
+                        else:
+                            current_rank = (
+                                0.0,
+                                current_pass_rate,
+                                -current_deployment_rms,
+                                -current_deployment_rms_p95,
+                                -current_retained_count,
+                                current_knot_match_f1,
+                                current_knot_match_precision,
+                                -current_knot_matched_mae,
+                                current_mask_f1,
+                                -current_count_mae,
+                                -current_val,
+                            )
+                        structured_policy = getattr(
+                            getattr(self.model, "pruning_head", None),
+                            "one_shot_selection_policy",
+                            "threshold",
+                        )
+                        selection_metric_name = (
+                            "v10_structured_feasible_standard_bspline_"
+                            "min_knots_rms_p95_recall"
+                            if structured_policy == "mass_topk"
+                            else "v9_constrained_standard_bspline_"
+                            "min_knots_rms_p95_recall"
+                        )
+                        selection_value = (
+                            current_retained_count
+                            if pass_constraint_satisfied
+                            else current_pass_rate
+                        )
+                    elif pass_constraint_satisfied:
                         # Constrained deployment objective: once the required
                         # standard-B-spline pass rate is met, fewer knots are
                         # always preferred.  This prevents the former
@@ -602,14 +675,15 @@ class Trainer:
                             current_knot_match_f1,
                             -current_val,
                         )
-                    selection_metric_name = (
-                        "constrained_min_knots_at_target_pass_then_mask_count_rms"
-                    )
-                    selection_value = (
-                        current_retained_count
-                        if pass_constraint_satisfied
-                        else current_pass_rate
-                    )
+                    if not fixed_proposal:
+                        selection_metric_name = (
+                            "constrained_min_knots_at_target_pass_then_mask_count_rms"
+                        )
+                        selection_value = (
+                            current_retained_count
+                            if pass_constraint_satisfied
+                            else current_pass_rate
+                        )
                 else:
                     current_rank = (
                         current_candidate_recall,
@@ -704,6 +778,9 @@ class Trainer:
                         ),
                         "best_deployment_bspline_rms": selection_metrics.get(
                             "deployment_bspline_rms", float("nan")
+                        ),
+                        "best_deployment_bspline_rms_p95": selection_metrics.get(
+                            "deployment_bspline_rms_p95", float("nan")
                         ),
                         "best_deployment_retained_knot_count": (
                             selection_metrics.get(

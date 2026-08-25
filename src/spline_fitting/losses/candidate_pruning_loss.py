@@ -25,6 +25,9 @@ class CandidatePruningLossWeights:
     count_consistency: float = 0.0
     deletion_cost: float = 5e-2
     teacher_risk: float = 0.0
+    teacher_ranking: float = 0.0
+    teacher_distribution: float = 0.0
+    teacher_critical_recall: float = 0.0
     teacher_count: float = 0.0
     complexity: float = 0.0
 
@@ -49,6 +52,7 @@ class CandidatePruningLoss(nn.Module):
         exact_deletion_supervision: bool = True,
         deletion_smoothness_weight: float = 1e-6,
         deletion_control_ridge: float = 0.0,
+        teacher_ranking_margin: float = 1.0,
     ) -> None:
         super().__init__()
         self.weights = weights or CandidatePruningLossWeights()
@@ -64,6 +68,8 @@ class CandidatePruningLoss(nn.Module):
             raise ValueError("positive_keep_weight must be positive")
         if deletion_smoothness_weight < 0.0 or deletion_control_ridge < 0.0:
             raise ValueError("deletion solver weights must be non-negative")
+        if teacher_ranking_margin < 0.0:
+            raise ValueError("teacher_ranking_margin must be non-negative")
         self.knot_position_beta = float(knot_position_beta)
         self.candidate_match_tolerance = float(candidate_match_tolerance)
         self.fit_tolerance = float(fit_tolerance)
@@ -72,6 +78,7 @@ class CandidatePruningLoss(nn.Module):
         self.exact_deletion_supervision = bool(exact_deletion_supervision)
         self.deletion_smoothness_weight = float(deletion_smoothness_weight)
         self.deletion_control_ridge = float(deletion_control_ridge)
+        self.teacher_ranking_margin = float(teacher_ranking_margin)
 
     @staticmethod
     def _fit_loss(reconstructed: torch.Tensor, points: torch.Tensor) -> torch.Tensor:
@@ -207,15 +214,35 @@ class CandidatePruningLoss(nn.Module):
             # easy all-remove or all-keep solution.  This term is v8-only;
             # historical v7 supervision keeps its exact loss semantics.
             dice_numerator = 2.0 * (keep_probability * keep_targets).sum(dim=-1)
-            dice_denominator = (
-                keep_probability.sum(dim=-1) + keep_targets.sum(dim=-1)
-            )
+            dice_denominator = keep_probability.sum(dim=-1) + keep_targets.sum(dim=-1)
             keep_dice_loss = (
                 1.0 - (dice_numerator + 1.0) / (dice_denominator + 1.0)
             ).mean()
         else:
             keep_dice_loss = points.new_zeros(())
         keep_loss = keep_bce_loss + keep_dice_loss
+        if teacher_retained_mask is not None:
+            ranking_terms: list[torch.Tensor] = []
+            retained_mask = teacher_retained_mask.to(torch.bool)
+            for batch_index in range(points.shape[0]):
+                retained_logits = keep_logits[batch_index, retained_mask[batch_index]]
+                removed_logits = keep_logits[batch_index, ~retained_mask[batch_index]]
+                if retained_logits.numel() and removed_logits.numel():
+                    pairwise_difference = retained_logits.unsqueeze(
+                        -1
+                    ) - removed_logits.unsqueeze(0)
+                    ranking_terms.append(
+                        F.softplus(
+                            self.teacher_ranking_margin - pairwise_difference
+                        ).mean()
+                    )
+            teacher_ranking_loss = (
+                torch.stack(ranking_terms).mean()
+                if ranking_terms
+                else points.new_zeros(())
+            )
+        else:
+            teacher_ranking_loss = points.new_zeros(())
         if teacher_single_deletion_rms is not None:
             if teacher_single_deletion_rms.shape != candidates.shape:
                 raise ValueError("teacher_single_deletion_rms must have shape [B,Kc]")
@@ -248,6 +275,48 @@ class CandidatePruningLoss(nn.Module):
         else:
             teacher_risk_loss = points.new_zeros(())
 
+        # A slot-wise classifier can obtain a reasonable average F1 while
+        # placing most selected knots in the same parameter-domain region.
+        # Comparing normalized cumulative mass is the 1-D Wasserstein/CDF
+        # distance between the predicted and teacher knot sets.  It explicitly
+        # trains global spatial allocation without requiring a second spline
+        # solve or an arbitrary candidate-to-candidate matching operation.
+        if teacher_retained_mask is not None:
+            teacher_mass = keep_targets.sum(dim=-1, keepdim=True)
+            predicted_mass = keep_probability.sum(dim=-1, keepdim=True)
+            valid_distribution = teacher_mass.squeeze(-1) > 0
+            predicted_density = keep_probability / predicted_mass.clamp_min(1e-6)
+            teacher_density = keep_targets / teacher_mass.clamp_min(1.0)
+            per_sample_distribution = (
+                (predicted_density.cumsum(dim=-1) - teacher_density.cumsum(dim=-1))
+                .abs()
+                .mean(dim=-1)
+            )
+            teacher_distribution_loss = (
+                per_sample_distribution[valid_distribution].mean()
+                if valid_distribution.any()
+                else points.new_zeros(())
+            )
+        else:
+            teacher_distribution_loss = points.new_zeros(())
+
+        # False negatives at the teacher's final stopping state are much more
+        # damaging than harmless extra knots: deleting any such critical slot
+        # violates epsilon.  The positive-only softplus term therefore gives
+        # retained high-risk slots an explicit recall gradient, while count and
+        # complexity terms continue to penalize unnecessary additions.
+        if teacher_retained_mask is not None:
+            critical_weight = keep_targets
+            if teacher_soft_keep_risk is not None:
+                critical_weight = critical_weight * (
+                    1.0 + teacher_soft_keep_risk.to(points.dtype)
+                )
+            teacher_critical_recall_loss = (
+                F.softplus(-keep_logits) * critical_weight
+            ).sum() / critical_weight.sum().clamp_min(1.0)
+        else:
+            teacher_critical_recall_loss = points.new_zeros(())
+
         remove_stop_logits = output.get("remove_stop_logits")
         if remove_stop_logits is not None:
             if remove_stop_logits.shape != (
@@ -276,6 +345,7 @@ class CandidatePruningLoss(nn.Module):
             remove_action_loss = torch.stack(action_terms).mean()
         else:
             remove_action_loss = points.new_zeros(())
+        teacher_anchor_position_loss = points.new_zeros(())
         if teacher_internal_knots is not None or teacher_internal_knot_mask is not None:
             if teacher_internal_knots is None or teacher_internal_knot_mask is None:
                 raise ValueError(
@@ -313,19 +383,30 @@ class CandidatePruningLoss(nn.Module):
                             beta=self.knot_position_beta,
                         )
                     )
-            knot_position_loss = (
+            teacher_anchor_position_loss = (
                 torch.stack(teacher_position_terms).mean()
                 if teacher_position_terms
                 else points.new_zeros(())
             )
-        elif matched_mask.any():
-            knot_position_loss = F.smooth_l1_loss(
+        canonical_position_loss = (
+            F.smooth_l1_loss(
                 refined[matched_mask],
                 position_targets[matched_mask],
                 beta=self.knot_position_beta,
             )
-        else:
-            knot_position_loss = points.new_zeros(())
+            if matched_mask.any()
+            else points.new_zeros(())
+        )
+        # Proposal pretraining learns canonical localization.  Once an offline
+        # Hard-RMS teacher exists, its mask is bound to that exact proposal
+        # geometry: pulling the same slots toward a second canonical target
+        # makes the cached deletion labels stale.  v9 therefore uses the
+        # teacher anchor exclusively during distillation.
+        knot_position_loss = (
+            teacher_anchor_position_loss
+            if teacher_internal_knots is not None
+            else canonical_position_loss
+        )
 
         expected_count = keep_probability.sum(dim=-1)
         if teacher_retained_mask is not None:
@@ -453,6 +534,9 @@ class CandidatePruningLoss(nn.Module):
             + self.weights.count_consistency * count_consistency_loss
             + self.weights.deletion_cost * deletion_cost_loss
             + self.weights.teacher_risk * teacher_risk_loss
+            + self.weights.teacher_ranking * teacher_ranking_loss
+            + self.weights.teacher_distribution * teacher_distribution_loss
+            + self.weights.teacher_critical_recall * teacher_critical_recall_loss
             + self.weights.teacher_count * teacher_count_loss
             + self.weights.complexity * complexity_loss
         )
@@ -506,6 +590,9 @@ class CandidatePruningLoss(nn.Module):
             "remove_action_loss": remove_action_loss,
             "deletion_cost_loss": deletion_cost_loss,
             "teacher_risk_loss": teacher_risk_loss,
+            "teacher_ranking_loss": teacher_ranking_loss,
+            "teacher_distribution_loss": teacher_distribution_loss,
+            "teacher_critical_recall_loss": teacher_critical_recall_loss,
             "teacher_count_loss": teacher_count_loss,
             "complexity_loss": complexity_loss,
             "deletion_log_ratio_mae": deletion_log_ratio_mae,
@@ -516,6 +603,8 @@ class CandidatePruningLoss(nn.Module):
             "true_parameter_loss": true_parameter_loss,
             "parameter_prior_loss": parameter_prior_loss,
             "knot_position_loss": knot_position_loss,
+            "teacher_anchor_position_loss": teacher_anchor_position_loss,
+            "canonical_position_loss": canonical_position_loss,
             "count_loss": count_consistency_loss,
             "count_consistency_loss": count_consistency_loss,
             "candidate_recall": candidate_recall,
