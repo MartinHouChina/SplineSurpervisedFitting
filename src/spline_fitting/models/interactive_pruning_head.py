@@ -43,6 +43,8 @@ class InteractivePruningHead(nn.Module):
         one_shot_safety_sigma: float = 0.0,
         one_shot_selector_layers: int = 1,
         one_shot_coverage_bins: int = 0,
+        one_shot_joint_position_refinement: bool = False,
+        one_shot_max_position_shift: float = 0.05,
     ) -> None:
         super().__init__()
         if attention_heads <= 0 or hidden_dim % attention_heads != 0:
@@ -67,6 +69,12 @@ class InteractivePruningHead(nn.Module):
             raise ValueError("one_shot_selector_layers must be positive")
         if one_shot_coverage_bins < 0:
             raise ValueError("one_shot_coverage_bins must be non-negative")
+        if (
+            not math.isfinite(one_shot_max_position_shift)
+            or one_shot_max_position_shift <= 0.0
+            or one_shot_max_position_shift >= 0.5
+        ):
+            raise ValueError("one_shot_max_position_shift must lie in (0,0.5)")
 
         self.hidden_dim = int(hidden_dim)
         self.residual_feature_dim = int(residual_feature_dim)
@@ -78,9 +86,19 @@ class InteractivePruningHead(nn.Module):
         self.one_shot_safety_sigma = float(one_shot_safety_sigma)
         self.one_shot_selector_layers = int(one_shot_selector_layers)
         self.one_shot_coverage_bins = int(one_shot_coverage_bins)
+        self.one_shot_joint_position_refinement = bool(
+            one_shot_joint_position_refinement
+        )
+        self.one_shot_max_position_shift = float(one_shot_max_position_shift)
         if self.one_shot_fixed_proposal_geometry and not self.one_shot_adaptive:
             raise ValueError(
                 "fixed one-shot proposal geometry requires one_shot_adaptive"
+            )
+        if self.one_shot_joint_position_refinement and not (
+            self.one_shot_fixed_proposal_geometry and self.one_shot_adaptive
+        ):
+            raise ValueError(
+                "joint one-shot position refinement requires fixed adaptive proposals"
             )
 
         # position + coefficient energy + deletion delta + left/right spacing
@@ -177,6 +195,38 @@ class InteractivePruningHead(nn.Module):
                 self.one_shot_selector_extra_output_norm = nn.ModuleList(
                     nn.LayerNorm(self.hidden_dim) for _ in range(extra_layers)
                 )
+                if self.one_shot_joint_position_refinement:
+                    # v11 uses a fixed two-pass interaction inside one network
+                    # forward: preliminary Keep -> position -> final Keep ->
+                    # final position.  Zero-initialised terminal layers make a
+                    # v10 proposal an exact neutral initialiser.
+                    self.joint_preliminary_position_projection = nn.Sequential(
+                        nn.Linear(3 * self.hidden_dim + 1, self.hidden_dim),
+                        nn.GELU(),
+                        nn.Linear(self.hidden_dim, self.hidden_dim),
+                    )
+                    self.joint_preliminary_position_norm = nn.LayerNorm(self.hidden_dim)
+                    self.joint_preliminary_position_head = nn.Linear(self.hidden_dim, 1)
+                    self.joint_position_to_keep_feedback = nn.Sequential(
+                        nn.Linear(3 * self.hidden_dim + 2, self.hidden_dim),
+                        nn.GELU(),
+                        nn.Linear(self.hidden_dim, self.hidden_dim),
+                    )
+                    self.joint_position_to_keep_norm = nn.LayerNorm(self.hidden_dim)
+                    self.joint_final_position_projection = nn.Sequential(
+                        nn.Linear(3 * self.hidden_dim + 1, self.hidden_dim),
+                        nn.GELU(),
+                        nn.Linear(self.hidden_dim, self.hidden_dim),
+                    )
+                    self.joint_final_position_norm = nn.LayerNorm(self.hidden_dim)
+                    self.joint_final_position_head = nn.Linear(self.hidden_dim, 1)
+                    for module in (
+                        self.joint_preliminary_position_head,
+                        self.joint_position_to_keep_feedback[-1],
+                        self.joint_final_position_head,
+                    ):
+                        nn.init.zeros_(module.weight)
+                        nn.init.zeros_(module.bias)
         self.deletion_cost_head = nn.Linear(self.hidden_dim, 1)
         nn.init.normal_(self.deletion_cost_head.weight, std=0.01)
         nn.init.constant_(self.deletion_cost_head.bias, -4.0)
@@ -236,6 +286,23 @@ class InteractivePruningHead(nn.Module):
                     key = module_prefix + name
                     if key not in state_dict:
                         state_dict[key] = value.detach().clone()
+            if self.one_shot_joint_position_refinement:
+                for module_name in (
+                    "joint_preliminary_position_projection",
+                    "joint_preliminary_position_norm",
+                    "joint_preliminary_position_head",
+                    "joint_position_to_keep_feedback",
+                    "joint_position_to_keep_norm",
+                    "joint_final_position_projection",
+                    "joint_final_position_norm",
+                    "joint_final_position_head",
+                ):
+                    module = getattr(self, module_name)
+                    module_prefix = prefix + module_name + "."
+                    for name, value in module.state_dict().items():
+                        key = module_prefix + name
+                        if key not in state_dict:
+                            state_dict[key] = value.detach().clone()
         super()._load_from_state_dict(
             state_dict,
             prefix,
@@ -266,6 +333,139 @@ class InteractivePruningHead(nn.Module):
         intervals = boundaries[:, 1:] - boundaries[:, :-1]
         return torch.stack([intervals[:, :-1], intervals[:, 1:]], dim=-1)
 
+    @staticmethod
+    def _straight_through_keep_gate(
+        keep_probabilities: torch.Tensor,
+        hard_mask: torch.Tensor,
+        candidate_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        return (
+            hard_mask.to(keep_probabilities.dtype)
+            + keep_probabilities
+            - keep_probabilities.detach()
+        ) * candidate_mask.to(keep_probabilities.dtype)
+
+    @staticmethod
+    def _hard_st_context(
+        tokens: torch.Tensor,
+        hard_mask: torch.Tensor,
+        straight_through_gate: torch.Tensor,
+    ) -> torch.Tensor:
+        hard_count = hard_mask.to(tokens.dtype).sum(dim=1, keepdim=True)
+        st_count = straight_through_gate.sum(dim=1, keepdim=True)
+        denominator = hard_count.clamp_min(1.0) + st_count - st_count.detach()
+        return (tokens * straight_through_gate.unsqueeze(-1)).sum(dim=1) / denominator
+
+    def _bounded_all_candidate_residual(
+        self,
+        candidate_positions: torch.Tensor,
+        raw_signal: torch.Tensor,
+        candidate_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Move every slot without changing the global candidate ordering."""
+
+        spacing = self._two_sided_spacing(candidate_positions)
+        left_slack = (spacing[..., 0] - self.min_gap).clamp_min(0.0)
+        right_slack = (spacing[..., 1] - self.min_gap).clamp_min(0.0)
+        residual = self.max_position_fraction * torch.where(
+            raw_signal >= 0.0,
+            raw_signal * right_slack,
+            raw_signal * left_slack,
+        )
+        residual = residual.clamp(
+            min=-self.one_shot_max_position_shift,
+            max=self.one_shot_max_position_shift,
+        )
+        return residual.masked_fill(~candidate_mask, 0.0)
+
+    def _bounded_selected_residual(
+        self,
+        candidate_positions: torch.Tensor,
+        raw_signal: torch.Tensor,
+        selected_mask: torch.Tensor,
+        candidate_mask: torch.Tensor,
+        *,
+        reference_positions: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Bound motion by the adjacent *selected* knots, not dense proposals.
+
+        The selected subsequence can therefore move substantially farther than
+        half a dense proposal interval, while the ``< 0.5`` motion fraction
+        preserves its strict order and minimum gap in one fixed tensor pass.
+        Unselected slots remain at their proposal locations.
+        """
+
+        active = selected_mask & candidate_mask
+        batch, candidate_count = active.shape
+        indices = torch.arange(candidate_count, device=active.device).unsqueeze(0)
+        indices = indices.expand(batch, -1)
+
+        previous_inclusive = torch.where(active, indices, -1).cummax(dim=-1).values
+        previous_exclusive = torch.cat(
+            [
+                torch.full_like(previous_inclusive[:, :1], -1),
+                previous_inclusive[:, :-1],
+            ],
+            dim=-1,
+        )
+        next_inclusive = torch.flip(
+            torch.flip(torch.where(active, indices, candidate_count), dims=(-1,))
+            .cummin(dim=-1)
+            .values,
+            dims=(-1,),
+        )
+        next_exclusive = torch.cat(
+            [
+                next_inclusive[:, 1:],
+                torch.full_like(next_inclusive[:, :1], candidate_count),
+            ],
+            dim=-1,
+        )
+
+        previous_position = candidate_positions.gather(
+            1, previous_exclusive.clamp(min=0)
+        )
+        previous_position = torch.where(
+            previous_exclusive >= 0,
+            previous_position,
+            torch.zeros_like(previous_position),
+        )
+        next_position = candidate_positions.gather(
+            1, next_exclusive.clamp(max=candidate_count - 1)
+        )
+        next_position = torch.where(
+            next_exclusive < candidate_count,
+            next_position,
+            torch.ones_like(next_position),
+        )
+        left_slack = (candidate_positions - previous_position - self.min_gap).clamp_min(
+            0.0
+        )
+        right_slack = (next_position - candidate_positions - self.min_gap).clamp_min(
+            0.0
+        )
+        residual = self.max_position_fraction * torch.where(
+            raw_signal >= 0.0,
+            raw_signal * right_slack,
+            raw_signal * left_slack,
+        )
+        if reference_positions is None:
+            residual = residual.clamp(
+                min=-self.one_shot_max_position_shift,
+                max=self.one_shot_max_position_shift,
+            )
+        else:
+            if reference_positions.shape != candidate_positions.shape:
+                raise ValueError("reference_positions must share candidate shape")
+            consumed_budget = candidate_positions - reference_positions
+            minimum_residual = -self.one_shot_max_position_shift - consumed_budget
+            maximum_residual = self.one_shot_max_position_shift - consumed_budget
+            residual = torch.maximum(
+                minimum_residual,
+                torch.minimum(residual, maximum_residual),
+            )
+        return residual.masked_fill(~active, 0.0)
+
     def _select_hard_keep_mask(
         self,
         keep_probabilities: torch.Tensor,
@@ -293,9 +493,14 @@ class InteractivePruningHead(nn.Module):
             selected_count = hard_mask.sum(dim=-1).to(torch.long)
             return hard_mask, selected_count, uncertainty
 
-        requested_count = torch.ceil(
+        requested_count_score = (
             probability_mass + self.one_shot_safety_sigma * uncertainty
-        ).to(torch.long)
+        )
+        requested_count = torch.where(
+            requested_count_score < 0.5,
+            torch.zeros_like(requested_count_score, dtype=torch.long),
+            torch.ceil(requested_count_score).to(torch.long),
+        )
         valid_count = candidate_mask.sum(dim=-1).to(torch.long)
         requested_count = torch.minimum(requested_count.clamp_min(0), valid_count)
         selection_score = keep_probabilities.masked_fill(~candidate_mask, float("-inf"))
@@ -548,49 +753,156 @@ class InteractivePruningHead(nn.Module):
                 final_decision_tokens = output_norm(
                     final_decision_tokens + feed_forward(final_decision_tokens)
                 )
-            final_pooled = (final_decision_tokens * valid_weight).sum(
-                dim=1
-            ) / valid_weight.sum(dim=1).clamp_min(1.0)
             normalized_global = None
             if global_features is not None:
                 normalized_global = F.layer_norm(
                     torch.nan_to_num(global_features),
                     (self.hidden_dim,),
                 )
-            threshold_context = final_pooled
+            selector_decision_tokens = final_decision_tokens
+            selector_pooled = (selector_decision_tokens * valid_weight).sum(
+                dim=1
+            ) / valid_weight.sum(dim=1).clamp_min(1.0)
+            preliminary_threshold_context = selector_pooled
             if normalized_global is not None:
-                threshold_context = 0.5 * (final_pooled + normalized_global)
-            raw_importance = self.keep_head(final_decision_tokens).squeeze(-1)
-            raw_importance = raw_importance.masked_fill(
-                ~candidate_mask,
-                torch.finfo(raw_importance.dtype).min,
-            )
-            adaptive_keep_threshold = self.adaptive_threshold_head(
-                threshold_context
+                preliminary_threshold_context = 0.5 * (
+                    selector_pooled + normalized_global
+                )
+            preliminary_raw_importance = self.keep_head(
+                selector_decision_tokens
             ).squeeze(-1)
-            keep_logits = raw_importance - adaptive_keep_threshold.unsqueeze(-1)
-
-            # Compatibility diagnostics: v9 has a single selector pass rather
-            # than v8's keep -> position -> keep chain.
-            preliminary_raw_importance = raw_importance
-            preliminary_adaptive_keep_threshold = adaptive_keep_threshold
-            preliminary_keep_logits = keep_logits
-            preliminary_keep_probabilities = torch.sigmoid(keep_logits)
+            preliminary_raw_importance = preliminary_raw_importance.masked_fill(
+                ~candidate_mask,
+                torch.finfo(preliminary_raw_importance.dtype).min,
+            )
+            preliminary_adaptive_keep_threshold = self.adaptive_threshold_head(
+                preliminary_threshold_context
+            ).squeeze(-1)
+            preliminary_keep_logits = (
+                preliminary_raw_importance
+                - preliminary_adaptive_keep_threshold.unsqueeze(-1)
+            )
+            preliminary_keep_probabilities = torch.sigmoid(preliminary_keep_logits)
             preliminary_soft_keep_weight = (
                 preliminary_keep_probabilities * candidate_mask.to(tokens.dtype)
             )
             preliminary_soft_keep_context = (
-                final_decision_tokens * preliminary_soft_keep_weight.unsqueeze(-1)
+                selector_decision_tokens * preliminary_soft_keep_weight.unsqueeze(-1)
             ).sum(dim=1) / preliminary_soft_keep_weight.sum(
                 dim=1, keepdim=True
             ).clamp_min(1e-6)
-            provisional_position_refinement_tokens = tokens
-            provisional_raw_position_residual = fixed_proposal_signal
-            provisional_keep_conditioned_position_signal = fixed_proposal_signal
-            provisional_position_residual = fixed_proposal_position_residual
-            provisional_candidates = fixed_proposal_candidates
-            position_feedback_encoding = fixed_position_encoding - position_encoding
-            position_feedback_state = final_decision_tokens
+            if self.one_shot_joint_position_refinement:
+                preliminary_hard_keep_mask, _, _ = self._select_hard_keep_mask(
+                    preliminary_keep_probabilities,
+                    candidate_mask,
+                    fixed_proposal_candidates,
+                )
+                preliminary_hard_st_keep_gate = self._straight_through_keep_gate(
+                    preliminary_keep_probabilities,
+                    preliminary_hard_keep_mask,
+                    candidate_mask,
+                )
+                preliminary_hard_st_keep_context = self._hard_st_context(
+                    selector_decision_tokens,
+                    preliminary_hard_keep_mask,
+                    preliminary_hard_st_keep_gate,
+                )
+                preliminary_context = preliminary_hard_st_keep_context.unsqueeze(
+                    1
+                ).expand_as(selector_decision_tokens)
+                preliminary_position_interaction = torch.cat(
+                    [
+                        selector_decision_tokens,
+                        preliminary_context,
+                        selector_decision_tokens * torch.tanh(preliminary_context),
+                        preliminary_keep_probabilities.unsqueeze(-1),
+                    ],
+                    dim=-1,
+                )
+                provisional_position_refinement_tokens = (
+                    self.joint_preliminary_position_norm(
+                        selector_decision_tokens
+                        + self.joint_preliminary_position_projection(
+                            preliminary_position_interaction
+                        )
+                    )
+                )
+                provisional_raw_position_residual = torch.tanh(
+                    self.joint_preliminary_position_head(
+                        provisional_position_refinement_tokens
+                    ).squeeze(-1)
+                )
+                # The preliminary move is not multiplied by p0: a provisional
+                # false negative can still move and feed evidence back into p1.
+                provisional_keep_conditioned_position_signal = (
+                    provisional_raw_position_residual
+                )
+                provisional_position_residual = self._bounded_all_candidate_residual(
+                    fixed_proposal_candidates,
+                    provisional_raw_position_residual,
+                    candidate_mask,
+                )
+                provisional_candidates = (
+                    fixed_proposal_candidates + provisional_position_residual
+                )
+                provisional_position_encoding = KnotHead._sinusoidal_position_encoding(
+                    provisional_candidates,
+                    self.hidden_dim,
+                )
+                position_feedback_encoding = (
+                    provisional_position_encoding - fixed_position_encoding
+                )
+                position_feedback_state = (
+                    provisional_position_refinement_tokens + position_feedback_encoding
+                )
+                normalized_motion = (
+                    provisional_position_residual / self.one_shot_max_position_shift
+                ).unsqueeze(-1)
+                feedback_interaction = torch.cat(
+                    [
+                        selector_decision_tokens,
+                        position_feedback_state,
+                        selector_decision_tokens * torch.tanh(position_feedback_state),
+                        preliminary_keep_probabilities.unsqueeze(-1),
+                        normalized_motion,
+                    ],
+                    dim=-1,
+                )
+                final_decision_tokens = (
+                    selector_decision_tokens
+                    + self.joint_position_to_keep_norm(
+                        self.joint_position_to_keep_feedback(feedback_interaction)
+                    )
+                )
+                final_pooled = (final_decision_tokens * valid_weight).sum(
+                    dim=1
+                ) / valid_weight.sum(dim=1).clamp_min(1.0)
+                threshold_context = final_pooled
+                if normalized_global is not None:
+                    threshold_context = 0.5 * (final_pooled + normalized_global)
+                raw_importance = self.keep_head(final_decision_tokens).squeeze(-1)
+                raw_importance = raw_importance.masked_fill(
+                    ~candidate_mask,
+                    torch.finfo(raw_importance.dtype).min,
+                )
+                adaptive_keep_threshold = self.adaptive_threshold_head(
+                    threshold_context
+                ).squeeze(-1)
+                keep_logits = raw_importance - adaptive_keep_threshold.unsqueeze(-1)
+            else:
+                # Exact v9/v10 behavior: one selector pass and fixed proposal
+                # positions.  The preliminary aliases intentionally equal the
+                # final decision for historical diagnostics.
+                raw_importance = preliminary_raw_importance
+                adaptive_keep_threshold = preliminary_adaptive_keep_threshold
+                keep_logits = preliminary_keep_logits
+                provisional_position_refinement_tokens = tokens
+                provisional_raw_position_residual = fixed_proposal_signal
+                provisional_keep_conditioned_position_signal = fixed_proposal_signal
+                provisional_position_residual = fixed_proposal_position_residual
+                provisional_candidates = fixed_proposal_candidates
+                position_feedback_encoding = fixed_position_encoding - position_encoding
+                position_feedback_state = final_decision_tokens
         elif self.one_shot_adaptive:
             # Fixed-pass bidirectional interaction (there is deliberately no
             # data-dependent loop):
@@ -770,24 +1082,49 @@ class InteractivePruningHead(nn.Module):
             ) = self._select_hard_keep_mask(
                 keep_probabilities,
                 candidate_mask,
-                fixed_proposal_candidates,
+                (
+                    provisional_candidates
+                    if self.one_shot_joint_position_refinement
+                    else fixed_proposal_candidates
+                ),
             )
-            final_hard_st_keep_gate = (
-                final_hard_keep_mask.to(tokens.dtype)
-                + keep_probabilities
-                - keep_probabilities.detach()
-            ) * candidate_mask.to(tokens.dtype)
-            hard_count = final_hard_keep_mask.to(tokens.dtype).sum(dim=1, keepdim=True)
-            st_count = final_hard_st_keep_gate.sum(dim=1, keepdim=True)
-            safe_context_denominator = (
-                hard_count.clamp_min(1.0) + st_count - st_count.detach()
+            final_hard_st_keep_gate = self._straight_through_keep_gate(
+                keep_probabilities,
+                final_hard_keep_mask,
+                candidate_mask,
             )
-            final_hard_st_keep_context = (
-                final_decision_tokens * final_hard_st_keep_gate.unsqueeze(-1)
-            ).sum(dim=1) / safe_context_denominator
-            position_refinement_tokens = tokens
-            residual_signal = fixed_proposal_signal
-            keep_conditioned_signal = fixed_proposal_signal
+            final_hard_st_keep_context = self._hard_st_context(
+                final_decision_tokens,
+                final_hard_keep_mask,
+                final_hard_st_keep_gate,
+            )
+            if self.one_shot_joint_position_refinement:
+                final_context = final_hard_st_keep_context.unsqueeze(1).expand_as(
+                    final_decision_tokens
+                )
+                final_position_interaction = torch.cat(
+                    [
+                        final_decision_tokens,
+                        final_context,
+                        final_decision_tokens * torch.tanh(final_context),
+                        final_hard_st_keep_gate.unsqueeze(-1),
+                    ],
+                    dim=-1,
+                )
+                position_refinement_tokens = self.joint_final_position_norm(
+                    final_decision_tokens
+                    + self.joint_final_position_projection(final_position_interaction)
+                )
+                residual_signal = torch.tanh(
+                    self.joint_final_position_head(position_refinement_tokens).squeeze(
+                        -1
+                    )
+                )
+                keep_conditioned_signal = residual_signal * final_hard_st_keep_gate
+            else:
+                position_refinement_tokens = tokens
+                residual_signal = fixed_proposal_signal
+                keep_conditioned_signal = fixed_proposal_signal
         elif self.one_shot_adaptive:
             # ``soft_keep_context`` remains a useful diagnostic of the final
             # probabilities.  The actual final location path below does not
@@ -863,9 +1200,26 @@ class InteractivePruningHead(nn.Module):
             )
             keep_conditioned_signal = residual_signal
         if self.one_shot_fixed_proposal_geometry:
-            position_residual = fixed_proposal_position_residual
-            refined_candidates = fixed_proposal_candidates
+            if self.one_shot_joint_position_refinement:
+                final_position_residual = self._bounded_selected_residual(
+                    provisional_candidates,
+                    residual_signal,
+                    final_hard_keep_mask,
+                    candidate_mask,
+                    reference_positions=fixed_proposal_candidates,
+                )
+                refined_candidates = provisional_candidates + final_position_residual
+                position_residual = refined_candidates - fixed_proposal_candidates
+            else:
+                final_position_residual = fixed_proposal_position_residual.new_zeros(
+                    fixed_proposal_position_residual.shape
+                )
+                position_residual = fixed_proposal_position_residual
+                refined_candidates = fixed_proposal_candidates
         else:
+            final_position_residual = candidate_positions.new_zeros(
+                candidate_positions.shape
+            )
             position_residual = self.max_position_fraction * torch.where(
                 keep_conditioned_signal >= 0.0,
                 keep_conditioned_signal * right_slack,
@@ -911,6 +1265,19 @@ class InteractivePruningHead(nn.Module):
                 tokens * final_hard_st_keep_gate.unsqueeze(-1)
             ).sum(dim=1) / safe_context_denominator
 
+        one_shot_probability_mass = (
+            keep_probabilities * candidate_mask.to(keep_probabilities.dtype)
+        ).sum(dim=-1)
+        one_shot_requested_count_score = (
+            one_shot_probability_mass
+            + self.one_shot_safety_sigma * one_shot_selection_uncertainty
+        )
+        proposal_candidates = (
+            fixed_proposal_candidates
+            if fixed_proposal_candidates is not None
+            else candidate_positions
+        )
+
         return {
             "pruning_tokens": tokens,
             "analytic_contribution_features": analytic_features,
@@ -954,6 +1321,8 @@ class InteractivePruningHead(nn.Module):
             "final_hard_keep_mask": final_hard_keep_mask,
             "one_shot_selected_count": one_shot_selected_count,
             "one_shot_selection_uncertainty": one_shot_selection_uncertainty,
+            "one_shot_probability_mass": one_shot_probability_mass,
+            "one_shot_requested_count_score": one_shot_requested_count_score,
             "final_hard_st_keep_gate": final_hard_st_keep_gate,
             "final_hard_st_keep_context": final_hard_st_keep_context,
             "predicted_deletion_cost": predicted_deletion_cost,
@@ -967,7 +1336,12 @@ class InteractivePruningHead(nn.Module):
             "raw_position_residual": residual_signal,
             "keep_conditioned_position_signal": keep_conditioned_signal,
             "position_residual": position_residual,
+            "final_position_residual": final_position_residual,
+            "proposal_candidate_positions": proposal_candidates,
+            "proposal_candidate_knots": proposal_candidates,
             "refined_candidate_positions": refined_candidates,
             "refined_candidate_knots": refined_candidates,
+            "deployment_candidate_positions": refined_candidates,
+            "deployment_candidate_knots": refined_candidates,
             "candidate_mask": candidate_mask,
         }

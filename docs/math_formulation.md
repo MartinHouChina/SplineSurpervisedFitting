@@ -1,143 +1,388 @@
-# v10 数学定义
+# v11 数学定义
 
-## 1. 目标
+## 1. 问题
 
-对有序点集 \(Q=\{q_i\}_{i=1}^M\)，在预测参数 \(t_i\) 下求内部节点集合 \(U\)：
-
-\[
-\min_U |U|\qquad
-\text{s.t.}\qquad
-R(U)=\sqrt{\frac1M\sum_i\|C_U(t_i)-q_i\|_2^2}\le\varepsilon .
-\]
-
-离线教师采用确定性的逐节点贪心删除，因此得到的是该删除路径上的近似最简集合，不是所有
-节点子集上的组合全局最优证明。
-
-## 2. 参数与高召回候选
-
-ParameterHead 预测正间隔并累加：
+给定有序点：
 
 \[
-t_0=0,\qquad t_i=\sum_{r<i}\Delta t_r,\qquad t_{M-1}=1.
+Q=(q_0,\ldots,q_{M-1}),\qquad q_i\in\mathbb R^D,
 \]
 
-CandidateKnotHead 预测 \(K_c+1\) 个带最小间隔 \(\delta\) 的正区间：
+预测参数 `t`、内部节点集合 `U` 和控制顶点 `P`，使：
 
 \[
-\Delta_j=\delta+[1-(K_c+1)\delta]\operatorname{softmax}(a)_j,
-\qquad
-c_j=\sum_{r=0}^{j-1}\Delta_r .
+\min |U|
+\quad\text{s.t.}\quad
+R(U,Q)\le\varepsilon,
 \]
 
-所以 \(0<c_1<\cdots<c_{K_c}<1\)。候选阶段优先提高真实必要节点的覆盖率，不直接决定最终
-节点数量。
-
-## 3. 可解释贡献特征
-
-全候选截断幂代理为
+其中标准 B 样条重拟合 RMS 为：
 
 \[
-\Phi=[1,t,t^2,t^3,(t-c_1)_+^3,\ldots,(t-c_{K_c})_+^3].
+R(U,Q)=
+\sqrt{\frac1M\sum_{i=0}^{M-1}
+\|C(t_i;U,P^*)-q_i\|_2^2}.
 \]
 
-若 \(D^*=\arg\min_D\|\Phi D-Q\|_F^2+D^T\Lambda D\)，则每个节点拥有独立列系数、
-系数能量和解析删列目标增量。InteractivePruningHead 同时读取：
+v11 学习这个约束问题的一次性近似，不提供逐样本可行性或全局最优证明。
 
-- 候选 token 与位置；
-- 截断幂系数能量和解析删列增量；
-- 候选附近的局部残差；
+## 2. 严格递增参数
+
+`ParameterHead` 输出正区间并归一化，使：
+
+\[
+0=t_0<t_1<\cdots<t_{M-1}=1.
+\]
+
+训练时使用：
+
+\[
+L_t=\frac1M\sum_i(t_i-t_i^{\mathrm{true}})^2.
+\]
+
+节点匹配依赖共享参数化，所以测试时应同时报告 `true_parameter_rmse`。
+
+## 3. 局部 Gaussian cross-attention
+
+设第 `j` 个 interval query 的固定锚点为：
+
+\[
+a_j=\frac{j+1/2}{K_c+1}.
+\]
+
+点特征加参数位置编码：
+
+\[
+x_i=f_i+\operatorname{PE}(t_i).
+\]
+
+当局部带宽 `h>0` 时，attention 为：
+
+\[
+A_{j,i}=
+\operatorname{softmax}_i\left(
+\frac{\langle W_Qz_j,W_Kx_i\rangle}{\sqrt d}
+-\frac{(t_i-a_j)^2}{2h^2}
+\right).
+\]
+
+`h=0` 表示不加 Gaussian 偏置，恢复全局 attention。
+
+## 4. 严格有序候选
+
+`Kc+1` 个 interval logit 产生：
+
+\[
+\Delta_j=
+\delta+
+\left[1-(K_c+1)\delta\right]
+\frac{\exp \ell_j}{\sum_r\exp\ell_r}.
+\]
+
+候选位置：
+
+\[
+c_j=\sum_{r=0}^{j-1}\Delta_r,
+\qquad j=1,\ldots,K_c.
+\]
+
+由构造可知：
+
+\[
+0<c_1<\cdots<c_{K_c}<1,
+\]
+
+且每个间隔不小于 `δ`。
+
+## 5. 多尺度候选覆盖
+
+对 canonical 节点 `v`，定义到候选集合 `C` 的最近距离：
+
+\[
+d(v,C)=\min_j|v-c_j|.
+\]
+
+基本 coverage 使用平均最近距离。v11 再加入多尺度 hinge：
+
+\[
+L_{\mathrm{multi}}=
+\frac{1}{|\mathcal V||\mathcal T|}
+\sum_{v\in\mathcal V}
+\sum_{\tau\in\mathcal T}
+\left[
+\max\left(\frac{d(v,C)}{\tau}-1,0\right)
+\right]^2,
+\]
+
+\[
+\mathcal T=\{0.005,0.01,0.02\}.
+\]
+
+相同项同时作用于 CandidateKnotHead 的初始候选和 proposal-only 精修候选。
+
+## 6. 截断幂代理与贡献特征
+
+三次截断幂表示为：
+
+\[
+C(t)=a_0+a_1t+a_2t^2+a_3t^3+
+\sum_{j=1}^{K_c}b_j(t-u_j)_+^3.
+\]
+
+全候选代理 solve 得到：
+
+- `\|b_j\|_2^2`：候选系数能量；
+- 删除对应列后的解析目标增量；
+- 候选附近的局部点残差；
 - 左右间距。
 
-截断幂基只产生可微代理和贡献证据；最终曲线始终由标准 B 样条基求解。
+这些量经过稳定变换后与候选 token、位置编码一起输入 `InteractivePruningHead`。它们是训练特征，不等价于最终标准 B 样条删除误差。
 
-## 4. 离线 Hard-RMS 教师
+## 7. 固定 proposal
 
-从全候选集合开始，每轮枚举当前集合的所有单节点删除，对每个子集完整重拟合标准 B 样条，
-选择 RMS 最低的删除，并且仅当其 RMS 不超过 \(\varepsilon\) 时接受。最终集合给出
-\(m_j^*\in\{0,1\}\) 和教师数量 \(K^*=\sum_jm_j^*\)。
-
-软风险在最终停止状态计算。对最终保留节点 \(j\)：
+proposal-only 位置头产生：
 
 \[
-s_j^*=\sigma\!\left(
-\frac{R(U^*\setminus\{u_j\})/\varepsilon-1}{T}
-\right),
+u_j^{\mathrm{prop}}=c_j+\Delta u_j^{\mathrm{prop}}.
 \]
 
-并限制 \(s_j^*\ge0.5\)；已删除槽位的风险为 0。这样软风险不会与最终 hard mask 产生相反
-监督。完整冗余集合的初始单删 RMS 只作为诊断量保存。
+位移受相邻候选 slack 和最小间隔限制。`U_prop` 是离线教师绑定的不可变槽位集合。
 
-## 5. 一次性双向交互
+## 8. p0 → u1 → p1
 
-模型先确定不依赖 KeepMask 的 proposal 位置，再执行一次固定选择，不包含数据相关循环：
-
-```text
-基础候选 token
-  → proposal-only ordered position
-  → 固定位置编码 + 解析贡献
-  → 两层 selector self-attention
-  → final importance / beta / keep
-  → probability-mass Top-K + coverage anchors
-```
-
-最终概率和 mask 为
+selector 首次预测：
 
 \[
-p_j=\sigma(r_j-\beta),\qquad
-\widehat K=\left\lceil\sum_jp_j+s\sqrt{\sum_jp_j(1-p_j)}\right\rceil.
+p_j^{(0)}
+=\sigma(r_j^{(0)}-\beta^{(0)}).
 \]
 
-最终 mask 在覆盖锚点后选择 raw importance 最高的 \(\widehat K\) 个槽位。固定 proposal 位置参与
-selector 的位置编码，但 \(m_j\) 不再进入位置解码器。因此 KeepMask
-变化不会使离线 Hard-RMS 教师绑定的槽位发生漂移。位移最多使用相邻可用 slack 的 0.45，故
-proposal 精修后仍严格有序。第二次 surrogate solve 仍使用
-\(m_j+p_j-\operatorname{stopgrad}(p_j)\)，但默认不参与 selector 选优。
-
-## 6. 训练损失与选优
-
-候选预训练使用拟合、阈值违约和覆盖监督。固定 proposal 后，一次性选择器使用：
+由 `p0` 构造 hard straight-through gate：
 
 \[
-L_{select}=L_{mask}^{BCE+Dice}+L_{risk}+L_{rank}+L_{CDF}+L_{critical}
-+L_{count}^{hard\text{-}ST}+L_{complexity}.
+\widetilde m_j^{(0)}
+=m_j^{(0)}+p_j^{(0)}
+-\operatorname{stopgrad}(p_j^{(0)}).
 \]
 
-其中
+前向值为 hard mask，反向导数来自 `p0`。其集合上下文驱动临时位置：
 
 \[
-L_{rank}=\operatorname{mean}_{i\in K^+,j\in K^-}
-\operatorname{softplus}(\delta-r_i+r_j)
+u_j^{(1)}
+=u_j^{\mathrm{prop}}+\Delta u_j^{(1)}.
 \]
 
-直接要求Hard-RMS教师保留节点的重要性logit高于被删除节点，降低节点数接近但选错位置的情况。
-canonical 位置监督只用于 proposal 预训练；教师生成后的蒸馏不再用第二套位置目标改变槽位。
+`\Delta u1` 不乘 `p0`，因此初始低概率槽位仍能移动并提供第二次选择证据。
 
-`CDF` 项比较预测与教师节点质量沿有序候选轴的累计分布，是一维 Wasserstein 距离；
-`critical` 项只作用于 Hard-RMS 最终保留节点，并按 final-state risk 加权，直接抑制致命漏检。
-
-其中 hard-ST 数量在前向使用部署二值 mask，反向使用概率梯度。截断幂 `fit` 和 `violation`
-仍作为诊断量，但默认权重为零，防止代理拟合通过打开全部基列来支配选择器。不可满足阈值的
-教师样本不参与 count/complexity 项。
-
-checkpoint 选优不使用代理 pass-rate，而是在验证集对一次性 mask 执行一次标准 B 样条重拟合。
-尚未达到目标满足率时改善真实 pass/mean/P95；达到目标后最小化平均节点数，并以真实 fit 和
-最终节点 recall/F1 作 tie-break。
-
-## 7. 标准 B 样条部署
-
-网络一次前向得到最终子集后，只求解一次
+将 `u1` 的位置编码变化和归一化位移反馈给 selector：
 
 \[
-P^*=\arg\min_P\|BP-Q\|_F^2
-+\lambda_s\|D_2P\|_F^2+\lambda_r\|P\|_F^2,
+p_j^{(1)}
+=\sigma(r_j^{(1)}-\beta^{(1)}).
 \]
 
-并严格施加
+这是固定的两次概率计算，不是迭代至收敛。
+
+## 9. 一次性 KeepMask
+
+`mass_topk` 计算概率质量和 Bernoulli 不确定性：
 
 \[
-P_0=Q_0,\qquad P_{n-1}=Q_{M-1}.
+\mu=\sum_jp_j^{(1)},
+\qquad
+\sigma_K=
+\sqrt{\sum_jp_j^{(1)}(1-p_j^{(1)})}.
 \]
 
-默认 v10 部署不再运行逐节点 Hard-RMS 搜索，因此 \(R(U)\le\varepsilon\) 是独立测试分布上的
-统计满足率，不是每条新曲线的硬保证。必须逐样本保证时，应显式运行离线 hard diagnostic 或
-采用 v7 的硬验证回退。
+令请求分数：
+
+\[
+q=\mu+s\sigma_K.
+\]
+
+请求节点数为：
+
+\[
+\widehat K=
+\begin{cases}
+0,&q<0.5,\\
+\lceil q\rceil,&q\ge0.5,
+\end{cases}
+\]
+
+并截断到有效候选数。然后一次性保留 raw importance 最高的 `Khat` 个有效槽位。可选的参数域覆盖锚点只修改同一次排序得分；默认 v11 不启用分箱锚点。
+
+policy-count 损失不只拟合 `sum p`。教师计数为零时，其连续目标为 `0.25`；教师计数 `K>0` 时，目标为 `K-0.25`。二者分别位于零节点稳定区间和对应正数 `ceil` 区间内部。
+
+## 10. 最终位置 u*
+
+最终 mask 的 hard-ST 上下文驱动第二个位置残差：
+
+\[
+u_j^*=u_j^{(1)}+m_j\Delta u_j^{(2)}.
+\]
+
+未保留槽位的第二次残差为零。第一阶段先保证：
+
+\[
+|u_j^{(1)}-u_j^{\mathrm{prop}}|\le d_{\max}.
+\]
+
+第二阶段根据已经消耗的预算限制剩余残差，使：
+
+\[
+|u_j^*-u_j^{\mathrm{prop}}|\le d_{\max}.
+\]
+
+因此 `d_max` 是两阶段相对 `U_prop` 的合计上限，而不是两个位置头各自的上限。两个阶段还同时受相邻有效节点 slack、`min_gap` 和小于半个可用区间的比例约束，因此选中子序列保持严格有序。
+
+## 11. canonical 与 teacher 双监督
+
+### 11.1 canonical 选择
+
+由候选到 canonical 节点的一维有序分配产生 existence target `y_j^{can}`：
+
+\[
+L_{\mathrm{can-sel}}
+=\operatorname{BCEWithLogits}(r_j^{(1)}-\beta^{(1)},y_j^{can}).
+\]
+
+### 11.2 teacher mask
+
+离线 Hard-RMS 教师给出 `y_j^{teach}`：
+
+\[
+L_{\mathrm{keep}}
+=L_{\mathrm{weighted\ BCE}}
++L_{\mathrm{soft\ Dice}}.
+\]
+
+另外使用：
+
+- retained/remove 排序损失；
+- final-state soft-risk BCE；
+- critical retained-slot softplus；
+- teacher false-positive softplus；
+- teacher count 和 policy count；
+- teacher 槽位概率质量的累计分布距离；
+- complexity。
+
+false-positive 项只把 teacher-negative 且 canonical-negative 的槽位作为负样本。令：
+
+\[
+w_j^-=(1-y_j^{\mathrm{teach}})(1-y_j^{\mathrm{can}}),
+\]
+
+则其主要形式为：
+
+\[
+L_{\mathrm{fp}}=
+\frac{\sum_jw_j^-\operatorname{softplus}(\ell_j^{\mathrm{keep}})}
+{\max(\sum_jw_j^-,1)}.
+\]
+
+canonical-positive 但未被贪心教师保留的邻近替代槽位由此获得豁免。
+
+### 11.3 联合位置
+
+只取教师保留槽位，再与 canonical 节点做有序最小 `L1` 配对：
+
+\[
+L_{\mathrm{joint-pos}}
+=\operatorname{SmoothL1}
+\left(U^*_{\mathrm{teach\ slots}},
+U_{\mathrm{canonical}}\right).
+\]
+
+因此 teacher 决定“移动哪些槽位”，canonical 决定“这些最终槽位向哪里校准”。`U_prop` 不参与该更新。
+
+## 12. 总损失
+
+候选预训练的主要目标为：
+
+\[
+L_{\mathrm{pre}}=
+\lambda_tL_t+
+\lambda_cL_{\mathrm{coverage}}+
+\lambda_mL_{\mathrm{multi}}+
+\lambda_uL_{\mathrm{canonical-pos}}+
+\lambda_rL_{\mathrm{repulsion}}+
+\lambda_fL_{\mathrm{surrogate-fit}}+
+\lambda_\varepsilon L_{\mathrm{surrogate-violation}}.
+\]
+
+蒸馏/联合校准为：
+
+\[
+\begin{aligned}
+L_{\mathrm{one}}={}&
+\lambda_kL_{\mathrm{keep}}
++\lambda_{\mathrm{risk}}L_{\mathrm{risk}}
++\lambda_{\mathrm{rank}}L_{\mathrm{rank}}\\
+&+\lambda_{\mathrm{crit}}L_{\mathrm{critical}}
++\lambda_{\mathrm{fp}}L_{\mathrm{false-positive}}
++\lambda_{\mathrm{dist}}L_{\mathrm{distribution}}\\
+&+\lambda_{\mathrm{count}}L_{\mathrm{teacher-count}}
++\lambda_{\mathrm{policy}}L_{\mathrm{policy-count}}
++\lambda_{\mathrm{can}}L_{\mathrm{can-sel}}\\
+&+\lambda_{\mathrm{pos}}L_{\mathrm{joint-pos}}
++\lambda_{\mathrm{cmp}}L_{\mathrm{complexity}}.
+\end{aligned}
+\]
+
+纯选择蒸馏阶段默认令 surrogate fit 和 violation 权重为零。联合位置校准阶段另外加入：
+
+\[
+L_{\mathrm{cal}}=L_{\mathrm{one}}
++0.05L_{\mathrm{surrogate-fit}}
++0.5L_{\mathrm{surrogate-violation}}.
+\]
+
+代理设计矩阵的 hard-ST fit gate 对选择概率 detach，因此这两项不会通过门控梯度直接增加节点；它们用于约束已选组合的位置可行性。最终 checkpoint 仍依据真实标准 B 样条验证结果排序。
+
+## 13. 标准 B 样条部署
+
+最终节点为：
+
+\[
+U=\{u_j^*\mid m_j=1\}.
+\]
+
+控制顶点求解：
+
+\[
+P^*=\arg\min_P
+\|B(t,U)P-Q\|_F^2+
+\lambda_s\|D_2P\|_F^2+
+\lambda_r\|P\|_F^2,
+\]
+
+并施加端点插值：
+
+\[
+C(0)=q_0,\qquad C(1)=q_{M-1}.
+\]
+
+网络前向一次，标准 B 样条 refit 一次。`R(U,Q)\le\varepsilon` 在默认 one-shot 模式中是测试分布上的统计满足率，而不是每条曲线的硬保证。
+
+## 14. 分阶段节点指标
+
+对容差 `tau`，分别匹配：
+
+\[
+U_{\mathrm{prop}},
+\qquad
+U_{\mathrm{prop}}[M],
+\qquad
+U^*[M].
+\]
+
+得到 proposal、选择后更新前和最终部署的 Precision/Recall/F1/MAE。位置更新增量定义为：
+
+\[
+\Delta R=R_{\mathrm{post}}-R_{\mathrm{pre}},
+\qquad
+\Delta P=P_{\mathrm{post}}-P_{\mathrm{pre}}.
+\]
+
+该分解用于判断误差主要来自 proposal 漏检、selector 误删，还是位置更新。

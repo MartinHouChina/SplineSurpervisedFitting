@@ -76,6 +76,29 @@ class CandidateKnotHeadTests(unittest.TestCase):
         self.assertGreater(int((candidates < 0.25).sum()), 0)
         self.assertGreater(int((candidates > 0.75).sum()), 0)
 
+    def test_local_cross_attention_is_anchor_centred(self) -> None:
+        torch.manual_seed(13)
+        head = CandidateKnotHead(
+            hidden_dim=16,
+            num_candidates=7,
+            min_gap=0.01,
+            attention_heads=4,
+            local_attention_bandwidth=0.05,
+        ).eval()
+        positions = torch.linspace(0.0, 1.0, 101).unsqueeze(0)
+        with torch.no_grad():
+            output = head(
+                torch.zeros(1, 16),
+                torch.randn(1, 101, 16),
+                positions,
+            )
+        attention = output["candidate_attention_weights"][0]
+        anchors = head.interval_query_anchors
+        mean_distance = (
+            attention * (positions[0].unsqueeze(0) - anchors.unsqueeze(-1)).abs()
+        ).sum(dim=-1)
+        self.assertTrue(torch.all(mean_distance < 0.10))
+
 
 class InteractivePruningHeadTests(unittest.TestCase):
     def _inputs(self) -> tuple[torch.Tensor, ...]:
@@ -319,6 +342,192 @@ class InteractivePruningHeadTests(unittest.TestCase):
             removed["refined_candidate_positions"],
             retained["refined_candidate_positions"],
         )
+
+    def test_v11_keep_mask_conditions_parallel_position_update(self) -> None:
+        torch.manual_seed(97)
+        head = InteractivePruningHead(
+            hidden_dim=16,
+            residual_feature_dim=1,
+            attention_heads=4,
+            min_gap=0.01,
+            one_shot_adaptive=True,
+            one_shot_fixed_proposal_geometry=True,
+            one_shot_selection_policy="mass_topk",
+            one_shot_joint_position_refinement=True,
+        ).eval()
+        positions = torch.tensor([[0.08, 0.22, 0.40, 0.58, 0.76, 0.92]])
+        inputs = {
+            "coefficient_energy": torch.rand(1, 6),
+            "deletion_delta": torch.rand(1, 6),
+            "residual_features": torch.rand(1, 6),
+        }
+        tokens = torch.randn(1, 6, 16)
+        with torch.no_grad():
+            head.keep_head.weight.zero_()
+            head.adaptive_threshold_head[-1].weight.zero_()
+            head.adaptive_threshold_head[-1].bias.zero_()
+            head.joint_final_position_head.weight.zero_()
+            head.joint_final_position_head.bias.fill_(3.0)
+            head.keep_head.bias.fill_(-0.4)
+            smaller = head(tokens, positions, **inputs)
+            head.keep_head.bias.fill_(1.4)
+            larger = head(tokens, positions, **inputs)
+
+        self.assertLess(
+            int(smaller["final_hard_keep_mask"].sum()),
+            int(larger["final_hard_keep_mask"].sum()),
+        )
+        self.assertFalse(
+            torch.allclose(
+                smaller["refined_candidate_positions"],
+                larger["refined_candidate_positions"],
+            )
+        )
+        for output in (smaller, larger):
+            selected = output["refined_candidate_positions"][
+                output["final_hard_keep_mask"]
+            ]
+            if selected.numel() > 1:
+                self.assertTrue(torch.all(selected[1:] - selected[:-1] >= 0.01))
+
+    def test_v11_position_proposal_feeds_back_into_final_keep(self) -> None:
+        torch.manual_seed(101)
+        hidden_dim = 16
+        head = InteractivePruningHead(
+            hidden_dim=hidden_dim,
+            residual_feature_dim=1,
+            attention_heads=4,
+            min_gap=0.01,
+            one_shot_adaptive=True,
+            one_shot_fixed_proposal_geometry=True,
+            one_shot_selection_policy="mass_topk",
+            one_shot_joint_position_refinement=True,
+        ).eval()
+        with torch.no_grad():
+            feedback_in = head.joint_position_to_keep_feedback[0]
+            feedback_out = head.joint_position_to_keep_feedback[-1]
+            feedback_in.weight.zero_()
+            feedback_in.bias.zero_()
+            feedback_in.weight[:, hidden_dim : 2 * hidden_dim].copy_(
+                torch.eye(hidden_dim)
+            )
+            feedback_out.weight.copy_(torch.eye(hidden_dim))
+            feedback_out.bias.zero_()
+            head.keep_head.weight.zero_()
+            head.keep_head.weight[0, 0] = 1.0
+            head.keep_head.bias.zero_()
+            head.adaptive_threshold_head[-1].weight.zero_()
+            head.adaptive_threshold_head[-1].bias.zero_()
+            head.joint_preliminary_position_head.weight.zero_()
+
+        positions = torch.tensor([[0.08, 0.22, 0.40, 0.58, 0.76, 0.92]])
+        tokens = torch.randn(1, 6, hidden_dim)
+        inputs = {
+            "coefficient_energy": torch.rand(1, 6),
+            "deletion_delta": torch.rand(1, 6),
+            "residual_features": torch.rand(1, 6),
+        }
+        with torch.no_grad():
+            head.joint_preliminary_position_head.bias.fill_(-3.0)
+            shifted_left = head(tokens, positions, **inputs)
+            head.joint_preliminary_position_head.bias.fill_(3.0)
+            shifted_right = head(tokens, positions, **inputs)
+
+        torch.testing.assert_close(
+            shifted_left["preliminary_keep_probability"],
+            shifted_right["preliminary_keep_probability"],
+        )
+        self.assertFalse(
+            torch.allclose(
+                shifted_left["final_keep_probability"],
+                shifted_right["final_keep_probability"],
+            )
+        )
+
+    def test_v11_two_stage_motion_respects_total_shift_budget(self) -> None:
+        torch.manual_seed(103)
+        max_shift = 0.05
+        head = InteractivePruningHead(
+            hidden_dim=16,
+            residual_feature_dim=1,
+            attention_heads=4,
+            min_gap=0.01,
+            one_shot_adaptive=True,
+            one_shot_fixed_proposal_geometry=True,
+            one_shot_selection_policy="mass_topk",
+            one_shot_joint_position_refinement=True,
+            one_shot_max_position_shift=max_shift,
+        ).eval()
+        with torch.no_grad():
+            # Make the fixed proposal equal the supplied positions, retain all
+            # slots, and ask both refinement stages for the same maximal move.
+            head.position_residual_head.weight.zero_()
+            head.position_residual_head.bias.zero_()
+            head.keep_head.weight.zero_()
+            head.keep_head.bias.fill_(8.0)
+            head.adaptive_threshold_head[-1].weight.zero_()
+            head.adaptive_threshold_head[-1].bias.zero_()
+            head.joint_preliminary_position_head.weight.zero_()
+            head.joint_final_position_head.weight.zero_()
+
+        positions = torch.tensor([[0.10, 0.26, 0.42, 0.58, 0.74, 0.90]])
+        tokens = torch.randn(1, 6, 16)
+        inputs = {
+            "coefficient_energy": torch.rand(1, 6),
+            "deletion_delta": torch.rand(1, 6),
+            "residual_features": torch.rand(1, 6),
+        }
+        for direction in (-10.0, 10.0):
+            with self.subTest(direction=direction), torch.no_grad():
+                head.joint_preliminary_position_head.bias.fill_(direction)
+                head.joint_final_position_head.bias.fill_(direction)
+                output = head(tokens, positions, **inputs)
+
+            self.assertTrue(torch.all(output["final_hard_keep_mask"]))
+            self.assertGreater(
+                float(output["provisional_position_residual"].abs().max()),
+                0.0,
+            )
+            self.assertGreater(
+                float(output["final_position_residual"].abs().max()),
+                0.0,
+            )
+            total_shift = (
+                output["refined_candidate_positions"]
+                - output["proposal_candidate_positions"]
+            )
+            self.assertTrue(torch.all(total_shift.abs() <= max_shift + 1e-6))
+
+    def test_mass_topk_score_below_half_stably_selects_zero_knots(self) -> None:
+        head = InteractivePruningHead(
+            hidden_dim=16,
+            attention_heads=4,
+            one_shot_adaptive=True,
+            one_shot_fixed_proposal_geometry=True,
+            one_shot_selection_policy="mass_topk",
+            one_shot_safety_sigma=0.25,
+        )
+        probability = torch.full((2, 4), 0.01)
+        candidate_mask = torch.ones_like(probability, dtype=torch.bool)
+        positions = torch.tensor([[0.1, 0.3, 0.6, 0.9], [0.1, 0.3, 0.6, 0.9]])
+
+        first_mask, first_count, uncertainty = head._select_hard_keep_mask(
+            probability,
+            candidate_mask,
+            positions,
+        )
+        second_mask, second_count, _ = head._select_hard_keep_mask(
+            probability,
+            candidate_mask,
+            positions,
+        )
+
+        requested_score = probability.sum(dim=-1) + 0.25 * uncertainty
+        self.assertTrue(torch.all(requested_score < 0.5))
+        self.assertEqual(first_count.tolist(), [0, 0])
+        self.assertFalse(torch.any(first_mask))
+        self.assertTrue(torch.equal(second_count, first_count))
+        self.assertTrue(torch.equal(second_mask, first_mask))
 
     def test_mass_topk_uses_probability_mass_as_structured_cardinality(self) -> None:
         head = InteractivePruningHead(

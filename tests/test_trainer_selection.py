@@ -93,6 +93,78 @@ class TrainerSelectionTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["knot_match_f1"], 2 * 0.6 * 0.75 / 1.35)
         self.assertAlmostEqual(metrics["knot_matched_mae"], 0.02)
 
+    def test_mean_metrics_derives_multiscale_candidate_recall(self) -> None:
+        metrics = Trainer._mean_metrics(
+            {
+                "candidate_match_count": 3.0,
+                "candidate_match_count_at_0p005": 1.0,
+                "candidate_match_count_at_0p01": 2.0,
+                "candidate_match_count_at_0p02": 3.0,
+                "candidate_target_count": 4.0,
+                "candidate_nearest_error_sum": 0.08,
+            },
+            samples=1,
+        )
+
+        self.assertAlmostEqual(metrics["candidate_recall_at_0p005"], 0.25)
+        self.assertAlmostEqual(metrics["candidate_recall_at_0p01"], 0.5)
+        self.assertAlmostEqual(metrics["candidate_recall_at_0p02"], 0.75)
+
+    def test_candidate_pretrain_checkpoint_prioritizes_strict_recall(self) -> None:
+        model = torch.nn.Linear(1, 1)
+        model.structure_mode = "candidate_pruning"
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        trainer = Trainer(model, torch.nn.Identity(), optimizer, torch.device("cpu"))
+        loader = DataLoader(TensorDataset(torch.zeros(1, 1)), batch_size=1)
+
+        broad_but_imprecise = _metrics(0.1, 0.0, 0.7)
+        broad_but_imprecise.update(
+            {
+                "candidate_recall": 0.99,
+                "candidate_nearest_mae": 0.001,
+                "candidate_recall_at_0p005": 0.60,
+                "candidate_recall_at_0p01": 0.95,
+                "candidate_recall_at_0p02": 0.99,
+            }
+        )
+        strict_but_broader_metrics_lower = _metrics(0.2, 0.0, 0.6)
+        strict_but_broader_metrics_lower.update(
+            {
+                "candidate_recall": 0.90,
+                "candidate_nearest_mae": 0.02,
+                "candidate_recall_at_0p005": 0.70,
+                "candidate_recall_at_0p01": 0.90,
+                "candidate_recall_at_0p02": 0.90,
+            }
+        )
+        epoch_metrics = [
+            broad_but_imprecise,
+            broad_but_imprecise,
+            strict_but_broader_metrics_lower,
+            strict_but_broader_metrics_lower,
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint_path = Path(directory) / "proposal.pt"
+            with patch.object(trainer, "_run_epoch", side_effect=epoch_metrics):
+                trainer.fit(
+                    loader,
+                    loader,
+                    epochs=2,
+                    checkpoint_path=checkpoint_path,
+                    stage_name="candidate_pretrain",
+                )
+            checkpoint = torch.load(
+                checkpoint_path, map_location="cpu", weights_only=True
+            )
+
+        self.assertEqual(checkpoint["epoch"], 2)
+        self.assertEqual(
+            checkpoint["selection_metric"],
+            "candidate_recall_0p005_0p01_0p02_then_mae_knot_f1_loss",
+        )
+        self.assertAlmostEqual(checkpoint["selection_value"], 0.70)
+
     def test_checkpoint_prioritizes_geometric_knot_f1_over_other_metrics(self) -> None:
         model = torch.nn.Linear(1, 1)
         optimizer = torch.optim.SGD(model.parameters(), lr=0.1)

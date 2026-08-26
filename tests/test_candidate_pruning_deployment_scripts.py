@@ -22,6 +22,31 @@ def _load_script(name: str):
     return module
 
 
+def test_proposal_semantic_mismatches_detect_geometry_changes_only() -> None:
+    module = _load_script("train_candidate_pruning")
+    requested = {
+        "point_dim": 2,
+        "hidden_dim": 64,
+        "structure_attention_heads": 4,
+        "min_knot_gap": 1e-3,
+        "one_shot_selection_policy": "mass_topk",
+    }
+
+    assert module._proposal_semantic_mismatches(requested, dict(requested)) == []
+
+    saved = {
+        **requested,
+        "structure_attention_heads": 8,
+        "min_knot_gap": 2e-3,
+        # Selection-only settings must not invalidate immutable proposal geometry.
+        "one_shot_selection_policy": "threshold",
+    }
+    mismatches = module._proposal_semantic_mismatches(requested, saved)
+    mismatched_keys = {message.split(":", 1)[0] for message in mismatches}
+
+    assert mismatched_keys == {"structure_attention_heads", "min_knot_gap"}
+
+
 def _candidate_problem() -> tuple[dict[str, torch.Tensor], torch.Tensor]:
     parameters = torch.linspace(0.0, 1.0, 32, dtype=torch.float64)
     candidates = torch.tensor([0.2, 0.45, 0.75], dtype=torch.float64)

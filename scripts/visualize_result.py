@@ -262,6 +262,15 @@ def candidate_loss_from_checkpoint(
         ),
         deletion_control_ridge=float(config.get("deletion_control_ridge", 0.0)),
         teacher_ranking_margin=float(config.get("teacher_ranking_margin", 1.0)),
+        candidate_coverage_tolerances=tuple(
+            float(value) for value in config.get("candidate_coverage_tolerances", ())
+        ),
+        position_aware_distribution=bool(
+            config.get("position_aware_distribution", False)
+        ),
+        joint_position_supervision=bool(
+            config.get("joint_position_supervision", False)
+        ),
     )
 
 
@@ -283,7 +292,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Historical activity threshold. For v8-v10 it is ignored by deployment; "
+            "Historical activity threshold. For v8-v11 it is ignored by deployment; "
             "the learned mask (or centered keep probability >= 0.5 fallback) is used."
         ),
     )
@@ -295,7 +304,7 @@ def main() -> None:
         default=None,
         help=(
             "Normalized RMS reference for one-shot satisfaction reporting "
-            "and optional offline hard diagnostics. It never changes the v8-v10 "
+            "and optional offline hard diagnostics. It never changes the v8-v11 "
             "learned mask."
         ),
     )
@@ -306,7 +315,7 @@ def main() -> None:
         help=(
             "Candidate-pruning visualization: all candidates, learned "
             "one-shot mask, offline hard RMS teacher, or comparison. "
-            "Defaults to learned for v8-v10 and hard for v7."
+            "Defaults to learned for v8-v11 and hard for v7."
         ),
     )
     parser.add_argument(
@@ -457,8 +466,11 @@ def main() -> None:
         adaptive_keep_threshold: torch.Tensor | None = None
         learned_selection_source: str | None = None
         if candidate_pruning:
-            candidate_knots = output["internal_knots"][0]
-            all_mask = torch.ones_like(candidate_knots, dtype=torch.bool)
+            proposal_knots = output.get(
+                "proposal_internal_knots", output["internal_knots"]
+            )[0]
+            deployment_knots = output["internal_knots"][0]
+            all_mask = torch.ones_like(proposal_knots, dtype=torch.bool)
             if candidate_one_shot:
                 learned_masks, adaptive_thresholds, learned_selection_source = (
                     one_shot_selection(output)
@@ -475,11 +487,13 @@ def main() -> None:
             for name, mask in (("all", all_mask), ("learned", learned_mask)):
                 if name not in requested_views:
                     continue
+                view_knots = proposal_knots if name == "all" else deployment_knots
                 candidate_fits[name], candidate_postprocess_ms[name] = timed_call(
-                    lambda mask=mask: refit_candidate_mask_as_deployed_fit(
+                    lambda mask=mask,
+                    view_knots=view_knots: refit_candidate_mask_as_deployed_fit(
                         output["params"][0],
                         points[0],
-                        candidate_knots,
+                        view_knots,
                         mask,
                         degree=model.degree,
                         smoothness_weight=args.smoothness_weight,
@@ -492,7 +506,7 @@ def main() -> None:
                     lambda: prune_knots_to_rms_tolerance(
                         output["params"][0],
                         points[0],
-                        candidate_knots,
+                        proposal_knots,
                         error_tolerance=fit_tolerance,
                         degree=model.degree,
                         smoothness_weight=args.smoothness_weight,

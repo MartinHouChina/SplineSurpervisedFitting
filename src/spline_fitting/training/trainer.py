@@ -138,6 +138,13 @@ class Trainer:
             metrics["candidate_nearest_mae"] = (
                 metrics["candidate_nearest_error_sum"] / target if target > 0.0 else 0.0
             )
+            for key, value in tuple(metrics.items()):
+                prefix = "candidate_match_count_at_"
+                if key.startswith(prefix):
+                    suffix = key[len(prefix) :]
+                    metrics[f"candidate_recall_at_{suffix}"] = (
+                        value / target if target > 0.0 else 1.0
+                    )
         return metrics
 
     def _run_epoch(
@@ -548,14 +555,27 @@ class Trainer:
                 current_unsafe_action = selection_metrics.get("unsafe_delete_rate", 1.0)
                 current_false_stop = selection_metrics.get("false_stop_rate", 1.0)
                 if stage_name == "candidate_pretrain":
+                    strict_recall = selection_metrics.get(
+                        "candidate_recall_at_0p005", current_candidate_recall
+                    )
+                    medium_recall = selection_metrics.get(
+                        "candidate_recall_at_0p01", current_candidate_recall
+                    )
+                    broad_recall = selection_metrics.get(
+                        "candidate_recall_at_0p02", current_candidate_recall
+                    )
                     current_rank = (
-                        current_candidate_recall,
+                        strict_recall,
+                        medium_recall,
+                        broad_recall,
                         -current_candidate_mae,
                         current_knot_match_f1,
                         -current_val,
                     )
-                    selection_metric_name = "candidate_recall_mae_then_knot_f1_loss"
-                    selection_value = current_candidate_recall
+                    selection_metric_name = (
+                        "candidate_recall_0p005_0p01_0p02_then_mae_knot_f1_loss"
+                    )
+                    selection_value = strict_recall
                 elif structure_mode == "candidate_pruning_one_shot":
                     current_pass_rate = selection_metrics.get(
                         "deployment_threshold_satisfied_rate", 0.0
@@ -629,7 +649,7 @@ class Trainer:
                             "threshold",
                         )
                         selection_metric_name = (
-                            "v10_structured_feasible_standard_bspline_"
+                            "one_shot_structured_feasible_standard_bspline_"
                             "min_knots_rms_p95_recall"
                             if structured_policy == "mass_topk"
                             else "v9_constrained_standard_bspline_"

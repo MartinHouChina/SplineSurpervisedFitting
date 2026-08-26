@@ -219,7 +219,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Historical activity threshold. For v8-v10 it is ignored by deployment; "
+            "Historical activity threshold. For v8-v11 it is ignored by deployment; "
             "the learned mask (or centered keep probability >= 0.5 fallback) is used."
         ),
     )
@@ -230,7 +230,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Normalized RMS limit for v7 hard candidate pruning. For v8-v10 it is "
+            "Normalized RMS limit for v7 hard candidate pruning. For v8-v11 it is "
             "reporting-only: it measures satisfaction and never changes the learned "
             "one-shot mask. Defaults to deployment_config.error_tolerance, then the "
             "dataset canonical knot tolerance stored in the checkpoint."

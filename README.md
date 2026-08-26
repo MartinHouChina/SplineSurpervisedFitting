@@ -1,43 +1,83 @@
 # Minimum-Complexity B-Spline Fitting
 
-本项目从沿曲线方向排列的二维或三维点云，预测开放三次 B 样条的参数、内部节点和控制点。当前主版本为 `candidate_pruning_structured_feasible_teacher_v10`，目标是在归一化 RMS 阈值 `ε` 下，用尽量少的内部节点拟合曲线：
-
-\[
-\min |U|\quad\text{s.t.}\quad \operatorname{RMS}(C_U,Q)\le\varepsilon .
-\]
-
-模型没有 CountHead，也不把生成曲线时的源节点数当作目标。节点数等于最终 LearnedKeep 掩码中被保留的候选数。
-
-## 当前工作流
+本项目从沿曲线方向排列的二维或三维点云，预测开放三次 B 样条的参数、内部节点和控制顶点。当前主版本为：
 
 ```text
-有序点云
-  → GeometryEncoder：局部/全局几何特征
-  → ParameterHead：严格递增参数 t
-  → CandidateKnotHead：固定 Kc 个严格有序、高召回候选
-  → 第一次截断幂代理求解：提取系数能量、删除增量和局部残差
-  → proposal-only 位置精修：生成教师绑定的固定候选位置
-  → v10 结构化 selector adapter
-       固定位置 + 解析贡献特征
-       → 两层候选 self-attention
-       → raw importance r 与曲线自适应阈值 β
-       → 概率质量 Top-K + 不确定性余量 + 参数域覆盖锚点
-       → 一次性 LearnedKeep mask
-  → 第二次截断幂代理求解：记录 surrogate 拟合诊断（选择阶段默认不驱动 KeepMask）
-  → 部署时仅保留最终 KeepMask 对应节点
-  → 一次标准开放 B 样条控制点重拟合
+objective_version = candidate_pruning_joint_refinement_teacher_v11
+structure_mode    = candidate_pruning_one_shot
 ```
 
-网络内部虽然有两次截断幂代理求解，但整个模型仍只执行一次 `forward`；这两次代理求解不属于部署的标准 B 样条 refit，也不是逐节点搜索。
-
-最终决策不再逐槽位独立执行 `p≥0.5`。先计算
+优化目标是在归一化 RMS 阈值 `ε` 下，用尽量少的内部节点拟合曲线：
 
 \[
-p_j=\sigma(r_j-\beta),\quad
-\widehat K=\left\lceil\sum_jp_j+s\sqrt{\sum_jp_j(1-p_j)}\right\rceil,
+\min |U| \quad \text{s.t.}\quad
+\operatorname{RMS}(C_U,Q)\le \varepsilon .
 \]
 
-再保留 raw importance 最高的 `K̂` 个候选，并为若干参数域区间保留最高概率锚点。`s` 是不确定性安全余量。它不是 CountHead，也不运行 B 样条搜索。v10 另外用教师节点集合的累计分布损失和关键节点漏检损失训练组合选择；节点位置仍与离线教师严格绑定。
+模型没有 `CountHead`。最终节点数由一次性 `LearnedKeep` 掩码确定，而不是部署时逐节点试删。
+
+## 当前数据流
+
+```text
+有序点云 Q [B,M,D]
+  → GeometryEncoder
+      local_features [B,M,H]
+      global_features [B,H]
+  → ParameterHead
+      严格递增 params t [B,M]
+  → CandidateKnotHead
+      Kc+1 个带锚点的 interval query
+      + 参数位置编码
+      + 锚点中心 Gaussian 局部 cross-attention
+      → Kc 个严格有序候选
+  → 截断幂代理求解
+      → 系数能量、解析删除增量、局部残差
+  → proposal-only 精修
+      → 固定 proposal U_prop [B,Kc]
+  → InteractivePruningHead 的固定交互
+      p0 → 临时位置 u1 → p1 → 一次性 mask → 最终位置 u*
+  → 只保留 mask 对应的 u*
+  → 一次标准开放 B 样条控制顶点 refit
+```
+
+这里有两套位置，不能混用：
+
+- `proposal_internal_knots`：离线 Hard-RMS 教师绑定的固定候选；教师生成后不再改变。
+- `deployment_internal_knots`：由最终 KeepMask 条件化更新的位置；实际部署和最终节点匹配使用它。
+- `internal_knots`：兼容别名，v11 中等于 `deployment_internal_knots`。
+
+网络内部会执行两次截断幂代理求解，用于贡献特征和训练期诊断；它们都位于同一次网络 `forward` 中，不是标准 B 样条逐节点搜索。在线部署仍是一次网络前向和一次标准 B 样条 refit。
+
+## v11 的两个主要改动
+
+### 高召回候选
+
+`CandidateKnotHead` 为每个 interval query 设置参数域锚点 `a_j`，并向 cross-attention 分数加入 Gaussian 局部偏置：
+
+\[
+b_{j,i}=-\frac{(t_i-a_j)^2}{2h^2}.
+\]
+
+默认带宽 `h=0.08`；设为 `0` 可恢复历史全局 attention。候选预训练同时在 `0.005/0.01/0.02` 三个尺度施加 coverage hinge，避免只优化平均最近距离而漏掉少量困难节点。
+
+### 删除与位置更新联动
+
+固定次数交互为：
+
+\[
+p^{(0)}\rightarrow u^{(1)}\rightarrow p^{(1)}
+\rightarrow M\rightarrow u^* .
+\]
+
+1. selector 根据固定 proposal 和贡献特征输出初始概率 `p0`。
+2. `p0` 的 hard straight-through 上下文生成所有槽位的临时位置 `u1`。
+3. `u1` 的位置编码和位移反馈给 selector，得到最终概率 `p1`。
+4. `p1` 经一次 `mass_topk` 或 threshold 产生最终 `KeepMask`。
+5. 最终位置头读取 KeepMask 的 hard-ST 上下文，只更新被保留节点，得到 `u*`。
+
+这是一条固定计算图，没有 while 循环，也不在部署时反复拟合。`--one-shot-max-position-shift` 限制的是两阶段合计位移 `|u*-U_prop|`，而不是允许每阶段各移动一次完整预算；同时使用邻接间距和最小节点间隔约束，保持被选节点严格有序。
+
+默认 `mass_topk` 令 `score=sum(p1)+s·sqrt(sum(p1(1-p1)))`。当 `score<0.5` 时稳定输出 `K=0`；否则仍取 `ceil(score)` 并截断到有效候选数。这样零节点是显式结果，不依赖概率质量数值下溢。
 
 ## 数据集
 
@@ -48,31 +88,39 @@ p_j=\sigma(r_j-\beta),\quad
 | 训练 / 验证样本 | 10000 / 2000 |
 | 训练 / 验证 / 独立测试 seed | 42 / 10000 / 20000 |
 | 每条曲线采样点 | 192 |
-| 源控制点 | 8–24 |
+| 点维度 | 2，可选 3 |
+| 源控制顶点 | 8–24 |
 | 源内部节点 | 4–20 |
-| 候选节点预算 `Kc` | 28 |
+| 候选预算 `Kc` | 28 |
 | 坐标噪声标准差 | 0.001 |
 | 归一化 RMS 阈值 `ε` | 0.005 |
 
-样本会中心化并按最大半径归一化。离线教师与部署都使用端点约束的标准开放 B 样条重拟合。源节点数只描述数据生成过程，不等于阈值下的最少节点数。
+每条样本包含有序点、弦长参数、真参数、源样条表示和 canonical 节点标签。canonical 标签由源节点出发，在相同 RMS 阈值和端点约束下离线删点得到；源节点数本身不是监督目标。
+
+训练时同时使用两类互补监督：
+
+- canonical 监督：参数、proposal 多尺度覆盖、候选位置、选择存在性和最终部署位置。
+- Hard-RMS 教师监督：固定 proposal 槽位上的 hard mask、最终状态 soft risk、排序、关键节点召回、误保留惩罚和目标节点数。
+
+canonical 负责“几何位置接近哪里”，教师负责“固定候选组合中保留哪些槽位才能满足阈值”。二者并不保证在所有曲线上给出相同节点集合。
+
+teacher false-positive 项只惩罚“教师未保留且 canonical 也未匹配”的槽位。若一个槽位是 canonical-positive，但只是没有被贪心教师选中，它会被视为可能的等价替代，不会被强行压成负类。
 
 ## 训练
 
-训练由三个必需阶段和一个可选阶段组成：
+默认训练分为三段：
 
-1. 候选预训练并恢复验证集上最好的 proposal。
-2. 对固定数据和固定 proposal 生成离线 Hard-RMS 教师；soft risk 来自贪心删除最终停止状态的 leave-one-out RMS。
-3. 冻结完整 proposal 几何，只蒸馏独立 selector adapter、`keep_head` 和 `adaptive_threshold_head`。
-4. 可选 selector 校准仍只更新上述选择模块，绝不移动教师绑定的节点位置。
+1. 候选预训练：训练参数头和高召回 proposal，并恢复验证集最优的 `*_proposal.pt`。
+2. 选择蒸馏：固定 proposal，生成离线 Hard-RMS 缓存，只训练一次性 selector。
+3. 联合校准：默认最后 10 轮以较低学习率训练 selector 与独立 deployment 位置头；固定 proposal 和教师槽位仍不变。该阶段默认加入 `0.05` 的截断幂 fit 和 `0.5` 的阈值违反权重，fit gate 对选择概率停止梯度，因此它们用于改善已选组合的位置可行性，不直接鼓励多开节点。
 
-交互式终端默认逐batch显示训练和验证进度条，包括百分比、当前loss、吞吐率和ETA；使用
-`--no-progress` 可关闭。输出被重定向到日志文件时会自动退回 `--log-every-batches` 的逐行日志。
+首次训练：
 
 ```powershell
 python scripts/train_candidate_pruning.py `
   --epochs 150 `
   --candidate-pretrain-epochs 20 `
-  --selector-calibration-epochs 0 `
+  --selector-calibration-epochs 10 `
   --train-size 10000 `
   --val-size 2000 `
   --batch-size 16 `
@@ -81,117 +129,146 @@ python scripts/train_candidate_pruning.py `
   --candidate-knots 28 `
   --num-points 192 `
   --fit-tolerance 0.005 `
-  --candidate-match-tolerance 0.01 `
-  --deployment-pass-rate-target 0.97 `
-  --selector-lr 5e-4 `
-  --positive-keep-weight 2.0 `
-  --lambda-keep 1.0 `
-  --lambda-teacher-ranking 1.0 `
-  --lambda-teacher-distribution 2.0 `
-  --lambda-teacher-critical-recall 1.0 `
-  --teacher-ranking-margin 1.0 `
-  --lambda-teacher-count 4.0 `
-  --lambda-complexity 0.1 `
+  --candidate-local-attention-bandwidth 0.08 `
+  --candidate-coverage-tolerances 0.005 0.01 0.02 `
   --one-shot-selection-policy mass_topk `
-  --one-shot-safety-sigma 0.5 `
+  --one-shot-safety-sigma 0.25 `
   --one-shot-selector-layers 2 `
-  --one-shot-coverage-bins 4 `
-  --teacher-batch-size 4 `
-  --teacher-cache-dir outputs/candidate_pruning_one_shot_v10_teacher `
+  --one-shot-coverage-bins 0 `
+  --one-shot-max-position-shift 0.05 `
+  --lambda-one-shot-surrogate-fit 0 `
+  --lambda-one-shot-surrogate-threshold 0 `
+  --lambda-joint-fit 0.05 `
+  --lambda-joint-threshold-violation 0.5 `
+  --teacher-cache-dir outputs/candidate_pruning_one_shot_v11_teacher `
   --no-resample-train-each-epoch `
-  --output outputs/candidate_pruning_one_shot_v10.pt
+  --output outputs/candidate_pruning_one_shot_v11.pt
 ```
 
-已有最佳 proposal 且缓存指纹完全一致时，可跳过候选预训练：
+交互式终端默认显示训练、验证、样本指纹和教师生成进度。`--no-progress` 可关闭 batch 进度。
+
+### v10 checkpoint 与教师缓存
+
+v10 checkpoint 仍可按原语义加载、评估和部署；v11 新位置模块由版本配置隔离，读取 v10 不会自动启用 v11 联动。
+
+也可以用已有 v10 proposal 初始化 v11：
 
 ```powershell
 python scripts/train_candidate_pruning.py `
-  --epochs 130 `
-  --candidate-pretrain-epochs 0 `
-  --proposal-checkpoint outputs/candidate_pruning_v9_proposal.pt `
-  --selector-calibration-epochs 0 `
+  --epochs 138 `
+  --candidate-pretrain-epochs 8 `
+  --proposal-checkpoint outputs/candidate_pruning_one_shot_v10_proposal.pt `
+  --selector-calibration-epochs 10 `
   --train-size 10000 `
   --val-size 2000 `
+  --batch-size 16 `
   --candidate-knots 28 `
   --num-points 192 `
-  --one-shot-selection-policy mass_topk `
-  --one-shot-safety-sigma 0.5 `
-  --one-shot-selector-layers 2 `
-  --one-shot-coverage-bins 4 `
-  --teacher-cache-dir outputs/candidate_pruning_one_shot_v10_teacher `
+  --fit-tolerance 0.005 `
+  --candidate-local-attention-bandwidth 0.08 `
+  --lambda-one-shot-surrogate-fit 0 `
+  --lambda-one-shot-surrogate-threshold 0 `
+  --lambda-joint-fit 0.05 `
+  --lambda-joint-threshold-violation 0.5 `
+  --teacher-cache-dir outputs/candidate_pruning_one_shot_v11_teacher `
   --no-resample-train-each-epoch `
-  --output outputs/candidate_pruning_one_shot_v10.pt
+  --output outputs/candidate_pruning_one_shot_v11.pt
 ```
 
-教师缓存绑定数据集指纹、proposal 权重指纹、配置、样本 ID 与张量形状。使用缓存时禁止 `--resample-train-each-epoch`；不匹配会直接报错，不会静默套用旧标签。
+推荐用 5–10 轮 proposal 预训练适配 v11 的 Gaussian 局部 attention；上例的 8 轮使后续蒸馏仍保留 120 轮。`--candidate-pretrain-epochs 0` 只复用固定 proposal，不会训练新增的局部 attention 行为：脚本会沿用 checkpoint 记录的 attention 带宽，并校验 `model_config` 中会改变 proposal 的非权重语义；不匹配时直接报错。缺少 `model_config` 的历史文件只能按全局 attention 回退并给出无法完整校验的警告。新生成的 `*_proposal.pt` 会保存 `model_config`，便于之后安全复用。
 
-一次性选择阶段默认关闭截断幂 surrogate 的 fit/violation 梯度，KeepMask 由标准 B 样条
-Hard-RMS 教师的 hard mask、最终状态 soft risk、保留/删除成对排序和节点数监督。canonical
-位置监督只用于教师生成前的 proposal 预训练；蒸馏阶段不再用第二套位置目标改变教师槽位。
-checkpoint 只依据真实标准 B 样条部署指标排序：未达到目标通过率时比较通过率及均值/P95 RMS；
-达到目标后优先最少节点，再以真实 RMS 和最终节点匹配作 tie-break；surrogate fit 不参与选优。
+不要把 v10 教师缓存直接用于 v11。Gaussian 局部 attention、proposal 指纹和 v11 的监督契约已经变化，第一次 v11 训练必须使用新的缓存目录，且不要加 `--reuse-teacher-cache`。只有 proposal 权重、数据集、教师配置和张量形状全部不变时，后续 v11 训练才能加 `--reuse-teacher-cache`。
 
-## 评估、可视化与用户点云
+## 独立测试
 
 ```powershell
 python scripts/evaluate_checkpoint.py `
-  --checkpoint outputs/candidate_pruning_one_shot_v10.pt `
+  --checkpoint outputs/candidate_pruning_one_shot_v11.pt `
   --num-samples 2000 `
   --batch-size 32 `
   --seed 20000 `
   --fit-tolerance 0.005 `
-  --json-output outputs/candidate_pruning_one_shot_v10_evaluation.json
+  --knot-tolerance 0.05 `
+  --json-output outputs/candidate_pruning_one_shot_v11_evaluation.json
 ```
 
-旧 v9 权重可先用结构化掩码做部署消融，无需重训：
+重点查看：
 
-```powershell
-python scripts/evaluate_checkpoint.py `
-  --checkpoint outputs/candidate_pruning_v9.pt `
-  --num-samples 2000 `
-  --one-shot-selection-policy mass_topk `
-  --one-shot-safety-sigma 0.5 `
-  --one-shot-coverage-bins 4 `
-  --json-output outputs/candidate_pruning_v9_structured_mask.json
-```
+- proposal recall@`0.005/0.01/0.02/0.05`；
+- `proposal_full → selected_pre_update → deployment_post_update` 的 Precision/Recall/F1；
+- `position_recall_delta` 和 `position_precision_delta`；
+- one-shot 节点数、平均/P95/最大 RMS 与阈值满足率；
+- 最终 `match@tolerance` 和 matched MAE。
+
+需要离线 Hard-RMS 对照时额外加 `--run-hard-diagnostic`。它只做诊断，会显著增加时间，不会替换 LearnedKeep 部署。
+
+## 可视化
+
+四联对比图：
 
 ```powershell
 python scripts/visualize_result.py `
-  --checkpoint outputs/candidate_pruning_one_shot_v10.pt `
-  --sample-index 0 `
+  --checkpoint outputs/candidate_pruning_one_shot_v11.pt `
   --seed 20000 `
+  --sample-index 0 `
   --fit-tolerance 0.005 `
   --pruning-view comparison `
-  --timing-repeats 3 `
+  --timing-repeats 5 `
   --dpi 600 `
-  --output outputs/candidate_pruning_one_shot_v10_sample_000.png
+  --output outputs/candidate_pruning_one_shot_v11_comparison_000.png
 ```
 
-`comparison` 输出四个同尺度曲线面板：原始/source 样条、全部冗余候选、LearnedKeep 部署、
-离线 Hard-RMS 删除。每个面板同时绘制采样点、控制多边形、内部节点在曲线上的位置、完整
-节点向量、RMS 和 CPU 时间；Learned/Hard 时间均包含同一次网络前向。
+四个面板依次是源曲线、全部 proposal、一次性 LearnedKeep 部署和离线 Hard-RMS 删除。图中 `net` 是网络前向时间，`refit` 是一次标准 B 样条重拟合时间，`prune` 是多次试删与重拟合的离线硬搜索时间。
+
+### 批量分层四联图
+
+论文批量图推荐使用独立脚本：
+
+```powershell
+python scripts/visualize_batch_comparison.py `
+  --checkpoint outputs/candidate_pruning_one_shot_v11.pt `
+  --output-dir outputs/v11_batch_comparison `
+  --num-figures 10 `
+  --scan-size 512 `
+  --seed 20000 `
+  --stratify-by source `
+  --knot-counts 4 8 12 16 20 `
+  --mse-tolerance 2.5e-5 `
+  --selection-seed 12345 `
+  --dpi 600 `
+  --timing-repeats 5
+```
+
+该脚本先按 source 或 canonical 内部节点数分层，再用固定 `selection-seed` 随机轮转抽样，输出若干 PNG 以及 `comparison_manifest.json`、`comparison_manifest.csv`。批量图使用：
+
+\[
+\operatorname{MSE}=\frac1M\sum_i\|C(t_i)-Q_i\|_2^2,
+\]
+
+不再开平方；因此 `2.5e-5=(0.005)^2`。四个面板中 all-proposal 和传统 Hard 删除都从固定 `proposal_internal_knots` 开始，LearnedKeep 则使用 `deployment_internal_knots[learned_keep_mask]`。Hard 是同一 proposal 上反复执行标准 refit 的传统贪心单节点删除，不是模型的在线部署步骤。
+
+## 用户点云
+
+输入必须是沿曲线方向排列的 `.csv`、`.txt`、`.npy` 或 `.pt` 点序列：
 
 ```powershell
 python scripts/fit_point_cloud.py `
-  --checkpoint outputs/candidate_pruning_one_shot_v10.pt `
+  --checkpoint outputs/candidate_pruning_one_shot_v11.pt `
   --point-cloud data/my_curve.csv `
   --fit-tolerance 0.005 `
-  --json-output outputs/my_curve_fit.json `
-  --figure-output outputs/my_curve_fit.png
+  --json-output outputs/my_curve_v11.json `
+  --figure-output outputs/my_curve_v11.png
 ```
 
-用户点云必须沿曲线方向有序。默认部署是“一次网络前向 + 一次标准 B 样条 refit”，不会逐样本运行 Hard-RMS 剪枝，因此 `RMS≤ε` 是独立测试分布上的统计满足率，不是每条输入的硬保证。
+用户点云会按训练长度重采样、归一化、执行一次网络前向，并在原始点分辨率上做一次标准 B 样条 refit。
 
 ## 文档
 
 - [模型与数据流](docs/architecture.md)
 - [数据与训练流程](docs/training_pipeline.md)
-- [部署与指标](docs/deployment_pipeline.md)
+- [部署、评估与可视化](docs/deployment_pipeline.md)
 - [数学定义](docs/math_formulation.md)
+- [版本演化](docs/pruning_redesign.md)
 - [文件索引](docs/file_guide.md)
 
-运行测试：
-
-```powershell
-python -m pytest -q
-```
+当前实现提供的是学习式一次性近似，不保证每条新曲线都达到 `ε`，也不保证全局最少节点。实际效果应以独立 seed 的标准 B 样条 refit、节点匹配和耗时结果为准。

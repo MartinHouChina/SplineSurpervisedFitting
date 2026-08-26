@@ -1,6 +1,6 @@
 # 候选生成与交互消冗框架（v7 历史设计）
 
-> 本文记录 v7 的逐节点硬验证方案，不是当前 v10 默认部署。v10 请参阅
+> 本文记录 v7 的逐节点硬验证方案，不是当前 v11 默认部署。v11 请参阅
 > [模型数据流](architecture.md)、[训练流程](training_pipeline.md) 与
 > [部署流程](deployment_pipeline.md)。
 

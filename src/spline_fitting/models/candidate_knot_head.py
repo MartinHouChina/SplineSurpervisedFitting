@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -23,6 +25,7 @@ class CandidateKnotHead(nn.Module):
         *,
         min_gap: float = 1e-3,
         attention_heads: int = 4,
+        local_attention_bandwidth: float = 0.0,
     ) -> None:
         super().__init__()
         if num_candidates <= 0:
@@ -33,10 +36,19 @@ class CandidateKnotHead(nn.Module):
             raise ValueError(
                 "min_gap must be positive and leave positive interval budget"
             )
+        if (
+            not math.isfinite(local_attention_bandwidth)
+            or local_attention_bandwidth < 0.0
+        ):
+            raise ValueError(
+                "local_attention_bandwidth must be finite and non-negative"
+            )
 
         self.hidden_dim = int(hidden_dim)
         self.num_candidates = int(num_candidates)
         self.min_gap = float(min_gap)
+        self.attention_heads = int(attention_heads)
+        self.local_attention_bandwidth = float(local_attention_bandwidth)
 
         # Interval queries have a fixed left-to-right identity.  Positional
         # anchors make the initial attention cover the complete domain, while
@@ -48,9 +60,7 @@ class CandidateKnotHead(nn.Module):
         nn.init.trunc_normal_(self.interval_queries, std=0.02)
         self.register_buffer(
             "interval_query_anchors",
-            (
-                torch.arange(self.num_candidates + 1, dtype=torch.float32) + 0.5
-            )
+            (torch.arange(self.num_candidates + 1, dtype=torch.float32) + 0.5)
             / (self.num_candidates + 1),
         )
 
@@ -117,26 +127,54 @@ class CandidateKnotHead(nn.Module):
             positions,
             self.hidden_dim,
         )
-        anchors = self.interval_query_anchors.to(
-            device=local_features.device,
-            dtype=local_features.dtype,
-        ).unsqueeze(0).expand(batch, -1)
+        anchors = (
+            self.interval_query_anchors.to(
+                device=local_features.device,
+                dtype=local_features.dtype,
+            )
+            .unsqueeze(0)
+            .expand(batch, -1)
+        )
         anchor_encoding = KnotHead._sinusoidal_position_encoding(
             anchors,
             self.hidden_dim,
         )
-        queries = self.interval_queries.to(local_features.dtype).unsqueeze(0).expand(
-            batch, -1, -1
+        queries = (
+            self.interval_queries.to(local_features.dtype)
+            .unsqueeze(0)
+            .expand(batch, -1, -1)
         )
         queries = (
             queries
             + anchor_encoding
             + self.global_projection(global_features).unsqueeze(1)
         )
+        attention_bias = None
+        local_attention_bias = None
+        if self.local_attention_bandwidth > 0.0:
+            # Each interval query receives an anchor-centred Gaussian bias in
+            # parameter space.  Unlike the former positional encoding alone,
+            # this makes the cross-attention itself local while retaining a
+            # smooth tail that can still collect wider geometric context.
+            distance = positions.unsqueeze(1) - anchors.unsqueeze(-1)
+            local_attention_bias = (
+                -0.5 * (distance / self.local_attention_bandwidth).square()
+            )
+            local_attention_bias = local_attention_bias.clamp_min(-30.0)
+            attention_bias = (
+                local_attention_bias.unsqueeze(1)
+                .expand(-1, self.attention_heads, -1, -1)
+                .reshape(
+                    batch * self.attention_heads,
+                    self.num_candidates + 1,
+                    positions.shape[1],
+                )
+            )
         attended, attention_weights = self.cross_attention(
             queries,
             memory,
             memory,
+            attn_mask=attention_bias,
             need_weights=True,
             average_attn_weights=True,
         )
@@ -173,4 +211,9 @@ class CandidateKnotHead(nn.Module):
             "candidate_intervals": candidate_intervals,
             "raw_candidate_interval_logits": raw_interval_logits,
             "candidate_attention_weights": attention_weights,
+            "candidate_local_attention_bias": (
+                local_attention_bias
+                if local_attention_bias is not None
+                else candidate_positions.new_empty(0)
+            ),
         }

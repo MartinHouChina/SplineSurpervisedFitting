@@ -187,11 +187,12 @@ def prune_candidate_output_batch(
             raise KeyError(f"candidate-pruning output is missing {key}")
     results: list[MinimalKnotPruningResult] = []
     deployed: list[HardGatedBSplineFit] = []
+    proposal_knots = output.get("proposal_internal_knots", output["internal_knots"])
     for index in range(points.shape[0]):
         result = prune_knots_to_rms_tolerance(
             output["params"][index],
             points[index],
-            output["internal_knots"][index],
+            proposal_knots[index],
             error_tolerance=error_tolerance,
             degree=degree,
             smoothness_weight=smoothness_weight,
@@ -230,6 +231,15 @@ def candidate_loss_from_checkpoint(
         ),
         deletion_control_ridge=float(config.get("deletion_control_ridge", 0.0)),
         teacher_ranking_margin=float(config.get("teacher_ranking_margin", 1.0)),
+        candidate_coverage_tolerances=tuple(
+            float(value) for value in config.get("candidate_coverage_tolerances", ())
+        ),
+        position_aware_distribution=bool(
+            config.get("position_aware_distribution", False)
+        ),
+        joint_position_supervision=bool(
+            config.get("joint_position_supervision", False)
+        ),
     )
 
 
@@ -251,7 +261,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Historical activity threshold. For v8-v10 it is ignored by deployment; "
+            "Historical activity threshold. For v8-v11 it is ignored by deployment; "
             "the learned mask (or centered keep probability >= 0.5 fallback) is used."
         ),
     )
@@ -269,7 +279,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Normalized RMS bound for v7 hard candidate pruning. For v8-v10 it is "
+            "Normalized RMS bound for v7 hard candidate pruning. For v8-v11 it is "
             "reporting-only: it measures threshold satisfaction and never changes "
             "the learned one-shot mask. Defaults to the checkpoint deployment "
             "error tolerance, then canonical label tolerance."
@@ -279,7 +289,7 @@ def main() -> None:
         "--run-hard-diagnostic",
         action="store_true",
         help=(
-            "For v8-v10 only, additionally run the offline greedy hard-pruning "
+            "For v8-v11 only, additionally run the offline greedy hard-pruning "
             "teacher for comparison. It never replaces one-shot deployment."
         ),
     )
@@ -363,7 +373,7 @@ def main() -> None:
         parser.error("one-shot selection overrides require a one-shot checkpoint")
     candidate_hard_v7 = candidate_pruning and not candidate_one_shot
     if args.run_hard_diagnostic and not candidate_one_shot:
-        parser.error("--run-hard-diagnostic requires a v8-v10 one-shot checkpoint")
+        parser.error("--run-hard-diagnostic requires a v8-v11 one-shot checkpoint")
     count_conditioned = structure_mode in {
         "count_conditioned",
         "interactive_dynamic",
@@ -459,7 +469,7 @@ def main() -> None:
     pruning_accepted_deletions: list[int] = []
     pruning_threshold_satisfied: list[bool] = []
     pruning_first_rejected_rms: list[float] = []
-    candidate_recall_tolerances = (0.005, 0.01, 0.02)
+    candidate_recall_tolerances = (0.005, 0.01, 0.02, 0.05)
     candidate_proposal_matched = {
         tolerance: 0 for tolerance in candidate_recall_tolerances
     }
@@ -469,6 +479,43 @@ def main() -> None:
     candidate_proposal_error_sum = {
         tolerance: 0.0 for tolerance in candidate_recall_tolerances
     }
+    knot_stage_accumulators = {
+        stage: {
+            tolerance: {
+                "matched_count": 0,
+                "predicted_count": 0,
+                "true_count": 0,
+                "matched_error_sum": 0.0,
+            }
+            for tolerance in candidate_recall_tolerances
+        }
+        for stage in (
+            "proposal_full",
+            "selected_pre_update",
+            "deployment_post_update",
+        )
+    }
+
+    def accumulate_knot_stage(
+        stage: str,
+        predicted: torch.Tensor,
+        target: torch.Tensor,
+    ) -> None:
+        for stage_tolerance in candidate_recall_tolerances:
+            stage_matching = match_internal_knots(
+                predicted,
+                target,
+                tolerance=stage_tolerance,
+            )
+            accumulator = knot_stage_accumulators[stage][stage_tolerance]
+            accumulator["matched_count"] += stage_matching.matched_count
+            accumulator["predicted_count"] += stage_matching.predicted_count
+            accumulator["true_count"] += stage_matching.true_count
+            if stage_matching.matched_count:
+                accumulator["matched_error_sum"] += (
+                    stage_matching.matched_mae * stage_matching.matched_count
+                )
+
     keep_probability_values: list[torch.Tensor] = []
     keep_probability_ranges: list[torch.Tensor] = []
     learned_keep_masks: list[torch.Tensor] = []
@@ -543,10 +590,16 @@ def main() -> None:
                 deployment_output = output
                 for index in range(batch_size):
                     target = true_knots[index, true_mask[index]].cpu()
-                    # ``internal_knots`` is the pruning head's refined full
-                    # candidate set.  These proposal diagnostics deliberately
-                    # precede any hard deletion.
-                    refined_candidates = output["internal_knots"][index].detach().cpu()
+                    # v11 keeps the immutable proposal set separate from the
+                    # Keep-conditioned deployment locations.
+                    refined_candidates = (
+                        output.get("proposal_internal_knots", output["internal_knots"])[
+                            index
+                        ]
+                        .detach()
+                        .cpu()
+                    )
+                    accumulate_knot_stage("proposal_full", refined_candidates, target)
                     for proposal_tolerance in candidate_recall_tolerances:
                         proposal_matching = match_internal_knots(
                             refined_candidates,
@@ -564,6 +617,29 @@ def main() -> None:
                                 proposal_matching.matched_mae
                                 * proposal_matching.matched_count
                             )
+                    if candidate_one_shot:
+                        learned_stage_mask = (
+                            output.get(
+                                "final_hard_keep_mask",
+                                output["keep_probability"] >= 0.5,
+                            )[index]
+                            .detach()
+                            .cpu()
+                            .to(torch.bool)
+                        )
+                        accumulate_knot_stage(
+                            "selected_pre_update",
+                            refined_candidates[learned_stage_mask],
+                            target,
+                        )
+                        deployment_candidates = (
+                            output["internal_knots"][index].detach().cpu()
+                        )
+                        accumulate_knot_stage(
+                            "deployment_post_update",
+                            deployment_candidates[learned_stage_mask],
+                            target,
+                        )
             else:
                 activity = output["activity"]
                 activity_values.append(activity.cpu())
@@ -727,8 +803,14 @@ def main() -> None:
             * mean_losses["teacher_distribution_loss"],
             "teacher_critical_recall": loss_fn.weights.teacher_critical_recall
             * mean_losses["teacher_critical_recall_loss"],
+            "teacher_false_positive": loss_fn.weights.teacher_false_positive
+            * mean_losses["teacher_false_positive_loss"],
             "teacher_count": loss_fn.weights.teacher_count
             * mean_losses["teacher_count_loss"],
+            "policy_count": loss_fn.weights.policy_count
+            * mean_losses["policy_count_loss"],
+            "canonical_selection": loss_fn.weights.canonical_selection
+            * mean_losses["canonical_selection_loss"],
             "complexity": loss_fn.weights.complexity * mean_losses["complexity_loss"],
         }
     else:
@@ -892,6 +974,48 @@ def main() -> None:
     }
     candidate_proposal_recall = candidate_proposal_metrics["0.020"]["recall"]
     candidate_proposal_mae = candidate_proposal_metrics["0.020"]["matched_mae"]
+
+    def finalize_stage_metric(values: dict[str, int | float]) -> dict[str, object]:
+        matched = int(values["matched_count"])
+        predicted = int(values["predicted_count"])
+        true = int(values["true_count"])
+        precision_value = matched / predicted if predicted else 0.0
+        recall_value = matched / true if true else 0.0
+        f1_value = (
+            2.0 * precision_value * recall_value / (precision_value + recall_value)
+            if precision_value + recall_value
+            else 0.0
+        )
+        return {
+            "matched_count": matched,
+            "predicted_count": predicted,
+            "true_count": true,
+            "precision": precision_value,
+            "recall": recall_value,
+            "f1": f1_value,
+            "matched_mae": (
+                float(values["matched_error_sum"]) / matched if matched else None
+            ),
+        }
+
+    knot_stage_metrics: dict[str, object] = {}
+    for stage_tolerance in candidate_recall_tolerances:
+        tolerance_key = f"{stage_tolerance:.3f}"
+        stage_values = {
+            stage: finalize_stage_metric(
+                knot_stage_accumulators[stage][stage_tolerance]
+            )
+            for stage in knot_stage_accumulators
+        }
+        pre = stage_values["selected_pre_update"]
+        post = stage_values["deployment_post_update"]
+        stage_values["position_recall_delta"] = float(post["recall"]) - float(
+            pre["recall"]
+        )
+        stage_values["position_precision_delta"] = float(post["precision"]) - float(
+            pre["precision"]
+        )
+        knot_stage_metrics[tolerance_key] = stage_values
     pruning_report = (
         {
             "method": "greedy_single_deletion_standard_bspline_refit",
@@ -1016,7 +1140,7 @@ def main() -> None:
     )
 
     report = {
-        "schema_version": 11,
+        "schema_version": 12,
         "checkpoint": str(args.checkpoint),
         "checkpoint_epoch": checkpoint.get("epoch"),
         "checkpoint_selection_metric": checkpoint.get("selection_metric"),
@@ -1063,7 +1187,7 @@ def main() -> None:
         "minimal_knot_pruning": pruning_report,
         "one_shot_deployment": one_shot_report,
         "candidate_proposal_definition": (
-            "refined output['internal_knots'] before deployment selection"
+            "output['proposal_internal_knots'] before LearnedKeep selection"
             if candidate_pruning
             else None
         ),
@@ -1077,6 +1201,7 @@ def main() -> None:
         "candidate_proposal_matched_mae": (
             candidate_proposal_mae if candidate_pruning else None
         ),
+        "knot_stage_metrics": knot_stage_metrics if candidate_one_shot else None,
         "zero_knot_fraction": float((retained == 0).float().mean()),
         "all_knot_fraction": float((retained == candidate_count).float().mean()),
         "network_objective_role": (
@@ -1178,7 +1303,7 @@ def main() -> None:
         print(f"  deployment count histogram: {hard_histogram}")
     elif candidate_pruning:
         print("\nHigh-recall candidate diagnostics")
-        print("  proposal set: refined candidates before deployment selection")
+        print("  proposal set: immutable proposal candidates before selection")
         for tolerance in candidate_recall_tolerances:
             metric = candidate_proposal_metrics[f"{tolerance:.3f}"]
             mae_text = (
@@ -1191,6 +1316,17 @@ def main() -> None:
                 f"{metric['recall']:.3f}, matched MAE={mae_text}"
             )
         if candidate_one_shot:
+            print("  staged knot matching (proposal -> selected -> position-updated)")
+            for tolerance in (0.01, 0.02, 0.05):
+                stages = knot_stage_metrics[f"{tolerance:.3f}"]
+                pre = stages["selected_pre_update"]
+                post = stages["deployment_post_update"]
+                print(
+                    f"    @{tolerance:.3f}: pre P/R/F1="
+                    f"{pre['precision']:.3f}/{pre['recall']:.3f}/{pre['f1']:.3f} "
+                    f"-> post={post['precision']:.3f}/{post['recall']:.3f}/"
+                    f"{post['f1']:.3f}"
+                )
             print(
                 "  learned keep probability mass mean (deployment): "
                 f"{expected_count_mean:.3f}"

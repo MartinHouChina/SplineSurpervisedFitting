@@ -74,6 +74,9 @@ class SplineFittingNetwork(nn.Module):
         one_shot_safety_sigma: float = 0.0,
         one_shot_selector_layers: int = 1,
         one_shot_coverage_bins: int = 0,
+        candidate_local_attention_bandwidth: float = 0.0,
+        one_shot_joint_position_refinement: bool = False,
+        one_shot_max_position_shift: float = 0.05,
     ) -> None:
         super().__init__()
         if structure_mode not in {
@@ -140,6 +143,7 @@ class SplineFittingNetwork(nn.Module):
                 max_internal_knots,
                 min_gap=min_knot_gap,
                 attention_heads=structure_attention_heads,
+                local_attention_bandwidth=candidate_local_attention_bandwidth,
             )
             self.pruning_head = InteractivePruningHead(
                 hidden_dim,
@@ -155,6 +159,11 @@ class SplineFittingNetwork(nn.Module):
                 one_shot_safety_sigma=one_shot_safety_sigma,
                 one_shot_selector_layers=one_shot_selector_layers,
                 one_shot_coverage_bins=one_shot_coverage_bins,
+                one_shot_joint_position_refinement=(
+                    one_shot_joint_position_refinement
+                    and self.structure_mode == "candidate_pruning_one_shot"
+                ),
+                one_shot_max_position_shift=one_shot_max_position_shift,
             )
         elif self.structure_mode == "interactive_dynamic":
             self.structure_head = InteractiveStructureHead(
@@ -317,7 +326,12 @@ class SplineFittingNetwork(nn.Module):
             residual_features=local_residual,
             global_features=global_features,
         )
-        refined_knots = pruning_output["refined_candidate_knots"]
+        proposal_knots = pruning_output.get(
+            "proposal_candidate_knots", pruning_output["refined_candidate_knots"]
+        )
+        refined_knots = pruning_output.get(
+            "deployment_candidate_knots", pruning_output["refined_candidate_knots"]
+        )
         keep_probability = pruning_output["keep_probability"]
         learned_keep_mask = pruning_output.get(
             "final_hard_keep_mask", keep_probability >= 0.5
@@ -334,6 +348,11 @@ class SplineFittingNetwork(nn.Module):
                 + keep_probability
                 - keep_probability.detach(),
             )
+            if self.detach_activity_gate_for_fit:
+                # During v11 position calibration the differentiable spline
+                # fit should improve deployed locations, not reopen extra
+                # candidates through the straight-through mask shortcut.
+                fit_activity_gate = fit_activity_gate.detach()
         else:
             # v7 keeps the learned mask diagnostic-only and fits all proposals.
             fit_activity_gate = torch.ones_like(refined_knots)
@@ -363,8 +382,11 @@ class SplineFittingNetwork(nn.Module):
             **candidate_output,
             **pruning_output,
             # Compatibility aliases used by Trainer and diagnostics.  The
-            # mask is only a learned diagnostic; hard deployment pruning does
-            # not trust this 0.5 threshold.
+            # historical internal_knots name remains the actual deployment
+            # geometry.  v11 additionally preserves the immutable proposal
+            # geometry used by the offline Hard-RMS teacher.
+            "proposal_internal_knots": proposal_knots,
+            "deployment_internal_knots": refined_knots,
             "internal_knots": refined_knots,
             "activity": keep_probability,
             "activity_probability_logits": pruning_output["keep_logits"],

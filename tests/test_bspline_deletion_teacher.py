@@ -13,6 +13,7 @@ from spline_fitting.evaluation.bspline_inference import (  # noqa: E402
     refit_bspline_control_points,
 )
 from spline_fitting.spline.bspline_deletion_teacher import (  # noqa: E402
+    single_knot_deletion_mse_batch,
     single_knot_deletion_rmse_batch,
 )
 
@@ -117,6 +118,64 @@ class BSplineDeletionTeacherTests(unittest.TestCase):
         )
 
         torch.testing.assert_close(actual, expected, rtol=2e-10, atol=2e-12)
+
+    def test_mse_batch_is_finite_rmse_square_and_preserves_legacy_result(self) -> None:
+        parameters, points, knots = self._inputs()
+        options = {
+            "smoothness_weight": 2e-3,
+            "control_ridge": 4e-4,
+            "interpolate_endpoints": False,
+        }
+
+        legacy_before = single_knot_deletion_rmse_batch(
+            parameters,
+            points,
+            knots,
+            **options,
+        )
+        mse = single_knot_deletion_mse_batch(
+            parameters,
+            points,
+            knots,
+            **options,
+        )
+        legacy_after = single_knot_deletion_rmse_batch(
+            parameters,
+            points,
+            knots,
+            **options,
+        )
+
+        self.assertEqual(mse.shape, knots.shape)
+        self.assertTrue(bool(torch.isfinite(mse).all()))
+        self.assertTrue(bool((mse >= 0.0).all()))
+        torch.testing.assert_close(
+            mse,
+            legacy_before.square(),
+            rtol=5e-14,
+            atol=5e-16,
+        )
+        torch.testing.assert_close(
+            legacy_after,
+            legacy_before,
+            rtol=5e-14,
+            atol=5e-16,
+        )
+
+        expected_legacy = self._reference(
+            parameters,
+            points,
+            knots,
+            smoothness_weight=options["smoothness_weight"],
+            control_ridge=options["control_ridge"],
+            interpolate_endpoints=options["interpolate_endpoints"],
+        )
+        torch.testing.assert_close(
+            legacy_after,
+            expected_legacy,
+            rtol=2e-10,
+            atol=2e-12,
+        )
 
     def test_one_candidate_produces_bezier_deletion_state(self) -> None:
         parameters = torch.linspace(0.0, 1.0, 45, dtype=self.dtype).unsqueeze(0)

@@ -5,6 +5,7 @@ import hashlib
 import json
 import sys
 import time
+from collections.abc import Mapping
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from spline_fitting.checkpointing import (
-    V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+    V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
 )
 from spline_fitting.data.synthetic import SyntheticCubicBSplineDataset
 from spline_fitting.losses import CandidatePruningLoss, CandidatePruningLossWeights
@@ -100,7 +101,7 @@ def _checkpoint_with_metadata(
             "model_config": model_config,
             "dataset_config": dataset_config,
             "dataset_type": "synthetic_open_cubic_bspline",
-            "objective_version": V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+            "objective_version": V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
             "loss_config": loss_config,
             "training_config": training_config,
             "deployment_config": deployment_config,
@@ -114,12 +115,104 @@ def _checkpoint_with_metadata(
 def _model_fingerprint(model: torch.nn.Module) -> str:
     """Bind an offline teacher cache to the exact proposal-producing weights."""
     digest = hashlib.sha256()
+    proposal_prefixes = (
+        "encoder.",
+        "parameter_head.",
+        "candidate_head.",
+        "pruning_head.analytic_projection.",
+        "pruning_head.input_norm.",
+        "pruning_head.self_attention.",
+        "pruning_head.self_norm.",
+        "pruning_head.feed_forward.",
+        "pruning_head.output_norm.",
+        "pruning_head.position_residual_head.",
+    )
+    proposal_metadata = {
+        "degree": int(model.degree),
+        "lambda_poly": float(model.lambda_poly),
+        "lambda_knot": float(model.lambda_knot),
+        "pruning_residual_bandwidth": float(model.pruning_residual_bandwidth),
+        "parameter_min_gap": float(model.parameter_head.min_gap),
+        "parameter_gap_parameterization": str(
+            model.parameter_head.gap_parameterization
+        ),
+        "geometry_feature_mode": str(model.encoder.feature_mode),
+        "candidate_count": int(model.candidate_head.num_candidates),
+        "candidate_attention_heads": int(model.candidate_head.attention_heads),
+        "candidate_min_gap": float(model.candidate_head.min_gap),
+        "candidate_local_attention_bandwidth": float(
+            model.candidate_head.local_attention_bandwidth
+        ),
+        "proposal_position_fraction": float(model.pruning_head.max_position_fraction),
+        "pruning_attention_heads": int(model.pruning_head.self_attention.num_heads),
+        "pruning_min_gap": float(model.pruning_head.min_gap),
+        "fixed_proposal_geometry": bool(
+            model.pruning_head.one_shot_fixed_proposal_geometry
+        ),
+    }
+    digest.update(
+        json.dumps(proposal_metadata, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    )
     for name, value in sorted(model.state_dict().items()):
+        if not name.startswith(proposal_prefixes):
+            continue
         digest.update(name.encode("utf-8"))
         tensor = value.detach().cpu().contiguous()
         digest.update(str(tuple(tensor.shape)).encode("ascii"))
+        digest.update(str(tensor.dtype).encode("ascii"))
+        if tensor.is_floating_point():
+            # CPU linear algebra can differ by a few float32 ulps across
+            # otherwise identical runs.  Such sub-micro changes do not alter
+            # teacher geometry, so hash a stable 1e-6 quantisation instead of
+            # making cache reuse depend on thread-level reduction order.
+            tensor = torch.round(tensor.to(torch.float64) * 1e6).to(torch.int64)
         digest.update(tensor.numpy().tobytes())
     return digest.hexdigest()
+
+
+_PROPOSAL_SEMANTIC_KEYS = (
+    "point_dim",
+    "degree",
+    "hidden_dim",
+    "encoder_layers",
+    "max_internal_knots",
+    "min_parameter_gap",
+    "min_knot_gap",
+    "gap_parameterization",
+    "lambda_poly",
+    "lambda_knot",
+    "structure_mode",
+    "structure_attention_heads",
+    "geometry_feature_mode",
+    "pruning_residual_bandwidth",
+    "one_shot_fixed_proposal_geometry",
+    "compute_first_derivative",
+)
+
+
+def _proposal_semantic_mismatches(
+    requested: Mapping[str, object],
+    saved: Mapping[str, object],
+) -> list[str]:
+    """Find non-weight settings that can change fixed proposal geometry."""
+
+    mismatches: list[str] = []
+    for key in _PROPOSAL_SEMANTIC_KEYS:
+        if key not in saved or key not in requested:
+            continue
+        requested_value = requested[key]
+        saved_value = saved[key]
+        if isinstance(requested_value, float) or isinstance(saved_value, float):
+            equal = abs(float(requested_value) - float(saved_value)) <= 1e-12
+        else:
+            equal = requested_value == saved_value
+        if not equal:
+            mismatches.append(
+                f"{key}: requested={requested_value!r}, checkpoint={saved_value!r}"
+            )
+    return mismatches
 
 
 def _dataset_fingerprint(
@@ -237,7 +330,10 @@ def _build_or_load_teacher_cache(
                 # Refined candidates are strictly ordered without sorting, so
                 # their left-to-right slot identity remains stable after the
                 # proposal backbone is frozen for distillation.
-                output["internal_knots"].detach().cpu().to(torch.float64),
+                output.get("proposal_internal_knots", output["internal_knots"])
+                .detach()
+                .cpu()
+                .to(torch.float64),
                 sample_indices=batch["sample_id"],
                 config=config,
             )
@@ -261,12 +357,19 @@ def _set_one_shot_trainable(
     *,
     calibrate_positions: bool,
 ) -> list[torch.nn.Parameter]:
-    """Freeze proposal geometry and expose only cache-compatible head modules."""
+    """Freeze proposal geometry and expose cache-compatible v11 student modules."""
     for parameter in model.parameters():
         parameter.requires_grad_(False)
     module_names = ["keep_head", "adaptive_threshold_head"]
     fixed_geometry = bool(
         getattr(model.pruning_head, "one_shot_fixed_proposal_geometry", False)
+    )
+    joint_refinement = bool(
+        getattr(
+            model.pruning_head,
+            "one_shot_joint_position_refinement",
+            False,
+        )
     )
     if fixed_geometry:
         module_names.extend(
@@ -283,7 +386,20 @@ def _set_one_shot_trainable(
         )
     else:
         module_names.append("position_to_keep_feedback")
-    if calibrate_positions and not fixed_geometry:
+    if calibrate_positions and joint_refinement:
+        module_names.extend(
+            [
+                "joint_preliminary_position_projection",
+                "joint_preliminary_position_norm",
+                "joint_preliminary_position_head",
+                "joint_position_to_keep_feedback",
+                "joint_position_to_keep_norm",
+                "joint_final_position_projection",
+                "joint_final_position_norm",
+                "joint_final_position_head",
+            ]
+        )
+    elif calibrate_positions and not fixed_geometry:
         module_names.extend(
             [
                 "keep_context_projection",
@@ -328,11 +444,16 @@ def _reset_one_shot_selector_to_neutral(
         for module_name in (
             "adaptive_threshold_head",
             "position_to_keep_feedback",
+            "joint_position_to_keep_feedback",
+            "joint_preliminary_position_head",
+            "joint_final_position_head",
         ):
             module = getattr(head, module_name, None)
             if module is None:
                 continue
-            final_linear = module[-1]
+            final_linear = (
+                module[-1] if isinstance(module, torch.nn.Sequential) else module
+            )
             final_linear.weight.zero_()
             final_linear.bias.zero_()
 
@@ -362,11 +483,11 @@ def main() -> None:
         "--joint-finetune-epochs",
         dest="keep_position_calibration_epochs",
         type=int,
-        default=0,
+        default=10,
         help=(
-            "Optional final low-learning-rate selector calibration epochs. In "
-            "v10 proposal positions remain frozen; this option never calibrates "
-            "or moves teacher-bound knot locations."
+            "Final low-learning-rate joint Keep/position calibration epochs. "
+            "The immutable proposal slots remain teacher-compatible while the "
+            "separate deployment positions are updated."
         ),
     )
     parser.add_argument("--batch-size", type=int, default=16)
@@ -440,7 +561,7 @@ def main() -> None:
             "Keep at zero to prevent the all-keep shortcut."
         ),
     )
-    parser.add_argument("--lambda-true-params", type=float, default=0.05)
+    parser.add_argument("--lambda-true-params", type=float, default=0.1)
     parser.add_argument("--lambda-candidate-coverage", type=float, default=5.0)
     parser.add_argument("--lambda-candidate-repulsion", type=float, default=0.05)
     parser.add_argument("--lambda-keep", type=float, default=1.0)
@@ -448,7 +569,7 @@ def main() -> None:
         "--lambda-remove-action",
         type=float,
         default=0.0,
-        help="Compatibility option; v10 one-shot training does not use sequential actions.",
+        help="Compatibility option; v11 one-shot training does not use sequential actions.",
     )
     parser.add_argument("--lambda-knot-position", type=float, default=2.0)
     parser.add_argument(
@@ -461,10 +582,32 @@ def main() -> None:
     parser.add_argument("--lambda-teacher-ranking", type=float, default=1.0)
     parser.add_argument("--lambda-teacher-distribution", type=float, default=2.0)
     parser.add_argument("--lambda-teacher-critical-recall", type=float, default=1.0)
+    parser.add_argument("--lambda-teacher-false-positive", type=float, default=1.0)
     parser.add_argument("--teacher-ranking-margin", type=float, default=1.0)
     parser.add_argument("--lambda-teacher-count", type=float, default=4.0)
+    parser.add_argument("--lambda-policy-count", type=float, default=4.0)
+    parser.add_argument("--lambda-canonical-selection", type=float, default=0.5)
+    parser.add_argument("--lambda-joint-position", type=float, default=1.0)
+    parser.add_argument(
+        "--lambda-joint-fit",
+        type=float,
+        default=0.05,
+        help=(
+            "Normalized truncated-power fit weight used only during joint "
+            "Keep/position calibration; its mask path is detached."
+        ),
+    )
+    parser.add_argument(
+        "--lambda-joint-threshold-violation",
+        type=float,
+        default=0.5,
+        help=(
+            "Surrogate RMS-threshold penalty used only during joint position "
+            "calibration to discourage deployment-fit regressions."
+        ),
+    )
     parser.add_argument("--lambda-complexity", type=float, default=0.1)
-    parser.add_argument("--positive-keep-weight", type=float, default=2.0)
+    parser.add_argument("--positive-keep-weight", type=float, default=1.5)
     parser.add_argument(
         "--one-shot-selection-policy",
         choices=("threshold", "mass_topk"),
@@ -477,7 +620,7 @@ def main() -> None:
     parser.add_argument(
         "--one-shot-safety-sigma",
         type=float,
-        default=0.5,
+        default=0.25,
         help=(
             "Bernoulli uncertainty reserve used by mass_topk. It adds sigma*std "
             "to probability mass before rounding the retained count."
@@ -492,11 +635,33 @@ def main() -> None:
     parser.add_argument(
         "--one-shot-coverage-bins",
         type=int,
-        default=4,
+        default=0,
         help=(
             "Reserve the highest-probability candidate in each parameter-domain "
             "bin before filling the remaining mass_topk budget; zero disables it."
         ),
+    )
+    parser.add_argument(
+        "--candidate-local-attention-bandwidth",
+        type=float,
+        default=0.08,
+        help=(
+            "Gaussian parameter-space bandwidth for anchor-centred candidate "
+            "cross-attention; zero restores the historical global attention."
+        ),
+    )
+    parser.add_argument(
+        "--candidate-coverage-tolerances",
+        type=float,
+        nargs="+",
+        default=(0.005, 0.01, 0.02),
+        help="Multi-scale proposal-recall margins used during pretraining.",
+    )
+    parser.add_argument(
+        "--one-shot-max-position-shift",
+        type=float,
+        default=0.05,
+        help="Maximum absolute v11 deployment-knot correction in [0,1].",
     )
     parser.add_argument(
         "--initial-keep-probability",
@@ -513,7 +678,7 @@ def main() -> None:
         type=float,
         default=0.97,
         help=(
-            "Validation feasibility target. Before reaching it v10 ranks by "
+            "Validation feasibility target. Before reaching it v11 ranks by "
             "real standard-B-spline pass rate and mean/P95 RMS; afterwards it "
             "minimizes retained knots, with fit and localization as tie-breakers."
         ),
@@ -535,7 +700,7 @@ def main() -> None:
         default=True,
         help=(
             "Generate exact standard-B-spline Hard-RMS labels offline. "
-            "Disabling this is unsupported by the v10 one-shot objective."
+            "Disabling this is unsupported by the v11 one-shot objective."
         ),
     )
     parser.add_argument("--teacher-risk-temperature", type=float, default=0.1)
@@ -558,13 +723,13 @@ def main() -> None:
         default=False,
         help=(
             "Regenerate curves each epoch. Unsupported with an index-aligned "
-            "offline teacher cache; keep this disabled for v10."
+            "offline teacher cache; keep this disabled for v11."
         ),
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=ROOT / "outputs" / "candidate_pruning_one_shot_v10.pt",
+        default=ROOT / "outputs" / "candidate_pruning_one_shot_v11.pt",
     )
     args = parser.parse_args()
 
@@ -574,6 +739,21 @@ def main() -> None:
         parser.error("--candidate-pretrain-epochs must lie in [0, epochs)")
     if args.candidate_pretrain_epochs == 0 and args.proposal_checkpoint is None:
         parser.error("zero candidate pretraining requires --proposal-checkpoint")
+    if args.proposal_checkpoint is not None and not args.proposal_checkpoint.is_file():
+        checkpoint_parent = args.proposal_checkpoint.parent
+        nearby = (
+            sorted(checkpoint_parent.glob("*.pt")) if checkpoint_parent.is_dir() else []
+        )
+        nearby_text = (
+            "\nAvailable checkpoints in that directory:\n  "
+            + "\n  ".join(str(path) for path in nearby)
+            if nearby
+            else ""
+        )
+        parser.error(
+            f"proposal checkpoint does not exist: {args.proposal_checkpoint}"
+            f"{nearby_text}"
+        )
     if (
         not 0
         <= args.keep_position_calibration_epochs
@@ -594,7 +774,7 @@ def main() -> None:
     if args.teacher_risk_temperature <= 0.0 or args.teacher_batch_size <= 0:
         parser.error("teacher temperature and batch size must be positive")
     if not args.exact_deletion_supervision:
-        parser.error("v10 requires --exact-deletion-supervision for offline labels")
+        parser.error("v11 requires --exact-deletion-supervision for offline labels")
     if args.resample_train_each_epoch:
         parser.error("offline teacher labels require --no-resample-train-each-epoch")
     if args.candidate_match_tolerance <= 0.0:
@@ -629,7 +809,13 @@ def main() -> None:
         args.lambda_teacher_ranking,
         args.lambda_teacher_distribution,
         args.lambda_teacher_critical_recall,
+        args.lambda_teacher_false_positive,
         args.lambda_teacher_count,
+        args.lambda_policy_count,
+        args.lambda_canonical_selection,
+        args.lambda_joint_position,
+        args.lambda_joint_fit,
+        args.lambda_joint_threshold_violation,
         args.lambda_complexity,
     )
     if any(value < 0.0 for value in nonnegative):
@@ -646,6 +832,22 @@ def main() -> None:
         parser.error("--one-shot-selector-layers must be positive")
     if args.one_shot_coverage_bins < 0:
         parser.error("--one-shot-coverage-bins must be non-negative")
+    if args.candidate_local_attention_bandwidth < 0.0:
+        parser.error("--candidate-local-attention-bandwidth must be non-negative")
+    if any(value <= 0.0 for value in args.candidate_coverage_tolerances):
+        parser.error("--candidate-coverage-tolerances must be positive")
+    if not 0.0 < args.one_shot_max_position_shift < 0.5:
+        parser.error("--one-shot-max-position-shift must lie in (0,0.5)")
+
+    effective_lambda_policy_count = args.lambda_policy_count
+    if args.one_shot_selection_policy == "threshold":
+        effective_lambda_policy_count = 0.0
+        if args.lambda_policy_count:
+            print(
+                "Threshold selection does not use probability-mass cardinality; "
+                "disabling --lambda-policy-count.",
+                flush=True,
+            )
 
     torch.manual_seed(args.train_seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -682,6 +884,40 @@ def main() -> None:
     )
     val_loader = DataLoader(val_set, batch_size=args.batch_size)
 
+    proposal_initializer_checkpoint: dict[str, object] | None = None
+    saved_proposal_model_config: Mapping[str, object] = {}
+    saved_proposal_bandwidth = 0.0
+    if args.proposal_checkpoint is not None:
+        proposal_initializer_checkpoint = torch.load(
+            args.proposal_checkpoint,
+            map_location="cpu",
+            weights_only=True,
+        )
+        saved_model_config = proposal_initializer_checkpoint.get("model_config", {})
+        if isinstance(saved_model_config, Mapping):
+            saved_proposal_model_config = saved_model_config
+            saved_proposal_bandwidth = float(
+                saved_model_config.get("candidate_local_attention_bandwidth", 0.0)
+            )
+
+    effective_local_attention_bandwidth = args.candidate_local_attention_bandwidth
+    if args.candidate_pretrain_epochs == 0:
+        # No adaptation means the proposal forward must remain byte-for-byte
+        # compatible with its source checkpoint.  Applying v11's Gaussian
+        # bias to old global-attention weights silently degrades recall.
+        effective_local_attention_bandwidth = saved_proposal_bandwidth
+        if (
+            effective_local_attention_bandwidth
+            != args.candidate_local_attention_bandwidth
+        ):
+            print(
+                "Proposal adaptation is disabled; preserving checkpoint local "
+                "attention bandwidth "
+                f"{effective_local_attention_bandwidth:g} instead of requested "
+                f"{args.candidate_local_attention_bandwidth:g}.",
+                flush=True,
+            )
+
     model_config: dict[str, object] = {
         "point_dim": args.point_dim,
         "degree": 3,
@@ -703,9 +939,44 @@ def main() -> None:
         "one_shot_safety_sigma": args.one_shot_safety_sigma,
         "one_shot_selector_layers": args.one_shot_selector_layers,
         "one_shot_coverage_bins": args.one_shot_coverage_bins,
+        "candidate_local_attention_bandwidth": effective_local_attention_bandwidth,
+        "one_shot_joint_position_refinement": True,
+        "one_shot_max_position_shift": args.one_shot_max_position_shift,
         "compute_first_derivative": False,
     }
+    if args.candidate_pretrain_epochs == 0:
+        if saved_proposal_model_config:
+            semantic_mismatches = _proposal_semantic_mismatches(
+                model_config,
+                saved_proposal_model_config,
+            )
+            if semantic_mismatches:
+                parser.error(
+                    "fixed proposal checkpoint semantics do not match the requested "
+                    "model; use matching arguments or enable proposal adaptation:\n  "
+                    + "\n  ".join(semantic_mismatches)
+                )
+        else:
+            print(
+                "Warning: proposal checkpoint has no model_config; assuming "
+                "historical global attention and unable to verify other proposal "
+                "semantics.",
+                flush=True,
+            )
     model = SplineFittingNetwork(**model_config)
+    if proposal_initializer_checkpoint is not None and args.candidate_pretrain_epochs:
+        # A v10 checkpoint is a useful initializer, but v11's local proposal
+        # attention still needs a short adaptation stage.  Previously the
+        # checkpoint argument was silently ignored whenever pretraining was
+        # enabled, which made migration unexpectedly start from scratch.
+        initializer_state = proposal_initializer_checkpoint.get(
+            "model_state_dict", proposal_initializer_checkpoint
+        )
+        model.load_state_dict(initializer_state, strict=True)
+        print(
+            f"Initialized v11 proposal adaptation from: {args.proposal_checkpoint}",
+            flush=True,
+        )
     proposal_weights = CandidatePruningLossWeights(
         fit=args.lambda_fit,
         threshold_violation=args.lambda_threshold_violation,
@@ -721,7 +992,10 @@ def main() -> None:
         teacher_ranking=args.lambda_teacher_ranking,
         teacher_distribution=args.lambda_teacher_distribution,
         teacher_critical_recall=args.lambda_teacher_critical_recall,
+        teacher_false_positive=args.lambda_teacher_false_positive,
         teacher_count=args.lambda_teacher_count,
+        policy_count=effective_lambda_policy_count,
+        canonical_selection=args.lambda_canonical_selection,
         complexity=args.lambda_complexity,
     )
     pretrain_weights = replace(
@@ -731,7 +1005,13 @@ def main() -> None:
         count_consistency=0.0,
         deletion_cost=0.0,
         teacher_risk=0.0,
+        teacher_ranking=0.0,
+        teacher_distribution=0.0,
+        teacher_critical_recall=0.0,
+        teacher_false_positive=0.0,
         teacher_count=0.0,
+        policy_count=0.0,
+        canonical_selection=0.0,
         complexity=0.0,
     )
     one_shot_weights = replace(
@@ -746,6 +1026,12 @@ def main() -> None:
         candidate_coverage=0.0,
         candidate_repulsion=0.0,
         knot_position=0.0,
+    )
+    calibration_weights = replace(
+        one_shot_weights,
+        fit=args.lambda_joint_fit,
+        threshold_violation=args.lambda_joint_threshold_violation,
+        knot_position=args.lambda_joint_position,
     )
 
     def make_loss(
@@ -763,6 +1049,9 @@ def main() -> None:
             deletion_smoothness_weight=1e-6,
             deletion_control_ridge=0.0,
             teacher_ranking_margin=args.teacher_ranking_margin,
+            candidate_coverage_tolerances=tuple(args.candidate_coverage_tolerances),
+            position_aware_distribution=True,
+            joint_position_supervision=True,
         )
 
     optimizer = torch.optim.AdamW(
@@ -780,7 +1069,8 @@ def main() -> None:
     )
 
     print(
-        "v10 objective: structured-feasible fixed-proposal one-shot prediction "
+        "v11 objective: high-recall local proposals plus joint one-shot "
+        "Keep/position prediction "
         "distilled from "
         f"an offline Hard-RMS teacher at epsilon={args.fit_tolerance:g}",
         flush=True,
@@ -806,6 +1096,22 @@ def main() -> None:
             "keep_head",
             "adaptive_threshold_head",
             "position_to_keep_feedback",
+            "one_shot_selector_attention",
+            "one_shot_selector_attention_norm",
+            "one_shot_selector_feed_forward",
+            "one_shot_selector_output_norm",
+            "one_shot_selector_extra_attention",
+            "one_shot_selector_extra_attention_norm",
+            "one_shot_selector_extra_feed_forward",
+            "one_shot_selector_extra_output_norm",
+            "joint_preliminary_position_projection",
+            "joint_preliminary_position_norm",
+            "joint_preliminary_position_head",
+            "joint_position_to_keep_feedback",
+            "joint_position_to_keep_norm",
+            "joint_final_position_projection",
+            "joint_final_position_norm",
+            "joint_final_position_head",
         ):
             module = getattr(model.pruning_head, module_name, None)
             if module is not None:
@@ -826,15 +1132,48 @@ def main() -> None:
             proposal_path, map_location=device, weights_only=True
         )
         model.load_state_dict(proposal_checkpoint["model_state_dict"], strict=True)
+        # Trainer checkpoints are intentionally generic.  Persist proposal
+        # semantics here so a later --candidate-pretrain-epochs 0 run can
+        # reproduce this exact local-attention forward and safely fingerprint
+        # its offline teacher cache.
+        proposal_checkpoint.update(
+            {
+                "model_config": dict(model_config),
+                "dataset_config": dict(dataset_config),
+                "dataset_type": "synthetic_open_cubic_bspline",
+                "objective_version": V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+                "loss_config": {
+                    "weights": asdict(pretrain_weights),
+                    "candidate_match_tolerance": args.candidate_match_tolerance,
+                    "candidate_coverage_tolerances": list(
+                        args.candidate_coverage_tolerances
+                    ),
+                    "fit_tolerance": args.fit_tolerance,
+                },
+                "training_config": {
+                    "stage": "candidate_pretrain",
+                    "candidate_pretrain_epochs": args.candidate_pretrain_epochs,
+                    "candidate_local_attention_bandwidth": (
+                        effective_local_attention_bandwidth
+                    ),
+                },
+                "deployment_config": {"role": "fixed_proposal_for_offline_teacher"},
+                "selected_stage": "candidate_pretrain",
+                "stage_histories": {
+                    "candidate_pretrain": histories["candidate_pretrain"]
+                },
+            }
+        )
+        torch.save(proposal_checkpoint, proposal_path)
         print(
             f"Restored best proposal checkpoint from epoch "
             f"{proposal_checkpoint['epoch']} before teacher generation.",
             flush=True,
         )
     else:
-        proposal_checkpoint = torch.load(
-            args.proposal_checkpoint, map_location=device, weights_only=True
-        )
+        if proposal_initializer_checkpoint is None:
+            raise RuntimeError("proposal checkpoint was not loaded")
+        proposal_checkpoint = proposal_initializer_checkpoint
         state = proposal_checkpoint.get("model_state_dict", proposal_checkpoint)
         model.load_state_dict(state, strict=True)
         print(
@@ -915,9 +1254,9 @@ def main() -> None:
         batch_size=args.batch_size,
     )
 
-    # Offline labels bind to the restored proposal geometry. Distillation only
-    # trains selection modules, so base candidate slots and parameters stay
-    # fixed; retained refined positions remain anchored by teacher knot targets.
+    # Offline labels bind to immutable proposal geometry.  Initial distillation
+    # learns only the selection rule; the later low-LR stage activates the
+    # separate deployment-position path without changing teacher slot identity.
     selection_parameters = _set_one_shot_trainable(
         model,
         calibrate_positions=False,
@@ -971,6 +1310,10 @@ def main() -> None:
             lr=args.selector_lr * 0.1,
             weight_decay=args.weight_decay,
         )
+        trainer.loss_fn = make_loss(
+            calibration_weights,
+            exact_deletion_supervision=False,
+        ).to(device)
         calibration_path = args.output.with_name(
             args.output.stem + "_calibrated" + args.output.suffix
         )
@@ -993,9 +1336,13 @@ def main() -> None:
         best_candidates,
         key=lambda checkpoint: tuple(checkpoint.get("selection_rank", [])),
     )
+    selected_position_calibration = best.get("stage") == "one_shot_selector_calibration"
+    selected_loss_weights = (
+        calibration_weights if selected_position_calibration else one_shot_weights
+    )
 
     loss_config: dict[str, object] = {
-        "weights": asdict(one_shot_weights),
+        "weights": asdict(selected_loss_weights),
         "proposal_weights": asdict(pretrain_weights),
         "knot_position_beta": args.knot_position_beta,
         "candidate_match_tolerance": args.candidate_match_tolerance,
@@ -1006,18 +1353,28 @@ def main() -> None:
         "deletion_control_ridge": 0.0,
         "one_shot_teacher": True,
         "fixed_proposal_geometry": True,
-        "selector_adapter": "position_aware_self_attention",
+        "selector_adapter": "two_pass_keep_position_feedback",
         "selector_layers": args.one_shot_selector_layers,
         "straight_through_keep_gate": True,
-        "surrogate_selection_role": "diagnostic_only",
+        "surrogate_selection_role": (
+            "diagnostic_during_distillation_position_feasibility_during_calibration"
+        ),
         "teacher_mask_loss": (
-            "weighted_bce_plus_soft_dice_plus_cdf_plus_critical_recall"
+            "teacher_bce_dice_ranking_plus_canonical_set_and_policy_count"
         ),
         "selection_policy": args.one_shot_selection_policy,
         "selection_safety_sigma": args.one_shot_safety_sigma,
         "selection_coverage_bins": args.one_shot_coverage_bins,
         "teacher_risk_temperature": args.teacher_risk_temperature,
         "teacher_ranking_margin": args.teacher_ranking_margin,
+        "candidate_coverage_tolerances": list(args.candidate_coverage_tolerances),
+        "position_aware_distribution": True,
+        "joint_position_supervision": True,
+        "selected_checkpoint_position_calibrated": selected_position_calibration,
+        "candidate_local_attention_bandwidth": (effective_local_attention_bandwidth),
+        "joint_position_max_shift": args.one_shot_max_position_shift,
+        "joint_calibration_fit_weight": args.lambda_joint_fit,
+        "joint_calibration_threshold_weight": (args.lambda_joint_threshold_violation),
         "count_consistency_is_deployment_rule": False,
         "analytic_deletion_cost_is_auxiliary_only": True,
     }
@@ -1032,8 +1389,8 @@ def main() -> None:
         ),
         "one_shot_distillation_epochs": distill_epochs,
         "selector_calibration_epochs": args.keep_position_calibration_epochs,
-        "keep_position_calibration_epochs": 0,
-        "joint_finetune_epochs": 0,
+        "keep_position_calibration_epochs": args.keep_position_calibration_epochs,
+        "joint_finetune_epochs": args.keep_position_calibration_epochs,
         "train_size": args.train_size,
         "val_size": args.val_size,
         "train_seed": args.train_seed,
@@ -1055,12 +1412,18 @@ def main() -> None:
         "selection_policy": args.one_shot_selection_policy,
         "selection_safety_sigma": args.one_shot_safety_sigma,
         "selection_coverage_bins": args.one_shot_coverage_bins,
+        "candidate_local_attention_bandwidth": (effective_local_attention_bandwidth),
+        "joint_position_max_shift": args.one_shot_max_position_shift,
+        "requested_policy_count_weight": args.lambda_policy_count,
+        "effective_policy_count_weight": effective_lambda_policy_count,
+        "joint_calibration_fit_weight": args.lambda_joint_fit,
+        "joint_calibration_threshold_weight": (args.lambda_joint_threshold_violation),
     }
     deployment_config: dict[str, object] = {
         "selection_rule": (
-            "v10_probability_mass_topk_then_single_refit"
+            "v11_joint_position_mass_topk_then_single_refit"
             if args.one_shot_selection_policy == "mass_topk"
-            else "v10_adaptive_threshold_then_single_refit"
+            else "v11_joint_position_threshold_then_single_refit"
         ),
         "error_tolerance": args.fit_tolerance,
         "min_internal_knots": 0,
@@ -1077,6 +1440,8 @@ def main() -> None:
         "parameter_domain_coverage_bins": args.one_shot_coverage_bins,
         "hard_rms_pruning_at_deployment": False,
         "proposal_geometry_frozen_after_teacher": True,
+        "deployment_positions_jointly_refined": True,
+        "selected_checkpoint_position_calibrated": selected_position_calibration,
         "threshold_guarantee": "statistical_not_per_sample_exact",
         "checkpoint_selection": (
             "min_retained_knots_subject_to_validation_pass_rate_target"
@@ -1108,13 +1473,25 @@ def main() -> None:
             else "one_shot_distillation"
         ],
     }
+    last_position_calibrated = bool(args.keep_position_calibration_epochs)
+    last_loss_config = {
+        **loss_config,
+        "weights": asdict(
+            calibration_weights if last_position_calibrated else one_shot_weights
+        ),
+        "selected_checkpoint_position_calibrated": last_position_calibrated,
+    }
+    last_deployment_config = {
+        **deployment_config,
+        "selected_checkpoint_position_calibrated": last_position_calibrated,
+    }
     last = _checkpoint_with_metadata(
         last,
         model_config=model_config,
         dataset_config=dataset_config,
-        loss_config=loss_config,
+        loss_config=last_loss_config,
         training_config=training_config,
-        deployment_config=deployment_config,
+        deployment_config=last_deployment_config,
         histories=histories,
     )
     torch.save(last, last_path)

@@ -20,8 +20,13 @@ def _validate_inputs(
         raise ValueError("points must have shape [B, M, D]")
     if internal_knots.ndim != 2:
         raise ValueError("internal_knots must have shape [B, K]")
-    if parameters.shape[0] != points.shape[0] or parameters.shape[0] != internal_knots.shape[0]:
-        raise ValueError("parameters, points and internal_knots must share a batch size")
+    if (
+        parameters.shape[0] != points.shape[0]
+        or parameters.shape[0] != internal_knots.shape[0]
+    ):
+        raise ValueError(
+            "parameters, points and internal_knots must share a batch size"
+        )
     if parameters.shape[1] != points.shape[1]:
         raise ValueError("parameters and points must share a point count")
     if internal_knots.shape[1] < 1:
@@ -115,8 +120,7 @@ def _batched_open_bspline_basis(
         )
         left_numerator = parameter_column - knot_vector[..., None, :count]
         right_numerator = (
-            knot_vector[..., None, order + 1 : order + 1 + count]
-            - parameter_column
+            knot_vector[..., None, order + 1 : order + 1 + count] - parameter_column
         )
         left_term = torch.where(
             left_denominator[..., None, :].abs() > 1e-12,
@@ -154,7 +158,7 @@ def _second_difference_matrix(
 
 
 @torch.no_grad()
-def single_knot_deletion_rmse_batch(
+def single_knot_deletion_mse_batch(
     parameters: torch.Tensor,
     points: torch.Tensor,
     internal_knots: torch.Tensor,
@@ -165,11 +169,11 @@ def single_knot_deletion_rmse_batch(
     interpolate_endpoints: bool = True,
     rcond: float | None = None,
 ) -> torch.Tensor:
-    """Compute the real refit RMS after deleting each candidate knot.
+    """Compute mean squared Euclidean refit error for every one-knot deletion.
 
     The returned tensor has shape ``[B, K]``. Entry ``[b, j]`` is the mean
-    Euclidean RMS obtained by physically deleting knot ``j`` and refitting a
-    standard open-clamped B-spline to curve ``b``.  All ``B*K`` deletion
+    squared Euclidean error obtained by physically deleting knot ``j`` and
+    refitting a standard open-clamped B-spline to curve ``b``.  All ``B*K`` deletion
     states are evaluated together: Cox--de Boor basis construction and the
     augmented least-squares solve are both batched.
 
@@ -212,12 +216,9 @@ def single_knot_deletion_rmse_batch(
             fixed_difference = torch.stack(
                 [difference[:, 0], difference[:, -1]], dim=-1
             )
-            smooth_design = (
-                square_root_weight
-                * difference[:, 1:-1][None, None, :, :].expand(
-                    batch_size, candidate_count, -1, -1
-                )
-            )
+            smooth_design = square_root_weight * difference[:, 1:-1][
+                None, None, :, :
+            ].expand(batch_size, candidate_count, -1, -1)
             smooth_target = -square_root_weight * (
                 fixed_difference[None, None, :, :] @ fixed_control_points
             )
@@ -225,14 +226,11 @@ def single_knot_deletion_rmse_batch(
             target_blocks.append(smooth_target)
         if control_ridge > 0.0:
             interior_count = num_control_points - 2
-            ridge_design = (
-                math.sqrt(control_ridge)
-                * torch.eye(
-                    interior_count,
-                    device=points.device,
-                    dtype=points.dtype,
-                )[None, None, :, :].expand(batch_size, candidate_count, -1, -1)
-            )
+            ridge_design = math.sqrt(control_ridge) * torch.eye(
+                interior_count,
+                device=points.device,
+                dtype=points.dtype,
+            )[None, None, :, :].expand(batch_size, candidate_count, -1, -1)
             design_blocks.append(ridge_design)
             target_blocks.append(
                 points.new_zeros(
@@ -247,12 +245,9 @@ def single_knot_deletion_rmse_batch(
         design_blocks = [basis]
         target_blocks = [target]
         if smoothness_weight > 0.0:
-            smooth_design = (
-                math.sqrt(smoothness_weight)
-                * difference[None, None, :, :].expand(
-                    batch_size, candidate_count, -1, -1
-                )
-            )
+            smooth_design = math.sqrt(smoothness_weight) * difference[
+                None, None, :, :
+            ].expand(batch_size, candidate_count, -1, -1)
             design_blocks.append(smooth_design)
             target_blocks.append(
                 points.new_zeros(
@@ -263,14 +258,11 @@ def single_knot_deletion_rmse_batch(
                 )
             )
         if control_ridge > 0.0:
-            ridge_design = (
-                math.sqrt(control_ridge)
-                * torch.eye(
-                    num_control_points,
-                    device=points.device,
-                    dtype=points.dtype,
-                )[None, None, :, :].expand(batch_size, candidate_count, -1, -1)
-            )
+            ridge_design = math.sqrt(control_ridge) * torch.eye(
+                num_control_points,
+                device=points.device,
+                dtype=points.dtype,
+            )[None, None, :, :].expand(batch_size, candidate_count, -1, -1)
             design_blocks.append(ridge_design)
             target_blocks.append(
                 points.new_zeros(
@@ -296,17 +288,44 @@ def single_knot_deletion_rmse_batch(
         control_points = solution
     else:
         control_points = torch.cat(
-            [fixed_control_points[..., :1, :], solution, fixed_control_points[..., 1:, :]],
+            [
+                fixed_control_points[..., :1, :],
+                solution,
+                fixed_control_points[..., 1:, :],
+            ],
             dim=-2,
         )
     reconstructed = basis @ control_points
-    return (
-        (reconstructed - target)
-        .pow(2)
-        .sum(dim=-1)
-        .mean(dim=-1)
-        .sqrt()
-    )
+    return (reconstructed - target).pow(2).sum(dim=-1).mean(dim=-1)
 
 
-__all__ = ["single_knot_deletion_rmse_batch"]
+@torch.no_grad()
+def single_knot_deletion_rmse_batch(
+    parameters: torch.Tensor,
+    points: torch.Tensor,
+    internal_knots: torch.Tensor,
+    *,
+    degree: int = 3,
+    smoothness_weight: float = 1e-6,
+    control_ridge: float = 0.0,
+    interpolate_endpoints: bool = True,
+    rcond: float | None = None,
+) -> torch.Tensor:
+    """Backward-compatible RMS view of one-knot deletion refit errors."""
+
+    return single_knot_deletion_mse_batch(
+        parameters,
+        points,
+        internal_knots,
+        degree=degree,
+        smoothness_weight=smoothness_weight,
+        control_ridge=control_ridge,
+        interpolate_endpoints=interpolate_endpoints,
+        rcond=rcond,
+    ).sqrt()
+
+
+__all__ = [
+    "single_knot_deletion_mse_batch",
+    "single_knot_deletion_rmse_batch",
+]
