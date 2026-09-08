@@ -1,0 +1,18 @@
+{
+  "config_fingerprint": "1ca187d899b1e3e09b3edaa84d2006c0592fbb996fb9d6e934f09d363085520b",
+  "counts": {
+    "canonical_boehm": 2
+  },
+  "fallback_fraction": 0.0,
+  "feasibility_policy": "canonical_true_knots_largest_interval_boehm_then_hard_rms_v1",
+  "ordered_rank_anchor_diagnostics": {
+    "max_abs_shift": 0.07300096178053386,
+    "mean_abs_shift": 0.049321746948546186,
+    "over_relocation_limit_fraction": 0.0,
+    "relocation_limit": 0.15
+  },
+  "position_storage_domain": "fixed_proposal_t0",
+  "slot_alignment": "ordered_rank",
+  "teacher_start_mode": "canonical_boehm",
+  "version": 2
+}

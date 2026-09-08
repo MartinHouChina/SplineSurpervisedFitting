@@ -6,6 +6,8 @@ from .count_head import CountHead
 from .dynamic_knot_decoder import DynamicKnotDecoder
 from .interactive_pruning_head import InteractivePruningHead
 from .interactive_structure_head import InteractiveStructureHead
+from .joint_parameter_structure_head import JointParameterStructureHead
+from .parameter_feedback_head import ParameterFeedbackHead
 
 __all__ = [
     "CandidateKnotHead",
@@ -15,5 +17,7 @@ __all__ = [
     "HardConcreteGate",
     "InteractivePruningHead",
     "InteractiveStructureHead",
+    "JointParameterStructureHead",
+    "ParameterFeedbackHead",
     "SplineFittingNetwork",
 ]

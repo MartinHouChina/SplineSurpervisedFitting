@@ -183,7 +183,9 @@ def hard_prune_and_refit(
                 activity_mass=float(activity[index].sum().item()),
                 retained_mask=retained_mask.detach().clone(),
                 retained_internal_knots=retained.detach().clone(),
-                open_knot_vector=build_open_knot_vector(retained, degree).detach().clone(),
+                open_knot_vector=build_open_knot_vector(retained, degree)
+                .detach()
+                .clone(),
                 coefficients=solution["coefficients"][0].detach().clone(),
                 reconstructed_points=reconstructed[0].detach().clone(),
                 fit_mse=fit["fit_mse"][0].detach().clone(),
@@ -214,10 +216,9 @@ def knot_contribution_rms(
     ):
         raise ValueError("basis and coefficients must share batch and knot dimensions")
 
-    contribution = (
-        weighted_increment_basis.unsqueeze(-1)
-        * increment_coefficients.unsqueeze(-3)
-    )
+    contribution = weighted_increment_basis.unsqueeze(
+        -1
+    ) * increment_coefficients.unsqueeze(-3)
     return contribution.pow(2).sum(dim=-1).mean(dim=-2).sqrt()
 
 
@@ -230,6 +231,76 @@ class KnotMatchStatistics:
     recall: float
     f1: float
     matched_mae: float
+
+
+def warp_internal_knots_to_parameterization(
+    knots: torch.Tensor,
+    source_parameters: torch.Tensor,
+    target_parameters: torch.Tensor,
+) -> torch.Tensor:
+    """Map knots between parameterizations using corresponding samples.
+
+    Sample ``i`` is assumed to identify the same observed point in both
+    parameterizations.  The resulting monotone piecewise-linear map is useful
+    for knot-localization diagnostics when a network predicts its own sample
+    parameters but the reference knots are expressed in the ground-truth
+    parameterization.  It does not alter either parameterization or refit a
+    curve.
+
+    The output retains the dtype, device and element order of ``knots``.
+    """
+    named_tensors = {
+        "knots": knots,
+        "source_parameters": source_parameters,
+        "target_parameters": target_parameters,
+    }
+    for name, value in named_tensors.items():
+        if not isinstance(value, torch.Tensor):
+            raise TypeError(f"{name} must be a torch.Tensor")
+        if value.ndim != 1:
+            raise ValueError(f"{name} must be one-dimensional")
+        if not value.is_floating_point():
+            raise ValueError(f"{name} must be floating-point")
+        if not torch.isfinite(value).all():
+            raise ValueError(f"{name} must contain only finite values")
+
+    if source_parameters.numel() != target_parameters.numel():
+        raise ValueError("source and target parameters must have the same length")
+    if source_parameters.numel() < 2:
+        raise ValueError("parameterizations must contain at least two samples")
+    if not (
+        knots.dtype == source_parameters.dtype == target_parameters.dtype
+        and knots.device == source_parameters.device == target_parameters.device
+    ):
+        raise ValueError("knots and parameterizations must share dtype and device")
+    if torch.any(source_parameters[1:] <= source_parameters[:-1]):
+        raise ValueError("source parameters must be strictly increasing")
+    # The source must be strict because it defines interpolation intervals.
+    # The target may contain repeated values (for example consecutive duplicate
+    # observations under chord-length parameterization); the resulting map is
+    # still well-defined and monotone, though not one-to-one.
+    if torch.any(target_parameters[1:] < target_parameters[:-1]):
+        raise ValueError("target parameters must be non-decreasing")
+
+    source_start = source_parameters[0]
+    source_end = source_parameters[-1]
+    if knots.numel() and torch.any((knots < source_start) | (knots > source_end)):
+        raise ValueError("knots must lie within the source parameter endpoints")
+    if knots.numel() == 0:
+        return knots.clone()
+
+    # ``right=True`` maps a knot exactly at an interior sample through the
+    # interval that starts there.  Clamping also gives the two domain endpoints
+    # a valid interpolation interval.
+    left_indices = torch.searchsorted(source_parameters, knots, right=True) - 1
+    left_indices = left_indices.clamp(0, source_parameters.numel() - 2)
+    source_left = source_parameters[left_indices]
+    source_right = source_parameters[left_indices + 1]
+    target_left = target_parameters[left_indices]
+    target_right = target_parameters[left_indices + 1]
+    fraction = (knots - source_left) / (source_right - source_left)
+    warped = target_left + fraction * (target_right - target_left)
+    return warped.clamp(min=target_parameters[0], max=target_parameters[-1])
 
 
 def match_internal_knots(
@@ -267,7 +338,9 @@ def match_internal_knots(
     predicted_count = len(predicted_values)
     true_count = len(target_values)
     matched_count = len(errors)
-    precision = matched_count / predicted_count if predicted_count else float(true_count == 0)
+    precision = (
+        matched_count / predicted_count if predicted_count else float(true_count == 0)
+    )
     recall = matched_count / true_count if true_count else float(predicted_count == 0)
     f1 = (
         2.0 * precision * recall / (precision + recall)

@@ -9,15 +9,17 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from spline_fitting.data.synthetic import evaluate_bspline_curve
-from spline_fitting.evaluation.bspline_inference import (
+from spline_fitting.data.synthetic import evaluate_bspline_curve  # noqa: E402
+from spline_fitting.evaluation.bspline_inference import (  # noqa: E402
     hard_gate_mask,
     refit_bspline_control_points,
     refit_hard_gated_bspline_batch,
     refit_model_output_as_bsplines,
     second_difference_matrix,
 )
-from spline_fitting.evaluation.knot_diagnostics import build_open_knot_vector
+from spline_fitting.evaluation.knot_diagnostics import (  # noqa: E402
+    build_open_knot_vector,
+)
 
 
 class BSplineInferenceTests(unittest.TestCase):
@@ -102,6 +104,47 @@ class BSplineInferenceTests(unittest.TestCase):
         )
         for result in results:
             self.assertLess(float(result.fit_mse), 1e-24)
+
+    def test_hard_gated_refit_canonicalizes_crossed_candidate_slots(self) -> None:
+        parameters = torch.linspace(0.0, 1.0, 64, dtype=self.dtype)
+        ordered = torch.tensor([0.31, 0.72], dtype=self.dtype)
+        points = self._sample_curve(parameters, ordered).unsqueeze(0)
+
+        result = refit_hard_gated_bspline_batch(
+            parameters.unsqueeze(0),
+            ordered.flip(0).unsqueeze(0),
+            torch.ones((1, 2), dtype=torch.bool),
+            points,
+            degree=3,
+            smoothness_weight=0.0,
+        )[0]
+
+        torch.testing.assert_close(result.retained_internal_knots, ordered)
+        self.assertLess(float(result.fit_mse), 1e-24)
+
+    def test_rank_deficient_learned_knots_preserve_supported_spline_space(self) -> None:
+        parameters = torch.linspace(0.0, 1.0, 192, dtype=self.dtype)
+        supported_knots = torch.tensor([0.25, 0.5, 0.75], dtype=self.dtype)
+        points = self._sample_curve(parameters, supported_knots)
+        # These knots all precede the first interior observation.  They create
+        # unsupported basis columns, as can happen when a learned relocation
+        # head clusters candidates at the left endpoint.
+        unsupported_knots = torch.linspace(2e-4, 4e-3, 12, dtype=self.dtype)
+        learned_knots = torch.sort(
+            torch.cat([unsupported_knots, supported_knots])
+        ).values
+
+        result = refit_bspline_control_points(
+            parameters,
+            points,
+            learned_knots,
+            degree=3,
+            smoothness_weight=0.0,
+        )
+
+        self.assertIsNotNone(result.solver_rank)
+        self.assertGreater(result.solver_rank, 2)
+        self.assertLess(float(result.fit_mse), 1e-20)
 
     def test_soft_probability_is_rejected_as_a_hard_gate(self) -> None:
         with self.assertRaisesRegex(ValueError, "model.eval"):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+import io
 import sys
 import tempfile
 import unittest
@@ -12,7 +14,7 @@ from torch.utils.data import DataLoader, TensorDataset
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from spline_fitting.training.trainer import Trainer
+from spline_fitting.training.trainer import Trainer  # noqa: E402
 
 
 def _metrics(
@@ -110,7 +112,76 @@ class TrainerSelectionTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["candidate_recall_at_0p01"], 0.5)
         self.assertAlmostEqual(metrics["candidate_recall_at_0p02"], 0.75)
 
-    def test_candidate_pretrain_checkpoint_prioritizes_strict_recall(self) -> None:
+    def test_geometric_metric_targets_are_warped_to_output_parameterization(
+        self,
+    ) -> None:
+        true_params = torch.tensor([[0.0, 0.25, 1.0]], dtype=torch.float64)
+        output_params = torch.tensor([[0.0, 0.50, 1.0]], dtype=torch.float64)
+        true_knots = torch.tensor([[0.25, 0.75]], dtype=torch.float64)
+
+        aligned = Trainer._true_knots_in_output_parameterization(
+            true_knots,
+            true_params,
+            output_params,
+        )
+
+        torch.testing.assert_close(
+            aligned,
+            torch.tensor([[0.50, 5.0 / 6.0]], dtype=torch.float64),
+        )
+
+    def test_parameter_feedback_stage_logs_its_own_metric_schema(self) -> None:
+        model = torch.nn.Linear(1, 1)
+        model.structure_mode = "candidate_pruning_one_shot"
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        trainer = Trainer(model, torch.nn.Identity(), optimizer, torch.device("cpu"))
+        loader = DataLoader(TensorDataset(torch.zeros(1, 1)), batch_size=1)
+        feedback_metrics = {
+            "loss": 0.4,
+            "fit_loss": 2.5e-5,
+            "true_parameter_loss": 4.0e-4,
+            "threshold_satisfied_rate": 0.75,
+            "parameter_feedback_chord_blend_weight": 0.6,
+            "parameter_feedback_gap_logit_shift_mean_abs": 0.025,
+            "hard_active_count": 8.0,
+            "candidate_knot_count": 28.0,
+            "deployment_threshold_satisfied_rate": 0.8,
+            "deployment_bspline_rms": 0.0045,
+            "deployment_bspline_rms_p95": 0.006,
+            "deployment_retained_knot_count": 8.0,
+            "knot_match_f1": 0.5,
+            "knot_match_precision": 0.5,
+            "knot_matched_mae": 0.01,
+        }
+
+        stream = io.StringIO()
+        with (
+            patch.object(
+                trainer,
+                "_run_epoch",
+                side_effect=[feedback_metrics, feedback_metrics],
+            ),
+            redirect_stdout(stream),
+        ):
+            trainer.fit(
+                loader,
+                loader,
+                epochs=1,
+                stage_name="parameter_feedback_calibration",
+                deployment_validation=True,
+            )
+
+        report = stream.getvalue()
+        self.assertIn("deploy_pass=0.800", report)
+        self.assertIn("deploy_RMS=0.00450", report)
+        self.assertIn("parameter_RMSE=0.02000", report)
+        self.assertIn("chord_blend=0.600", report)
+        self.assertIn("gap_shift=0.0250", report)
+        self.assertIn("parameter_MSE=0.000400", report)
+        self.assertNotIn("coverage=", report)
+        self.assertNotIn("knot_pos=", report)
+
+    def test_candidate_pretrain_checkpoint_prioritizes_full_candidate_fit(self) -> None:
         model = torch.nn.Linear(1, 1)
         model.structure_mode = "candidate_pruning"
         optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
@@ -125,6 +196,9 @@ class TrainerSelectionTests(unittest.TestCase):
                 "candidate_recall_at_0p005": 0.60,
                 "candidate_recall_at_0p01": 0.95,
                 "candidate_recall_at_0p02": 0.99,
+                "deployment_threshold_satisfied_rate": 0.50,
+                "deployment_bspline_rms": 0.02,
+                "deployment_bspline_rms_p95": 0.03,
             }
         )
         strict_but_broader_metrics_lower = _metrics(0.2, 0.0, 0.6)
@@ -135,6 +209,9 @@ class TrainerSelectionTests(unittest.TestCase):
                 "candidate_recall_at_0p005": 0.70,
                 "candidate_recall_at_0p01": 0.90,
                 "candidate_recall_at_0p02": 0.90,
+                "deployment_threshold_satisfied_rate": 0.95,
+                "deployment_bspline_rms": 0.004,
+                "deployment_bspline_rms_p95": 0.006,
             }
         )
         epoch_metrics = [
@@ -161,9 +238,153 @@ class TrainerSelectionTests(unittest.TestCase):
         self.assertEqual(checkpoint["epoch"], 2)
         self.assertEqual(
             checkpoint["selection_metric"],
-            "candidate_recall_0p005_0p01_0p02_then_mae_knot_f1_loss",
+            "all_candidate_standard_bspline_feasible_then_"
+            "candidate_recall_0p005_0p01_0p02_mae_rms_p95_loss",
         )
-        self.assertAlmostEqual(checkpoint["selection_value"], 0.70)
+        self.assertAlmostEqual(checkpoint["selection_value"], 0.95)
+
+    def test_proposal_parameter_warmup_selects_complete_weighted_loss(self) -> None:
+        model = torch.nn.Linear(1, 1)
+        model.structure_mode = "candidate_pruning"
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        trainer = Trainer(model, torch.nn.Identity(), optimizer, torch.device("cpu"))
+        loader = DataLoader(TensorDataset(torch.zeros(1, 1)), batch_size=1)
+        lower_coordinate_mse = _metrics(0.1, 0.0, 0.0)
+        lower_coordinate_mse["raw_proposal_parameter_loss"] = 0.01
+        lower_coordinate_mse["proposal_parameter_log_gap_mae"] = 0.1
+        lower_weighted_objective = _metrics(0.05, 0.0, 0.0)
+        lower_weighted_objective["raw_proposal_parameter_loss"] = 0.02
+        lower_weighted_objective["proposal_parameter_log_gap_mae"] = 0.
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint_path = Path(directory) / "parameter_warmup.pt"
+            with patch.object(
+                trainer,
+                "_run_epoch",
+                side_effect=[
+                    lower_coordinate_mse,
+                    lower_coordinate_mse,
+                    lower_weighted_objective,
+                    lower_weighted_objective,
+                ],
+            ):
+                trainer.fit(
+                    loader,
+                    loader,
+                    epochs=2,
+                    checkpoint_path=checkpoint_path,
+                    epoch_offset=3,
+                    stage_name="proposal_parameter_warmup",
+                )
+            checkpoint = torch.load(
+                checkpoint_path,
+                map_location="cpu",
+                weights_only=True,
+            )
+
+        self.assertEqual(checkpoint["epoch"], 5)
+        self.assertEqual(checkpoint["stage"], "proposal_parameter_warmup")
+        self.assertEqual(
+            checkpoint["selection_metric"],
+            "parameter_warmup_val_loss_then_log_gap_mae_coordinate_mse",
+        )
+        self.assertAlmostEqual(checkpoint["selection_value"], 0.05)
+
+    def test_proposal_parameter_warmup_uses_gap_then_coordinate_ties(self) -> None:
+        model = torch.nn.Linear(1, 1)
+        model.structure_mode = "candidate_pruning"
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        trainer = Trainer(model, torch.nn.Identity(), optimizer, torch.device("cpu"))
+        loader = DataLoader(TensorDataset(torch.zeros(1, 1)), batch_size=1)
+
+        metrics = []
+        for gap_mae, coordinate_mse in ((0.2, 0.01), (0.1, 0.03), (0.1, 0.02)):
+            epoch = _metrics(0.05, 0.0, 0.0)
+            epoch["proposal_parameter_log_gap_mae"] = gap_mae
+            epoch["raw_proposal_parameter_loss"] = coordinate_mse
+            metrics.extend((epoch, epoch))
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint_path = Path(directory) / "parameter_warmup.pt"
+            with patch.object(trainer, "_run_epoch", side_effect=metrics):
+                trainer.fit(
+                    loader,
+                    loader,
+                    epochs=3,
+                    checkpoint_path=checkpoint_path,
+                    stage_name="proposal_parameter_warmup",
+                )
+            checkpoint = torch.load(
+                checkpoint_path,
+                map_location="cpu",
+                weights_only=True,
+            )
+
+        self.assertEqual(checkpoint["epoch"], 3)
+        self.assertEqual(checkpoint["selection_rank"], [-0.05, -0.1, -0.02])
+
+    def test_candidate_pretrain_prioritizes_recall_after_fit_is_feasible(self) -> None:
+        model = torch.nn.Linear(1, 1)
+        model.structure_mode = "candidate_pruning"
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        trainer = Trainer(
+            model,
+            torch.nn.Identity(),
+            optimizer,
+            torch.device("cpu"),
+            deployment_pass_rate_target=0.97,
+        )
+        loader = DataLoader(TensorDataset(torch.zeros(1, 1)), batch_size=1)
+
+        lower_rms_lower_recall = _metrics(0.1, 0.0, 0.5)
+        lower_rms_lower_recall.update(
+            {
+                "candidate_recall": 0.95,
+                "candidate_nearest_mae": 0.004,
+                "candidate_recall_at_0p005": 0.70,
+                "candidate_recall_at_0p01": 0.85,
+                "candidate_recall_at_0p02": 0.95,
+                "deployment_threshold_satisfied_rate": 0.99,
+                "deployment_bspline_rms": 0.002,
+                "deployment_bspline_rms_p95": 0.003,
+            }
+        )
+        higher_rms_higher_recall = _metrics(0.2, 0.0, 0.7)
+        higher_rms_higher_recall.update(
+            {
+                "candidate_recall": 0.99,
+                "candidate_nearest_mae": 0.002,
+                "candidate_recall_at_0p005": 0.85,
+                "candidate_recall_at_0p01": 0.95,
+                "candidate_recall_at_0p02": 0.99,
+                "deployment_threshold_satisfied_rate": 0.97,
+                "deployment_bspline_rms": 0.004,
+                "deployment_bspline_rms_p95": 0.0048,
+            }
+        )
+        epoch_metrics = [
+            lower_rms_lower_recall,
+            lower_rms_lower_recall,
+            higher_rms_higher_recall,
+            higher_rms_higher_recall,
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint_path = Path(directory) / "proposal.pt"
+            with patch.object(trainer, "_run_epoch", side_effect=epoch_metrics):
+                trainer.fit(
+                    loader,
+                    loader,
+                    epochs=2,
+                    checkpoint_path=checkpoint_path,
+                    stage_name="candidate_pretrain",
+                )
+            checkpoint = torch.load(
+                checkpoint_path, map_location="cpu", weights_only=True
+            )
+
+        self.assertEqual(checkpoint["epoch"], 2)
+        self.assertAlmostEqual(checkpoint["selection_value"], 0.85)
 
     def test_checkpoint_prioritizes_geometric_knot_f1_over_other_metrics(self) -> None:
         model = torch.nn.Linear(1, 1)

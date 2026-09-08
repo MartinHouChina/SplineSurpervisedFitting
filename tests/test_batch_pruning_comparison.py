@@ -4,6 +4,7 @@ import importlib.util
 import random
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import matplotlib.figure
 import pytest
@@ -89,6 +90,159 @@ def test_stratified_sampling_is_deterministic_balanced_unique_and_rng_local() ->
     torch.testing.assert_close(torch.random.get_rng_state(), torch_rng_before)
 
 
+def test_fixed_samples_per_knot_count_covers_every_requested_stratum() -> None:
+    index_to_count = {
+        0: 4,
+        1: 4,
+        2: 4,
+        3: 5,
+        4: 5,
+        5: 5,
+        6: 6,
+        7: 6,
+        8: 6,
+    }
+    python_rng_before = random.getstate()
+    torch_rng_before = torch.random.get_rng_state().clone()
+
+    first = batch_comparison.fixed_samples_per_knot_count(
+        index_to_count,
+        (4, 5, 6),
+        samples_per_count=2,
+        seed=777,
+    )
+    second = batch_comparison.fixed_samples_per_knot_count(
+        index_to_count,
+        (4, 5, 6),
+        samples_per_count=2,
+        seed=777,
+    )
+
+    assert first == second
+    assert len(first) == len(set(first)) == 6
+    assert [index_to_count[index] for index in first] == [4, 4, 5, 5, 6, 6]
+    assert random.getstate() == python_rng_before
+    torch.testing.assert_close(torch.random.get_rng_state(), torch_rng_before)
+
+
+def test_fixed_samples_per_knot_count_reports_sparse_strata() -> None:
+    with pytest.raises(ValueError, match="increase --scan-size"):
+        batch_comparison.fixed_samples_per_knot_count(
+            {0: 4, 1: 5},
+            (4, 5),
+            samples_per_count=2,
+            seed=1,
+        )
+
+
+def test_explicit_sample_indices_support_single_and_batch_selection() -> None:
+    assert batch_comparison.validate_explicit_sample_indices([17]) == [17]
+    assert batch_comparison.validate_explicit_sample_indices([17, 3, 99]) == [17, 3, 99]
+
+    with pytest.raises(ValueError, match="unique"):
+        batch_comparison.validate_explicit_sample_indices([4, 4])
+    with pytest.raises(ValueError, match="non-negative"):
+        batch_comparison.validate_explicit_sample_indices([-1])
+
+
+def test_timed_call_excludes_requested_warmups() -> None:
+    calls: list[int] = []
+
+    def operation() -> int:
+        calls.append(len(calls) + 1)
+        return calls[-1]
+
+    result, duration_ms = batch_comparison.timed_call(
+        operation,
+        repeats=3,
+        warmup_repeats=2,
+    )
+
+    assert result == 5
+    assert len(calls) == 5
+    assert duration_ms >= 0.0
+
+
+def test_hard_timing_replay_uses_tolerant_non_blocking_diagnostics() -> None:
+    authoritative = SimpleNamespace(
+        final_count=2,
+        retained_mask=torch.tensor([True, False, True]),
+        retained_internal_knots=torch.tensor([0.2, 0.8], dtype=torch.float64),
+        final_fit=SimpleNamespace(fit_mse=torch.tensor(2.0e-5)),
+        threshold_satisfied=True,
+    )
+    tiny_roundoff = SimpleNamespace(
+        final_count=2,
+        retained_mask=torch.tensor([True, False, True]),
+        retained_internal_knots=torch.tensor(
+            [0.2 + 2.0e-7, 0.8 - 2.0e-7], dtype=torch.float64
+        ),
+        final_fit=SimpleNamespace(fit_mse=torch.tensor(2.0e-5 + 1.0e-10)),
+        threshold_satisfied=True,
+    )
+
+    close = batch_comparison.compare_hard_timing_reproduction(
+        authoritative,
+        tiny_roundoff,
+    )
+
+    assert close.structurally_consistent
+    assert close.count_equal
+    assert close.retained_mask_equal
+    assert close.retained_knots_allclose
+    assert close.retained_knots_max_abs_difference == pytest.approx(2.0e-7)
+
+    discrete_change = SimpleNamespace(
+        final_count=1,
+        retained_mask=torch.tensor([True, False, False]),
+        retained_internal_knots=torch.tensor([0.2], dtype=torch.float64),
+        final_fit=SimpleNamespace(fit_mse=torch.tensor(2.4e-5)),
+        threshold_satisfied=True,
+    )
+    changed = batch_comparison.compare_hard_timing_reproduction(
+        authoritative,
+        discrete_change,
+    )
+
+    # A real discrete replay mismatch is reported, not raised. The caller can
+    # continue rendering with the authoritative geometry.
+    assert not changed.structurally_consistent
+    assert not changed.count_equal
+    assert not changed.retained_mask_equal
+    assert not changed.retained_knots_allclose
+    assert changed.retained_knots_max_abs_difference is None
+    assert changed.mse_abs_difference == pytest.approx(4.0e-6)
+
+
+@pytest.mark.parametrize("certified", [False, True])
+def test_fast_source_count_scan_matches_materialized_dataset(certified: bool) -> None:
+    config = {
+        "num_points": 48,
+        "point_dim": 2,
+        "min_control_points": 8,
+        "max_control_points": 24,
+        "noise_std": 0.001,
+        "canonical_knot_tolerance": 0.005,
+        "certified_minimal_source": certified,
+        "minimality_audit_points": 64,
+    }
+    dataset = batch_comparison.SyntheticCubicBSplineDataset(
+        size=12,
+        seed=2468,
+        cache_samples=False,
+        **config,
+    )
+
+    for sample_index in (0, 3, 11):
+        expected = int(dataset[sample_index]["source_internal_knot_count"])
+        actual = batch_comparison.source_knot_count_from_seed(
+            config,
+            dataset_seed=2468,
+            sample_index=sample_index,
+        )
+        assert actual == expected
+
+
 def test_deployment_geometry_keeps_proposal_separate_from_v11_positions() -> None:
     proposal = torch.tensor([[0.10, 0.30, 0.60, 0.85]])
     deployment = torch.tensor([[0.12, 0.27, 0.64, 0.81]])
@@ -117,6 +271,93 @@ def test_deployment_geometry_keeps_proposal_separate_from_v11_positions() -> Non
     # Reading the deployment path must not overwrite immutable Hard-pruning
     # proposal geometry.
     torch.testing.assert_close(output["proposal_internal_knots"], proposal)
+
+
+def test_full_chord_comparison_maps_shared_proposal_geometry() -> None:
+    parameters = torch.tensor([0.0, 0.5, 1.0], dtype=torch.float64)
+    chord_parameters = torch.tensor([0.0, 0.2, 1.0], dtype=torch.float64)
+    proposal = torch.tensor([0.25, 0.75], dtype=torch.float64)
+
+    actual_parameters, actual_proposal, shared = (
+        batch_comparison.comparison_parameterization_geometry(
+            parameters,
+            proposal,
+            chord_parameters,
+            ours_deployment="verified",
+            verified_parameterization="chord",
+        )
+    )
+
+    assert shared
+    torch.testing.assert_close(actual_parameters, chord_parameters)
+    torch.testing.assert_close(
+        actual_proposal,
+        torch.tensor([0.1, 0.6], dtype=torch.float64),
+    )
+
+    network_parameters, network_proposal, shared = (
+        batch_comparison.comparison_parameterization_geometry(
+            parameters,
+            proposal,
+            chord_parameters,
+            ours_deployment="verified",
+            verified_parameterization="chord-fallback",
+        )
+    )
+    assert not shared
+    assert network_parameters is parameters
+    assert network_proposal is proposal
+
+
+def test_verified_visualization_deployment_returns_final_chord_fit() -> None:
+    chord_parameters = torch.linspace(0.0, 1.0, 24, dtype=torch.float64)
+    network_parameters = chord_parameters.pow(1.2)
+    points = torch.stack(
+        [chord_parameters, 0.2 + chord_parameters - 0.3 * chord_parameters**3],
+        dim=-1,
+    )
+    proposal = torch.tensor([0.18, 0.38, 0.62, 0.82], dtype=torch.float64)
+
+    class DummyModel(torch.nn.Module):
+        degree = 3
+
+        def forward(self, batched_points: torch.Tensor) -> dict[str, torch.Tensor]:
+            del batched_points
+            return {
+                "params": network_parameters.unsqueeze(0),
+                "internal_knots": proposal.unsqueeze(0),
+                "proposal_internal_knots": proposal.unsqueeze(0),
+                "deployment_internal_knots": proposal.unsqueeze(0),
+                "learned_keep_mask": torch.ones(
+                    (1, proposal.numel()), dtype=torch.bool
+                ),
+                "keep_probability": torch.full(
+                    (1, proposal.numel()), 0.8, dtype=torch.float64
+                ),
+            }
+
+    result = batch_comparison.run_verified_visualization_deployment(
+        DummyModel(),
+        points.unsqueeze(0),
+        points,
+        chord_parameters,
+        mse_tolerance=1e-12,
+        min_internal_knots=0,
+        smoothness_weight=0.0,
+        control_ridge=0.0,
+        compact=True,
+        hard_fallback=True,
+        residual_fallback=True,
+        max_residual_insertions=4,
+        residual_min_gap=1e-4,
+        parameterization_policy="chord",
+        refit_device="cpu",
+    )
+
+    assert result.repair.final_parameterization == "chord_length"
+    assert result.repair.threshold_satisfied
+    torch.testing.assert_close(result.repair.final_parameters, chord_parameters)
+    assert float(result.repair.final_fit.fit_mse) <= 1e-12
 
 
 def test_greedy_mse_pruning_respects_threshold_and_retained_structure() -> None:
@@ -211,11 +452,33 @@ def test_render_small_four_axis_png_uses_mse_titles(
         canonical_count=0,
         mse_tolerance=2.5e-5,
         dpi=50,
+        parameterization_note=(
+            "Redundant, Ours verified, and Greedy share chord-length parameters."
+        ),
+        timing_scope_note=(
+            "Timing scopes are symmetric end-to-end for this comparison."
+        ),
     )
 
     assert captured["axis_count"] == 4
     figure_text = str(captured["text"])
     assert figure_text.count("MSE=") == 4
     assert "RMS" not in figure_text.upper()
+    assert "share chord-length parameters" in figure_text
+    assert "symmetric end-to-end" in figure_text
     assert output_path.is_file()
     assert output_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_batch_cli_exposes_learned_and_verified_deployment_controls() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert '"--ours-deployment"' in source
+    assert 'choices=("learned", "verified")' in source
+    assert '"--verified-parameterization"' in source
+    assert 'choices=("network", "chord-fallback", "chord")' in source
+    assert '"--verified-refit-device"' in source
+    assert '"--sample-indices"' in source
+    assert '"--timing-scope"' in source
+    assert '"--timing-warmups"' in source
+    assert '("historical-asymmetric", "end-to-end")' in source

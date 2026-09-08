@@ -57,6 +57,19 @@ def main() -> None:
     parser.add_argument("--sampling-nonuniformity", type=float, default=0.45)
     parser.add_argument("--turn-strength", type=float, default=0.45)
     parser.add_argument(
+        "--certified-minimal-source",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Use clean, source-subset minimal knot labels and add noise only "
+            "after the label certificate has passed."
+        ),
+    )
+    parser.add_argument("--minimality-margin", type=float, default=0.2)
+    parser.add_argument("--minimality-max-attempts", type=int, default=16)
+    parser.add_argument("--minimality-audit-points", type=int, default=512)
+    parser.add_argument("--oscillation-amplitude", type=float, default=0.3)
+    parser.add_argument(
         "--canonical-knot-tolerance",
         type=float,
         default=5e-3,
@@ -140,6 +153,19 @@ def main() -> None:
         parser.error("--knot-match-tolerance must be non-negative")
     if args.canonical_knot_tolerance < 0.0:
         parser.error("--canonical-knot-tolerance must be non-negative")
+    if args.certified_minimal_source and args.canonical_knot_tolerance <= 0.0:
+        parser.error(
+            "--certified-minimal-source requires a positive "
+            "--canonical-knot-tolerance"
+        )
+    if args.minimality_margin < 0.0:
+        parser.error("--minimality-margin must be non-negative")
+    if args.minimality_max_attempts < 1:
+        parser.error("--minimality-max-attempts must be positive")
+    if args.minimality_audit_points not in (0,) and args.minimality_audit_points < 2:
+        parser.error("--minimality-audit-points must be zero or at least 2")
+    if args.oscillation_amplitude <= 0.0:
+        parser.error("--oscillation-amplitude must be positive")
     if not 0.0 <= args.teacher_forcing_final <= 1.0:
         parser.error("--teacher-forcing-final must lie in [0, 1]")
     if args.teacher_forcing_warmup_epochs < 0:
@@ -165,7 +191,7 @@ def main() -> None:
     max_true_internal_knots = args.max_control_points - 4
     min_legal_internal_knots = (
         args.min_control_points - 4
-        if args.canonical_knot_tolerance == 0.0
+        if args.canonical_knot_tolerance == 0.0 or args.certified_minimal_source
         else 0
     )
     checkpoint_selection_start_epoch = (
@@ -190,6 +216,11 @@ def main() -> None:
         "knot_nonuniformity": args.knot_nonuniformity,
         "sampling_nonuniformity": args.sampling_nonuniformity,
         "turn_strength": args.turn_strength,
+        "certified_minimal_source": args.certified_minimal_source,
+        "minimality_margin": args.minimality_margin,
+        "minimality_max_attempts": args.minimality_max_attempts,
+        "minimality_audit_points": args.minimality_audit_points,
+        "oscillation_amplitude": args.oscillation_amplitude,
         "canonical_knot_tolerance": args.canonical_knot_tolerance,
         "normalize": True,
         "return_ground_truth": True,

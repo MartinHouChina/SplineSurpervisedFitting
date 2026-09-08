@@ -10,7 +10,11 @@ import torch
 from torch.utils.data import DataLoader
 
 from ..evaluation.bspline_inference import refit_hard_gated_bspline_batch
-from ..evaluation.knot_diagnostics import activity_statistics, match_internal_knots
+from ..evaluation.knot_diagnostics import (
+    activity_statistics,
+    match_internal_knots,
+    warp_internal_knots_to_parameterization,
+)
 
 
 class Trainer:
@@ -45,6 +49,40 @@ class Trainer:
             raise ValueError("deployment_pass_rate_target must lie in [0, 1]")
         self.deployment_pass_rate_target = float(deployment_pass_rate_target)
         self.show_progress = bool(show_progress)
+
+    @staticmethod
+    def _true_knots_in_output_parameterization(
+        true_internal_knots: torch.Tensor,
+        true_params: torch.Tensor | None,
+        output_params: torch.Tensor,
+    ) -> torch.Tensor:
+        """Transport labelled knots to the domain used by predicted knots."""
+
+        if true_params is None:
+            return true_internal_knots
+        if true_params.shape != output_params.shape:
+            raise ValueError("true and output parameters must share shape [B,M]")
+        if (
+            true_internal_knots.ndim != 2
+            or true_internal_knots.shape[0] != true_params.shape[0]
+        ):
+            raise ValueError("true internal knots must have shape [B,K]")
+        return torch.stack(
+            [
+                warp_internal_knots_to_parameterization(
+                    knot_row,
+                    true_row,
+                    output_row,
+                )
+                for knot_row, true_row, output_row in zip(
+                    true_internal_knots,
+                    true_params,
+                    output_params,
+                    strict=True,
+                )
+            ],
+            dim=0,
+        )
 
     @staticmethod
     def _format_eta(seconds: float) -> str:
@@ -156,6 +194,7 @@ class Trainer:
         binary_scale: float,
         teacher_forcing_ratio: float = 1.0,
         compute_deployment_metrics: bool = False,
+        deployment_use_all_candidates: bool = False,
     ) -> dict[str, float]:
         self.model.train(training)
         totals: dict[str, float] = defaultdict(float)
@@ -251,12 +290,33 @@ class Trainer:
                     raise ValueError(
                         "deployment metrics require candidate_pruning_one_shot"
                     )
-                hard_mask = output.get("learned_keep_mask", output.get("knot_mask"))
-                if hard_mask is None:
-                    raise KeyError("one-shot output is missing learned_keep_mask")
+                if deployment_use_all_candidates:
+                    deployment_parameters = output["params"]
+                    proposal_parameters = output.get(
+                        "proposal_params", deployment_parameters
+                    )
+                    deployment_knots = output.get(
+                        "proposal_internal_knots", output["internal_knots"]
+                    )
+                    warp = getattr(self.model, "_warp_parameter_coordinates", None)
+                    if warp is not None:
+                        deployment_knots = warp(
+                            deployment_knots,
+                            proposal_parameters,
+                            deployment_parameters,
+                        )
+                    hard_mask = torch.ones_like(deployment_knots, dtype=torch.bool)
+                else:
+                    deployment_parameters = output["params"]
+                    deployment_knots = output["internal_knots"]
+                    hard_mask = output.get(
+                        "learned_keep_mask", output.get("knot_mask")
+                    )
+                    if hard_mask is None:
+                        raise KeyError("one-shot output is missing learned_keep_mask")
                 deployed = refit_hard_gated_bspline_batch(
-                    parameters=output["params"],
-                    candidate_knots=output["internal_knots"],
+                    parameters=deployment_parameters,
+                    candidate_knots=deployment_knots,
                     hard_gates=hard_mask,
                     points=points,
                     degree=int(getattr(self.model, "degree", 3)),
@@ -286,6 +346,13 @@ class Trainer:
                 }
             geometric_metrics: dict[str, torch.Tensor] = {}
             if true_internal_knots is not None and true_internal_knot_mask is not None:
+                metric_true_internal_knots = (
+                    self._true_knots_in_output_parameterization(
+                        true_internal_knots,
+                        true_params,
+                        output["params"],
+                    )
+                )
                 matched_count = 0
                 predicted_count = 0
                 target_count = 0
@@ -298,7 +365,7 @@ class Trainer:
                         output["internal_knots"][
                             sample_index, retained_mask[sample_index]
                         ],
-                        true_internal_knots[
+                        metric_true_internal_knots[
                             sample_index, true_internal_knot_mask[sample_index]
                         ],
                         tolerance=self.knot_match_tolerance,
@@ -442,6 +509,7 @@ class Trainer:
                     1.0,
                     1.0,
                     compute_deployment_metrics=deployment_validation,
+                    deployment_use_all_candidates=(stage_name == "candidate_pretrain"),
                 )
                 record.update({f"val/{k}": v for k, v in val_metrics.items()})
                 current_val = val_metrics["loss"]
@@ -463,7 +531,59 @@ class Trainer:
             history.append(record)
             displayed_metrics = val_metrics if val_loader is not None else train_metrics
             structure_mode = getattr(self.model, "structure_mode", None)
-            if structure_mode in {
+            parameter_feedback_stage = (
+                stage_name == "parameter_feedback_calibration"
+                or "parameter_feedback_chord_blend_weight" in displayed_metrics
+            )
+            if parameter_feedback_stage:
+                # Parameter feedback freezes proposal/selection/relocation, so its
+                # loss intentionally has no candidate-coverage or knot-position
+                # terms.  Report the quantities this stage actually optimizes
+                # instead of pretending the missing structural losses are zero.
+                if "deployment_threshold_satisfied_rate" in displayed_metrics:
+                    fit_report = (
+                        f"deploy_pass="
+                        f"{displayed_metrics['deployment_threshold_satisfied_rate']:.3f}"
+                        f" | deploy_RMS="
+                        f"{displayed_metrics['deployment_bspline_rms']:.5f}"
+                    )
+                else:
+                    fit_report = (
+                        f"surrogate_pass="
+                        f"{displayed_metrics.get('threshold_satisfied_rate', 0.0):.3f}"
+                    )
+                has_parameter_supervision = (
+                    displayed_metrics.get(
+                        "true_parameter_supervision_fraction",
+                        1.0,
+                    )
+                    > 0.0
+                )
+                parameter_report = (
+                    f"{max(displayed_metrics.get('true_parameter_loss', 0.0), 0.0) ** 0.5:.5f}"
+                    if has_parameter_supervision
+                    else "n/a"
+                )
+                structure_report = (
+                    f"{fit_report} | "
+                    f"keep={displayed_metrics['hard_active_count']:.2f}/"
+                    f"{displayed_metrics['candidate_knot_count']:.0f} | "
+                    f"parameter_RMSE={parameter_report} | "
+                    f"chord_blend="
+                    f"{displayed_metrics.get('parameter_feedback_chord_blend_weight', 0.0):.3f} | "
+                    f"gap_shift="
+                    f"{displayed_metrics.get('parameter_feedback_gap_logit_shift_mean_abs', 0.0):.4f}"
+                )
+                if "deployment_fit_loss" in displayed_metrics:
+                    structure_report += (
+                        f" | exact_refit_MSE="
+                        f"{displayed_metrics['deployment_fit_loss']:.6e}"
+                        f" | count_score="
+                        f"{displayed_metrics.get('joint_requested_count_mean', 0.0):.2f}/"
+                        f"{displayed_metrics.get('joint_target_policy_score_mean', 0.0):.2f}"
+                        f"(K={displayed_metrics.get('joint_target_count_mean', 0.0):.2f})"
+                    )
+            elif structure_mode in {
                 "candidate_pruning",
                 "candidate_pruning_one_shot",
             }:
@@ -496,6 +616,11 @@ class Trainer:
                         f" | mask_acc={displayed_metrics.get('teacher_mask_accuracy', 0.0):.3f}"
                         f" | beta={displayed_metrics.get('adaptive_keep_threshold_mean', 0.0):.3f}"
                     )
+                    if "predicted_relocation_mean_abs" in displayed_metrics:
+                        structure_report += (
+                            f" | reloc={displayed_metrics['predicted_relocation_mean_abs']:.4f}"
+                            f" | gap={displayed_metrics.get('teacher_survivor_spacing_loss', 0.0):.4f}"
+                        )
             elif structure_mode in {
                 "count_conditioned",
                 "interactive_dynamic",
@@ -517,6 +642,23 @@ class Trainer:
                     f"{displayed_metrics['candidate_knot_count']:.0f} | "
                     f"gate_nonzero={displayed_metrics['gate_nonzero_count']:.2f}"
                 )
+            if "knot_position_loss" in displayed_metrics:
+                position_report = (
+                    f"knot_pos={displayed_metrics['knot_position_loss']:.4f}"
+                )
+            elif (
+                "true_parameter_loss" in displayed_metrics
+                and displayed_metrics.get(
+                    "true_parameter_supervision_fraction",
+                    1.0,
+                )
+                > 0.0
+            ):
+                position_report = (
+                    f"parameter_MSE={displayed_metrics['true_parameter_loss']:.6f}"
+                )
+            else:
+                position_report = "position_loss=n/a"
             print(
                 f"Stage {stage_name} | "
                 f"Epoch {epoch_offset + epoch + 1:04d} "
@@ -526,7 +668,7 @@ class Trainer:
                 f"{structure_report} | "
                 f"knot_F1@{self.knot_match_tolerance:.3f}="
                 f"{displayed_metrics.get('knot_match_f1', 0.0):.3f} | "
-                f"knot_pos={displayed_metrics['knot_position_loss']:.4f} | "
+                f"{position_report} | "
                 f"teacher={teacher_forcing_ratio:.3f} | "
                 f"l0_scale={l0_scale:.3f} | "
                 f"temperature={gate_temperature if gate_temperature is not None else float('nan'):.3f}"
@@ -537,7 +679,33 @@ class Trainer:
                 "count_conditioned",
                 "interactive_dynamic",
             }
-            if structure_mode in {
+            if stage_name == "proposal_parameter_warmup":
+                # The warm-up caller gives the loss only its coordinate-MSE
+                # and log-gap terms.  Select by that complete weighted
+                # objective first: coordinate MSE alone can hide large local
+                # interval errors that cancel after cumulative integration.
+                current_gap_mae = selection_metrics.get(
+                    "proposal_parameter_log_gap_mae",
+                    float("inf"),
+                )
+                current_parameter_loss = selection_metrics.get(
+                    "raw_proposal_parameter_loss",
+                    float("inf"),
+                )
+                if current_gap_mae != current_gap_mae:
+                    current_gap_mae = float("inf")
+                if current_parameter_loss != current_parameter_loss:
+                    current_parameter_loss = float("inf")
+                current_rank = (
+                    -current_val,
+                    -current_gap_mae,
+                    -current_parameter_loss,
+                )
+                selection_metric_name = (
+                    "parameter_warmup_val_loss_then_log_gap_mae_coordinate_mse"
+                )
+                selection_value = current_val
+            elif structure_mode in {
                 "candidate_pruning",
                 "candidate_pruning_one_shot",
             }:
@@ -555,6 +723,15 @@ class Trainer:
                 current_unsafe_action = selection_metrics.get("unsafe_delete_rate", 1.0)
                 current_false_stop = selection_metrics.get("false_stop_rate", 1.0)
                 if stage_name == "candidate_pretrain":
+                    current_pass_rate = selection_metrics.get(
+                        "deployment_threshold_satisfied_rate", 0.0
+                    )
+                    current_deployment_rms = selection_metrics.get(
+                        "deployment_bspline_rms", float("inf")
+                    )
+                    current_deployment_rms_p95 = selection_metrics.get(
+                        "deployment_bspline_rms_p95", float("inf")
+                    )
                     strict_recall = selection_metrics.get(
                         "candidate_recall_at_0p005", current_candidate_recall
                     )
@@ -564,18 +741,49 @@ class Trainer:
                     broad_recall = selection_metrics.get(
                         "candidate_recall_at_0p02", current_candidate_recall
                     )
-                    current_rank = (
-                        strict_recall,
-                        medium_recall,
-                        broad_recall,
-                        -current_candidate_mae,
-                        current_knot_match_f1,
-                        -current_val,
+                    proposal_feasible = (
+                        current_pass_rate >= self.deployment_pass_rate_target
                     )
+                    if proposal_feasible:
+                        # Once every-candidate deployment is sufficiently
+                        # feasible, preserve the reason for this stage: a
+                        # high-recall proposal set.  Ranking feasible epochs by
+                        # ever-smaller RMS first previously selected candidates
+                        # that fit globally but missed labelled local knots.
+                        current_rank = (
+                            1.0,
+                            strict_recall,
+                            medium_recall,
+                            broad_recall,
+                            -current_candidate_mae,
+                            -current_deployment_rms,
+                            -current_deployment_rms_p95,
+                            current_knot_match_f1,
+                            -current_val,
+                        )
+                    else:
+                        # A high-recall but infeasible proposal cannot seed a
+                        # valid Hard-RMS teacher.  Reach the exact deployment
+                        # constraint before optimizing localization quality.
+                        current_rank = (
+                            0.0,
+                            current_pass_rate,
+                            -current_deployment_rms,
+                            -current_deployment_rms_p95,
+                            strict_recall,
+                            medium_recall,
+                            broad_recall,
+                            -current_candidate_mae,
+                            current_knot_match_f1,
+                            -current_val,
+                        )
                     selection_metric_name = (
-                        "candidate_recall_0p005_0p01_0p02_then_mae_knot_f1_loss"
+                        "all_candidate_standard_bspline_feasible_then_"
+                        "candidate_recall_0p005_0p01_0p02_mae_rms_p95_loss"
                     )
-                    selection_value = strict_recall
+                    selection_value = (
+                        strict_recall if proposal_feasible else current_pass_rate
+                    )
                 elif structure_mode == "candidate_pruning_one_shot":
                     current_pass_rate = selection_metrics.get(
                         "deployment_threshold_satisfied_rate", 0.0

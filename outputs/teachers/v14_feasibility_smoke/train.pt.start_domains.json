@@ -1,0 +1,11 @@
+{
+  "config_fingerprint": "443ffe7a6ff1492990b5a19919caf62965a9fc07e2a34259931fe5198aaad070",
+  "counts": {
+    "calibrated": 8,
+    "chord": 0,
+    "true": 0
+  },
+  "fallback_fraction": 0.0,
+  "feasibility_policy": "calibrated_all_candidate_standard_bspline_then_true_then_chord_v2",
+  "version": 1
+}

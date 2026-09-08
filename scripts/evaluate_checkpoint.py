@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+# Script entry points intentionally add ``src`` to sys.path before importing
+# the local package so they also run from an unpacked repository.
+# ruff: noqa: E402
+
 import argparse
 import json
 import math
+import statistics
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -17,6 +23,7 @@ from spline_fitting.checkpointing import (
     CANDIDATE_PRUNING_OBJECTIVE_VERSION,
     COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
     CURRENT_OBJECTIVE_VERSION,
+    V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
     build_model_from_checkpoint,
     migrate_loss_config,
 )
@@ -26,10 +33,21 @@ from spline_fitting.evaluation.bspline_inference import (
     refit_model_output_as_bsplines,
     select_count_conditioned_output_by_bic,
 )
-from spline_fitting.evaluation.knot_diagnostics import match_internal_knots
+from spline_fitting.evaluation.knot_diagnostics import (
+    match_internal_knots,
+    warp_internal_knots_to_parameterization,
+)
+from spline_fitting.evaluation.hybrid_knot_search import (
+    HybridKnotSearchResult,
+    hybrid_minimal_knot_search,
+)
 from spline_fitting.evaluation.minimal_knot_pruning import (
     MinimalKnotPruningResult,
     prune_knots_to_rms_tolerance,
+)
+from spline_fitting.evaluation.verified_knot_repair import (
+    VerifiedKnotRepairResult,
+    verified_confidence_repair,
 )
 from spline_fitting.losses.candidate_pruning_loss import (
     CandidatePruningLoss,
@@ -64,6 +82,23 @@ def resolve_fit_tolerance(
     return tolerance
 
 
+def resolve_verified_refit_device(
+    requested: str,
+    *,
+    model_device: torch.device,
+) -> torch.device:
+    """Resolve the exact verified-refit device independently of the network."""
+
+    if requested not in {"auto", "cpu", "model"}:
+        raise ValueError("verified refit device must be one of auto, cpu, model")
+    if requested == "model":
+        return torch.device(model_device)
+    # Small rank-revealing least-squares systems are more robust and usually
+    # faster on CPU.  ``auto`` therefore selects CPU for both CPU and CUDA
+    # model execution; callers can explicitly request ``model`` when desired.
+    return torch.device("cpu")
+
+
 def candidate_mode_flags(
     checkpoint: dict[str, object], model_config: dict[str, object]
 ) -> tuple[bool, bool]:
@@ -73,9 +108,27 @@ def candidate_mode_flags(
     one_shot = (
         structure == "candidate_pruning_one_shot"
         or "candidate_pruning_one_shot" in objective
+        or objective == V12_COUPLED_RELOCATION_OBJECTIVE_VERSION
     )
     candidate_family = one_shot or structure == "candidate_pruning"
     return candidate_family, one_shot
+
+
+def resolve_deployment_mode(requested: str, *, candidate_one_shot: bool) -> str:
+    """Resolve the quality-deployment policy without changing legacy modes."""
+
+    choices = {"checkpoint", "learned", "verified", "hybrid", "hard"}
+    if requested not in choices:
+        raise ValueError(
+            "deployment mode must be one of checkpoint, learned, verified, hybrid, hard"
+        )
+    if requested == "checkpoint":
+        return "learned" if candidate_one_shot else "checkpoint"
+    if not candidate_one_shot:
+        raise ValueError(
+            f"deployment mode '{requested}' requires a one-shot candidate checkpoint"
+        )
+    return requested
 
 
 def one_shot_selection(
@@ -146,6 +199,201 @@ def refit_one_shot_output_batch(
         interpolate_endpoints=True,
     )
     return deployed, mask, adaptive_threshold, source
+
+
+def hybrid_deploy_output_batch(
+    output: dict[str, torch.Tensor],
+    points: torch.Tensor,
+    *,
+    fit_tolerance_rms: float,
+    degree: int,
+    smoothness_weight: float,
+    control_ridge: float,
+    min_internal_knots: int = 0,
+    min_gap: float = 1e-4,
+    beam_width: int = 4,
+    branch_factor: int = 4,
+    position_sweeps: int = 1,
+    position_grid_size: int = 5,
+    position_restarts: int = 1,
+    position_refine_count_margin: int = 1,
+    position_refine_candidate_multiplier: int = 4,
+    progress_offset: int = 0,
+    progress_total: int | None = None,
+) -> tuple[
+    list[HardGatedBSplineFit],
+    list[HybridKnotSearchResult],
+    list[float],
+]:
+    """Run learned-seeded hybrid MSE search for every curve in a batch."""
+
+    for key in ("params", "internal_knots"):
+        if key not in output:
+            raise KeyError(f"one-shot output is missing {key}")
+    if not math.isfinite(fit_tolerance_rms) or fit_tolerance_rms < 0.0:
+        raise ValueError("fit_tolerance_rms must be finite and non-negative")
+    learned_mask, _, _ = one_shot_selection(output)
+    proposal_knots = output.get("proposal_internal_knots", output["internal_knots"])
+    deployment_knots = output.get("deployment_internal_knots", output["internal_knots"])
+    if not (
+        proposal_knots.shape
+        == deployment_knots.shape
+        == learned_mask.shape
+        == output["internal_knots"].shape
+    ):
+        raise ValueError("one-shot proposal/deployment/mask tensors must share [B,K]")
+    if points.shape[0] != proposal_knots.shape[0]:
+        raise ValueError("points and one-shot output must share a batch size")
+
+    mse_tolerance = fit_tolerance_rms * fit_tolerance_rms
+    deployed: list[HardGatedBSplineFit] = []
+    results: list[HybridKnotSearchResult] = []
+    elapsed_ms: list[float] = []
+    for index in range(points.shape[0]):
+        started_at = time.perf_counter()
+        result = hybrid_minimal_knot_search(
+            output["params"][index],
+            points[index],
+            proposal_knots[index],
+            deployment_knots=deployment_knots[index],
+            learned_mask=learned_mask[index],
+            mse_tolerance=mse_tolerance,
+            min_internal_knots=min_internal_knots,
+            degree=degree,
+            smoothness_weight=smoothness_weight,
+            control_ridge=control_ridge,
+            interpolate_endpoints=True,
+            beam_width=beam_width,
+            branch_factor=branch_factor,
+            position_sweeps=position_sweeps,
+            position_grid_size=position_grid_size,
+            position_restarts=position_restarts,
+            position_refine_count_margin=position_refine_count_margin,
+            position_refine_candidate_multiplier=(position_refine_candidate_multiplier),
+            min_gap=min_gap,
+        )
+        elapsed_ms.append(1e3 * (time.perf_counter() - started_at))
+        if progress_total is not None:
+            print(
+                "Hybrid quality search "
+                f"[{progress_offset + index + 1}/{progress_total}] | "
+                f"greedy K={result.greedy_count} -> final K={result.final_count} | "
+                f"MSE={float(result.final_fit.fit_mse):.5e} | "
+                f"pass={result.threshold_satisfied} | "
+                f"time={elapsed_ms[-1] / 1e3:.2f}s",
+                flush=True,
+            )
+        retained_mask = result.retained_proposal_mask
+        deployed.append(
+            HardGatedBSplineFit(
+                sample_index=index,
+                candidate_count=int(proposal_knots.shape[1]),
+                retained_count=result.final_count,
+                retained_mask=retained_mask,
+                hard_gate=retained_mask,
+                spline=result.final_fit,
+            )
+        )
+        results.append(result)
+    return deployed, results, elapsed_ms
+
+
+def verified_deploy_output_batch(
+    output: dict[str, torch.Tensor],
+    points: torch.Tensor,
+    *,
+    chord_parameters: torch.Tensor | None = None,
+    parameterization_policy: str = "network",
+    fit_tolerance_rms: float,
+    degree: int,
+    smoothness_weight: float,
+    control_ridge: float,
+    min_internal_knots: int = 0,
+    compact: bool = True,
+    hard_fallback: bool = True,
+    residual_fallback: bool = True,
+    max_residual_insertions: int = 8,
+    residual_min_gap: float = 1e-3,
+    refit_device: torch.device | str | None = None,
+) -> tuple[
+    list[HardGatedBSplineFit],
+    list[VerifiedKnotRepairResult],
+    list[float],
+]:
+    """Verify one-shot fits and repair only failed curves with exact refits."""
+
+    learned_mask, _, _ = one_shot_selection(output)
+    proposal_knots = output.get("proposal_internal_knots", output["internal_knots"])
+    deployment_knots = output.get("deployment_internal_knots", output["internal_knots"])
+    keep_scores = output["keep_probability"]
+    expected_shape = output["internal_knots"].shape
+    if not (
+        proposal_knots.shape
+        == deployment_knots.shape
+        == learned_mask.shape
+        == keep_scores.shape
+        == expected_shape
+    ):
+        raise ValueError("one-shot proposal/deployment/mask/scores must share [B,K]")
+    if points.shape[0] != proposal_knots.shape[0]:
+        raise ValueError("points and one-shot output must share a batch size")
+    if parameterization_policy not in {"network", "chord-fallback", "chord"}:
+        raise ValueError(
+            "parameterization_policy must be one of network, chord-fallback, chord"
+        )
+    if parameterization_policy != "network":
+        if chord_parameters is None:
+            raise ValueError("chord_parameters are required outside network policy")
+        if chord_parameters.shape != output["params"].shape:
+            raise ValueError("chord_parameters and params must share shape [B,M]")
+
+    target_device = (
+        points.device if refit_device is None else torch.device(refit_device)
+    )
+
+    deployed: list[HardGatedBSplineFit] = []
+    results: list[VerifiedKnotRepairResult] = []
+    elapsed_ms: list[float] = []
+    for index in range(points.shape[0]):
+        started_at = time.perf_counter()
+        result = verified_confidence_repair(
+            output["params"][index].detach().to(target_device),
+            points[index].detach().to(target_device),
+            proposal_knots[index].detach().to(target_device),
+            deployment_knots[index].detach().to(target_device),
+            learned_mask[index].detach().to(target_device),
+            keep_scores[index].detach().to(target_device),
+            fit_tolerance_rms=fit_tolerance_rms,
+            min_internal_knots=min_internal_knots,
+            degree=degree,
+            smoothness_weight=smoothness_weight,
+            control_ridge=control_ridge,
+            interpolate_endpoints=True,
+            compact=compact,
+            hard_fallback=hard_fallback,
+            residual_fallback=residual_fallback,
+            max_residual_insertions=max_residual_insertions,
+            residual_min_gap=residual_min_gap,
+            alternate_parameters=(
+                chord_parameters[index].detach().to(target_device)
+                if chord_parameters is not None
+                else None
+            ),
+            parameterization_policy=parameterization_policy,
+        )
+        elapsed_ms.append(1e3 * (time.perf_counter() - started_at))
+        deployed.append(
+            HardGatedBSplineFit(
+                sample_index=index,
+                candidate_count=result.deployment_candidate_count,
+                retained_count=result.final_count,
+                retained_mask=result.deployment_retained_mask,
+                hard_gate=result.deployment_retained_mask,
+                spline=result.final_fit,
+            )
+        )
+        results.append(result)
+    return deployed, results, elapsed_ms
 
 
 def _pruning_result_as_deployed_fit(
@@ -240,6 +488,12 @@ def candidate_loss_from_checkpoint(
         joint_position_supervision=bool(
             config.get("joint_position_supervision", False)
         ),
+        teacher_relocation_supervision=bool(
+            config.get("teacher_relocation_supervision", False)
+        ),
+        teacher_survivor_spacing_weight=float(
+            config.get("teacher_survivor_spacing_weight", 0.25)
+        ),
     )
 
 
@@ -251,6 +505,15 @@ def main() -> None:
     parser.add_argument("--num-samples", type=int, default=128)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument(
+        "--torch-num-threads",
+        type=int,
+        default=None,
+        help=(
+            "CPU intra-op threads. Small exact spline solves are often faster "
+            "with 4 threads than with all host cores."
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=20000,
@@ -261,7 +524,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Historical activity threshold. For v8-v11 it is ignored by deployment; "
+            "Historical activity threshold. For v8-v12 it is ignored by deployment; "
             "the learned mask (or centered keep probability >= 0.5 fallback) is used."
         ),
     )
@@ -279,20 +542,115 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Normalized RMS bound for v7 hard candidate pruning. For v8-v11 it is "
-            "reporting-only: it measures threshold satisfaction and never changes "
-            "the learned one-shot mask. Defaults to the checkpoint deployment "
-            "error tolerance, then canonical label tolerance."
+            "Normalized RMS bound. In learned mode it is reporting-only; verified, "
+            "hybrid and hard modes use it as an exact standard-B-spline acceptance "
+            "constraint. Defaults to the checkpoint deployment error tolerance, "
+            "then canonical label tolerance."
         ),
     )
     parser.add_argument(
         "--run-hard-diagnostic",
         action="store_true",
         help=(
-            "For v8-v11 only, additionally run the offline greedy hard-pruning "
+            "For v8-v12 only, additionally run the offline greedy hard-pruning "
             "teacher for comparison. It never replaces one-shot deployment."
         ),
     )
+    parser.add_argument(
+        "--deployment-mode",
+        choices=("checkpoint", "learned", "verified", "hybrid", "hard"),
+        default="checkpoint",
+        help=(
+            "Deployment policy. One-shot checkpoints resolve checkpoint to learned; "
+            "verified exact-refit checks the fast path and repairs failed curves; "
+            "hybrid performs learned-seeded MSE beam search; hard uses traditional "
+            "proposal-only greedy pruning."
+        ),
+    )
+    parser.add_argument(
+        "--verified-compact",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "After confidence add-back reaches the fit threshold, greedily remove "
+            "redundant knots from that smaller feasible set. Disable for the "
+            "lowest-latency verified path."
+        ),
+    )
+    parser.add_argument(
+        "--verified-hard-fallback",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "If even the complete proposal prefix misses the threshold, run the "
+            "traditional proposal-only greedy fallback."
+        ),
+    )
+    parser.add_argument(
+        "--verified-residual-fallback",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "When the complete proposal set still misses the bound, insert knots "
+            "at the largest current point residuals before traditional hard fallback."
+        ),
+    )
+    parser.add_argument(
+        "--verified-max-residual-insertions",
+        type=int,
+        default=8,
+        help="Maximum exact-refit residual insertions for an extreme failed sample.",
+    )
+    parser.add_argument(
+        "--verified-residual-min-gap",
+        type=float,
+        default=None,
+        help=(
+            "Minimum parameter gap for residual insertions. Defaults to the "
+            "checkpoint model min_knot_gap."
+        ),
+    )
+    parser.add_argument(
+        "--verified-refit-device",
+        choices=("auto", "cpu", "model"),
+        default="auto",
+        help=(
+            "Device for verified exact standard-B-spline refits. auto uses CPU "
+            "for small least-squares systems even when the model runs on CUDA; "
+            "model keeps refits on the network device."
+        ),
+    )
+    parser.add_argument(
+        "--verified-parameterization",
+        choices=("network", "chord-fallback", "chord"),
+        default="chord-fallback",
+        help=(
+            "Exact-refit parameterization. network preserves predicted parameters; "
+            "chord-fallback changes domain only after the complete network proposal "
+            "fails; chord uses deterministic chord length throughout verified repair."
+        ),
+    )
+    parser.add_argument("--hybrid-beam-width", type=int, default=4)
+    parser.add_argument(
+        "--hybrid-branch-factor",
+        type=int,
+        default=4,
+        help="Deletions expanded per beam parent; zero expands all deletions.",
+    )
+    parser.add_argument("--hybrid-position-sweeps", type=int, default=2)
+    parser.add_argument("--hybrid-position-grid-size", type=int, default=7)
+    parser.add_argument("--hybrid-position-restarts", type=int, default=2)
+    parser.add_argument("--hybrid-position-refine-count-margin", type=int, default=1)
+    parser.add_argument(
+        "--hybrid-position-refine-candidate-multiplier",
+        type=int,
+        default=4,
+        help=(
+            "Near the deletion boundary, refine this many beam-widths before "
+            "truncating the beam. Larger values strengthen delete/move coupling."
+        ),
+    )
+    parser.add_argument("--hybrid-min-gap", type=float, default=None)
     parser.add_argument(
         "--one-shot-selection-policy",
         choices=("checkpoint", "threshold", "mass_topk"),
@@ -331,12 +689,41 @@ def main() -> None:
     args = parser.parse_args()
     if args.num_samples <= 0 or args.batch_size <= 0:
         parser.error("sample and batch sizes must be positive")
+    if args.torch_num_threads is not None:
+        if args.torch_num_threads <= 0:
+            parser.error("--torch-num-threads must be positive")
+        torch.set_num_threads(args.torch_num_threads)
     if args.knot_tolerance < 0.0:
         parser.error("--knot-tolerance must be non-negative")
     if args.one_shot_safety_sigma is not None and args.one_shot_safety_sigma < 0.0:
         parser.error("--one-shot-safety-sigma must be non-negative")
     if args.one_shot_coverage_bins is not None and args.one_shot_coverage_bins < 0:
         parser.error("--one-shot-coverage-bins must be non-negative")
+    if args.hybrid_beam_width <= 0:
+        parser.error("--hybrid-beam-width must be positive")
+    if args.hybrid_branch_factor < 0:
+        parser.error("--hybrid-branch-factor must be non-negative")
+    if args.hybrid_position_sweeps < 0:
+        parser.error("--hybrid-position-sweeps must be non-negative")
+    if args.hybrid_position_grid_size < 3 or args.hybrid_position_grid_size % 2 == 0:
+        parser.error("--hybrid-position-grid-size must be odd and at least 3")
+    if args.hybrid_position_restarts <= 0:
+        parser.error("--hybrid-position-restarts must be positive")
+    if args.hybrid_position_refine_count_margin < 0:
+        parser.error("--hybrid-position-refine-count-margin must be non-negative")
+    if args.hybrid_position_refine_candidate_multiplier <= 0:
+        parser.error("--hybrid-position-refine-candidate-multiplier must be positive")
+    if args.hybrid_min_gap is not None and (
+        not math.isfinite(args.hybrid_min_gap) or args.hybrid_min_gap < 0.0
+    ):
+        parser.error("--hybrid-min-gap must be finite and non-negative")
+    if args.verified_max_residual_insertions < 0:
+        parser.error("--verified-max-residual-insertions must be non-negative")
+    if args.verified_residual_min_gap is not None and (
+        not math.isfinite(args.verified_residual_min_gap)
+        or args.verified_residual_min_gap < 0.0
+    ):
+        parser.error("--verified-residual-min-gap must be finite and non-negative")
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     try:
@@ -349,13 +736,29 @@ def main() -> None:
         else float(checkpoint.get("activity_threshold", 0.5))
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    verified_refit_device = resolve_verified_refit_device(
+        args.verified_refit_device,
+        model_device=device,
+    )
     model, model_config, legacy_checkpoint = build_model_from_checkpoint(checkpoint)
+    verified_residual_min_gap = (
+        float(args.verified_residual_min_gap)
+        if args.verified_residual_min_gap is not None
+        else float(model_config.get("min_knot_gap", 1e-3))
+    )
     model.set_activity_threshold(threshold)
     model.to(device).eval()
     structure_mode = model_config.get("structure_mode", "hard_concrete")
     candidate_pruning, candidate_one_shot = candidate_mode_flags(
         checkpoint, model_config
     )
+    try:
+        deployment_mode = resolve_deployment_mode(
+            args.deployment_mode,
+            candidate_one_shot=candidate_one_shot,
+        )
+    except ValueError as error:
+        parser.error(str(error))
     if candidate_one_shot:
         if args.one_shot_selection_policy != "checkpoint":
             model.pruning_head.one_shot_selection_policy = (
@@ -373,7 +776,9 @@ def main() -> None:
         parser.error("one-shot selection overrides require a one-shot checkpoint")
     candidate_hard_v7 = candidate_pruning and not candidate_one_shot
     if args.run_hard_diagnostic and not candidate_one_shot:
-        parser.error("--run-hard-diagnostic requires a v8-v11 one-shot checkpoint")
+        parser.error("--run-hard-diagnostic requires a v8-v12 one-shot checkpoint")
+    if args.run_hard_diagnostic and deployment_mode == "hard":
+        parser.error("--run-hard-diagnostic is redundant when --deployment-mode hard")
     count_conditioned = structure_mode in {
         "count_conditioned",
         "interactive_dynamic",
@@ -465,6 +870,12 @@ def main() -> None:
     matched_error_sum = 0.0
     true_parameter_squared_error = 0.0
     true_parameter_values = 0
+    parameter_feedback_squared_shift = 0.0
+    parameter_feedback_values = 0
+    parameter_feedback_gap_shift_absolute = 0.0
+    parameter_feedback_gap_shift_values = 0
+    parameter_feedback_chord_blend_sum = 0.0
+    parameter_feedback_chord_blend_values = 0
     pruning_initial_rms: list[float] = []
     pruning_accepted_deletions: list[int] = []
     pruning_threshold_satisfied: list[bool] = []
@@ -492,6 +903,7 @@ def main() -> None:
         for stage in (
             "proposal_full",
             "selected_pre_update",
+            "selected_pre_relocation",
             "deployment_post_update",
         )
     }
@@ -525,6 +937,44 @@ def main() -> None:
     one_shot_hard_diagnostic_counts: list[int] = []
     one_shot_hard_diagnostic_rms: list[float] = []
     one_shot_hard_diagnostic_satisfied: list[bool] = []
+    learned_baseline_counts: list[int] = []
+    learned_baseline_mse: list[float] = []
+    learned_baseline_satisfied: list[bool] = []
+    learned_relocation_abs_shifts: list[float] = []
+    learned_total_abs_shifts: list[float] = []
+    learned_relocation_sample_mean_shifts: list[float] = []
+    learned_relocation_sample_max_shifts: list[float] = []
+    hybrid_greedy_counts: list[int] = []
+    hybrid_greedy_mse: list[float] = []
+    hybrid_greedy_satisfied: list[bool] = []
+    hybrid_final_counts: list[int] = []
+    hybrid_final_mse: list[float] = []
+    hybrid_final_satisfied: list[bool] = []
+    hybrid_refit_counts: list[int] = []
+    hybrid_visited_state_counts: list[int] = []
+    hybrid_level_counts: list[int] = []
+    hybrid_elapsed_ms: list[float] = []
+    hybrid_mean_abs_position_shifts: list[float] = []
+    hybrid_max_abs_position_shifts: list[float] = []
+    hybrid_progress_completed = 0
+    verified_final_counts: list[int] = []
+    verified_final_mse: list[float] = []
+    verified_final_satisfied: list[bool] = []
+    verified_fallback_used: list[bool] = []
+    verified_hard_fallback_used: list[bool] = []
+    verified_cleanup_used: list[bool] = []
+    verified_residual_fallback_used: list[bool] = []
+    verified_inserted_counts: list[int] = []
+    verified_residual_refit_counts: list[int] = []
+    verified_direct_refit_counts: list[int] = []
+    verified_fit_evaluation_counts: list[int] = []
+    verified_prefix_counts: list[int] = []
+    verified_elapsed_ms: list[float] = []
+    verified_sources: dict[str, int] = defaultdict(int)
+    verified_final_parameterizations: dict[str, int] = defaultdict(int)
+    verified_parameterization_fallback_attempted: list[bool] = []
+    verified_parameterization_fallback_used: list[bool] = []
+    verified_parameterization_fallback_full_mse: list[float] = []
 
     with torch.no_grad():
         for batch in loader:
@@ -534,6 +984,31 @@ def main() -> None:
             true_knots = batch["true_internal_knots"].to(device)
             true_mask = batch["true_internal_knot_mask"].to(device)
             output = model(points)
+            batch_size = points.shape[0]
+            proposal_params = output.get("proposal_params")
+            if proposal_params is not None:
+                parameter_shift = (output["params"] - proposal_params).detach()
+                parameter_feedback_squared_shift += float(
+                    parameter_shift.square().sum().cpu()
+                )
+                parameter_feedback_values += parameter_shift.numel()
+            feedback_gap_shift = output.get("parameter_feedback_gap_logit_delta")
+            if feedback_gap_shift is not None:
+                detached_gap_shift = feedback_gap_shift.detach()
+                parameter_feedback_gap_shift_absolute += float(
+                    detached_gap_shift.abs().sum().cpu()
+                )
+                parameter_feedback_gap_shift_values += detached_gap_shift.numel()
+            feedback_chord_blend = output.get("parameter_feedback_chord_blend_weight")
+            if feedback_chord_blend is not None:
+                detached_chord_blend = feedback_chord_blend.detach()
+                parameter_feedback_chord_blend_sum += float(
+                    detached_chord_blend.sum().cpu()
+                )
+                parameter_feedback_chord_blend_values += detached_chord_blend.numel()
+            deployment_parameters = [
+                output["params"][index].detach().cpu() for index in range(batch_size)
+            ]
             losses = loss_fn(
                 output,
                 points,
@@ -543,7 +1018,6 @@ def main() -> None:
                 true_internal_knot_mask=true_mask,
                 activity_threshold=threshold,
             )
-            batch_size = points.shape[0]
             total_samples += batch_size
             for name, value in losses.items():
                 loss_sums[name] += float(value) * batch_size
@@ -590,8 +1064,15 @@ def main() -> None:
                 deployment_output = output
                 for index in range(batch_size):
                     target = true_knots[index, true_mask[index]].cpu()
-                    # v11 keeps the immutable proposal set separate from the
-                    # Keep-conditioned deployment locations.
+                    predicted_parameters = output["params"][index].detach().cpu()
+                    proposal_parameters = (
+                        output.get("proposal_params", output["params"])[index]
+                        .detach()
+                        .cpu()
+                    )
+                    true_parameters = true_params[index].detach().cpu()
+                    # Joint-refinement checkpoints keep the immutable proposal
+                    # set separate from the Keep-conditioned deployment locations.
                     refined_candidates = (
                         output.get("proposal_internal_knots", output["internal_knots"])[
                             index
@@ -599,10 +1080,19 @@ def main() -> None:
                         .detach()
                         .cpu()
                     )
-                    accumulate_knot_stage("proposal_full", refined_candidates, target)
+                    refined_candidates_true_domain = (
+                        warp_internal_knots_to_parameterization(
+                            refined_candidates,
+                            proposal_parameters,
+                            true_parameters,
+                        )
+                    )
+                    accumulate_knot_stage(
+                        "proposal_full", refined_candidates_true_domain, target
+                    )
                     for proposal_tolerance in candidate_recall_tolerances:
                         proposal_matching = match_internal_knots(
-                            refined_candidates,
+                            refined_candidates_true_domain,
                             target,
                             tolerance=proposal_tolerance,
                         )
@@ -627,19 +1117,81 @@ def main() -> None:
                             .cpu()
                             .to(torch.bool)
                         )
+                        pre_relocation_candidates = (
+                            output.get(
+                                "pre_relocation_candidate_positions",
+                                output.get(
+                                    "proposal_internal_knots",
+                                    output["internal_knots"],
+                                ),
+                            )[index]
+                            .detach()
+                            .cpu()
+                        )
+                        pre_relocation_true_domain = (
+                            warp_internal_knots_to_parameterization(
+                                pre_relocation_candidates[learned_stage_mask],
+                                proposal_parameters,
+                                true_parameters,
+                            )
+                        )
                         accumulate_knot_stage(
                             "selected_pre_update",
-                            refined_candidates[learned_stage_mask],
+                            refined_candidates_true_domain[learned_stage_mask],
+                            target,
+                        )
+                        accumulate_knot_stage(
+                            "selected_pre_relocation",
+                            pre_relocation_true_domain,
                             target,
                         )
                         deployment_candidates = (
                             output["internal_knots"][index].detach().cpu()
                         )
+                        source_deployment_candidates = (
+                            output.get(
+                                "parameter_feedback_source_internal_knots",
+                                output["internal_knots"],
+                            )[index]
+                            .detach()
+                            .cpu()
+                        )
+                        deployment_true_domain = (
+                            warp_internal_knots_to_parameterization(
+                                deployment_candidates[learned_stage_mask],
+                                predicted_parameters,
+                                true_parameters,
+                            )
+                        )
                         accumulate_knot_stage(
                             "deployment_post_update",
-                            deployment_candidates[learned_stage_mask],
+                            deployment_true_domain,
                             target,
                         )
+                        selected_shift = (
+                            source_deployment_candidates[learned_stage_mask]
+                            - pre_relocation_candidates[learned_stage_mask]
+                        ).abs()
+                        selected_total_shift = (
+                            source_deployment_candidates[learned_stage_mask]
+                            - refined_candidates[learned_stage_mask]
+                        ).abs()
+                        if selected_shift.numel():
+                            learned_relocation_abs_shifts.extend(
+                                float(value) for value in selected_shift
+                            )
+                            learned_relocation_sample_mean_shifts.append(
+                                float(selected_shift.mean())
+                            )
+                            learned_relocation_sample_max_shifts.append(
+                                float(selected_shift.max())
+                            )
+                            learned_total_abs_shifts.extend(
+                                float(value) for value in selected_total_shift
+                            )
+                        else:
+                            learned_relocation_sample_mean_shifts.append(0.0)
+                            learned_relocation_sample_max_shifts.append(0.0)
             else:
                 activity = output["activity"]
                 activity_values.append(activity.cpu())
@@ -685,23 +1237,225 @@ def main() -> None:
                             float(rejected.candidate_rmse)
                         )
             elif candidate_one_shot:
-                (
-                    deployed,
-                    learned_mask,
-                    adaptive_threshold,
-                    selection_source,
-                ) = refit_one_shot_output_batch(
-                    output,
-                    points,
-                    degree=model.degree,
-                    smoothness_weight=args.smoothness_weight,
-                    control_ridge=args.control_ridge,
+                learned_mask, adaptive_threshold, selection_source = one_shot_selection(
+                    output
                 )
                 learned_keep_masks.append(learned_mask.cpu())
                 one_shot_adaptive_thresholds.append(adaptive_threshold.cpu())
                 one_shot_selection_sources.add(selection_source)
+                learned_deployed: list[HardGatedBSplineFit] | None = None
+                if deployment_mode != "verified":
+                    learned_deployed, _, _, _ = refit_one_shot_output_batch(
+                        output,
+                        points,
+                        degree=model.degree,
+                        smoothness_weight=args.smoothness_weight,
+                        control_ridge=args.control_ridge,
+                    )
+                    learned_baseline_counts.extend(
+                        item.retained_count for item in learned_deployed
+                    )
+                    learned_baseline_mse.extend(
+                        float(item.fit_mse) for item in learned_deployed
+                    )
+                    learned_baseline_satisfied.extend(
+                        float(item.fit_mse) <= fit_tolerance * fit_tolerance
+                        for item in learned_deployed
+                    )
+                if deployment_mode == "learned":
+                    if learned_deployed is None:
+                        raise RuntimeError(
+                            "learned deployment refit was not materialized"
+                        )
+                    deployed = learned_deployed
+                elif deployment_mode == "verified":
+                    raw_deployment_config = checkpoint.get("deployment_config", {})
+                    deployment_config = (
+                        raw_deployment_config
+                        if isinstance(raw_deployment_config, dict)
+                        else {}
+                    )
+                    deployed, verified_batch, batch_elapsed_ms = (
+                        verified_deploy_output_batch(
+                            output,
+                            points,
+                            chord_parameters=chord_params,
+                            parameterization_policy=args.verified_parameterization,
+                            fit_tolerance_rms=fit_tolerance,
+                            degree=model.degree,
+                            smoothness_weight=args.smoothness_weight,
+                            control_ridge=args.control_ridge,
+                            min_internal_knots=int(
+                                deployment_config.get("min_internal_knots", 0)
+                            ),
+                            compact=args.verified_compact,
+                            hard_fallback=args.verified_hard_fallback,
+                            residual_fallback=args.verified_residual_fallback,
+                            max_residual_insertions=(
+                                args.verified_max_residual_insertions
+                            ),
+                            residual_min_gap=verified_residual_min_gap,
+                            refit_device=verified_refit_device,
+                        )
+                    )
+                    # The verifier's first exact refit is exactly the learned
+                    # KeepMask baseline.  Reuse it instead of performing an
+                    # otherwise duplicate standard B-spline solve before the
+                    # verified path.
+                    learned_baseline_counts.extend(
+                        int(value) for value in learned_mask.sum(dim=-1).tolist()
+                    )
+                    learned_baseline_mse.extend(
+                        float(item.learned_fit.fit_mse) for item in verified_batch
+                    )
+                    learned_baseline_satisfied.extend(
+                        float(item.learned_fit.fit_mse) <= fit_tolerance * fit_tolerance
+                        for item in verified_batch
+                    )
+                    verified_final_counts.extend(
+                        item.final_count for item in verified_batch
+                    )
+                    verified_final_mse.extend(
+                        float(item.final_fit.fit_mse) for item in verified_batch
+                    )
+                    verified_final_satisfied.extend(
+                        item.threshold_satisfied for item in verified_batch
+                    )
+                    verified_fallback_used.extend(
+                        item.fallback_used for item in verified_batch
+                    )
+                    verified_hard_fallback_used.extend(
+                        item.hard_fallback_used for item in verified_batch
+                    )
+                    verified_cleanup_used.extend(
+                        item.cleanup_used for item in verified_batch
+                    )
+                    verified_residual_fallback_used.extend(
+                        item.residual_fallback_used for item in verified_batch
+                    )
+                    verified_inserted_counts.extend(
+                        item.inserted_count for item in verified_batch
+                    )
+                    verified_residual_refit_counts.extend(
+                        item.residual_fallback_refit_count for item in verified_batch
+                    )
+                    verified_direct_refit_counts.extend(
+                        item.direct_refit_count for item in verified_batch
+                    )
+                    verified_fit_evaluation_counts.extend(
+                        item.fit_evaluation_count for item in verified_batch
+                    )
+                    verified_prefix_counts.extend(
+                        len(item.prefix_counts_evaluated) for item in verified_batch
+                    )
+                    verified_elapsed_ms.extend(batch_elapsed_ms)
+                    for item in verified_batch:
+                        verified_sources[item.final_source] += 1
+                        verified_final_parameterizations[
+                            item.final_parameterization
+                        ] += 1
+                        verified_parameterization_fallback_attempted.append(
+                            item.parameterization_fallback_attempted
+                        )
+                        verified_parameterization_fallback_used.append(
+                            item.parameterization_fallback_used
+                        )
+                        if item.parameterization_fallback_full_fit_mse is not None:
+                            verified_parameterization_fallback_full_mse.append(
+                                item.parameterization_fallback_full_fit_mse
+                            )
+                    deployment_parameters = [
+                        item.final_parameters.detach().cpu() for item in verified_batch
+                    ]
+                elif deployment_mode == "hard":
+                    deployed, _ = prune_candidate_output_batch(
+                        output,
+                        points,
+                        error_tolerance=fit_tolerance,
+                        degree=model.degree,
+                        smoothness_weight=args.smoothness_weight,
+                        control_ridge=args.control_ridge,
+                    )
+                elif deployment_mode == "hybrid":
+                    raw_deployment_config = checkpoint.get("deployment_config", {})
+                    deployment_config = (
+                        raw_deployment_config
+                        if isinstance(raw_deployment_config, dict)
+                        else {}
+                    )
+                    deployed, hybrid_batch, batch_elapsed_ms = (
+                        hybrid_deploy_output_batch(
+                            output,
+                            points,
+                            fit_tolerance_rms=fit_tolerance,
+                            degree=model.degree,
+                            smoothness_weight=args.smoothness_weight,
+                            control_ridge=args.control_ridge,
+                            min_internal_knots=int(
+                                deployment_config.get("min_internal_knots", 0)
+                            ),
+                            min_gap=(
+                                float(args.hybrid_min_gap)
+                                if args.hybrid_min_gap is not None
+                                else float(model_config.get("min_knot_gap", 1e-3))
+                            ),
+                            beam_width=args.hybrid_beam_width,
+                            branch_factor=args.hybrid_branch_factor,
+                            position_sweeps=args.hybrid_position_sweeps,
+                            position_grid_size=args.hybrid_position_grid_size,
+                            position_restarts=args.hybrid_position_restarts,
+                            position_refine_count_margin=(
+                                args.hybrid_position_refine_count_margin
+                            ),
+                            position_refine_candidate_multiplier=(
+                                args.hybrid_position_refine_candidate_multiplier
+                            ),
+                            progress_offset=hybrid_progress_completed,
+                            progress_total=args.num_samples,
+                        )
+                    )
+                    hybrid_progress_completed += len(hybrid_batch)
+                    hybrid_greedy_counts.extend(
+                        item.greedy_count for item in hybrid_batch
+                    )
+                    hybrid_greedy_mse.extend(
+                        float(item.greedy_fit.fit_mse) for item in hybrid_batch
+                    )
+                    hybrid_greedy_satisfied.extend(
+                        item.greedy_threshold_satisfied for item in hybrid_batch
+                    )
+                    hybrid_final_counts.extend(
+                        item.final_count for item in hybrid_batch
+                    )
+                    hybrid_final_mse.extend(
+                        float(item.final_fit.fit_mse) for item in hybrid_batch
+                    )
+                    hybrid_final_satisfied.extend(
+                        item.threshold_satisfied for item in hybrid_batch
+                    )
+                    hybrid_refit_counts.extend(
+                        item.refit_count for item in hybrid_batch
+                    )
+                    hybrid_visited_state_counts.extend(
+                        item.visited_state_count for item in hybrid_batch
+                    )
+                    hybrid_level_counts.extend(
+                        len(item.levels_explored) for item in hybrid_batch
+                    )
+                    hybrid_elapsed_ms.extend(batch_elapsed_ms)
+                    hybrid_mean_abs_position_shifts.extend(
+                        item.mean_absolute_position_shift for item in hybrid_batch
+                    )
+                    hybrid_max_abs_position_shifts.extend(
+                        item.max_absolute_position_shift for item in hybrid_batch
+                    )
+                else:
+                    raise RuntimeError(
+                        f"unexpected resolved one-shot deployment mode: {deployment_mode}"
+                    )
                 one_shot_threshold_satisfied.extend(
-                    float(item.fit_rmse) <= fit_tolerance for item in deployed
+                    float(item.fit_mse) <= fit_tolerance * fit_tolerance
+                    for item in deployed
                 )
                 if args.run_hard_diagnostic:
                     _, diagnostic_batch = prune_candidate_output_batch(
@@ -746,11 +1500,12 @@ def main() -> None:
                     bspline_rank_deficient.append(
                         item.spline.solver_rank < control_count
                     )
+                observed_points = points[index].to(item.reconstructed_points.device)
                 bspline_start_endpoint_distances.append(
-                    float((item.reconstructed_points[0] - points[index, 0]).norm())
+                    float((item.reconstructed_points[0] - observed_points[0]).norm())
                 )
                 bspline_end_endpoint_distances.append(
-                    float((item.reconstructed_points[-1] - points[index, -1]).norm())
+                    float((item.reconstructed_points[-1] - observed_points[-1]).norm())
                 )
 
             parameter_difference = output["params"].cpu() - batch["true_params"]
@@ -760,8 +1515,13 @@ def main() -> None:
                 target = batch["true_internal_knots"][index][
                     batch["true_internal_knot_mask"][index]
                 ]
+                deployed_knots_true_domain = warp_internal_knots_to_parameterization(
+                    item.retained_internal_knots.detach().cpu(),
+                    deployment_parameters[index],
+                    batch["true_params"][index],
+                )
                 matching = match_internal_knots(
-                    item.retained_internal_knots,
+                    deployed_knots_true_domain,
                     target,
                     tolerance=args.knot_tolerance,
                 )
@@ -846,6 +1606,20 @@ def main() -> None:
     parameter_rmse = math.sqrt(
         true_parameter_squared_error / max(true_parameter_values, 1)
     )
+    parameter_feedback_report = {
+        "enabled": bool(model_config.get("parameter_feedback_fusion", False)),
+        "parameter_rmse_from_proposal": math.sqrt(
+            parameter_feedback_squared_shift / max(parameter_feedback_values, 1)
+        ),
+        "gap_logit_delta_mean_absolute": (
+            parameter_feedback_gap_shift_absolute
+            / max(parameter_feedback_gap_shift_values, 1)
+        ),
+        "chord_blend_weight_mean": (
+            parameter_feedback_chord_blend_sum
+            / max(parameter_feedback_chord_blend_values, 1)
+        ),
+    }
     endpoint_distances = (
         bspline_start_endpoint_distances + bspline_end_endpoint_distances
     )
@@ -1008,12 +1782,19 @@ def main() -> None:
             for stage in knot_stage_accumulators
         }
         pre = stage_values["selected_pre_update"]
+        pre_relocation = stage_values["selected_pre_relocation"]
         post = stage_values["deployment_post_update"]
         stage_values["position_recall_delta"] = float(post["recall"]) - float(
             pre["recall"]
         )
         stage_values["position_precision_delta"] = float(post["precision"]) - float(
             pre["precision"]
+        )
+        stage_values["relocation_recall_delta"] = float(post["recall"]) - float(
+            pre_relocation["recall"]
+        )
+        stage_values["relocation_precision_delta"] = float(post["precision"]) - float(
+            pre_relocation["precision"]
         )
         knot_stage_metrics[tolerance_key] = stage_values
     pruning_report = (
@@ -1059,9 +1840,192 @@ def main() -> None:
     finite_adaptive_thresholds = adaptive_threshold_values[
         torch.isfinite(adaptive_threshold_values)
     ]
+    learned_baseline_report = (
+        {
+            "retained_count_mean": sum(learned_baseline_counts)
+            / len(learned_baseline_counts),
+            "mse_mean": sum(learned_baseline_mse) / len(learned_baseline_mse),
+            "threshold_satisfied_fraction": sum(learned_baseline_satisfied)
+            / len(learned_baseline_satisfied),
+        }
+        if learned_baseline_counts
+        else None
+    )
+    hybrid_report = (
+        {
+            "method": "learned_seeded_beam_deletion_with_position_refinement",
+            "mse_tolerance": fit_tolerance * fit_tolerance,
+            "rms_tolerance_compatibility_input": fit_tolerance,
+            "global_minimum_guaranteed": False,
+            "selection_objective": "minimum_K_then_minimum_MSE_under_tolerance",
+            "traditional_greedy_is_permanent_incumbent": True,
+            "learned_baseline": learned_baseline_report,
+            "traditional_greedy": {
+                "retained_count_mean": sum(hybrid_greedy_counts)
+                / len(hybrid_greedy_counts),
+                "mse_mean": sum(hybrid_greedy_mse) / len(hybrid_greedy_mse),
+                "threshold_satisfied_fraction": sum(hybrid_greedy_satisfied)
+                / len(hybrid_greedy_satisfied),
+            },
+            "hybrid_final": {
+                "retained_count_mean": sum(hybrid_final_counts)
+                / len(hybrid_final_counts),
+                "mse_mean": sum(hybrid_final_mse) / len(hybrid_final_mse),
+                "threshold_satisfied_fraction": sum(hybrid_final_satisfied)
+                / len(hybrid_final_satisfied),
+                "mean_knot_reduction_vs_greedy": (
+                    sum(hybrid_greedy_counts) - sum(hybrid_final_counts)
+                )
+                / len(hybrid_final_counts),
+                "mean_absolute_proposal_to_final_position_shift": (
+                    sum(hybrid_mean_abs_position_shifts)
+                    / len(hybrid_mean_abs_position_shifts)
+                ),
+                "max_absolute_proposal_to_final_position_shift": max(
+                    hybrid_max_abs_position_shifts
+                ),
+            },
+            "search_refit_count_mean": sum(hybrid_refit_counts)
+            / len(hybrid_refit_counts),
+            "search_refit_count_total": sum(hybrid_refit_counts),
+            "search_fit_evaluation_count_mean": sum(hybrid_refit_counts)
+            / len(hybrid_refit_counts),
+            "search_fit_evaluation_count_total": sum(hybrid_refit_counts),
+            "search_refit_count_semantics": (
+                "exact candidate fit evaluations; batched deletion states are "
+                "counted individually"
+            ),
+            "visited_state_count_mean": sum(hybrid_visited_state_counts)
+            / len(hybrid_visited_state_counts),
+            "visited_state_count_total": sum(hybrid_visited_state_counts),
+            "levels_explored_mean": sum(hybrid_level_counts) / len(hybrid_level_counts),
+            "levels_explored_max": max(hybrid_level_counts),
+            "search_time_ms_mean": sum(hybrid_elapsed_ms) / len(hybrid_elapsed_ms),
+            "search_time_ms_total": sum(hybrid_elapsed_ms),
+            "beam_width": args.hybrid_beam_width,
+            "branch_factor": args.hybrid_branch_factor,
+            "position_sweeps": args.hybrid_position_sweeps,
+            "position_grid_size": args.hybrid_position_grid_size,
+            "position_restarts": args.hybrid_position_restarts,
+            "position_refine_count_margin": (args.hybrid_position_refine_count_margin),
+            "position_refine_candidate_multiplier": (
+                args.hybrid_position_refine_candidate_multiplier
+            ),
+            "min_gap": (
+                float(args.hybrid_min_gap)
+                if args.hybrid_min_gap is not None
+                else float(model_config.get("min_knot_gap", 1e-3))
+            ),
+        }
+        if hybrid_final_counts
+        else None
+    )
+    verified_report = (
+        {
+            "method": "adaptive_exact_guard_add_back_residual_rescue",
+            "mse_tolerance": fit_tolerance * fit_tolerance,
+            "rms_tolerance_compatibility_input": fit_tolerance,
+            "global_minimum_guaranteed": False,
+            "prefix_monotonicity_assumed_for_acceptance": False,
+            "accepted_states_are_exactly_refit": True,
+            "compact": bool(args.verified_compact),
+            "hard_fallback_enabled": bool(args.verified_hard_fallback),
+            "residual_fallback_enabled": bool(args.verified_residual_fallback),
+            "max_residual_insertions": args.verified_max_residual_insertions,
+            "residual_min_gap": verified_residual_min_gap,
+            "parameterization_policy": args.verified_parameterization,
+            "parameterization_fallback_attempted_fraction": (
+                sum(verified_parameterization_fallback_attempted)
+                / len(verified_parameterization_fallback_attempted)
+            ),
+            "parameterization_fallback_used_fraction": (
+                sum(verified_parameterization_fallback_used)
+                / len(verified_parameterization_fallback_used)
+            ),
+            "parameterization_fallback_full_fit_mse_mean_when_attempted": (
+                sum(verified_parameterization_fallback_full_mse)
+                / len(verified_parameterization_fallback_full_mse)
+                if verified_parameterization_fallback_full_mse
+                else None
+            ),
+            "final_parameterization_histogram": dict(
+                sorted(verified_final_parameterizations.items())
+            ),
+            "model_device": str(device),
+            "refit_device_requested": args.verified_refit_device,
+            "refit_device": str(verified_refit_device),
+            "learned_baseline": learned_baseline_report,
+            "verified_final": {
+                "retained_count_mean": sum(verified_final_counts)
+                / len(verified_final_counts),
+                "mse_mean": sum(verified_final_mse) / len(verified_final_mse),
+                "threshold_satisfied_fraction": sum(verified_final_satisfied)
+                / len(verified_final_satisfied),
+            },
+            "learned_feasible_fraction": sum(learned_baseline_satisfied)
+            / len(learned_baseline_satisfied),
+            "fast_path_fraction": sum(
+                not fallback and not cleanup
+                for fallback, cleanup in zip(
+                    verified_fallback_used,
+                    verified_cleanup_used,
+                    strict=True,
+                )
+            )
+            / len(verified_fallback_used),
+            "repair_fraction": sum(verified_fallback_used)
+            / len(verified_fallback_used),
+            "hard_fallback_fraction": sum(verified_hard_fallback_used)
+            / len(verified_hard_fallback_used),
+            "residual_fallback_fraction": sum(verified_residual_fallback_used)
+            / len(verified_residual_fallback_used),
+            "residual_insertion_fraction": sum(
+                count > 0 for count in verified_inserted_counts
+            )
+            / len(verified_inserted_counts),
+            "residual_inserted_knot_count_mean": sum(verified_inserted_counts)
+            / len(verified_inserted_counts),
+            "residual_inserted_knot_count_mean_when_used": (
+                sum(verified_inserted_counts)
+                / sum(count > 0 for count in verified_inserted_counts)
+                if any(count > 0 for count in verified_inserted_counts)
+                else 0.0
+            ),
+            "residual_inserted_knot_count_max": max(verified_inserted_counts),
+            "residual_fallback_refit_count_mean": sum(verified_residual_refit_counts)
+            / len(verified_residual_refit_counts),
+            "residual_fallback_refit_count_max": max(verified_residual_refit_counts),
+            "cleanup_fraction": sum(verified_cleanup_used) / len(verified_cleanup_used),
+            "final_source_histogram": dict(sorted(verified_sources.items())),
+            "direct_refit_count_mean": sum(verified_direct_refit_counts)
+            / len(verified_direct_refit_counts),
+            "fit_evaluation_count_mean": sum(verified_fit_evaluation_counts)
+            / len(verified_fit_evaluation_counts),
+            "prefix_count_evaluations_mean": sum(verified_prefix_counts)
+            / len(verified_prefix_counts),
+            "repair_time_ms_mean": sum(verified_elapsed_ms) / len(verified_elapsed_ms),
+            "repair_time_ms_median": statistics.median(verified_elapsed_ms),
+            "repair_time_ms_p95": float(
+                torch.quantile(torch.tensor(verified_elapsed_ms), 0.95)
+            ),
+            "repair_time_scope": (
+                "exact learned refit plus conditional proposal repair/cleanup; "
+                "extreme failures may use residual insertions; network forward excluded"
+            ),
+        }
+        if verified_final_counts
+        else None
+    )
     one_shot_report = (
         {
-            "method": "learned_mask_then_single_standard_bspline_refit",
+            "method": {
+                "learned": "learned_mask_then_single_standard_bspline_refit",
+                "verified": "verified_adaptive_exact_repair",
+                "hybrid": "learned_seeded_hybrid_mse_search",
+                "hard": "proposal_greedy_hard_pruning",
+            }[deployment_mode],
+            "deployment_mode_requested": args.deployment_mode,
+            "deployment_mode_resolved": deployment_mode,
             "selection_sources": sorted(one_shot_selection_sources),
             "selection_policy": getattr(
                 model.pruning_head, "one_shot_selection_policy", "threshold"
@@ -1074,7 +2038,7 @@ def main() -> None:
             ),
             "keep_probability_cutoff": 0.5,
             "activity_threshold_cli_used_for_selection": False,
-            "fit_tolerance_used_for_selection": False,
+            "fit_tolerance_used_for_selection": deployment_mode != "learned",
             "adaptive_keep_logit_threshold_mean": (
                 float(finite_adaptive_thresholds.mean())
                 if finite_adaptive_thresholds.numel()
@@ -1105,14 +2069,69 @@ def main() -> None:
                 sum(one_shot_threshold_satisfied)
                 / max(len(one_shot_threshold_satisfied), 1)
             ),
-            "standard_refits_per_sample": 1,
-            "deployment_standard_refits_per_sample": 1,
+            "standard_refits_per_sample": (1 if deployment_mode == "learned" else None),
+            "deployment_standard_refits_per_sample": (
+                1 if deployment_mode == "learned" else None
+            ),
             "model_forward_internal_proxy_solves_counted_as_deployment_refits": False,
             "offline_diagnostic_refits_counted_as_deployment_refits": False,
-            "hard_pruning_used_for_deployment": False,
+            "hard_pruning_used_for_deployment": (
+                deployment_mode in {"hard", "hybrid"}
+                or (deployment_mode == "verified" and any(verified_hard_fallback_used))
+            ),
             "loss_time_exact_teacher_executed": False,
             "objective_role": "inference_proxy_teacher_terms_unavailable",
+            "network_survivor_relocation": {
+                "enabled": bool(
+                    getattr(
+                        model.pruning_head,
+                        "one_shot_survivor_relocation",
+                        False,
+                    )
+                ),
+                "reference": "selected pre-relocation positions",
+                "selected_knot_mean_absolute_shift": (
+                    sum(learned_relocation_abs_shifts)
+                    / len(learned_relocation_abs_shifts)
+                    if learned_relocation_abs_shifts
+                    else 0.0
+                ),
+                "selected_knot_max_absolute_shift": (
+                    max(learned_relocation_abs_shifts)
+                    if learned_relocation_abs_shifts
+                    else 0.0
+                ),
+                "sample_mean_absolute_shift_mean": (
+                    sum(learned_relocation_sample_mean_shifts)
+                    / len(learned_relocation_sample_mean_shifts)
+                    if learned_relocation_sample_mean_shifts
+                    else 0.0
+                ),
+                "sample_max_absolute_shift_mean": (
+                    sum(learned_relocation_sample_max_shifts)
+                    / len(learned_relocation_sample_max_shifts)
+                    if learned_relocation_sample_max_shifts
+                    else 0.0
+                ),
+                "selected_knot_moved_fraction_at_1e-6": (
+                    sum(value > 1e-6 for value in learned_relocation_abs_shifts)
+                    / len(learned_relocation_abs_shifts)
+                    if learned_relocation_abs_shifts
+                    else 0.0
+                ),
+                "selected_knot_proposal_to_final_mean_absolute_shift": (
+                    sum(learned_total_abs_shifts) / len(learned_total_abs_shifts)
+                    if learned_total_abs_shifts
+                    else 0.0
+                ),
+                "selected_knot_proposal_to_final_max_absolute_shift": (
+                    max(learned_total_abs_shifts) if learned_total_abs_shifts else 0.0
+                ),
+            },
             "offline_hard_diagnostic_requested": bool(args.run_hard_diagnostic),
+            "learned_baseline": learned_baseline_report,
+            "verified_repair": verified_report,
+            "hybrid_search": hybrid_report,
             "offline_hard_diagnostic": (
                 {
                     "role": "teacher_diagnostic_only",
@@ -1140,13 +2159,20 @@ def main() -> None:
     )
 
     report = {
-        "schema_version": 12,
+        "schema_version": 15,
         "checkpoint": str(args.checkpoint),
         "checkpoint_epoch": checkpoint.get("epoch"),
         "checkpoint_selection_metric": checkpoint.get("selection_metric"),
         "checkpoint_selection_value": checkpoint.get("selection_value"),
         "objective_version": checkpoint.get("objective_version", "historical"),
         "structure_mode": structure_mode,
+        "deployment_mode_requested": args.deployment_mode,
+        "deployment_mode_resolved": deployment_mode,
+        "model_device": str(device),
+        "verified_refit_device_requested": args.verified_refit_device,
+        "verified_refit_device": str(verified_refit_device),
+        "verified_refit_device_used": deployment_mode == "verified",
+        "torch_num_threads": torch.get_num_threads(),
         "dataset_seed": args.seed,
         "num_samples": total_samples,
         "dataset_config": dataset_config,
@@ -1157,7 +2183,12 @@ def main() -> None:
         "count_selection": (
             count_selection
             if count_conditioned
-            else "learned_one_shot_mask"
+            else {
+                "learned": "learned_one_shot_mask",
+                "verified": "exact_refit_verified_adaptive_repair",
+                "hybrid": "hybrid_mse_search",
+                "hard": "hard_proposal_pruning",
+            }[deployment_mode]
             if candidate_one_shot
             else "hard_rms_pruning"
             if candidate_hard_v7
@@ -1186,6 +2217,8 @@ def main() -> None:
         "threshold_sweep": threshold_report,
         "minimal_knot_pruning": pruning_report,
         "one_shot_deployment": one_shot_report,
+        "verified_quality_deployment": verified_report,
+        "hybrid_quality_deployment": hybrid_report,
         "candidate_proposal_definition": (
             "output['proposal_internal_knots'] before LearnedKeep selection"
             if candidate_pruning
@@ -1244,16 +2277,25 @@ def main() -> None:
         "weighted_loss_components": weighted_components,
         "true_parameter_rmse": parameter_rmse,
         "knot_match_tolerance": args.knot_tolerance,
+        "knot_match_parameterization": (
+            "deployed knots warped through sample correspondence from each recorded "
+            "deployment parameterization into the ground-truth parameter domain"
+        ),
         "knot_match_precision": precision,
         "knot_match_recall": recall,
         "knot_match_f1": f1,
         "matched_knot_mae": knot_mae if math.isfinite(knot_mae) else None,
+        "parameter_feedback": parameter_feedback_report,
     }
 
     print("Checkpoint structured-knot evaluation")
     print(f"  checkpoint: {args.checkpoint}")
     print(f"  objective version: {report['objective_version']}")
     print(f"  structure mode: {structure_mode}")
+    print(
+        "  deployment mode requested/resolved: "
+        f"{args.deployment_mode}/{deployment_mode}"
+    )
     print(f"  recorded best epoch: {checkpoint.get('epoch', 'not recorded')}")
     print(
         "  checkpoint selection: "
@@ -1276,6 +2318,19 @@ def main() -> None:
         print(f"  total objective: {mean_losses['loss']:.9e}")
     print(f"  fit loss (mean squared Euclidean): {mean_losses['fit_loss']:.9e}")
     print(f"  RMS Euclidean distance: {math.sqrt(mean_losses['fit_loss']):.9e}")
+    if parameter_feedback_report["enabled"]:
+        print(
+            "  parameter feedback t0->t1 RMSE: "
+            f"{parameter_feedback_report['parameter_rmse_from_proposal']:.9e}"
+        )
+        print(
+            "  parameter feedback mean |gap-logit delta|: "
+            f"{parameter_feedback_report['gap_logit_delta_mean_absolute']:.9e}"
+        )
+        print(
+            "  parameter feedback chord-gap blend mean: "
+            f"{parameter_feedback_report['chord_blend_weight_mean']:.6f}"
+        )
     print("  weighted objective components:")
     for name, value in weighted_components.items():
         print(f"    {name}: {value:.9e}")
@@ -1332,9 +2387,24 @@ def main() -> None:
                 f"{expected_count_mean:.3f}"
             )
             print(f"  learned one-shot count histogram: {network_histogram}")
-            print("\nOne-shot standard B-spline deployment")
+            relocation_report = one_shot_report["network_survivor_relocation"]
             print(
-                "  selection: learned_keep_mask | policy="
+                f"  network survivor relocation enabled: {relocation_report['enabled']}"
+            )
+            print(
+                "  selected pre->post |shift| mean/max/moved@1e-6: "
+                f"{relocation_report['selected_knot_mean_absolute_shift']:.6e}/"
+                f"{relocation_report['selected_knot_max_absolute_shift']:.6e}/"
+                f"{relocation_report['selected_knot_moved_fraction_at_1e-6']:.3f}"
+            )
+            print(
+                "  selected proposal->final |shift| mean/max: "
+                f"{relocation_report['selected_knot_proposal_to_final_mean_absolute_shift']:.6e}/"
+                f"{relocation_report['selected_knot_proposal_to_final_max_absolute_shift']:.6e}"
+            )
+            print("\nQuality standard B-spline deployment")
+            print(
+                f"  selection: {deployment_mode} | learned policy="
                 f"{one_shot_report['selection_policy']} | safety_sigma="
                 f"{one_shot_report['selection_safety_sigma']:.3f} | coverage_bins="
                 f"{one_shot_report['selection_coverage_bins']}"
@@ -1346,31 +2416,114 @@ def main() -> None:
                 f"{one_shot_report['adaptive_keep_logit_threshold_max']}"
             )
             print(f"  normalized RMS tolerance: {fit_tolerance:.9e}")
+            if deployment_mode == "learned":
+                print(
+                    "  tolerance role: reporting only; it does not change the "
+                    "learned mask"
+                )
+            else:
+                print(
+                    "  tolerance role: hard selection constraint; equivalent MSE="
+                    f"{fit_tolerance * fit_tolerance:.9e}"
+                )
             print(
-                "  tolerance role: reporting only; it does not change the learned mask"
-            )
-            print(
-                "  one-shot K mean/min/max: "
+                "  deployed K mean/min/max: "
                 f"{one_shot_report['retained_count_mean']:.3f}/"
                 f"{one_shot_report['retained_count_min']}/"
                 f"{one_shot_report['retained_count_max']}"
             )
             print(
-                "  one-shot refit mean-curve RMS/P95/max: "
+                "  deployed refit mean-curve RMS/P95/max: "
                 f"{one_shot_report['refit_rms_mean']:.9e}/"
                 f"{one_shot_report['refit_rms_p95']:.9e}/"
                 f"{one_shot_report['refit_rms_max']:.9e}"
             )
-            print(f"  one-shot pooled RMS: {one_shot_report['refit_rms_pooled']:.9e}")
+            print(f"  deployed pooled RMS: {one_shot_report['refit_rms_pooled']:.9e}")
             print(
                 "  threshold-satisfied fraction: "
                 f"{one_shot_report['threshold_satisfied_fraction']:.3f}"
             )
-            print("  hard pruning used for deployment: False")
             print(
-                "  deployment standard B-spline refits per sample: 1 "
-                "(network-forward proxy solves are excluded)"
+                "  hard search used for deployment: "
+                f"{one_shot_report['hard_pruning_used_for_deployment']}"
             )
+            if deployment_mode == "learned":
+                print(
+                    "  deployment standard B-spline refits per sample: 1 "
+                    "(network-forward proxy solves are excluded)"
+                )
+            elif deployment_mode == "verified":
+                print(
+                    "  model / verified refit device: "
+                    f"{device}/{verified_refit_device} "
+                    f"(requested={args.verified_refit_device})"
+                )
+                print(
+                    "  learned-feasible / zero-cleanup fast / repair / hard-fallback: "
+                    f"{verified_report['learned_feasible_fraction']:.3f}/"
+                    f"{verified_report['fast_path_fraction']:.3f}/"
+                    f"{verified_report['repair_fraction']:.3f}/"
+                    f"{verified_report['hard_fallback_fraction']:.3f}"
+                )
+                print(
+                    "  parameterization policy/fallback-used/final domains: "
+                    f"{args.verified_parameterization}/"
+                    f"{verified_report['parameterization_fallback_used_fraction']:.3f}/"
+                    f"{verified_report['final_parameterization_histogram']}"
+                )
+                print(
+                    "  verified residual fallback/insertion fractions: "
+                    f"{verified_report['residual_fallback_fraction']:.3f}/"
+                    f"{verified_report['residual_insertion_fraction']:.3f}"
+                )
+                print(
+                    "  residual inserted K mean/used-mean/max; refits mean/max: "
+                    f"{verified_report['residual_inserted_knot_count_mean']:.3f}/"
+                    f"{verified_report['residual_inserted_knot_count_mean_when_used']:.3f}/"
+                    f"{verified_report['residual_inserted_knot_count_max']}; "
+                    f"{verified_report['residual_fallback_refit_count_mean']:.3f}/"
+                    f"{verified_report['residual_fallback_refit_count_max']}"
+                )
+                print(
+                    "  verified final K/MSE/pass: "
+                    f"{verified_report['verified_final']['retained_count_mean']:.3f}/"
+                    f"{verified_report['verified_final']['mse_mean']:.9e}/"
+                    f"{verified_report['verified_final']['threshold_satisfied_fraction']:.3f}"
+                )
+                print(
+                    "  verified exact fit-evaluations/direct-refits mean: "
+                    f"{verified_report['fit_evaluation_count_mean']:.1f}/"
+                    f"{verified_report['direct_refit_count_mean']:.1f}"
+                )
+                print(
+                    "  verified repair time mean/median/P95 (forward excluded): "
+                    f"{verified_report['repair_time_ms_mean']:.2f}/"
+                    f"{verified_report['repair_time_ms_median']:.2f}/"
+                    f"{verified_report['repair_time_ms_p95']:.2f} ms"
+                )
+                print(
+                    "  verified final sources: "
+                    f"{verified_report['final_source_histogram']}"
+                )
+            elif deployment_mode == "hybrid":
+                print(
+                    "  hybrid learned/greedy/final K mean: "
+                    f"{hybrid_report['learned_baseline']['retained_count_mean']:.3f}/"
+                    f"{hybrid_report['traditional_greedy']['retained_count_mean']:.3f}/"
+                    f"{hybrid_report['hybrid_final']['retained_count_mean']:.3f}"
+                )
+                print(
+                    "  hybrid final MSE/pass: "
+                    f"{hybrid_report['hybrid_final']['mse_mean']:.9e}/"
+                    f"{hybrid_report['hybrid_final']['threshold_satisfied_fraction']:.3f}"
+                )
+                print(
+                    "  hybrid fit-evaluations/visited/time mean: "
+                    f"{hybrid_report['search_refit_count_mean']:.1f}/"
+                    f"{hybrid_report['visited_state_count_mean']:.1f}/"
+                    f"{hybrid_report['search_time_ms_mean']:.2f} ms"
+                )
+                print("  global minimum guaranteed: False")
             if one_shot_report["offline_hard_diagnostic"] is not None:
                 diagnostic = one_shot_report["offline_hard_diagnostic"]
                 print(

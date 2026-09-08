@@ -1,144 +1,85 @@
-# 结构预测方案演化
+# 节点结构方案演化
 
-本文只说明各版本解决的问题和部署语义。当前主版本是 v11；历史版本仍可通过 checkpoint 兼容层读取。
+当前主版本是 v12；历史 checkpoint 通过兼容层读取，但保持各自原有部署语义。
 
-## v3：独立 activity 与 Hard-Concrete
+## v3–v6：直接结构预测
 
-固定候选分别预测 activity，再用 Hard-Concrete 二值化。它把节点身份、节点数和拟合梯度压在同一组独立 Bernoulli 门上，容易出现全保留、全删除或同一曲线内区分度不足。
+- v3：独立 knot query、ActivityHead 与 Hard-Concrete；容易出现概率集中在窄区间、阈值后全保留或全删除。
+- v4/v5：直接 CountHead 与 canonical count；数量和位置条件解码更清楚，但离散数量错误会直接改变整条节点向量。
+- v6：交互结构头与动态区间解码；减少无效分支，但仍把复杂度决策压在一次 count 分类上。
 
-## v4：直接 CountHead
+## v7：冗余 proposal + 传统 Hard-RMS
 
-```text
-CountHead 预测 K
-  → 选择 K 专属分支
-  → 输出长度为 K 的节点向量
-```
+网络只负责生成高召回冗余候选，部署时逐个尝试删除并执行标准 B 样条 refit。优点是误差判定直接、过程可解释；缺点是需要大量串行/批量 refit，不是一次性部署。
 
-它消除了 activity threshold，但训练样本被多个计数分支分散。
+## v8–v10：离线教师 + 一次性 LearnedKeep
 
-## v5：canonical 数量监督与条件分支
+- v8 把 Hard-RMS 删除放到离线阶段，在线 student 一次性预测 mask；
+- v9 固定 proposal 槽位，避免 selector 更新破坏 teacher cache 对齐；
+- v10 用候选交互、mass-TopK 和验证集约束选择强化整组节点组合。
 
-v5 引入 canonical 标签、序数 CountHead 和共享 count-conditioned decoder。部署曾用 BIC/先验比较完整数量分支，解释和训练/部署一致性仍不理想。
+这些版本已把在线计算降为一次 forward + 一次 refit，但最终位置主要仍受固定 proposal 限制。
 
-## v6：交互结构头与动态解码
+## v11：Keep 与位置反馈
 
-结构 query 先读取点云，再通过 self-attention 联合预测节点数；动态解码器只生成选定长度的节点向量。它减少无用位置分支，但计数错误仍会立即改变整个节点向量长度。
-
-## v7：冗余 proposal + Hard-RMS 删除
+v11 引入局部 Gaussian proposal attention 和固定深度交互：
 
 ```text
-点云
-  → 固定预算高召回 proposal
-  → 贡献特征与删除建议
-  → 标准 B 样条逐节点试删
+p0 -> provisional position -> p1 -> final mask -> deployment position
 ```
 
-最终节点数由真实 RMS 阈值决定，可解释性强，但每次部署需要多次 refit。
+其核心问题不在于“代码完全没有位置头”，而在于教师目标：`teacher_internal_knots` 直接复制 retained proposal 位置。因此位置监督把零移动当作正确答案，节点删除后新的邻接关系也没有被显式编码。旧图又只画 proposal 横坐标和 retained 索引，使 hybrid 的真实位置变化不可见。
 
-## v8：离线教师 + 一次性 LearnedKeep
+## v12：删除与存活节点重定位联动
 
-把 v7 的 Hard-RMS 搜索移到训练前：
+v12 同时修改离线教师和在线 student。
+
+### 离线教师
 
 ```text
-离线：proposal → Hard-RMS → mask/risk/count cache
-在线：一次网络 forward → KeepMask → 一次标准 refit
+greedy delete
+  -> relax survivor positions
+  -> retry delete
+  -> 重复有限轮
+  -> 缓存最终槽位 mask、优化后位置、gap 和风险
 ```
 
-速度提升来自不再在线试删；代价是阈值只具统计满足率，不再逐样本硬保证。
+位置优化后如果还能安全删除，教师会继续减少节点；最后一轮产生新 survivor 集合时，还会再对最终集合做一次 relaxation。
 
-## v9：固定 proposal 与独立 selector
-
-v8 的 Keep/位置联动会使教师缓存绑定的候选槽位漂移。v9 将 proposal 几何冻结，selector 只读取固定位置并预测 mask，保证 teacher slot 一致性。
-
-## v10：结构化一次性组合
-
-v10 在 v9 上加入：
-
-- 两层 selector interaction；
-- teacher 槽位概率质量的累计分布损失；
-- critical retained-slot recall；
-- probability-mass Top-K；
-- Bernoulli 不确定性安全余量；
-- 可选参数域覆盖锚点。
-
-它改善的是组合建模能力，但最终位置仍等于固定 proposal；selector 选对附近槽位后，不能再把它向 canonical 节点校准。
-
-## v11：局部 proposal 与 Keep/位置固定交互
-
-v11 针对两个可分解问题更新。
-
-### 1. proposal 召回
-
-CandidateKnotHead 从“有位置编码但全局的 cross-attention”改为锚点中心 Gaussian 局部 cross-attention，并在多个匹配容差上直接训练 coverage：
+### 在线网络
 
 ```text
-局部几何 + 参数位置
-  → Gaussian-biased interval queries
-  → 严格有序 Kc 候选
-  → 0.005/0.01/0.02 多尺度 coverage
+final KeepMask
+  -> 按最终 survivors 重算邻居、rank、count 和覆盖特征
+  -> Key/Value 仅来自 survivors 的 multi-head attention
+  -> 只对 survivors 施加位置残差
+  -> 有界单调 U_deploy
 ```
 
-该设计的目标是让每个 interval query 更稳定地读取对应参数区间，并减少平均 coverage 掩盖少数漏检的情况。是否提升召回必须由独立测试确认。
+straight-through gate 让位置损失可以影响 keep score，因此删除和移动不再是完全独立的两个目标。最终更新遵守端点、相邻 survivor、`min_gap` 和相对 proposal 的最大位移。
 
-### 2. selector 与位置更新
+v12 仍是固定深度一次性网络：它没有在线逐节点试删，也没有第二次网络 forward。标准 B 样条只在最终部署节点上 refit 一次。
 
-v11 保留固定 teacher proposal，同时增加独立 deployment 位置：
+## hybrid：独立的离线质量搜索
 
-```text
-U_prop
-  → p0
-  → 临时位置 u1
-  → 位置反馈后的 p1
-  → 一次性 KeepMask
-  → mask 条件化最终位置 u*
-```
+hybrid 不是 v12 网络层。它在一次网络预测后执行 beam 删除、coordinate 位置精修和多次标准 refit；传统 greedy 作为 fallback。它会实际移动节点，当前图显示 `proposal u -> refined u*`。
 
-这是固定两次概率预测和两次位置预测，不是逐次节点生成或迭代优化。部署仍只执行一次网络前向和一次标准 B 样条 refit。
-
-### 3. 双监督
-
-```text
-Hard-RMS teacher：决定固定 proposal 中保留哪些槽位
-canonical labels ：监督候选覆盖、辅助选择和最终位置
-```
-
-`U_prop` 冻结以保护教师标签；`U*` 单独更新以提高最终节点定位精度。
-
-### 4. 计数与误保留
-
-v11 额外约束：
-
-- teacher false-positive，但豁免 canonical-positive 的可替代槽位；
-- 实际 `mass_topk` requested-count score；分数小于 `0.5` 时稳定输出零节点，正数仍使用 `ceil`；
-- canonical existence；
-- 最终 teacher-retained slot 的位置。
-
-这些项用于缓解“召回较高但 precision 低”和“概率和正确但 `ceil` 后节点数偏大”。它们不构成性能保证。
-
-位置校准还加入小权重截断幂 fit/threshold 信号。fit gate 对选择概率 detach，避免沿门控梯度回到 all-keep；该信号只承担已选组合的位置可行性约束。两阶段位置修正共享同一个相对 `U_prop` 的总位移预算。
+hybrid 适合时间不敏感、需要逐样本继续压缩的场景。有限 beam 与局部网格仍不能证明全局最少节点。
 
 ## 版本对比
 
-| 版本 | 候选/数量机制 | 位置机制 | 部署 |
+| 版本 | 结构选择 | 连续位置更新 | 默认部署 |
 |---|---|---|---|
-| v3 | 独立 activity + Hard-Concrete | 固定候选 | threshold |
-| v4 | categorical CountHead | 数量专属分支 | argmax |
-| v5 | ordinal CountHead | 全数量条件分支 | BIC/先验 |
-| v6 | 交互结构 query 预测数量 | 仅解码选定长度 | posterior median |
-| v7 | 冗余 proposal，RMS 决定数量 | proposal 局部精修 | 在线逐节点 Hard-RMS |
-| v8 | 离线教师蒸馏 KeepMask | 固定次数 Keep/位置反馈 | 一次 mask + 一次 refit |
-| v9 | 固定 proposal 上的独立 selector | 教师绑定位置不动 | 一次 mask + 一次 refit |
-| v10 | mass-TopK + 集合约束 | 固定 proposal | 一次结构化 mask + 一次 refit |
-| v11 | 局部 proposal + mass-TopK | `p0→u1→p1→mask→u*` | 一次 forward + 一次 refit |
+| v7 | 在线 greedy Hard-RMS | 无 | 多次 refit |
+| v8–v10 | 离线教师蒸馏的一次性 mask | 固定/弱 | 一次 forward + 一次 refit |
+| v11 | 一次性 mask 与位置反馈 | 有头，但教师偏向零位移 | 一次 forward + 一次 refit |
+| v12 | final-mask 条件化 selector + relocation | delete-then-relax 监督、selected-only attention | 一次 forward + 一次 refit |
+| hybrid | beam/greedy 子集搜索 | coordinate refinement | 一次 forward + 多次 refit |
 
 ## 兼容边界
 
-- v10 checkpoint 按原固定位置语义恢复，v11 不会静默改写它。
-- v10 proposal 可作为 v11 参数初始化。
-- 推荐在加载 v10 proposal 后执行 5–10 轮 v11 proposal 适配，以训练新增的局部 attention 行为。
-- `candidate-pretrain-epochs=0` 只复用固定 proposal，不会适配 Gaussian 局部 attention；脚本保留 checkpoint 带宽，并校验 `model_config` 中影响 proposal 的非权重语义。
-- 新选出的 proposal checkpoint 会保存 `model_config`；缺少该配置的历史 checkpoint 只能警告并按兼容语义加载。
-- v11 必须重新生成 teacher cache；v10 cache 不应直接复用。
-- v7 Hard-RMS 仍保留为离线教师和显式 diagnostic。
-
-统一实验应同时报告 proposal recall、三阶段节点 Precision/Recall/F1/MAE、最终标准 B 样条 RMS、阈值满足率、节点数和时间。
+- v11 权重可以严格载入 v12；新增 relocation head 零初始化，初始行为保持中性。
+- 载入不等于训练完成。需要 v12 delete-then-relax teacher 和联合校准才能获得非零重定位。
+- v11 teacher cache 不应直接复用到 v12；首次训练应创建新目录。
+- `--teacher-relaxation-min-gap` 默认等于 `--min-knot-gap`，不是 match tolerance。抑制聚集时优先调大 `--min-knot-gap`，使 proposal、student 与 teacher 使用一致约束；这属于建模假设，需要单独做消融。
+- learned v12 不提供逐样本阈值或全局最优保证；hybrid 也只在访问过的状态中择优。

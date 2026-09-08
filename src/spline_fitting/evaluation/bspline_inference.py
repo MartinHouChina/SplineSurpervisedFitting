@@ -136,9 +136,12 @@ def refit_bspline_control_points(
     ``min ||B P - Q||_F^2 + lambda_s ||D2 P||_F^2
          + lambda_r ||P||_F^2``.
 
-    On CPU, PyTorch's pivoted-QR least-squares driver (``gelsy``) is used.
-    Other devices use their supported ``torch.linalg.lstsq`` backend.  This is
-    deliberately more stable than solving ``(B.T @ B) P = B.T @ Q``.
+    On CPU, PyTorch's SVD least-squares driver (``gelsd``) is used.  The
+    deployment matrix can be rank deficient when several learned knots fall
+    before the first interior sample; ``gelsd`` still returns the minimum-norm
+    least-squares solution in that case.  Other devices use their supported
+    ``torch.linalg.lstsq`` backend.  This is deliberately more stable than
+    solving ``(B.T @ B) P = B.T @ Q``.
     """
     _validate_non_negative("smoothness_weight", smoothness_weight)
     _validate_non_negative("control_ridge", control_ridge)
@@ -225,9 +228,11 @@ def refit_bspline_control_points(
     augmented_target = torch.cat(target_blocks, dim=0)
     lstsq_kwargs: dict[str, object] = {"rcond": rcond}
     if augmented_design.device.type == "cpu":
-        # gelsy uses a rank-revealing complete orthogonal factorization with
-        # column pivoting and is robust to nearly coincident retained knots.
-        lstsq_kwargs["driver"] = "gelsy"
+        # ``gelsy`` may report an essentially empty rank for a B-spline design
+        # containing several exactly unsupported columns, returning only the
+        # endpoint line.  The SVD driver reliably preserves the supported
+        # column space and exposes the actual numerical rank.
+        lstsq_kwargs["driver"] = "gelsd"
     solution = torch.linalg.lstsq(
         augmented_design,
         augmented_target,
@@ -405,7 +410,12 @@ def refit_hard_gated_bspline_batch(
             hard_gates[index],
             binary_tolerance=binary_tolerance,
         )
-        retained_knots = candidate_knots[index, retained_mask]
+        # Candidate slots normally remain ordered, but a jointly learned final
+        # relocation can temporarily cross two survivors during calibration.
+        # Their set is unchanged by sorting and a B-spline knot vector is
+        # defined in non-decreasing order, so canonicalize at this deployment
+        # boundary rather than aborting validation midway through an epoch.
+        retained_knots = torch.sort(candidate_knots[index, retained_mask]).values
         spline = refit_bspline_control_points(
             parameters[index],
             points[index],

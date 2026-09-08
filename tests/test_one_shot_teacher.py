@@ -163,9 +163,15 @@ class OneShotTeacherTests(unittest.TestCase):
                 "teacher_internal_knot_mask",
                 "teacher_count",
                 "teacher_fit_rms",
+                "teacher_fit_mse",
                 "teacher_threshold_satisfied",
                 "teacher_deletion_order",
                 "teacher_single_deletion_rms",
+                "teacher_greedy_count",
+                "teacher_greedy_fit_rms",
+                "teacher_relocation_mean_abs",
+                "teacher_relocation_max_abs",
+                "teacher_extra_deleted_after_relocation",
             },
         )
 

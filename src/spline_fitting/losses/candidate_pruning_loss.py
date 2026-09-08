@@ -10,6 +10,82 @@ from ..spline.bspline_deletion_teacher import single_knot_deletion_rmse_batch
 from .total_loss import SplineFittingLoss
 
 
+def build_redundant_boehm_candidates(
+    true_internal_knots: torch.Tensor,
+    true_mask: torch.Tensor,
+    candidate_count: int,
+) -> torch.Tensor:
+    """Expand an ordered labelled knot set by deterministic midpoint insertion.
+
+    Each step splits the left-most largest interval, including the two boundary
+    intervals.  Inserting these knot values is a Boehm refinement: it enlarges
+    the B-spline space without changing the curve represented by the original
+    knots.  The deterministic tie break also gives every output rank a stable
+    slot identity for supervised proposal/KeepMask training.
+    """
+
+    if true_internal_knots.shape != true_mask.shape:
+        raise ValueError("true knot values and mask must share shape [B,K]")
+    if candidate_count < 0:
+        raise ValueError("candidate_count must be non-negative")
+    batch_size = true_internal_knots.shape[0]
+    if candidate_count == 0:
+        return true_internal_knots.new_empty((batch_size, 0))
+
+    with torch.no_grad():
+        counts = true_mask.sum(dim=-1).to(torch.long)
+        if bool((counts > candidate_count).any()):
+            raise ValueError("true internal-knot count cannot exceed candidate count")
+        infinity = torch.full_like(true_internal_knots, float("inf"))
+        ordered = torch.sort(
+            torch.where(true_mask, true_internal_knots, infinity),
+            dim=-1,
+        ).values
+        targets = true_internal_knots.new_full(
+            (batch_size, candidate_count),
+            float("inf"),
+        )
+        copied_width = min(candidate_count, ordered.shape[-1])
+        if copied_width:
+            targets[:, :copied_width] = ordered[:, :copied_width]
+
+        interval_index = torch.arange(
+            candidate_count + 1,
+            device=true_internal_knots.device,
+        ).view(1, -1)
+        for _ in range(candidate_count):
+            active = counts < candidate_count
+            left_indices = (interval_index - 1).clamp(
+                min=0,
+                max=candidate_count - 1,
+            )
+            right_indices = interval_index.clamp(max=candidate_count - 1)
+            left = targets.gather(1, left_indices.expand(batch_size, -1))
+            right = targets.gather(1, right_indices.expand(batch_size, -1))
+            left = torch.where(interval_index == 0, torch.zeros_like(left), left)
+            right = torch.where(
+                interval_index == counts.unsqueeze(-1),
+                torch.ones_like(right),
+                right,
+            )
+            valid_interval = interval_index <= counts.unsqueeze(-1)
+            gaps = torch.where(
+                valid_interval,
+                right - left,
+                torch.full_like(right, -float("inf")),
+            )
+            split_index = gaps.argmax(dim=-1, keepdim=True)
+            midpoint = 0.5 * (
+                left.gather(1, split_index) + right.gather(1, split_index)
+            )
+            insertion_index = counts.clamp_max(candidate_count - 1).unsqueeze(-1)
+            inserted = targets.scatter(1, insertion_index, midpoint)
+            inserted = torch.sort(inserted, dim=-1).values
+            targets = torch.where(active.unsqueeze(-1), inserted, targets)
+            counts = counts + active.to(torch.long)
+    return targets.detach()
+
+
 @dataclass
 class CandidatePruningLossWeights:
     """Weights for high-recall proposal and supervised pruning training."""
@@ -17,6 +93,7 @@ class CandidatePruningLossWeights:
     fit: float = 0.25
     threshold_violation: float = 5.0
     true_parameter: float = 5e-2
+    true_parameter_gap: float = 0.0
     candidate_coverage: float = 5.0
     candidate_repulsion: float = 5e-2
     keep: float = 2.5e-1
@@ -33,6 +110,7 @@ class CandidatePruningLossWeights:
     policy_count: float = 0.0
     canonical_selection: float = 0.0
     complexity: float = 0.0
+    redundant_candidate: float = 0.0
 
 
 class CandidatePruningLoss(nn.Module):
@@ -59,6 +137,9 @@ class CandidatePruningLoss(nn.Module):
         candidate_coverage_tolerances: tuple[float, ...] = (),
         position_aware_distribution: bool = False,
         joint_position_supervision: bool = False,
+        teacher_relocation_supervision: bool = False,
+        teacher_survivor_spacing_weight: float = 0.25,
+        true_parameter_error_scale: float = 1.0,
     ) -> None:
         super().__init__()
         self.weights = weights or CandidatePruningLossWeights()
@@ -81,6 +162,10 @@ class CandidatePruningLoss(nn.Module):
             for value in candidate_coverage_tolerances
         ):
             raise ValueError("candidate coverage tolerances must be positive")
+        if teacher_survivor_spacing_weight < 0.0:
+            raise ValueError("teacher_survivor_spacing_weight must be non-negative")
+        if true_parameter_error_scale <= 0.0:
+            raise ValueError("true_parameter_error_scale must be positive")
         self.knot_position_beta = float(knot_position_beta)
         self.candidate_match_tolerance = float(candidate_match_tolerance)
         self.fit_tolerance = float(fit_tolerance)
@@ -95,10 +180,52 @@ class CandidatePruningLoss(nn.Module):
         )
         self.position_aware_distribution = bool(position_aware_distribution)
         self.joint_position_supervision = bool(joint_position_supervision)
+        self.teacher_relocation_supervision = bool(teacher_relocation_supervision)
+        self.teacher_survivor_spacing_weight = float(teacher_survivor_spacing_weight)
+        self.true_parameter_error_scale = float(true_parameter_error_scale)
 
     @staticmethod
     def _fit_loss(reconstructed: torch.Tensor, points: torch.Tensor) -> torch.Tensor:
         return (reconstructed - points).pow(2).sum(dim=-1).mean()
+
+    @staticmethod
+    def _warp_parameter_coordinates(
+        values: torch.Tensor,
+        source_params: torch.Tensor,
+        target_params: torch.Tensor,
+    ) -> torch.Tensor:
+        """Transport cached proposal-domain knots into the output domain."""
+
+        if source_params.shape != target_params.shape:
+            raise ValueError("source and target parameters must share shape [B,M]")
+        if values.ndim != 2 or values.shape[0] != source_params.shape[0]:
+            raise ValueError("values must have shape [B,K] and share the batch")
+        right = torch.searchsorted(
+            source_params.detach().contiguous(),
+            values.detach().contiguous(),
+            right=True,
+        ).clamp(1, source_params.shape[-1] - 1)
+        left = right - 1
+        source_left = torch.gather(source_params, 1, left)
+        source_right = torch.gather(source_params, 1, right)
+        target_left = torch.gather(target_params, 1, left)
+        target_right = torch.gather(target_params, 1, right)
+        fraction = (values - source_left) / (source_right - source_left).clamp_min(
+            torch.finfo(source_params.dtype).eps
+        )
+        return target_left + fraction * (target_right - target_left)
+
+    @staticmethod
+    def _redundant_candidate_targets(
+        true_internal_knots: torch.Tensor,
+        true_mask: torch.Tensor,
+        candidate_count: int,
+    ) -> torch.Tensor:
+        return build_redundant_boehm_candidates(
+            true_internal_knots,
+            true_mask,
+            candidate_count,
+        )
 
     @staticmethod
     def _ordered_pair_indices(
@@ -192,12 +319,112 @@ class CandidatePruningLoss(nn.Module):
         ):
             raise ValueError("all candidate tensors must share shape [B,Kc]")
 
+        batch_size = candidates.shape[0]
+        if teacher_threshold_satisfied is not None:
+            if teacher_threshold_satisfied.shape != (batch_size,):
+                raise ValueError("teacher_threshold_satisfied must have shape [B]")
+            feasible_teacher = teacher_threshold_satisfied.to(
+                device=points.device,
+                dtype=torch.bool,
+            )
+        else:
+            # Historical callers did not attach an explicit feasibility flag.
+            # Treat their teacher rows as valid so pre-v10/all-feasible training
+            # keeps the same semantics.
+            feasible_teacher = torch.ones(
+                batch_size,
+                dtype=torch.bool,
+                device=points.device,
+            )
+
+        def feasible_sample_mean(
+            per_sample: torch.Tensor,
+            *,
+            additionally_valid: torch.Tensor | None = None,
+        ) -> torch.Tensor:
+            """Average normalized sample losses over feasible teacher rows."""
+
+            valid = feasible_teacher
+            if additionally_valid is not None:
+                valid = valid & additionally_valid.to(
+                    device=points.device,
+                    dtype=torch.bool,
+                )
+            return (
+                per_sample[valid].mean()
+                if bool(valid.any())
+                else points.new_zeros(())
+            )
+
+        threshold_hard_keep = keep_probability >= 0.5
+        hard_keep = output.get("final_hard_keep_mask", threshold_hard_keep)
+        if hard_keep.shape != candidates.shape:
+            raise ValueError("final_hard_keep_mask must have shape [B,Kc]")
+        hard_keep = hard_keep.to(torch.bool)
+
+        teacher_knot_mask: torch.Tensor | None = None
+        teacher_positions = teacher_internal_knots
+        if teacher_internal_knots is not None or teacher_internal_knot_mask is not None:
+            if teacher_internal_knots is None or teacher_internal_knot_mask is None:
+                raise ValueError(
+                    "teacher_internal_knots and teacher_internal_knot_mask "
+                    "must be supplied together"
+                )
+            if (
+                teacher_internal_knots.shape != candidates.shape
+                or teacher_internal_knot_mask.shape != candidates.shape
+            ):
+                raise ValueError("teacher knot tensors must have shape [B,Kc]")
+            teacher_knot_mask = teacher_internal_knot_mask.to(torch.bool)
+            proposal_params = output.get("proposal_params")
+            if proposal_params is not None:
+                if proposal_params.shape != output["params"].shape:
+                    raise ValueError(
+                        "proposal_params and params must share shape [B,M]"
+                    )
+                teacher_positions = self._warp_parameter_coordinates(
+                    teacher_internal_knots.to(points.dtype),
+                    proposal_params,
+                    output["params"],
+                )
+
         true_mask = true_internal_knot_mask.to(torch.bool)
+        true_knots_true_domain = true_internal_knots.to(points.dtype)
+        proposal_params = output.get("proposal_params", output["params"])
+        if true_params is not None:
+            if true_params.shape != output["params"].shape:
+                raise ValueError("true_params and params must share shape [B,M]")
+            if proposal_params.shape != true_params.shape:
+                raise ValueError(
+                    "proposal_params and true_params must share shape [B,M]"
+                )
+            # Candidate/proposal knots live in the preliminary parameter domain
+            # t0, whereas dataset labels live in the generating (true) domain.
+            # Final relocated knots live in the feedback-corrected t1 domain.
+            # Transport labels into the corresponding prediction domain before
+            # every positional comparison.  The transported values are labels,
+            # so they must not offer ParameterHead a shortcut through the loss.
+            with torch.no_grad():
+                true_knots_proposal_domain = self._warp_parameter_coordinates(
+                    true_knots_true_domain,
+                    true_params,
+                    proposal_params.detach(),
+                )
+                true_knots_deployment_domain = self._warp_parameter_coordinates(
+                    true_knots_true_domain,
+                    true_params,
+                    output["params"].detach(),
+                )
+        else:
+            # Historical/unit-test callers without true parameters already
+            # express their knot labels in the model's parameter domain.
+            true_knots_proposal_domain = true_knots_true_domain
+            true_knots_deployment_domain = true_knots_true_domain
         true_count = true_mask.sum(dim=-1).to(torch.long)
         existence_targets, position_targets, matched_mask = (
             SplineFittingLoss._ordered_knot_assignment(
                 proposal_refined,
-                true_internal_knots,
+                true_knots_proposal_domain,
                 true_mask,
             )
         )
@@ -213,7 +440,9 @@ class CandidatePruningLoss(nn.Module):
         target_count = points.new_zeros(())
         nearest_error_sum = points.new_zeros(())
         for batch_index in range(points.shape[0]):
-            targets = true_internal_knots[batch_index, true_mask[batch_index]]
+            targets = true_knots_proposal_domain[
+                batch_index, true_mask[batch_index]
+            ]
             if targets.numel() == 0:
                 continue
             distances = (
@@ -266,6 +495,92 @@ class CandidatePruningLoss(nn.Module):
             )
 
         candidate_count = candidates.shape[-1]
+        if self.weights.redundant_candidate != 0.0:
+            # Boehm insertion is defined in the generating parameter domain.
+            # Build the complete redundant vector there first, then transport
+            # every slot into proposal t0.  Warping the sparse true knots first
+            # and inserting t0 midpoints is not equivalent under a nonlinear
+            # parameterization and disagrees with the canonical-Boehm teacher.
+            with torch.no_grad():
+                redundant_targets = self._redundant_candidate_targets(
+                    true_knots_true_domain,
+                    true_mask,
+                    candidate_count,
+                )
+                if true_params is not None:
+                    redundant_targets = self._warp_parameter_coordinates(
+                        redundant_targets,
+                        true_params,
+                        proposal_params.detach(),
+                    )
+            redundant_candidate_position_loss = 0.5 * (
+                F.smooth_l1_loss(
+                    candidates,
+                    redundant_targets,
+                    beta=self.knot_position_beta,
+                )
+                + F.smooth_l1_loss(
+                    proposal_refined,
+                    redundant_targets,
+                    beta=self.knot_position_beta,
+                )
+            )
+            target_boundaries = torch.cat(
+                [
+                    redundant_targets.new_zeros(batch_size, 1),
+                    redundant_targets,
+                    redundant_targets.new_ones(batch_size, 1),
+                ],
+                dim=-1,
+            )
+            candidate_boundaries = torch.cat(
+                [
+                    candidates.new_zeros(batch_size, 1),
+                    candidates,
+                    candidates.new_ones(batch_size, 1),
+                ],
+                dim=-1,
+            )
+            refined_boundaries = torch.cat(
+                [
+                    proposal_refined.new_zeros(batch_size, 1),
+                    proposal_refined,
+                    proposal_refined.new_ones(batch_size, 1),
+                ],
+                dim=-1,
+            )
+            target_intervals = target_boundaries.diff(dim=-1)
+            redundant_candidate_interval_loss = 0.5 * (
+                F.smooth_l1_loss(
+                    candidate_boundaries.diff(dim=-1),
+                    target_intervals,
+                    beta=self.knot_position_beta,
+                )
+                + F.smooth_l1_loss(
+                    refined_boundaries.diff(dim=-1),
+                    target_intervals,
+                    beta=self.knot_position_beta,
+                )
+            )
+            # Both Huber terms have parameter-coordinate units.  Normalize by
+            # the strict localization tolerance so this full-vector objective
+            # is comparable to the already normalized nearest-knot coverage
+            # loss.  Previously its weighted contribution was about 50 times
+            # smaller, so the network learned only uniform R@0.02 coverage and
+            # never placed the slots needed by the exact B-spline teacher.
+            redundant_scale = max(
+                self.candidate_match_tolerance,
+                self.knot_position_beta,
+                1e-6,
+            )
+            redundant_candidate_loss = (
+                redundant_candidate_position_loss
+                + redundant_candidate_interval_loss
+            ) / redundant_scale
+        else:
+            redundant_candidate_loss = points.new_zeros(())
+            redundant_candidate_position_loss = points.new_zeros(())
+            redundant_candidate_interval_loss = points.new_zeros(())
         desired_gap = (
             self.repulsion_distance
             if self.repulsion_distance is not None
@@ -288,24 +603,35 @@ class CandidatePruningLoss(nn.Module):
         else:
             keep_targets = existence_targets
         positive_weight = points.new_tensor(self.positive_keep_weight)
-        keep_bce_loss = F.binary_cross_entropy_with_logits(
-            keep_logits,
-            keep_targets,
-            pos_weight=positive_weight,
-        )
         if teacher_retained_mask is not None:
+            per_sample_keep_bce = F.binary_cross_entropy_with_logits(
+                keep_logits,
+                keep_targets,
+                pos_weight=positive_weight,
+                reduction="none",
+            ).mean(dim=-1)
+            keep_bce_loss = feasible_sample_mean(per_sample_keep_bce)
             # Slot-wise BCE calibrates probabilities, while the soft Dice term
             # prevents the heavily imbalanced candidate set from finding an
             # easy all-remove or all-keep solution.  This term is v8-only;
             # historical v7 supervision keeps its exact loss semantics.
             dice_numerator = 2.0 * (keep_probability * keep_targets).sum(dim=-1)
             dice_denominator = keep_probability.sum(dim=-1) + keep_targets.sum(dim=-1)
-            keep_dice_loss = (
+            per_sample_keep_dice = (
                 1.0 - (dice_numerator + 1.0) / (dice_denominator + 1.0)
-            ).mean()
+            )
+            keep_dice_loss = feasible_sample_mean(per_sample_keep_dice)
         else:
+            keep_bce_loss = F.binary_cross_entropy_with_logits(
+                keep_logits,
+                keep_targets,
+                pos_weight=positive_weight,
+            )
             keep_dice_loss = points.new_zeros(())
         keep_loss = keep_bce_loss + keep_dice_loss
+        # This target comes from the canonical ground-truth knot set, not from
+        # the offline pruning teacher.  It remains valid even when Hard-RMS did
+        # not find a feasible subset and is intentionally not feasibility-masked.
         canonical_selection_loss = F.binary_cross_entropy_with_logits(
             keep_logits,
             existence_targets,
@@ -316,15 +642,22 @@ class CandidatePruningLoss(nn.Module):
             # teach it as a strong false positive merely because the teacher
             # retained a neighbouring equivalent slot.
             negative_weight = (1.0 - keep_targets) * (1.0 - existence_targets)
-            teacher_false_positive_loss = (
+            per_sample_negative_mass = negative_weight.sum(dim=-1)
+            per_sample_false_positive = (
                 F.softplus(keep_logits) * negative_weight
-            ).sum() / negative_weight.sum().clamp_min(1.0)
+            ).sum(dim=-1) / per_sample_negative_mass.clamp_min(1.0)
+            teacher_false_positive_loss = feasible_sample_mean(
+                per_sample_false_positive,
+                additionally_valid=per_sample_negative_mass > 0,
+            )
         else:
             teacher_false_positive_loss = points.new_zeros(())
         if teacher_retained_mask is not None:
             ranking_terms: list[torch.Tensor] = []
             retained_mask = teacher_retained_mask.to(torch.bool)
             for batch_index in range(points.shape[0]):
+                if not bool(feasible_teacher[batch_index]):
+                    continue
                 retained_logits = keep_logits[batch_index, retained_mask[batch_index]]
                 removed_logits = keep_logits[batch_index, ~retained_mask[batch_index]]
                 if retained_logits.numel() and removed_logits.numel():
@@ -368,20 +701,30 @@ class CandidatePruningLoss(nn.Module):
         if teacher_soft_keep_risk is not None:
             if teacher_soft_keep_risk.shape != candidates.shape:
                 raise ValueError("teacher_soft_keep_risk must have shape [B,Kc]")
-            teacher_risk_loss = F.binary_cross_entropy(
+            per_sample_teacher_risk = F.binary_cross_entropy(
                 keep_probability.clamp(1e-6, 1.0 - 1e-6),
                 teacher_soft_keep_risk.to(points.dtype).clamp(0.0, 1.0),
-            )
+                reduction="none",
+            ).mean(dim=-1)
+            teacher_risk_loss = feasible_sample_mean(per_sample_teacher_risk)
         else:
             teacher_risk_loss = points.new_zeros(())
 
-        # A slot-wise classifier can obtain a reasonable average F1 while
-        # placing most selected knots in the same parameter-domain region.
-        # Comparing normalized cumulative mass is the 1-D Wasserstein/CDF
-        # distance between the predicted and teacher knot sets.  It explicitly
-        # trains global spatial allocation without requiring a second spline
-        # solve or an arbitrary candidate-to-candidate matching operation.
+        # A slot-wise greedy mask is not a unique representation of a feasible
+        # knot set: neighbouring proposal slots can be interchangeable.  Use
+        # the relocated packed teacher knots whenever available, so spatial
+        # supervision is invariant to the particular proposal slots retained
+        # by the offline search.  The CDF term controls global allocation and
+        # the local-coverage term gives every missing teacher knot a direct
+        # gradient through keep_probability.
+        teacher_set_coverage_loss = points.new_zeros(())
         if teacher_retained_mask is not None and self.position_aware_distribution:
+            if teacher_positions is not None and teacher_knot_mask is not None:
+                distribution_targets = teacher_positions.to(points.dtype)
+                distribution_mask = teacher_knot_mask
+            else:
+                distribution_targets = true_knots_deployment_domain
+                distribution_mask = true_mask
             grid = torch.linspace(
                 0.0,
                 1.0,
@@ -397,24 +740,43 @@ class CandidatePruningLoss(nn.Module):
             predicted_cdf = (predicted_steps * keep_probability.unsqueeze(-1)).sum(
                 dim=1
             ) / predicted_mass.clamp_min(1e-6)
-            true_steps = torch.sigmoid(
-                (
-                    grid.view(1, 1, -1)
-                    - true_internal_knots.to(points.dtype).unsqueeze(-1)
-                )
-                / temperature
+            target_steps = torch.sigmoid(
+                (grid.view(1, 1, -1) - distribution_targets.unsqueeze(-1)) / temperature
             )
-            true_mass = true_mask.to(points.dtype).sum(dim=-1, keepdim=True)
-            true_cdf = (true_steps * true_mask.to(points.dtype).unsqueeze(-1)).sum(
+            target_weight = distribution_mask.to(points.dtype)
+            target_mass = target_weight.sum(dim=-1, keepdim=True)
+            target_cdf = (target_steps * target_weight.unsqueeze(-1)).sum(
                 dim=1
-            ) / true_mass.clamp_min(1.0)
-            valid_distribution = true_mass.squeeze(-1) > 0
-            per_sample_distribution = (predicted_cdf - true_cdf).abs().mean(dim=-1)
-            teacher_distribution_loss = (
-                per_sample_distribution[valid_distribution].mean()
-                if valid_distribution.any()
-                else points.new_zeros(())
+            ) / target_mass.clamp_min(1.0)
+            valid_distribution = target_mass.squeeze(-1) > 0
+            per_sample_cdf = (predicted_cdf - target_cdf).abs().mean(dim=-1)
+            cdf_loss = feasible_sample_mean(
+                per_sample_cdf,
+                additionally_valid=valid_distribution,
             )
+
+            coverage_bandwidth = max(self.candidate_match_tolerance, 5e-3)
+            target_distance = (
+                refined.unsqueeze(-1) - distribution_targets.unsqueeze(1)
+            ).abs()
+            local_kernel = torch.exp(
+                -0.5 * (target_distance / coverage_bandwidth).square()
+            )
+            local_keep = (
+                keep_probability.unsqueeze(-1)
+                * local_kernel
+                * target_weight.unsqueeze(1)
+            ).clamp(max=1.0 - 1e-6)
+            coverage_probability = 1.0 - torch.prod(1.0 - local_keep, dim=1)
+            per_target_coverage = -torch.log(coverage_probability.clamp_min(1e-6))
+            per_sample_coverage = (per_target_coverage * target_weight).sum(
+                dim=-1
+            ) / target_mass.squeeze(-1).clamp_min(1.0)
+            teacher_set_coverage_loss = feasible_sample_mean(
+                per_sample_coverage,
+                additionally_valid=valid_distribution,
+            )
+            teacher_distribution_loss = cdf_loss + teacher_set_coverage_loss
         elif teacher_retained_mask is not None:
             teacher_mass = keep_targets.sum(dim=-1, keepdim=True)
             predicted_mass = keep_probability.sum(dim=-1, keepdim=True)
@@ -426,10 +788,9 @@ class CandidatePruningLoss(nn.Module):
                 .abs()
                 .mean(dim=-1)
             )
-            teacher_distribution_loss = (
-                per_sample_distribution[valid_distribution].mean()
-                if valid_distribution.any()
-                else points.new_zeros(())
+            teacher_distribution_loss = feasible_sample_mean(
+                per_sample_distribution,
+                additionally_valid=valid_distribution,
             )
         else:
             teacher_distribution_loss = points.new_zeros(())
@@ -445,9 +806,14 @@ class CandidatePruningLoss(nn.Module):
                 critical_weight = critical_weight * (
                     1.0 + teacher_soft_keep_risk.to(points.dtype)
                 )
-            teacher_critical_recall_loss = (
+            per_sample_critical_mass = critical_weight.sum(dim=-1)
+            per_sample_critical_recall = (
                 F.softplus(-keep_logits) * critical_weight
-            ).sum() / critical_weight.sum().clamp_min(1.0)
+            ).sum(dim=-1) / per_sample_critical_mass.clamp_min(1.0)
+            teacher_critical_recall_loss = feasible_sample_mean(
+                per_sample_critical_recall,
+                additionally_valid=per_sample_critical_mass > 0,
+            )
         else:
             teacher_critical_recall_loss = points.new_zeros(())
 
@@ -461,6 +827,10 @@ class CandidatePruningLoss(nn.Module):
             log_probability = F.log_softmax(remove_stop_logits, dim=-1)
             action_terms: list[torch.Tensor] = []
             for batch_index in range(points.shape[0]):
+                if teacher_threshold_satisfied is not None and not bool(
+                    feasible_teacher[batch_index]
+                ):
+                    continue
                 if safe_delete_mask[batch_index].any():
                     # Several deletions can satisfy the same geometric bound.
                     # Multi-positive likelihood avoids inventing an arbitrary
@@ -476,50 +846,85 @@ class CandidatePruningLoss(nn.Module):
                     )
                 else:
                     action_terms.append(-log_probability[batch_index, -1])
-            remove_action_loss = torch.stack(action_terms).mean()
+            remove_action_loss = (
+                torch.stack(action_terms).mean()
+                if action_terms
+                else points.new_zeros(())
+            )
         else:
             remove_action_loss = points.new_zeros(())
         teacher_anchor_position_loss = points.new_zeros(())
-        if teacher_internal_knots is not None or teacher_internal_knot_mask is not None:
-            if teacher_internal_knots is None or teacher_internal_knot_mask is None:
-                raise ValueError(
-                    "teacher_internal_knots and teacher_internal_knot_mask "
-                    "must be supplied together"
-                )
-            if (
-                teacher_internal_knots.shape != candidates.shape
-                or teacher_internal_knot_mask.shape != candidates.shape
-            ):
-                raise ValueError("teacher knot tensors must have shape [B,Kc]")
-            if teacher_retained_mask is None:
-                raise ValueError(
-                    "teacher knot position supervision requires teacher_retained_mask"
-                )
+        teacher_survivor_spacing_loss = points.new_zeros(())
+        if teacher_positions is not None and teacher_knot_mask is not None:
             teacher_position_terms: list[torch.Tensor] = []
-            teacher_knot_mask = teacher_internal_knot_mask.to(torch.bool)
-            retained_teacher_mask = teacher_retained_mask.to(torch.bool)
+            teacher_spacing_terms: list[torch.Tensor] = []
             for batch_index in range(points.shape[0]):
-                slot_targets = teacher_internal_knots[
+                if not bool(feasible_teacher[batch_index]):
+                    continue
+                target_positions = teacher_positions[
                     batch_index, teacher_knot_mask[batch_index]
                 ].to(points.dtype)
-                selected_positions = refined[
-                    batch_index, retained_teacher_mask[batch_index]
-                ]
-                if slot_targets.numel() != selected_positions.numel():
-                    raise ValueError(
-                        "teacher packed knots disagree with teacher_retained_mask"
+                predicted_positions = refined[batch_index, hard_keep[batch_index]]
+                predicted_positions = torch.sort(predicted_positions).values
+                target_positions = torch.sort(target_positions).values
+                pairs = self._ordered_pair_indices(
+                    predicted_positions,
+                    target_positions,
+                )
+                if pairs:
+                    predicted_indices = torch.tensor(
+                        [left for left, _ in pairs],
+                        dtype=torch.long,
+                        device=points.device,
                     )
-                if slot_targets.numel():
+                    target_indices = torch.tensor(
+                        [right for _, right in pairs],
+                        dtype=torch.long,
+                        device=points.device,
+                    )
                     teacher_position_terms.append(
                         F.smooth_l1_loss(
-                            selected_positions,
-                            slot_targets,
+                            predicted_positions[predicted_indices],
+                            target_positions[target_indices],
+                            beta=self.knot_position_beta,
+                        )
+                    )
+                # Boundary/spacing vectors describe complete ordered sets.
+                # Applying them after partial matching would invent false
+                # boundary gaps when K_pred differs from K_teacher.
+                if (
+                    predicted_positions.numel()
+                    and predicted_positions.numel() == target_positions.numel()
+                ):
+                    predicted_with_boundaries = torch.cat(
+                        [
+                            predicted_positions.new_zeros(1),
+                            predicted_positions,
+                            predicted_positions.new_ones(1),
+                        ]
+                    )
+                    target_with_boundaries = torch.cat(
+                        [
+                            target_positions.new_zeros(1),
+                            target_positions,
+                            target_positions.new_ones(1),
+                        ]
+                    )
+                    teacher_spacing_terms.append(
+                        F.smooth_l1_loss(
+                            predicted_with_boundaries.diff(),
+                            target_with_boundaries.diff(),
                             beta=self.knot_position_beta,
                         )
                     )
             teacher_anchor_position_loss = (
                 torch.stack(teacher_position_terms).mean()
                 if teacher_position_terms
+                else points.new_zeros(())
+            )
+            teacher_survivor_spacing_loss = (
+                torch.stack(teacher_spacing_terms).mean()
+                if teacher_spacing_terms
                 else points.new_zeros(())
             )
         canonical_position_loss = (
@@ -535,6 +940,8 @@ class CandidatePruningLoss(nn.Module):
         if self.joint_position_supervision and teacher_retained_mask is not None:
             retained_teacher_mask = teacher_retained_mask.to(torch.bool)
             for batch_index in range(points.shape[0]):
+                if not bool(feasible_teacher[batch_index]):
+                    continue
                 retained_slots = torch.nonzero(
                     retained_teacher_mask[batch_index], as_tuple=False
                 ).squeeze(-1)
@@ -547,7 +954,7 @@ class CandidatePruningLoss(nn.Module):
                     refined[batch_index, retained_slots]
                 )
                 target_positions, target_order = torch.sort(
-                    true_internal_knots[batch_index, target_slots].to(points.dtype)
+                    true_knots_deployment_domain[batch_index, target_slots]
                 )
                 pairs = self._ordered_pair_indices(
                     retained_positions,
@@ -568,9 +975,9 @@ class CandidatePruningLoss(nn.Module):
                 joint_deployment_position_terms.append(
                     F.smooth_l1_loss(
                         refined[batch_index, predicted_indices],
-                        true_internal_knots[batch_index, target_indices].to(
-                            points.dtype
-                        ),
+                        true_knots_deployment_domain[
+                            batch_index, target_indices
+                        ],
                         beta=self.knot_position_beta,
                     )
                 )
@@ -584,7 +991,12 @@ class CandidatePruningLoss(nn.Module):
         # geometry: pulling the same slots toward a second canonical target
         # makes the cached deletion labels stale.  v9 therefore uses the
         # teacher anchor exclusively during distillation.
-        if self.joint_position_supervision and teacher_retained_mask is not None:
+        if self.teacher_relocation_supervision and teacher_internal_knots is not None:
+            knot_position_loss = (
+                teacher_anchor_position_loss
+                + self.teacher_survivor_spacing_weight * teacher_survivor_spacing_loss
+            )
+        elif self.joint_position_supervision and teacher_retained_mask is not None:
             knot_position_loss = joint_deployment_position_loss
         elif teacher_internal_knots is not None:
             knot_position_loss = teacher_anchor_position_loss
@@ -616,14 +1028,6 @@ class CandidatePruningLoss(nn.Module):
             if teacher_count is not None
             else true_count.to(points.dtype)
         )
-        if teacher_threshold_satisfied is not None:
-            if teacher_threshold_satisfied.shape != (candidates.shape[0],):
-                raise ValueError("teacher_threshold_satisfied must have shape [B]")
-            feasible_teacher = teacher_threshold_satisfied.to(torch.bool)
-        else:
-            feasible_teacher = torch.ones(
-                candidates.shape[0], dtype=torch.bool, device=points.device
-            )
         if teacher_fit_rms is not None:
             if teacher_fit_rms.shape != (candidates.shape[0],):
                 raise ValueError("teacher_fit_rms must have shape [B]")
@@ -637,11 +1041,7 @@ class CandidatePruningLoss(nn.Module):
             reduction="none",
         )
         if teacher_count is not None:
-            count_consistency_loss = (
-                per_sample_count_loss[feasible_teacher].mean()
-                if feasible_teacher.any()
-                else points.new_zeros(())
-            )
+            count_consistency_loss = feasible_sample_mean(per_sample_count_loss)
         else:
             count_consistency_loss = per_sample_count_loss.mean()
         teacher_count_loss = (
@@ -669,19 +1069,11 @@ class CandidatePruningLoss(nn.Module):
                 beta=0.05,
                 reduction="none",
             )
-            policy_count_loss = (
-                per_sample_policy_count[feasible_teacher].mean()
-                if feasible_teacher.any()
-                else points.new_zeros(())
-            )
+            policy_count_loss = feasible_sample_mean(per_sample_policy_count)
         else:
             policy_count_loss = points.new_zeros(())
         per_sample_complexity = structure_count / max(candidate_count, 1)
-        complexity_loss = (
-            per_sample_complexity[feasible_teacher].mean()
-            if feasible_teacher.any()
-            else points.new_zeros(())
-        )
+        complexity_loss = feasible_sample_mean(per_sample_complexity)
 
         predicted_log_cost = output.get("predicted_log_deletion_cost")
         analytic_delta = output.get("analytic_drop_objective_delta")
@@ -690,12 +1082,24 @@ class CandidatePruningLoss(nn.Module):
             target_log_cost = torch.log(
                 (deletion_rms + tiny) / (self.fit_tolerance + tiny)
             ).clamp(-20.0, 20.0)
-            deletion_cost_loss = F.smooth_l1_loss(
+            per_slot_deletion_cost = F.smooth_l1_loss(
                 predicted_log_cost,
                 target_log_cost,
                 beta=1.0,
+                reduction="none",
             )
-            deletion_log_ratio_mae = (predicted_log_cost - target_log_cost).abs().mean()
+            per_sample_deletion_cost = per_slot_deletion_cost.mean(dim=-1)
+            per_sample_deletion_mae = (
+                predicted_log_cost - target_log_cost
+            ).abs().mean(dim=-1)
+            if teacher_single_deletion_rms is not None:
+                deletion_cost_loss = feasible_sample_mean(per_sample_deletion_cost)
+                deletion_log_ratio_mae = feasible_sample_mean(
+                    per_sample_deletion_mae
+                )
+            else:
+                deletion_cost_loss = per_sample_deletion_cost.mean()
+                deletion_log_ratio_mae = per_sample_deletion_mae.mean()
         elif predicted_log_cost is not None and analytic_delta is not None:
             target_log_cost = torch.log(
                 analytic_delta.detach().clamp_min(torch.finfo(points.dtype).tiny)
@@ -723,9 +1127,78 @@ class CandidatePruningLoss(nn.Module):
             (per_sample_fit_rms <= self.fit_tolerance).to(points.dtype).mean()
         )
         if true_params is None:
+            raw_true_parameter_loss = points.new_zeros(())
+            raw_proposal_parameter_loss = points.new_zeros(())
             true_parameter_loss = points.new_zeros(())
+            raw_true_parameter_gap_loss = points.new_zeros(())
+            raw_proposal_parameter_gap_loss = points.new_zeros(())
+            true_parameter_gap_loss = points.new_zeros(())
+            true_parameter_log_gap_mae = points.new_zeros(())
+            proposal_parameter_log_gap_mae = points.new_zeros(())
         else:
-            true_parameter_loss = (output["params"] - true_params).pow(2).mean()
+            raw_true_parameter_loss = (output["params"] - true_params).pow(2).mean()
+            proposal_params = output.get("proposal_params")
+            if proposal_params is None:
+                raw_proposal_parameter_loss = points.new_zeros(())
+                supervised_parameter_loss = raw_true_parameter_loss
+            else:
+                if proposal_params.shape != true_params.shape:
+                    raise ValueError(
+                        "proposal_params and true_params must share shape [B,M]"
+                    )
+                raw_proposal_parameter_loss = (
+                    proposal_params - true_params
+                ).pow(2).mean()
+                supervised_parameter_loss = 0.5 * (
+                    raw_true_parameter_loss + raw_proposal_parameter_loss
+                )
+            true_parameter_loss = supervised_parameter_loss / (
+                self.true_parameter_error_scale**2
+            )
+
+            # Coordinate MSE is cumulative: opposite local interval errors can
+            # partly cancel after integration into monotonically increasing
+            # parameters.  Supervise each positive interval in log space so
+            # relative under/over-estimation of short and long gaps receives a
+            # comparable, robust penalty.
+            tiny = torch.finfo(points.dtype).tiny
+            target_log_gaps = torch.log(
+                torch.diff(true_params.detach(), dim=-1).clamp_min(tiny)
+            )
+
+            def parameter_gap_terms(
+                params: torch.Tensor,
+            ) -> tuple[torch.Tensor, torch.Tensor]:
+                predicted_log_gaps = torch.log(
+                    torch.diff(params, dim=-1).clamp_min(tiny)
+                )
+                difference = predicted_log_gaps - target_log_gaps
+                return (
+                    F.smooth_l1_loss(
+                        predicted_log_gaps,
+                        target_log_gaps,
+                        beta=0.1,
+                    ),
+                    difference.abs().mean(),
+                )
+
+            (
+                raw_true_parameter_gap_loss,
+                true_parameter_log_gap_mae,
+            ) = parameter_gap_terms(output["params"])
+            if proposal_params is None:
+                raw_proposal_parameter_gap_loss = points.new_zeros(())
+                proposal_parameter_log_gap_mae = points.new_zeros(())
+                true_parameter_gap_loss = raw_true_parameter_gap_loss
+            else:
+                (
+                    raw_proposal_parameter_gap_loss,
+                    proposal_parameter_log_gap_mae,
+                ) = parameter_gap_terms(proposal_params)
+                true_parameter_gap_loss = 0.5 * (
+                    raw_true_parameter_gap_loss
+                    + raw_proposal_parameter_gap_loss
+                )
         parameter_prior_loss = (
             (output["params"] - chord_params).pow(2).mean()
             if chord_params is not None
@@ -736,7 +1209,9 @@ class CandidatePruningLoss(nn.Module):
             self.weights.fit * normalized_fit_loss
             + self.weights.threshold_violation * threshold_violation_loss
             + self.weights.true_parameter * true_parameter_loss
+            + self.weights.true_parameter_gap * true_parameter_gap_loss
             + self.weights.candidate_coverage * candidate_coverage_loss
+            + self.weights.redundant_candidate * redundant_candidate_loss
             + self.weights.candidate_repulsion * candidate_repulsion_loss
             + self.weights.keep * keep_loss
             + self.weights.remove_action * remove_action_loss
@@ -754,11 +1229,18 @@ class CandidatePruningLoss(nn.Module):
             + self.weights.complexity * complexity_loss
         )
 
-        threshold_hard_keep = keep_probability >= 0.5
-        hard_keep = output.get("final_hard_keep_mask", threshold_hard_keep)
-        if hard_keep.shape != candidates.shape:
-            raise ValueError("final_hard_keep_mask must have shape [B,Kc]")
-        hard_keep = hard_keep.to(torch.bool)
+        relocation_residual = output.get("relocation_position_residual")
+        if relocation_residual is not None:
+            if relocation_residual.shape != candidates.shape:
+                raise ValueError("relocation_position_residual must have shape [B,Kc]")
+            selected_relocation = relocation_residual.abs() * hard_keep.to(points.dtype)
+            predicted_relocation_mean_abs = (
+                selected_relocation.sum() / hard_keep.sum().clamp_min(1)
+            )
+            predicted_relocation_max_abs = selected_relocation.max()
+        else:
+            predicted_relocation_mean_abs = points.new_zeros(())
+            predicted_relocation_max_abs = points.new_zeros(())
         predicted_count = hard_keep.sum(dim=-1)
         metric_targets = keep_targets.to(torch.bool)
         true_positive = (hard_keep & metric_targets).to(points.dtype).sum(dim=-1).mean()
@@ -800,6 +1282,13 @@ class CandidatePruningLoss(nn.Module):
             "surrogate_threshold_satisfied_rate": threshold_satisfied_rate,
             "fit_rms": per_sample_fit_rms.mean(),
             "candidate_coverage_loss": candidate_coverage_loss,
+            "redundant_candidate_loss": redundant_candidate_loss,
+            "redundant_candidate_position_loss": (
+                redundant_candidate_position_loss
+            ),
+            "redundant_candidate_interval_loss": (
+                redundant_candidate_interval_loss
+            ),
             "candidate_repulsion_loss": candidate_repulsion_loss,
             "keep_loss": keep_loss,
             "keep_bce_loss": keep_bce_loss,
@@ -809,6 +1298,7 @@ class CandidatePruningLoss(nn.Module):
             "teacher_risk_loss": teacher_risk_loss,
             "teacher_ranking_loss": teacher_ranking_loss,
             "teacher_distribution_loss": teacher_distribution_loss,
+            "teacher_set_coverage_loss": teacher_set_coverage_loss,
             "teacher_critical_recall_loss": teacher_critical_recall_loss,
             "teacher_false_positive_loss": teacher_false_positive_loss,
             "teacher_count_loss": teacher_count_loss,
@@ -821,9 +1311,23 @@ class CandidatePruningLoss(nn.Module):
             "unsafe_delete_rate": unsafe_delete_rate,
             "safe_delete_fraction": safe_delete_mask.to(points.dtype).mean(),
             "true_parameter_loss": true_parameter_loss,
+            "raw_true_parameter_loss": raw_true_parameter_loss,
+            "raw_proposal_parameter_loss": raw_proposal_parameter_loss,
+            "true_parameter_gap_loss": true_parameter_gap_loss,
+            "raw_true_parameter_gap_loss": raw_true_parameter_gap_loss,
+            "raw_proposal_parameter_gap_loss": (
+                raw_proposal_parameter_gap_loss
+            ),
+            "true_parameter_log_gap_mae": true_parameter_log_gap_mae,
+            "proposal_parameter_log_gap_mae": (
+                proposal_parameter_log_gap_mae
+            ),
             "parameter_prior_loss": parameter_prior_loss,
             "knot_position_loss": knot_position_loss,
             "teacher_anchor_position_loss": teacher_anchor_position_loss,
+            "teacher_survivor_spacing_loss": teacher_survivor_spacing_loss,
+            "predicted_relocation_mean_abs": predicted_relocation_mean_abs,
+            "predicted_relocation_max_abs": predicted_relocation_max_abs,
             "joint_deployment_position_loss": joint_deployment_position_loss,
             "canonical_position_loss": canonical_position_loss,
             "count_loss": count_consistency_loss,

@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "checkpoint": "outputs\\candidate_pruning_one_shot_v12.pt",
+  "objective_version": "candidate_pruning_coupled_relocation_teacher_v12",
+  "model_device": "cuda",
+  "network_path": "structure-only",
+  "refit_device": "cpu",
+  "pytorch_version": "2.12.0+cu126",
+  "python_version": "3.13.9",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "cuda_device": "NVIDIA GeForce GTX 1070",
+  "torch_num_threads": 4,
+  "warmup": 1,
+  "repeats": 1,
+  "latency_target_ms": 10.0,
+  "fit_tolerance_rms": 0.005,
+  "fit_tolerance_mse": 2.5e-05,
+  "timing_scope": "resident normalized input -> synchronized result; deployment modes include network forward and standard B-spline refits; excludes dataset generation, file I/O, plotting, and request transport",
+  "mode_scopes": {
+    "network-forward": "model.forward_deployment(points), retaining the pilot solve but skipping the final training-only surrogate solve",
+    "refit-network": "one standard B-spline refit per curve from materialized network-domain outputs; includes model-to-refit-device transfer",
+    "refit-chord": "knot warp plus one chord-domain standard refit per curve from materialized outputs; includes model-to-refit-device transfer",
+    "learned-network": "network-forward plus network-domain learned refit",
+    "learned-chord": "network-forward plus knot warp and chord-domain learned refit",
+    "verified-fast": "network-forward plus exact learned check and conditional repair; no feasible-subset compaction",
+    "verified-compact": "network-forward plus exact verification/repair and greedy compaction"
+  },
+  "latency_semantics": "batch latency is request latency; median_ms_per_curve is throughput amortization and must not be reported as batch=1 latency",
+  "rows": [
+    {
+      "mode": "refit-network",
+      "batch_size": 64,
+      "p50_ms": 142.1276,
+      "median_ms": 142.1276,
+      "mean_ms": 142.1276,
+      "p95_ms": 142.1276,
+      "minimum_ms": 142.1276,
+      "maximum_ms": 142.1276,
+      "repeat_ms": [
+        142.1276
+      ],
+      "median_ms_per_curve": 2.22074375,
+      "batch_under_target": false,
+      "batch_p95_under_target": false,
+      "amortized_per_curve_under_target": true,
+      "amortized_p95_per_curve_under_target": true,
+      "quality": {
+        "mse_mean": 7.435179423964655e-05,
+        "mse_p95": 0.00020012873283121725,
+        "threshold_satisfied_fraction": 0.171875,
+        "retained_knots_mean": 9.0625
+      }
+    },
+    {
+      "mode": "refit-chord",
+      "batch_size": 64,
+      "p50_ms": 169.514,
+      "median_ms": 169.514,
+      "mean_ms": 169.514,
+      "p95_ms": 169.514,
+      "minimum_ms": 169.514,
+      "maximum_ms": 169.514,
+      "repeat_ms": [
+        169.514
+      ],
+      "median_ms_per_curve": 2.64865625,
+      "batch_under_target": false,
+      "batch_p95_under_target": false,
+      "amortized_per_curve_under_target": true,
+      "amortized_p95_per_curve_under_target": true,
+      "quality": {
+        "mse_mean": 5.4958980939545654e-05,
+        "mse_p95": 0.00017344048901577464,
+        "threshold_satisfied_fraction": 0.421875,
+        "retained_knots_mean": 9.0625
+      }
+    }
+  ],
+  "training_lower_bound": {
+    "enabled": false,
+    "scope": "model forward + reconstruction-MSE backward + AdamW step; excludes the full v13 teacher losses, data loading, host-to-device transfer, validation, and checkpointing, so it is only a lower bound",
+    "rows": []
+  }
+}

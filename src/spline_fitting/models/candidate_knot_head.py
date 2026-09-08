@@ -12,10 +12,12 @@ from .knot_head import KnotHead
 class CandidateKnotHead(nn.Module):
     """Generate a fixed, high-recall set of ordered candidate knots.
 
-    The head predicts ``num_candidates + 1`` positive intervals that partition
-    the normalized parameter domain.  Their cumulative sums are therefore
-    strictly ordered by construction; no post-hoc sort is needed and candidate
-    tokens keep a stable left-to-right identity.
+    ``interval_softmax`` predicts ``num_candidates + 1`` positive intervals
+    that partition the normalized parameter domain.  The opt-in
+    ``bounded_anchor_residual`` mode instead moves every uniform candidate by
+    less than half a cell, preventing proposal collapse while retaining local
+    adaptivity.  Both parameterizations are strictly ordered by construction;
+    no post-hoc sort is needed and tokens keep a stable left-to-right identity.
     """
 
     def __init__(
@@ -26,6 +28,8 @@ class CandidateKnotHead(nn.Module):
         min_gap: float = 1e-3,
         attention_heads: int = 4,
         local_attention_bandwidth: float = 0.0,
+        interval_logit_limit: float = 0.0,
+        position_parameterization: str = "interval_softmax",
     ) -> None:
         super().__init__()
         if num_candidates <= 0:
@@ -43,12 +47,24 @@ class CandidateKnotHead(nn.Module):
             raise ValueError(
                 "local_attention_bandwidth must be finite and non-negative"
             )
+        if not math.isfinite(interval_logit_limit) or interval_logit_limit < 0.0:
+            raise ValueError("interval_logit_limit must be finite and non-negative")
+        if position_parameterization not in {
+            "interval_softmax",
+            "bounded_anchor_residual",
+        }:
+            raise ValueError(
+                "position_parameterization must be 'interval_softmax' or "
+                "'bounded_anchor_residual'"
+            )
 
         self.hidden_dim = int(hidden_dim)
         self.num_candidates = int(num_candidates)
         self.min_gap = float(min_gap)
         self.attention_heads = int(attention_heads)
         self.local_attention_bandwidth = float(local_attention_bandwidth)
+        self.interval_logit_limit = float(interval_logit_limit)
+        self.position_parameterization = str(position_parameterization)
 
         # Interval queries have a fixed left-to-right identity.  Positional
         # anchors make the initial attention cover the complete domain, while
@@ -62,6 +78,12 @@ class CandidateKnotHead(nn.Module):
             "interval_query_anchors",
             (torch.arange(self.num_candidates + 1, dtype=torch.float32) + 0.5)
             / (self.num_candidates + 1),
+        )
+        self.register_buffer(
+            "candidate_position_anchors",
+            torch.arange(1, self.num_candidates + 1, dtype=torch.float32)
+            / (self.num_candidates + 1),
+            persistent=False,
         )
 
         self.global_projection = nn.Linear(self.hidden_dim, self.hidden_dim)
@@ -184,12 +206,68 @@ class CandidateKnotHead(nn.Module):
         )
 
         raw_interval_logits = self.interval_score(interval_tokens).squeeze(-1)
-        free_budget = 1.0 - self.min_gap * (self.num_candidates + 1)
-        candidate_intervals = self.min_gap + free_budget * F.softmax(
-            raw_interval_logits,
-            dim=-1,
-        )
-        candidate_positions = torch.cumsum(candidate_intervals, dim=-1)[:, :-1]
+        if self.interval_logit_limit > 0.0:
+            # Softmax is invariant to a shared shift, so remove it before the
+            # bounded transform.  The resulting logit range is at most
+            # ``2 * limit``: no single interval can absorb essentially the
+            # whole parameter domain and strand the remaining candidates at
+            # ``min_gap``.  ``limit=0`` retains historical checkpoint output
+            # exactly; the bounded path is opt-in for new training runs.
+            centered_interval_logits = raw_interval_logits - raw_interval_logits.mean(
+                dim=-1,
+                keepdim=True,
+            )
+            effective_interval_logits = self.interval_logit_limit * torch.tanh(
+                centered_interval_logits / self.interval_logit_limit
+            )
+        else:
+            effective_interval_logits = raw_interval_logits
+        if self.position_parameterization == "interval_softmax":
+            free_budget = 1.0 - self.min_gap * (self.num_candidates + 1)
+            candidate_intervals = self.min_gap + free_budget * F.softmax(
+                effective_interval_logits,
+                dim=-1,
+            )
+            candidate_positions = torch.cumsum(candidate_intervals, dim=-1)[:, :-1]
+            candidate_position_residual = candidate_positions - (
+                self.candidate_position_anchors.to(
+                    device=local_features.device,
+                    dtype=local_features.dtype,
+                )
+                .unsqueeze(0)
+                .expand(batch, -1)
+            )
+        else:
+            # A dense proposal is useful only if it covers the entire domain.
+            # Parameterize every candidate as a bounded residual around its
+            # uniform anchor instead of allowing a global interval softmax to
+            # move nearly all probability mass into one span.  Adjacent slots
+            # can each move by less than half their cell width; choosing the
+            # exact feasible radius below guarantees their remaining gap is at
+            # least ``min_gap`` without sorting or a projection.
+            anchor_positions = self.candidate_position_anchors.to(
+                device=local_features.device,
+                dtype=local_features.dtype,
+            ).unsqueeze(0).expand(batch, -1)
+            uniform_interval = 1.0 / (self.num_candidates + 1)
+            residual_radius = 0.5 * (uniform_interval - self.min_gap)
+            boundary_signal = (
+                effective_interval_logits[:, :-1]
+                - effective_interval_logits[:, 1:]
+            )
+            candidate_position_residual = residual_radius * torch.tanh(
+                boundary_signal
+            )
+            candidate_positions = anchor_positions + candidate_position_residual
+            boundaries = torch.cat(
+                [
+                    candidate_positions.new_zeros(batch, 1),
+                    candidate_positions,
+                    candidate_positions.new_ones(batch, 1),
+                ],
+                dim=-1,
+            )
+            candidate_intervals = boundaries[:, 1:] - boundaries[:, :-1]
 
         adjacent_tokens = torch.cat(
             [interval_tokens[:, :-1], interval_tokens[:, 1:]],
@@ -210,6 +288,12 @@ class CandidateKnotHead(nn.Module):
             "candidate_tokens": candidate_tokens,
             "candidate_intervals": candidate_intervals,
             "raw_candidate_interval_logits": raw_interval_logits,
+            "effective_candidate_interval_logits": effective_interval_logits,
+            "candidate_position_anchors": self.candidate_position_anchors.to(
+                device=local_features.device,
+                dtype=local_features.dtype,
+            ).unsqueeze(0).expand(batch, -1),
+            "candidate_position_residual": candidate_position_residual,
             "candidate_attention_weights": attention_weights,
             "candidate_local_attention_bias": (
                 local_attention_bias

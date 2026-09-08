@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import torch
 from torch.utils.data import Dataset
 
+from ..spline.bspline_deletion_teacher import single_knot_deletion_rmse_batch
+
 
 @dataclass(frozen=True)
 class CubicBSplineSample:
@@ -20,6 +22,38 @@ class CubicBSplineSample:
     control_points: torch.Tensor
     knot_vector: torch.Tensor
     degree: int
+
+
+@dataclass(frozen=True)
+class SourceKnotMinimalityCertificate:
+    """Numerical certificate for a clean source knot set.
+
+    The certificate is deliberately scoped to subsets of ``internal_knots``.
+    With unregularized least squares, every proper subset is contained in at
+    least one of the one-knot-deletion spline spaces.  Consequently, if the
+    full fit satisfies the threshold and every one-knot deletion violates a
+    guarded threshold, no proper subset of the source knots can satisfy it.
+
+    This does *not* certify the global optimum over arbitrary relocated knot
+    positions.  That harder continuous problem remains outside the dataset
+    generator's claim.
+    """
+
+    certified: bool
+    full_fit_rms: torch.Tensor
+    single_deletion_rms: torch.Tensor
+    error_tolerance: float
+    margin: float
+
+    @property
+    def required_single_deletion_rms(self) -> float:
+        return self.error_tolerance * (1.0 + self.margin)
+
+    @property
+    def minimum_single_deletion_rms(self) -> torch.Tensor:
+        if self.single_deletion_rms.numel() == 0:
+            return self.full_fit_rms.new_tensor(float("inf"))
+        return self.single_deletion_rms.min()
 
 
 def build_open_clamped_knot_vector(
@@ -235,6 +269,81 @@ def fit_control_points_for_internal_knots(
     return control_points, rms_distance
 
 
+@torch.no_grad()
+def certify_source_knot_minimality(
+    parameters: torch.Tensor,
+    clean_points: torch.Tensor,
+    internal_knots: torch.Tensor,
+    *,
+    degree: int = 3,
+    error_tolerance: float = 5e-3,
+    margin: float = 0.2,
+) -> SourceKnotMinimalityCertificate:
+    """Certify threshold minimality within subsets of a source knot set.
+
+    Labels are checked against a *clean* curve and unregularized endpoint-
+    constrained least squares.  A positive margin rejects samples that sit on
+    the decision boundary and would otherwise flip labels under small amounts
+    of observation noise or floating-point variation.
+
+    The result is a cardinality certificate only in the finite family formed
+    by subsets of ``internal_knots``.  It must not be reported as a proof over
+    arbitrary continuous knot relocation.
+    """
+    if parameters.ndim != 1:
+        raise ValueError("parameters must have shape [M]")
+    if clean_points.ndim != 2 or clean_points.shape[0] != parameters.shape[0]:
+        raise ValueError("clean_points must have shape [M, D]")
+    if internal_knots.ndim != 1:
+        raise ValueError("internal_knots must have shape [K]")
+    if error_tolerance <= 0.0:
+        raise ValueError("error_tolerance must be positive")
+    if margin < 0.0:
+        raise ValueError("margin must be non-negative")
+
+    # Certificates are generated offline, so use float64 even when the
+    # training tensors are float32.  This avoids accepting a boundary case due
+    # to a low-precision least-squares solve.
+    certificate_parameters = parameters.detach().to(dtype=torch.float64)
+    certificate_points = clean_points.detach().to(dtype=torch.float64)
+    certificate_knots = torch.sort(
+        internal_knots.detach().to(dtype=torch.float64)
+    ).values
+    _, full_fit_rms = fit_control_points_for_internal_knots(
+        certificate_parameters,
+        certificate_points,
+        certificate_knots,
+        degree=degree,
+        smoothness_weight=0.0,
+        ridge=0.0,
+    )
+    if certificate_knots.numel() == 0:
+        deletion_rms = certificate_knots.new_empty(0)
+    else:
+        deletion_rms = single_knot_deletion_rmse_batch(
+            certificate_parameters.unsqueeze(0),
+            certificate_points.unsqueeze(0),
+            certificate_knots.unsqueeze(0),
+            degree=degree,
+            smoothness_weight=0.0,
+            control_ridge=0.0,
+            interpolate_endpoints=True,
+        )[0]
+
+    required_deletion_rms = error_tolerance * (1.0 + margin)
+    full_fit_is_feasible = float(full_fit_rms) <= error_tolerance
+    every_deletion_is_infeasible = deletion_rms.numel() == 0 or bool(
+        torch.all(deletion_rms > required_deletion_rms)
+    )
+    return SourceKnotMinimalityCertificate(
+        certified=full_fit_is_feasible and every_deletion_is_infeasible,
+        full_fit_rms=full_fit_rms,
+        single_deletion_rms=deletion_rms,
+        error_tolerance=float(error_tolerance),
+        margin=float(margin),
+    )
+
+
 def canonicalize_internal_knots(
     parameters: torch.Tensor,
     points: torch.Tensor,
@@ -349,6 +458,69 @@ def generate_control_polygon(
     return control / scale
 
 
+def generate_complexity_aligned_control_polygon(
+    num_control_points: int,
+    point_dim: int,
+    *,
+    oscillation_amplitude: float = 0.3,
+    generator: torch.Generator | None = None,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """Generate a curve whose requested knot count carries geometric signal.
+
+    The legacy correlated random walk becomes smoother as its control count
+    grows after normalization.  It can therefore assign a large source knot
+    count to a curve that is accurately represented by far fewer knots.  This
+    construction combines monotone progress with alternating transverse
+    detail, then applies a random orthogonal transform.  Each added local span
+    contributes visible geometry, while the final certificate remains the
+    authority that decides whether the sample is accepted.
+    """
+    if point_dim not in (2, 3):
+        raise ValueError("point_dim must be 2 or 3")
+    if num_control_points < 4:
+        raise ValueError("A cubic B-spline needs at least four control points")
+    if oscillation_amplitude <= 0.0:
+        raise ValueError("oscillation_amplitude must be positive")
+
+    coordinates = torch.zeros(num_control_points, point_dim, dtype=dtype)
+    coordinates[:, 0] = torch.linspace(-1.0, 1.0, num_control_points, dtype=dtype)
+    phase = int(torch.randint(0, 2, (1,), generator=generator).item())
+    alternating = torch.where(
+        (torch.arange(num_control_points) + phase) % 2 == 0,
+        torch.ones(num_control_points, dtype=dtype),
+        -torch.ones(num_control_points, dtype=dtype),
+    )
+    amplitude_jitter = 0.75 + 0.5 * torch.rand(
+        num_control_points,
+        generator=generator,
+        dtype=dtype,
+    )
+    coordinates[:, 1] = oscillation_amplitude * alternating * amplitude_jitter
+    if point_dim == 3:
+        # A phase-shifted, lower-amplitude component avoids making every 3-D
+        # sample planar without destroying the strong local detail certificate.
+        shifted = torch.roll(alternating, shifts=1)
+        depth_jitter = 0.5 + torch.rand(
+            num_control_points,
+            generator=generator,
+            dtype=dtype,
+        )
+        coordinates[:, 2] = 0.45 * oscillation_amplitude * shifted * depth_jitter
+
+    random_frame = torch.randn(
+        point_dim,
+        point_dim,
+        generator=generator,
+        dtype=dtype,
+    )
+    orthogonal, _ = torch.linalg.qr(random_frame)
+    control = coordinates @ orthogonal.transpose(0, 1)
+    control = control - control.mean(dim=0, keepdim=True)
+    scale = control.norm(dim=-1).amax().clamp_min(1e-8)
+    return control / scale
+
+
 def generate_sampling_parameters(
     num_points: int,
     *,
@@ -381,6 +553,8 @@ def generate_cubic_bspline_sample(
     knot_nonuniformity: float = 0.65,
     sampling_nonuniformity: float = 0.45,
     turn_strength: float = 0.45,
+    control_polygon_mode: str = "smooth_random_walk",
+    oscillation_amplitude: float = 0.3,
     generator: torch.Generator | None = None,
     dtype: torch.dtype = torch.float32,
 ) -> CubicBSplineSample:
@@ -399,13 +573,26 @@ def generate_cubic_bspline_sample(
             generator=generator,
         ).item()
     )
-    control_points = generate_control_polygon(
-        num_control_points,
-        point_dim,
-        turn_strength=turn_strength,
-        generator=generator,
-        dtype=dtype,
-    )
+    if control_polygon_mode == "smooth_random_walk":
+        control_points = generate_control_polygon(
+            num_control_points,
+            point_dim,
+            turn_strength=turn_strength,
+            generator=generator,
+            dtype=dtype,
+        )
+    elif control_polygon_mode == "complexity_aligned":
+        control_points = generate_complexity_aligned_control_polygon(
+            num_control_points,
+            point_dim,
+            oscillation_amplitude=oscillation_amplitude,
+            generator=generator,
+            dtype=dtype,
+        )
+    else:
+        raise ValueError(
+            "control_polygon_mode must be 'smooth_random_walk' or 'complexity_aligned'"
+        )
     knot_vector = build_open_clamped_knot_vector(
         num_control_points,
         degree,
@@ -468,6 +655,11 @@ class SyntheticCubicBSplineDataset(Dataset):
         knot_nonuniformity: float = 0.65,
         sampling_nonuniformity: float = 0.45,
         turn_strength: float = 0.45,
+        certified_minimal_source: bool = False,
+        minimality_margin: float = 0.2,
+        minimality_max_attempts: int = 16,
+        minimality_audit_points: int = 0,
+        oscillation_amplitude: float = 0.3,
         seed: int = 42,
         normalize: bool = True,
         return_ground_truth: bool = True,
@@ -490,11 +682,28 @@ class SyntheticCubicBSplineDataset(Dataset):
         self.knot_nonuniformity = knot_nonuniformity
         self.sampling_nonuniformity = sampling_nonuniformity
         self.turn_strength = turn_strength
+        self.certified_minimal_source = bool(certified_minimal_source)
+        if minimality_margin < 0.0:
+            raise ValueError("minimality_margin must be non-negative")
+        self.minimality_margin = float(minimality_margin)
+        if minimality_max_attempts < 1:
+            raise ValueError("minimality_max_attempts must be positive")
+        self.minimality_max_attempts = int(minimality_max_attempts)
+        if minimality_audit_points not in (0,) and minimality_audit_points < 2:
+            raise ValueError("minimality_audit_points must be 0 or at least 2")
+        self.minimality_audit_points = int(minimality_audit_points)
+        if oscillation_amplitude <= 0.0:
+            raise ValueError("oscillation_amplitude must be positive")
+        self.oscillation_amplitude = float(oscillation_amplitude)
         self.seed = seed
         self.normalize = normalize
         self.return_ground_truth = return_ground_truth
         if canonical_knot_tolerance < 0.0:
             raise ValueError("canonical_knot_tolerance must be non-negative")
+        if self.certified_minimal_source and canonical_knot_tolerance <= 0.0:
+            raise ValueError(
+                "certified_minimal_source requires a positive canonical_knot_tolerance"
+            )
         self.canonical_knot_tolerance = canonical_knot_tolerance
         self.cache_samples = bool(cache_samples)
         self.resample_each_epoch = bool(resample_each_epoch)
@@ -538,23 +747,114 @@ class SyntheticCubicBSplineDataset(Dataset):
             return self._sample_cache[index]
         sample_seed = self.seed + self.epoch * self.epoch_seed_stride + index
         generator = torch.Generator().manual_seed(sample_seed)
-        sample = generate_cubic_bspline_sample(
-            num_points=self.num_points,
-            point_dim=self.point_dim,
-            min_control_points=self.min_control_points,
-            max_control_points=self.max_control_points,
-            noise_std=self.noise_std,
-            knot_nonuniformity=self.knot_nonuniformity,
-            sampling_nonuniformity=self.sampling_nonuniformity,
-            turn_strength=self.turn_strength,
-            generator=generator,
-            dtype=self.dtype,
-        )
+        minimality_certificate: SourceKnotMinimalityCertificate | None = None
+        generation_attempts = 1
+        if self.certified_minimal_source:
+            # Draw K once so rejection cannot bias the requested count
+            # distribution toward easier, smaller curves.
+            source_control_count = int(
+                torch.randint(
+                    self.min_control_points,
+                    self.max_control_points + 1,
+                    (1,),
+                    generator=generator,
+                ).item()
+            )
+            for generation_attempts in range(1, self.minimality_max_attempts + 1):
+                sample = generate_cubic_bspline_sample(
+                    num_points=self.num_points,
+                    point_dim=self.point_dim,
+                    min_control_points=source_control_count,
+                    max_control_points=source_control_count,
+                    noise_std=0.0,
+                    knot_nonuniformity=self.knot_nonuniformity,
+                    sampling_nonuniformity=self.sampling_nonuniformity,
+                    turn_strength=self.turn_strength,
+                    control_polygon_mode="complexity_aligned",
+                    oscillation_amplitude=self.oscillation_amplitude,
+                    generator=generator,
+                    dtype=self.dtype,
+                )
+                clean_center = sample.points.mean(dim=0)
+                clean_centered = sample.points - clean_center
+                clean_scale = clean_centered.norm(dim=-1).amax().clamp_min(1e-8)
+                source_internal_for_certificate = sample.knot_vector[
+                    sample.degree + 1 : -(sample.degree + 1)
+                ]
+                if self.minimality_audit_points:
+                    audit_parameters = torch.linspace(
+                        0.0,
+                        1.0,
+                        self.minimality_audit_points,
+                        dtype=self.dtype,
+                    )
+                    audit_points = evaluate_bspline_curve(
+                        audit_parameters,
+                        sample.control_points,
+                        sample.knot_vector,
+                        sample.degree,
+                    )
+                    if self.normalize:
+                        audit_points = (audit_points - clean_center) / clean_scale
+                else:
+                    audit_parameters = sample.parameters
+                    audit_points = (
+                        clean_centered / clean_scale
+                        if self.normalize
+                        else sample.points
+                    )
+                minimality_certificate = certify_source_knot_minimality(
+                    audit_parameters,
+                    audit_points,
+                    source_internal_for_certificate,
+                    degree=sample.degree,
+                    error_tolerance=self.canonical_knot_tolerance,
+                    margin=self.minimality_margin,
+                )
+                if minimality_certificate.certified:
+                    break
+            else:
+                raise RuntimeError(
+                    "failed to generate a certified-minimal source curve after "
+                    f"{self.minimality_max_attempts} attempts for sample {index}; "
+                    "increase oscillation_amplitude or minimality_max_attempts"
+                )
 
-        center = sample.points.mean(dim=0)
-        centered = sample.points - center
-        scale = centered.norm(dim=-1).amax().clamp_min(1e-8)
-        points = centered / scale if self.normalize else sample.points
+            center = clean_center
+            scale = clean_scale
+            clean_points = clean_centered / scale if self.normalize else sample.points
+            if self.noise_std > 0.0:
+                observation_noise = torch.randn(
+                    sample.points.shape,
+                    generator=generator,
+                    dtype=self.dtype,
+                )
+                observed_points = sample.points + self.noise_std * observation_noise
+            else:
+                observed_points = sample.points.detach().clone()
+            points = (
+                (observed_points - center) / scale
+                if self.normalize
+                else observed_points
+            )
+        else:
+            sample = generate_cubic_bspline_sample(
+                num_points=self.num_points,
+                point_dim=self.point_dim,
+                min_control_points=self.min_control_points,
+                max_control_points=self.max_control_points,
+                noise_std=self.noise_std,
+                knot_nonuniformity=self.knot_nonuniformity,
+                sampling_nonuniformity=self.sampling_nonuniformity,
+                turn_strength=self.turn_strength,
+                generator=generator,
+                dtype=self.dtype,
+            )
+            center = sample.points.mean(dim=0)
+            centered = sample.points - center
+            scale = centered.norm(dim=-1).amax().clamp_min(1e-8)
+            points = centered / scale if self.normalize else sample.points
+            clean_points = points
 
         result: dict[str, torch.Tensor | int] = {
             "points": points,
@@ -565,6 +865,28 @@ class SyntheticCubicBSplineDataset(Dataset):
             "sample_epoch": self.epoch,
             "curve_degree": sample.degree,
         }
+        if self.certified_minimal_source:
+            if minimality_certificate is None:
+                raise RuntimeError("minimality certificate was not generated")
+            result.update(
+                {
+                    "clean_points": clean_points,
+                    "source_minimality_certified": minimality_certificate.certified,
+                    "source_full_fit_rms": minimality_certificate.full_fit_rms.to(
+                        dtype=self.dtype
+                    ),
+                    "source_min_single_deletion_rms": (
+                        minimality_certificate.minimum_single_deletion_rms.to(
+                            dtype=self.dtype
+                        )
+                    ),
+                    "source_minimality_required_rms": torch.tensor(
+                        minimality_certificate.required_single_deletion_rms,
+                        dtype=self.dtype,
+                    ),
+                    "source_generation_attempts": generation_attempts,
+                }
+            )
 
         if not self.return_ground_truth:
             return result
@@ -598,7 +920,25 @@ class SyntheticCubicBSplineDataset(Dataset):
         source_knot_length = sample.knot_vector.numel()
         padded_source_knots[:source_knot_length] = sample.knot_vector
         source_knot_mask[:source_knot_length] = True
-        if self.canonical_knot_tolerance == 0.0:
+        if self.certified_minimal_source:
+            if minimality_certificate is None:
+                raise RuntimeError("minimality certificate was not generated")
+            # The source itself is the clean, threshold-minimal label in the
+            # certified subset domain.  Observation noise belongs only to the
+            # network input and is never allowed to change K or the knot set.
+            internal = source_internal.detach().clone()
+            control_points = source_control_points.detach().clone()
+            canonical_fit_rms = minimality_certificate.full_fit_rms.to(dtype=self.dtype)
+            _, observation_fit_rms = fit_control_points_for_internal_knots(
+                sample.parameters,
+                points,
+                internal,
+                degree=sample.degree,
+                smoothness_weight=1e-6,
+                ridge=0.0,
+            )
+            result["source_observation_fit_rms"] = observation_fit_rms
+        elif self.canonical_knot_tolerance == 0.0:
             internal = source_internal.detach().clone()
             control_points = source_control_points.detach().clone()
             source_reconstruction = evaluate_bspline_curve(

@@ -24,7 +24,22 @@ V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION = (
 V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION = (
     "candidate_pruning_joint_refinement_teacher_v11"
 )
-LATEST_OBJECTIVE_VERSION = V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+V12_COUPLED_RELOCATION_OBJECTIVE_VERSION = (
+    "candidate_pruning_coupled_relocation_teacher_v12"
+)
+V13_SET_RELOCATION_OBJECTIVE_VERSION = (
+    "candidate_pruning_one_shot_set_relocation_teacher_v13"
+)
+V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION = (
+    "candidate_pruning_one_shot_parameter_feedback_v14"
+)
+V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION = (
+    "candidate_pruning_joint_parameter_structure_feedback_v14"
+)
+V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION = (
+    "candidate_pruning_deployment_aligned_feedback_v15"
+)
+LATEST_OBJECTIVE_VERSION = V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION
 
 
 LEGACY_LOSS_CONFIG: dict[str, Any] = {
@@ -252,6 +267,86 @@ V11_JOINT_ONE_SHOT_PRUNING_LOSS_CONFIG: dict[str, Any] = {
     "selection_policy": "mass_topk",
 }
 
+# v12 supervises the deployed survivor locations with the packed positions
+# produced by the delete-then-relax teacher.  These flags matter when a compact
+# checkpoint omits ``loss_config`` (for example, an exported inference model):
+# falling back to v11's canonical matching would silently reconstruct the
+# wrong training objective.
+V12_COUPLED_RELOCATION_LOSS_CONFIG: dict[str, Any] = {
+    **deepcopy(V11_JOINT_ONE_SHOT_PRUNING_LOSS_CONFIG),
+    "joint_position_supervision": False,
+    "teacher_relocation_supervision": True,
+    "teacher_survivor_spacing_weight": 0.25,
+    "selector_adapter": "final_keepmask_conditioned_survivor_relocation",
+}
+
+# v13 keeps v12's deployed architecture but fixes the training semantics:
+# surrogate truncated-power terms are opt-in diagnostics, survivor positions
+# are matched as ordered sets against the relocated teacher, and the existing
+# distribution weight also provides slot-invariant soft teacher-set coverage.
+V13_SET_RELOCATION_LOSS_CONFIG: dict[str, Any] = {
+    **deepcopy(V12_COUPLED_RELOCATION_LOSS_CONFIG),
+    "weights": {
+        **V12_COUPLED_RELOCATION_LOSS_CONFIG["weights"],
+        "fit": 0.0,
+        "threshold_violation": 0.0,
+    },
+    "teacher_position_assignment": "actual_keepmask_ordered_set_matching",
+    "teacher_distribution_target": ("relocated_teacher_set_cdf_plus_local_coverage"),
+    "stable_pilot_descriptors": True,
+    "surrogate_selection_role": "diagnostic_only",
+}
+
+# v14 leaves proposal, selection and survivor relocation in the v13 parameter
+# domain, then calibrates a small late head from chord/pilot/Keep feedback.  The
+# stage-specific loss is stored separately by the training script; these
+# defaults keep compact inference checkpoints interpretable.
+V14_PARAMETER_FEEDBACK_LOSS_CONFIG: dict[str, Any] = {
+    **deepcopy(V13_SET_RELOCATION_LOSS_CONFIG),
+    "parameter_feedback_fusion": True,
+    "parameter_feedback_loss": {
+        "fit": 0.10,
+        "threshold_violation": 0.50,
+        "true_parameter": 1.00,
+        "chord_prior": 0.05,
+        "identity": 0.01,
+        "parameter_error_scale": 0.02,
+        "initial_chord_blend": 0.60,
+    },
+}
+
+V14_JOINT_PARAMETER_STRUCTURE_LOSS_CONFIG: dict[str, Any] = {
+    **deepcopy(V14_PARAMETER_FEEDBACK_LOSS_CONFIG),
+    "joint_parameter_structure_feedback": True,
+    "parameter_feedback_loss": {
+        **V14_PARAMETER_FEEDBACK_LOSS_CONFIG["parameter_feedback_loss"],
+        "joint_keep": 1.0,
+        "joint_position": 2.0,
+        "joint_count": 2.0,
+    },
+}
+
+# v15 keeps the v14 one-shot network intact, but calibrates it against the
+# actual hard-mask standard-B-spline refit.  Its count target follows the exact
+# mass_topk rounding score (including the uncertainty reserve), and its set
+# losses supervise every deployed survivor instead of only matched pairs.
+V15_DEPLOYMENT_ALIGNED_LOSS_CONFIG: dict[str, Any] = {
+    **deepcopy(V14_JOINT_PARAMETER_STRUCTURE_LOSS_CONFIG),
+    "parameter_feedback_loss": {
+        **V14_JOINT_PARAMETER_STRUCTURE_LOSS_CONFIG["parameter_feedback_loss"],
+        "fit": 0.0,
+        "threshold_violation": 0.0,
+        "deployment_fit": 0.25,
+        "deployment_threshold_violation": 2.0,
+        "joint_critical_recall": 0.5,
+        "joint_set_position": 1.0,
+        "joint_spacing": 0.5,
+        "joint_count_target": "mass_topk_requested_score_inside_ceil_interval",
+        "deployment_refit": "differentiable_standard_bspline_endpoint_constrained",
+    },
+    "deployment_aligned_feedback": True,
+}
+
 
 def migrate_model_config(
     checkpoint: Mapping[str, Any],
@@ -272,6 +367,11 @@ def migrate_model_config(
             V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
             V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
             V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+            V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
+            V13_SET_RELOCATION_OBJECTIVE_VERSION,
+            V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+            V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+            V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
         }:
             config["structure_mode"] = "candidate_pruning_one_shot"
         elif objective_version == CANDIDATE_PRUNING_OBJECTIVE_VERSION:
@@ -285,6 +385,11 @@ def migrate_model_config(
             config["structure_mode"] = "count_conditioned"
         else:
             config["structure_mode"] = "hard_concrete"
+    # These are compatibility defaults, not new-training defaults.  Explicit
+    # values recorded by a checkpoint always win; missing historical metadata
+    # must retain the old ParameterHead/CandidateKnotHead forward semantics.
+    config.setdefault("parameter_gap_reference", "learned")
+    config.setdefault("parameter_residual_logit_limit", 0.5)
     config.setdefault("count_attention_heads", 4)
     is_v5 = (
         checkpoint.get("objective_version") == COUNT_CONDITIONED_V5_OBJECTIVE_VERSION
@@ -308,6 +413,11 @@ def migrate_model_config(
                 V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
                 V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
                 V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+                V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
+                V13_SET_RELOCATION_OBJECTIVE_VERSION,
+                V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+                V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+                V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
             },
         )
         config.setdefault(
@@ -317,6 +427,11 @@ def migrate_model_config(
             in {
                 V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
                 V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+                V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
+                V13_SET_RELOCATION_OBJECTIVE_VERSION,
+                V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+                V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+                V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
             }
             else "threshold",
         )
@@ -328,6 +443,11 @@ def migrate_model_config(
             in {
                 V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
                 V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+                V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
+                V13_SET_RELOCATION_OBJECTIVE_VERSION,
+                V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+                V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+                V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
             }
             else 1,
         )
@@ -338,11 +458,94 @@ def migrate_model_config(
             else 0,
         )
         config.setdefault("candidate_local_attention_bandwidth", 0.0)
+        config.setdefault("candidate_interval_logit_limit", 0.0)
+        config.setdefault(
+            "candidate_position_parameterization",
+            "interval_softmax",
+        )
         config.setdefault(
             "one_shot_joint_position_refinement",
-            objective_version == V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+            objective_version
+            in {
+                V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+                V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
+                V13_SET_RELOCATION_OBJECTIVE_VERSION,
+                V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+                V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+                V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
+            },
         )
-        config.setdefault("one_shot_max_position_shift", 0.05)
+        config.setdefault(
+            "one_shot_max_position_shift",
+            0.15
+            if objective_version
+            in {
+                V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
+                V13_SET_RELOCATION_OBJECTIVE_VERSION,
+                V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+                V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+                V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
+            }
+            else 0.05,
+        )
+        config.setdefault(
+            "one_shot_survivor_relocation",
+            objective_version
+            in {
+                V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
+                V13_SET_RELOCATION_OBJECTIVE_VERSION,
+                V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+                V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+                V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
+            },
+        )
+        config.setdefault(
+            "stable_pilot_descriptors",
+            objective_version
+            in {
+                V13_SET_RELOCATION_OBJECTIVE_VERSION,
+                V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+                V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+                V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
+            },
+        )
+        config.setdefault(
+            "parameter_feedback_fusion",
+            objective_version
+            in {
+                V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+                V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+                V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
+            },
+        )
+        config.setdefault("parameter_feedback_attention_heads", None)
+        config.setdefault("parameter_feedback_max_logit_shift", 0.5)
+        config.setdefault(
+            "parameter_feedback_fusion_mode",
+            (
+                "cross_attention"
+                if objective_version
+                in {
+                    V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+                    V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
+                }
+                else "fast_global"
+            ),
+        )
+        config.setdefault(
+            "joint_parameter_structure_feedback",
+            objective_version
+            in {
+                V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+                V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
+            },
+        )
+        config.setdefault("joint_parameter_structure_local_bandwidth", 0.08)
+        config.setdefault(
+            "joint_parameter_structure_max_keep_logit_shift",
+            2.0,
+        )
+        config.setdefault("enforce_ordered_joint_candidates", False)
     if config["structure_mode"] == "interactive_dynamic":
         # v6 checkpoints written before categorical count prediction contain
         # stop_head/stop_bias tensors. Missing metadata must therefore rebuild
@@ -382,6 +585,11 @@ def migrate_model_config(
                 V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
                 V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
                 V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+                V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
+                V13_SET_RELOCATION_OBJECTIVE_VERSION,
+                V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+                V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+                V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
                 CURRENT_OBJECTIVE_VERSION,
                 COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
             }
@@ -441,6 +649,11 @@ def migrate_model_config(
                 V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
                 V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
                 V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+                V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
+                V13_SET_RELOCATION_OBJECTIVE_VERSION,
+                V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+                V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+                V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
                 COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
                 COUNT_CONDITIONED_V4_OBJECTIVE_VERSION,
                 PREVIOUS_OBJECTIVE_VERSION,
@@ -468,6 +681,11 @@ def migrate_loss_config(
         V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
         V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
         V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+        V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
+        V13_SET_RELOCATION_OBJECTIVE_VERSION,
+        V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+        V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+        V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
         COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
         COUNT_CONDITIONED_V4_OBJECTIVE_VERSION,
         PREVIOUS_OBJECTIVE_VERSION,
@@ -478,6 +696,16 @@ def migrate_loss_config(
     if assumed:
         if legacy:
             default_config = LEGACY_LOSS_CONFIG
+        elif objective_version == V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION:
+            default_config = V15_DEPLOYMENT_ALIGNED_LOSS_CONFIG
+        elif objective_version == V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION:
+            default_config = V14_JOINT_PARAMETER_STRUCTURE_LOSS_CONFIG
+        elif objective_version == V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION:
+            default_config = V14_PARAMETER_FEEDBACK_LOSS_CONFIG
+        elif objective_version == V13_SET_RELOCATION_OBJECTIVE_VERSION:
+            default_config = V13_SET_RELOCATION_LOSS_CONFIG
+        elif objective_version == V12_COUPLED_RELOCATION_OBJECTIVE_VERSION:
+            default_config = V12_COUPLED_RELOCATION_LOSS_CONFIG
         elif objective_version == V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION:
             default_config = V11_JOINT_ONE_SHOT_PRUNING_LOSS_CONFIG
         elif objective_version == V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION:
@@ -513,21 +741,52 @@ def migrate_loss_config(
             V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
             V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
             V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
+            V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
+            V13_SET_RELOCATION_OBJECTIVE_VERSION,
+            V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION,
+            V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION,
+            V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
         }:
             defaults = (
-                V11_JOINT_ONE_SHOT_PRUNING_LOSS_CONFIG
-                if objective_version == V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+                V15_DEPLOYMENT_ALIGNED_LOSS_CONFIG
+                if objective_version == V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION
                 else (
-                    V10_FEASIBLE_ONE_SHOT_PRUNING_LOSS_CONFIG
+                    V14_JOINT_PARAMETER_STRUCTURE_LOSS_CONFIG
                     if objective_version
-                    == V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+                    == V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION
                     else (
-                        V9_ONE_SHOT_PRUNING_LOSS_CONFIG
-                        if objective_version == V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+                        V14_PARAMETER_FEEDBACK_LOSS_CONFIG
+                        if objective_version == V14_PARAMETER_FEEDBACK_OBJECTIVE_VERSION
                         else (
-                            ONE_SHOT_PRUNING_LOSS_CONFIG
-                            if objective_version == ONE_SHOT_PRUNING_OBJECTIVE_VERSION
-                            else CANDIDATE_PRUNING_LOSS_CONFIG
+                            V13_SET_RELOCATION_LOSS_CONFIG
+                            if objective_version
+                            == V13_SET_RELOCATION_OBJECTIVE_VERSION
+                            else (
+                                V12_COUPLED_RELOCATION_LOSS_CONFIG
+                                if objective_version
+                                == V12_COUPLED_RELOCATION_OBJECTIVE_VERSION
+                                else (
+                                    V11_JOINT_ONE_SHOT_PRUNING_LOSS_CONFIG
+                                    if objective_version
+                                    == V11_JOINT_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+                                    else (
+                                        V10_FEASIBLE_ONE_SHOT_PRUNING_LOSS_CONFIG
+                                        if objective_version
+                                        == V10_FEASIBLE_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+                                        else (
+                                            V9_ONE_SHOT_PRUNING_LOSS_CONFIG
+                                            if objective_version
+                                            == V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+                                            else (
+                                                ONE_SHOT_PRUNING_LOSS_CONFIG
+                                                if objective_version
+                                                == ONE_SHOT_PRUNING_OBJECTIVE_VERSION
+                                                else CANDIDATE_PRUNING_LOSS_CONFIG
+                                            )
+                                        )
+                                    )
+                                )
+                            )
                         )
                     )
                 )

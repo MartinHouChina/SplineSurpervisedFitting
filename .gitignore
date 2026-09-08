@@ -1,4 +1,11 @@
 *.pyc
+.codex_tmp/
+tmp/
+outputs/archive/recoverable_cleanup_*/
+data/raw/
+data/processed/
+data/splits/*.jsonl
+data/splits/*_split.json
 paper/*.aux
 paper/*.bbl
 paper/*.blg

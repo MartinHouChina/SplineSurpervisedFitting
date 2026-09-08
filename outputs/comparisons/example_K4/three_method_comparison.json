@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "checkpoint": "outputs\\candidate_pruning_one_shot_v12.pt",
+    "ours_mode": "verified",
+    "source_knot_range": [
+      4,
+      4
+    ],
+    "samples_per_source_knot_count": 1,
+    "selected_sample_indices": [
+      248
+    ],
+    "dataset_seed": 20000,
+    "selection_seed": 12345,
+    "network_device": "cuda",
+    "network_batch_size": 1,
+    "network_warmups": 1,
+    "network_repeats": 2,
+    "network_compiled": false,
+    "gradient_baseline_uniform_Kmax": 20,
+    "paper_initial_uniform_knot_count": 12,
+    "paper_absolute_jump_threshold": 1e-07,
+    "paper_relative_jump_threshold": 0.001,
+    "mse_tolerance": 2.5e-05,
+    "timing_scopes_are_asymmetric": true,
+    "reported_refit_policy": "all three methods are re-evaluated by unregularized standard B-spline least squares with exact endpoint interpolation"
+  },
+  "mse_definition": "mean_i ||C(t_i) - Q_i||_2^2 (no square root)",
+  "timing_warning": "Ours reports pure network-forward latency only; its final B-spline refit and optional verified repair are excluded. Kang and the uniform-gradient baseline report complete numerical-method time.",
+  "method_definitions": {
+    "ours": "One-shot learned keep mask and survivor relocation; quality may optionally use verified postprocessing.",
+    "kang_sparse_2015_adaptation": "Vector group-L1 ADMM adaptation of Kang et al. (2015), followed by active-cluster midpoint/bisection relocation, exact refit, the adapter's feasibility repair, and a disclosed active/dense fallback only if the common endpoint constraint violates epsilon.",
+    "uniform_gradient_pruning": "No network. Uniform Kmax initialization, full-set relocation, greedy one-knot deletion, differentiable variable-projection relocation, and exact refit checks."
+  },
+  "overall": {
+    "ours": {
+      "mse_mean": 2.40243844320531e-05,
+      "mse_median": 2.40243844320531e-05,
+      "final_internal_knot_count_mean": 6.0,
+      "elapsed_ms_mean": 16.96345,
+      "elapsed_ms_median": 16.96345,
+      "threshold_pass_rate": 1.0,
+      "canonical_count_bias": 2.0,
+      "canonical_count_mae": 2.0,
+      "source_count_bias": 2.0,
+      "source_count_mae": 2.0
+    },
+    "kang_sparse_2015_adaptation": {
+      "mse_mean": 1.1238204246960743e-05,
+      "mse_median": 1.1238204246960743e-05,
+      "final_internal_knot_count_mean": 6.0,
+      "elapsed_ms_mean": 157.1916999964742,
+      "elapsed_ms_median": 157.1916999964742,
+      "threshold_pass_rate": 1.0,
+      "canonical_count_bias": 2.0,
+      "canonical_count_mae": 2.0,
+      "source_count_bias": 2.0,
+      "source_count_mae": 2.0
+    },
+    "uniform_gradient_pruning": {
+      "mse_mean": 1.2893906698628865e-05,
+      "mse_median": 1.2893906698628865e-05,
+      "final_internal_knot_count_mean": 5.0,
+      "elapsed_ms_mean": 2683.7610000075074,
+      "elapsed_ms_median": 2683.7610000075074,
+      "threshold_pass_rate": 1.0,
+      "canonical_count_bias": 1.0,
+      "canonical_count_mae": 1.0,
+      "source_count_bias": 1.0,
+      "source_count_mae": 1.0
+    }
+  },
+  "by_source_internal_knot_count": {
+    "4": {
+      "sample_count": 1,
+      "canonical_internal_knot_count_mean": 4.0,
+      "methods": {
+        "ours": {
+          "mse_mean": 2.40243844320531e-05,
+          "mse_stdev": 0.0,
+          "final_internal_knot_count_mean": 6.0,
+          "elapsed_ms_mean": 16.96345,
+          "pass_rate": 1.0,
+          "canonical_count_bias": 2.0,
+          "canonical_count_mae": 2.0,
+          "source_count_bias": 2.0,
+          "source_count_mae": 2.0
+        },
+        "kang_sparse_2015_adaptation": {
+          "mse_mean": 1.1238204246960743e-05,
+          "mse_stdev": 0.0,
+          "final_internal_knot_count_mean": 6.0,
+          "elapsed_ms_mean": 157.1916999964742,
+          "pass_rate": 1.0,
+          "canonical_count_bias": 2.0,
+          "canonical_count_mae": 2.0,
+          "source_count_bias": 2.0,
+          "source_count_mae": 2.0
+        },
+        "uniform_gradient_pruning": {
+          "mse_mean": 1.2893906698628865e-05,
+          "mse_stdev": 0.0,
+          "final_internal_knot_count_mean": 5.0,
+          "elapsed_ms_mean": 2683.7610000075074,
+          "pass_rate": 1.0,
+          "canonical_count_bias": 1.0,
+          "canonical_count_mae": 1.0,
+          "source_count_bias": 1.0,
+          "source_count_mae": 1.0
+        }
+      }
+    }
+  },
+  "samples": [
+    {
+      "sample_index": 248,
+      "source_internal_knot_count": 4,
+      "canonical_internal_knot_count": 4,
+      "source_mse": 1.967438720384962e-06,
+      "mse_tolerance": 2.5e-05,
+      "methods": [
+        {
+          "method": "ours",
+          "mse": 2.40243844320531e-05,
+          "final_internal_knot_count": 6,
+          "elapsed_ms": 16.96345,
+          "timing_scope": "synchronized batch-1 network forward only; input preloaded on device; final refit and verified repair excluded",
+          "parameterization": "network_predicted",
+          "internal_knots": [
+            0.20388789474964142,
+            0.39773494005203247,
+            0.5535518527030945,
+            0.8197313547134399,
+            0.8534852266311646,
+            0.9367127418518066
+          ],
+          "threshold_satisfied": true,
+          "diagnostics": {
+            "quality_mode": "verified",
+            "quality_contains_postprocessing": true,
+            "repair_path": "confidence_add_back_compact",
+            "initial_learned_count": 6,
+            "native_final_fit_mse": 2.402439531579148e-05,
+            "reported_refit": "unregularized standard B-spline least squares with exact endpoint interpolation",
+            "network_used": true,
+            "network_latency": {
+              "p50_ms": 16.96345,
+              "median_ms": 16.96345,
+              "mean_ms": 16.96345,
+              "p95_ms": 17.637414999999997,
+              "minimum_ms": 16.2146,
+              "maximum_ms": 17.7123,
+              "repeat_ms": [
+                17.7123,
+                16.2146
+              ]
+            },
+            "compiled": false,
+            "device": "cuda"
+          }
+        },
+        {
+          "method": "kang_sparse_2015_adaptation",
+          "mse": 1.1238204246960743e-05,
+          "final_internal_knot_count": 6,
+          "elapsed_ms": 157.1916999964742,
+          "timing_scope": "complete sparse ADMM selection + relocation + endpoint-constrained verification/fallback + final refit",
+          "parameterization": "chord_length",
+          "internal_knots": [
+            0.15384615384615385,
+            0.23076923076923078,
+            0.46153846153846156,
+            0.5384615384615384,
+            0.6057692307692308,
+            0.6923076923076923
+          ],
+          "threshold_satisfied": true,
+          "diagnostics": {
+            "initial_internal_knot_count": 12,
+            "network_used": false,
+            "active_internal_knot_count": 12,
+            "cluster_sizes": [
+              12
+            ],
+            "sparse_stage_mse": 1.6029067193759866e-06,
+            "sparse_stage_threshold_satisfied": true,
+            "sparse_iterations": 150,
+            "sparse_solver_seconds": 0.04308249999303371,
+            "relocation_seconds": 0.008389700000407174,
+            "non_paper_feasibility_repair_seconds": 0.1016467999870656,
+            "local_refit_count": 4,
+            "method_note": "Vector-valued group-L1 ADMM adaptation of Kang et al. (2015) equation (12), followed by Algorithms-4-and-5-inspired active-cluster midpoint-bisection merging; not the paper's scalar CVX implementation.",
+            "absolute_jump_threshold": 1e-07,
+            "relative_jump_threshold": 0.001,
+            "effective_jump_threshold": 0.445612875268723,
+            "paper_feasibility_repair_used": true,
+            "paper_feasibility_repair_added_count": 5,
+            "native_final_fit_mse_without_endpoint_constraint": 1.045433714272672e-05,
+            "native_endpoint_constrained_mse": 1.1238204246960743e-05,
+            "endpoint_constraint_fallback": "none",
+            "reported_refit": "unregularized standard B-spline least squares with exact endpoint interpolation"
+          }
+        },
+        {
+          "method": "uniform_gradient_pruning",
+          "mse": 1.2893906698628865e-05,
+          "final_internal_knot_count": 5,
+          "elapsed_ms": 2683.7610000075074,
+          "timing_scope": "complete uniform-Kmax initialization + all deletion scoring + gradient relocation + exact refit validation",
+          "parameterization": "chord_length",
+          "internal_knots": [
+            0.23809523809523817,
+            0.38095238095238104,
+            0.5714285714285715,
+            0.6190476190476192,
+            0.761904761904762
+          ],
+          "threshold_satisfied": true,
+          "diagnostics": {
+            "initial_internal_knot_count": 20,
+            "network_used": false,
+            "initial_location_update_accepted": true,
+            "uniform_initial_fit_mse": 9.380940166540606e-07,
+            "relocated_initial_fit_mse": 9.380940166540546e-07,
+            "accepted_deletions": 15,
+            "gradient_steps": 201,
+            "variable_projection_evaluations": 201,
+            "exact_refit_count": 402,
+            "native_final_fit_mse": 1.2893906698628865e-05,
+            "reported_refit": "unregularized standard B-spline least squares with exact endpoint interpolation"
+          }
+        }
+      ],
+      "figure": "samples/sample_00248_sourceK04.png"
+    }
+  ]
+}

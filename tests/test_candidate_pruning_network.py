@@ -8,7 +8,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from spline_fitting.checkpointing import (
+from spline_fitting.checkpointing import (  # noqa: E402
     CANDIDATE_PRUNING_OBJECTIVE_VERSION,
     ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
     V9_ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
@@ -17,8 +17,11 @@ from spline_fitting.checkpointing import (
     build_model_from_checkpoint,
     migrate_loss_config,
 )
-from spline_fitting.losses import CandidatePruningLoss, CandidatePruningLossWeights
-from spline_fitting.models import SplineFittingNetwork
+from spline_fitting.losses import (  # noqa: E402
+    CandidatePruningLoss,
+    CandidatePruningLossWeights,
+)
+from spline_fitting.models import SplineFittingNetwork  # noqa: E402
 
 
 def _model() -> SplineFittingNetwork:
@@ -56,6 +59,68 @@ def _v9_model() -> SplineFittingNetwork:
         geometry_feature_mode="chord_derivatives",
         one_shot_fixed_proposal_geometry=True,
     )
+
+
+def _stable_one_shot_model() -> SplineFittingNetwork:
+    return SplineFittingNetwork(
+        point_dim=2,
+        hidden_dim=32,
+        encoder_layers=1,
+        max_internal_knots=12,
+        structure_mode="candidate_pruning_one_shot",
+        structure_attention_heads=4,
+        geometry_feature_mode="chord_derivatives",
+        one_shot_fixed_proposal_geometry=True,
+        one_shot_selection_policy="mass_topk",
+        one_shot_selector_layers=2,
+        one_shot_joint_position_refinement=True,
+        one_shot_survivor_relocation=True,
+        stable_pilot_descriptors=True,
+    )
+
+
+def test_stable_pilot_is_batch_companion_invariant_in_train_and_eval() -> None:
+    torch.manual_seed(211)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = _stable_one_shot_model().to(device)
+    points = torch.randn(9, 64, 2, device=device)
+    first_batch = torch.cat([points[:1], points[1:5]], dim=0)
+    second_batch = torch.cat([points[:1], points[5:]], dim=0)
+
+    for training in (False, True):
+        model.train(training)
+        with torch.no_grad():
+            single = model(points[:1])
+            with_first_companions = model(first_batch)
+            with_second_companions = model(second_batch)
+
+        for key, absolute_tolerance in (
+            ("params", 1e-5),
+            ("candidate_knots", 1e-5),
+            ("proposal_internal_knots", 1e-5),
+            ("keep_probability", 2e-4),
+            ("deployment_internal_knots", 1e-5),
+        ):
+            torch.testing.assert_close(
+                single[key][0],
+                with_first_companions[key][0],
+                rtol=1e-5,
+                atol=absolute_tolerance,
+            )
+            torch.testing.assert_close(
+                single[key][0],
+                with_second_companions[key][0],
+                rtol=1e-5,
+                atol=absolute_tolerance,
+            )
+        assert torch.equal(
+            single["final_hard_keep_mask"][0],
+            with_first_companions["final_hard_keep_mask"][0],
+        )
+        assert torch.equal(
+            single["final_hard_keep_mask"][0],
+            with_second_companions["final_hard_keep_mask"][0],
+        )
 
 
 def test_candidate_pruning_network_output_and_backward() -> None:
@@ -444,3 +509,602 @@ def test_v11_checkpoint_joint_refinement_and_v10_neutral_initialization() -> Non
     with torch.no_grad():
         actual = restored.eval()(points)
     torch.testing.assert_close(actual["internal_knots"], neutral["internal_knots"])
+
+
+def _teacher_feasibility_loss_inputs() -> tuple[
+    dict[str, torch.Tensor],
+    torch.Tensor,
+    dict[str, torch.Tensor],
+]:
+    dtype = torch.float64
+    logits = torch.tensor(
+        [[1.2, -0.8, 0.7, -1.4], [3.0, 2.5, 2.0, 1.5]],
+        dtype=dtype,
+        requires_grad=True,
+    )
+    probability = logits.sigmoid()
+    refined = torch.tensor(
+        [[0.15, 0.38, 0.62, 0.85], [0.10, 0.30, 0.60, 0.90]],
+        dtype=dtype,
+        requires_grad=True,
+    )
+    hard_keep = torch.tensor(
+        [[True, False, True, False], [True, True, True, True]]
+    )
+    remove_logits = torch.tensor(
+        [[-0.5, 0.7, -0.2, 0.3, -1.0], [0.8, 0.4, 0.2, 0.1, -0.6]],
+        dtype=dtype,
+        requires_grad=True,
+    )
+    predicted_cost = torch.tensor(
+        [[0.2, -0.3, 0.4, -0.1], [2.0, 2.0, 2.0, 2.0]],
+        dtype=dtype,
+        requires_grad=True,
+    )
+    points = torch.zeros(2, 12, 2, dtype=dtype)
+    output = {
+        "candidate_knots": refined,
+        "proposal_internal_knots": refined,
+        "internal_knots": refined,
+        "keep_logits": logits,
+        "keep_probability": probability,
+        "reconstructed_points": points.clone(),
+        "params": torch.linspace(0.0, 1.0, 12, dtype=dtype).expand(2, -1),
+        "final_hard_keep_mask": hard_keep,
+        "final_hard_st_keep_gate": (
+            hard_keep.to(dtype) + probability - probability.detach()
+        ),
+        "one_shot_requested_count_score": probability.sum(dim=-1),
+        "remove_stop_logits": remove_logits,
+        "predicted_log_deletion_cost": predicted_cost,
+    }
+    teacher_kwargs = {
+        "true_internal_knots": torch.tensor(
+            [[0.17, 0.65, 0.0, 0.0], [0.20, 0.80, 0.0, 0.0]], dtype=dtype
+        ),
+        "true_internal_knot_mask": torch.tensor(
+            [[True, True, False, False], [True, True, False, False]]
+        ),
+        # The second row represents the failure mode being guarded against:
+        # the search missed epsilon and therefore returned an all-keep mask.
+        "teacher_retained_mask": torch.tensor(
+            [[True, False, True, False], [True, True, True, True]]
+        ),
+        "teacher_soft_keep_risk": torch.tensor(
+            [[0.9, 0.1, 0.8, 0.2], [1.0, 1.0, 1.0, 1.0]], dtype=dtype
+        ),
+        "teacher_internal_knots": torch.tensor(
+            [[0.18, 0.66, 0.0, 0.0], [0.10, 0.30, 0.60, 0.90]], dtype=dtype
+        ),
+        "teacher_internal_knot_mask": torch.tensor(
+            [[True, True, False, False], [True, True, True, True]]
+        ),
+        "teacher_count": torch.tensor([2, 4]),
+        "teacher_fit_rms": torch.tensor([0.04, 0.20], dtype=dtype),
+        "teacher_single_deletion_rms": torch.tensor(
+            [[0.20, 0.02, 0.30, 0.03], [0.40, 0.40, 0.40, 0.40]], dtype=dtype
+        ),
+    }
+    return output, points, teacher_kwargs
+
+
+def _teacher_only_loss() -> CandidatePruningLoss:
+    return CandidatePruningLoss(
+        CandidatePruningLossWeights(
+            fit=0.0,
+            threshold_violation=0.0,
+            true_parameter=0.0,
+            candidate_coverage=0.0,
+            candidate_repulsion=0.0,
+            keep=1.0,
+            remove_action=1.0,
+            knot_position=1.0,
+            count_consistency=1.0,
+            deletion_cost=1.0,
+            teacher_risk=1.0,
+            teacher_ranking=1.0,
+            teacher_distribution=1.0,
+            teacher_critical_recall=1.0,
+            teacher_false_positive=1.0,
+            teacher_count=1.0,
+            policy_count=1.0,
+            canonical_selection=0.0,
+            complexity=1.0,
+        ),
+        fit_tolerance=0.1,
+        candidate_match_tolerance=0.1,
+        exact_deletion_supervision=False,
+        position_aware_distribution=True,
+        joint_position_supervision=True,
+        teacher_relocation_supervision=True,
+    )
+
+
+def test_infeasible_offline_teacher_rows_do_not_supervise_student() -> None:
+    output, points, teacher_kwargs = _teacher_feasibility_loss_inputs()
+    loss_fn = _teacher_only_loss()
+    mixed = loss_fn(
+        output,
+        points,
+        teacher_threshold_satisfied=torch.tensor([True, False]),
+        **teacher_kwargs,
+    )
+    first_output = {key: value[:1] for key, value in output.items()}
+    first_teacher = {key: value[:1] for key, value in teacher_kwargs.items()}
+    feasible_only = loss_fn(
+        first_output,
+        points[:1],
+        teacher_threshold_satisfied=torch.tensor([True]),
+        **first_teacher,
+    )
+
+    teacher_loss_keys = (
+        "keep_bce_loss",
+        "keep_dice_loss",
+        "keep_loss",
+        "remove_action_loss",
+        "deletion_cost_loss",
+        "teacher_risk_loss",
+        "teacher_ranking_loss",
+        "teacher_distribution_loss",
+        "teacher_set_coverage_loss",
+        "teacher_critical_recall_loss",
+        "teacher_false_positive_loss",
+        "teacher_count_loss",
+        "policy_count_loss",
+        "complexity_loss",
+        "teacher_anchor_position_loss",
+        "teacher_survivor_spacing_loss",
+        "joint_deployment_position_loss",
+        "knot_position_loss",
+        "loss",
+    )
+    for key in teacher_loss_keys:
+        torch.testing.assert_close(mixed[key], feasible_only[key])
+
+    gradients = torch.autograd.grad(
+        mixed["loss"],
+        (
+            output["keep_logits"],
+            output["internal_knots"],
+            output["remove_stop_logits"],
+            output["predicted_log_deletion_cost"],
+        ),
+    )
+    for gradient in gradients:
+        assert gradient[0].abs().sum() > 0
+        torch.testing.assert_close(gradient[1], torch.zeros_like(gradient[1]))
+
+
+def test_teacher_feasibility_defaults_to_all_rows_and_all_false_is_zero() -> None:
+    output, points, teacher_kwargs = _teacher_feasibility_loss_inputs()
+    loss_fn = _teacher_only_loss()
+    implicit_all_feasible = loss_fn(output, points, **teacher_kwargs)
+    explicit_all_feasible = loss_fn(
+        output,
+        points,
+        teacher_threshold_satisfied=torch.tensor([True, True]),
+        **teacher_kwargs,
+    )
+    torch.testing.assert_close(
+        implicit_all_feasible["loss"], explicit_all_feasible["loss"]
+    )
+
+    all_infeasible = loss_fn(
+        output,
+        points,
+        teacher_threshold_satisfied=torch.tensor([False, False]),
+        **teacher_kwargs,
+    )
+    assert float(all_infeasible["loss"].detach()) == 0.0
+    for key in (
+        "keep_loss",
+        "remove_action_loss",
+        "deletion_cost_loss",
+        "teacher_risk_loss",
+        "teacher_ranking_loss",
+        "teacher_distribution_loss",
+        "teacher_critical_recall_loss",
+        "teacher_false_positive_loss",
+        "teacher_count_loss",
+        "policy_count_loss",
+        "complexity_loss",
+        "knot_position_loss",
+    ):
+        assert float(all_infeasible[key].detach()) == 0.0
+
+
+def test_redundant_candidate_targets_split_largest_intervals_one_to_one() -> None:
+    dtype = torch.float64
+    true_knots = torch.tensor([[0.25, 0.75, 0.0, 0.0]], dtype=dtype)
+    true_mask = torch.tensor([[True, True, False, False]])
+    expected = torch.tensor(
+        [[0.125, 0.25, 0.375, 0.50, 0.75]],
+        dtype=dtype,
+    )
+    actual = CandidatePruningLoss._redundant_candidate_targets(
+        true_knots,
+        true_mask,
+        candidate_count=5,
+    )
+    torch.testing.assert_close(actual, expected)
+
+    points = torch.zeros(1, 10, 2, dtype=dtype)
+    duplicated_candidates = torch.tensor(
+        [[0.25, 0.25, 0.50, 0.75, 0.75]],
+        dtype=dtype,
+        requires_grad=True,
+    )
+    output = {
+        "candidate_knots": duplicated_candidates,
+        "proposal_internal_knots": duplicated_candidates,
+        "internal_knots": duplicated_candidates,
+        "keep_logits": torch.zeros_like(duplicated_candidates),
+        "keep_probability": torch.full_like(duplicated_candidates, 0.5),
+        "reconstructed_points": points.clone(),
+        "params": torch.linspace(0.0, 1.0, 10, dtype=dtype).unsqueeze(0),
+    }
+    weights = CandidatePruningLossWeights(
+        fit=0.0,
+        threshold_violation=0.0,
+        true_parameter=0.0,
+        candidate_coverage=0.0,
+        redundant_candidate=1.0,
+        candidate_repulsion=0.0,
+        keep=0.0,
+        remove_action=0.0,
+        knot_position=0.0,
+        count_consistency=0.0,
+        deletion_cost=0.0,
+        teacher_risk=0.0,
+        teacher_ranking=0.0,
+        teacher_distribution=0.0,
+        teacher_critical_recall=0.0,
+        teacher_false_positive=0.0,
+        teacher_count=0.0,
+        policy_count=0.0,
+        canonical_selection=0.0,
+        complexity=0.0,
+    )
+    losses = CandidatePruningLoss(
+        weights,
+        exact_deletion_supervision=False,
+    )(
+        output,
+        points,
+        true_internal_knots=true_knots,
+        true_internal_knot_mask=true_mask,
+    )
+    assert losses["redundant_candidate_loss"] > 0
+    torch.testing.assert_close(losses["loss"], losses["redundant_candidate_loss"])
+    gradient = torch.autograd.grad(
+        losses["redundant_candidate_loss"], duplicated_candidates
+    )[0]
+    assert gradient.abs().sum() > 0
+
+
+def test_true_parameter_loss_uses_configured_error_scale_and_reports_raw_mse() -> (
+    None
+):
+    dtype = torch.float64
+    points = torch.zeros(1, 8, 2, dtype=dtype)
+    true_params = torch.linspace(0.0, 1.0, 8, dtype=dtype).unsqueeze(0)
+    predicted_params = true_params + 0.02
+    candidates = torch.tensor([[0.25, 0.50, 0.75]], dtype=dtype)
+    output = {
+        "candidate_knots": candidates,
+        "proposal_internal_knots": candidates,
+        "internal_knots": candidates,
+        "keep_logits": torch.zeros_like(candidates),
+        "keep_probability": torch.full_like(candidates, 0.5),
+        "reconstructed_points": points.clone(),
+        "params": predicted_params,
+    }
+    labels = {
+        "true_params": true_params,
+        "true_internal_knots": torch.tensor([[0.5]], dtype=dtype),
+        "true_internal_knot_mask": torch.tensor([[True]]),
+    }
+    raw = CandidatePruningLoss(exact_deletion_supervision=False)(
+        output,
+        points,
+        **labels,
+    )
+    scaled = CandidatePruningLoss(
+        exact_deletion_supervision=False,
+        true_parameter_error_scale=0.02,
+    )(
+        output,
+        points,
+        **labels,
+    )
+
+    torch.testing.assert_close(
+        raw["raw_true_parameter_loss"],
+        torch.tensor(0.02**2, dtype=dtype),
+    )
+    torch.testing.assert_close(raw["true_parameter_loss"], raw["raw_true_parameter_loss"])
+    torch.testing.assert_close(
+        scaled["raw_true_parameter_loss"], raw["raw_true_parameter_loss"]
+    )
+    torch.testing.assert_close(
+        scaled["true_parameter_loss"], torch.tensor(1.0, dtype=dtype)
+    )
+
+    dual_output = {
+        **output,
+        "proposal_params": true_params + 0.04,
+    }
+    dual = CandidatePruningLoss(
+        exact_deletion_supervision=False,
+        true_parameter_error_scale=0.02,
+    )(
+        dual_output,
+        points,
+        **labels,
+    )
+    torch.testing.assert_close(
+        dual["raw_proposal_parameter_loss"],
+        torch.tensor(0.04**2, dtype=dtype),
+    )
+    torch.testing.assert_close(
+        dual["true_parameter_loss"],
+        torch.tensor(2.5, dtype=dtype),
+    )
+
+
+def test_true_parameter_gap_loss_supervises_local_log_intervals() -> None:
+    dtype = torch.float64
+    points = torch.zeros(1, 4, 2, dtype=dtype)
+    true_params = torch.tensor([[0.0, 0.1, 0.4, 1.0]], dtype=dtype)
+    predicted_params = torch.tensor(
+        [[0.0, 0.2, 0.5, 1.0]],
+        dtype=dtype,
+        requires_grad=True,
+    )
+    candidates = torch.tensor([[0.5]], dtype=dtype)
+    output = {
+        "candidate_knots": candidates,
+        "proposal_internal_knots": candidates,
+        "internal_knots": candidates,
+        "keep_logits": torch.zeros_like(candidates),
+        "keep_probability": torch.full_like(candidates, 0.5),
+        "reconstructed_points": points.clone(),
+        "proposal_params": true_params.clone(),
+        "params": predicted_params,
+    }
+    labels = {
+        "true_params": true_params,
+        "true_internal_knots": torch.tensor([[0.5]], dtype=dtype),
+        "true_internal_knot_mask": torch.tensor([[True]]),
+    }
+    base_weights = CandidatePruningLossWeights()
+    base_weights.true_parameter_gap = 0.0
+    weighted_weights = CandidatePruningLossWeights()
+    weighted_weights.true_parameter_gap = 2.0
+    base = CandidatePruningLoss(
+        base_weights,
+        exact_deletion_supervision=False,
+    )(output, points, **labels)
+    weighted = CandidatePruningLoss(
+        weighted_weights,
+        exact_deletion_supervision=False,
+    )(output, points, **labels)
+
+    expected_output_gap_loss = torch.nn.functional.smooth_l1_loss(
+        torch.log(torch.diff(predicted_params, dim=-1)),
+        torch.log(torch.diff(true_params, dim=-1)),
+        beta=0.1,
+    )
+    torch.testing.assert_close(
+        weighted["raw_true_parameter_gap_loss"],
+        expected_output_gap_loss,
+    )
+    torch.testing.assert_close(
+        weighted["raw_proposal_parameter_gap_loss"],
+        torch.zeros((), dtype=dtype),
+    )
+    torch.testing.assert_close(
+        weighted["true_parameter_gap_loss"],
+        0.5 * expected_output_gap_loss,
+    )
+    torch.testing.assert_close(
+        weighted["loss"] - base["loss"],
+        2.0 * weighted["true_parameter_gap_loss"],
+    )
+    gradient = torch.autograd.grad(
+        weighted["true_parameter_gap_loss"], predicted_params
+    )[0]
+    assert gradient.abs().sum() > 0
+
+
+def test_teacher_positions_are_warped_from_proposal_t0_to_calibrated_t1() -> None:
+    dtype = torch.float64
+    proposal_params = torch.linspace(0.0, 1.0, 9, dtype=dtype).unsqueeze(0)
+    calibrated_params = proposal_params.square()
+    proposal_knots = torch.tensor([[0.5]], dtype=dtype)
+    deployed_knots = torch.tensor([[0.25]], dtype=dtype)
+    points = torch.zeros(1, 9, 2, dtype=dtype)
+    output = {
+        "candidate_knots": proposal_knots,
+        "proposal_internal_knots": proposal_knots,
+        "internal_knots": deployed_knots,
+        "keep_logits": torch.full_like(proposal_knots, 4.0),
+        "keep_probability": torch.sigmoid(torch.full_like(proposal_knots, 4.0)),
+        "final_hard_keep_mask": torch.ones_like(proposal_knots, dtype=torch.bool),
+        "reconstructed_points": points.clone(),
+        "proposal_params": proposal_params,
+        "params": calibrated_params,
+    }
+    weights = CandidatePruningLossWeights(
+        fit=0.0,
+        threshold_violation=0.0,
+        true_parameter=0.0,
+        candidate_coverage=0.0,
+        redundant_candidate=0.0,
+        candidate_repulsion=0.0,
+        keep=0.0,
+        remove_action=0.0,
+        knot_position=1.0,
+        count_consistency=0.0,
+        deletion_cost=0.0,
+        teacher_risk=0.0,
+        teacher_ranking=0.0,
+        teacher_distribution=0.0,
+        teacher_critical_recall=0.0,
+        teacher_false_positive=0.0,
+        teacher_count=0.0,
+        policy_count=0.0,
+        canonical_selection=0.0,
+        complexity=0.0,
+    )
+    losses = CandidatePruningLoss(
+        weights,
+        exact_deletion_supervision=False,
+        teacher_relocation_supervision=True,
+    )(
+        output,
+        points,
+        true_internal_knots=proposal_knots,
+        true_internal_knot_mask=torch.ones_like(proposal_knots, dtype=torch.bool),
+        teacher_retained_mask=torch.ones_like(proposal_knots, dtype=torch.bool),
+        teacher_internal_knots=proposal_knots,
+        teacher_internal_knot_mask=torch.ones_like(proposal_knots, dtype=torch.bool),
+        teacher_count=torch.ones(1, dtype=torch.long),
+        teacher_threshold_satisfied=torch.ones(1, dtype=torch.bool),
+    )
+
+    torch.testing.assert_close(
+        losses["teacher_anchor_position_loss"], points.new_zeros(())
+    )
+    torch.testing.assert_close(losses["knot_position_loss"], points.new_zeros(()))
+    torch.testing.assert_close(losses["loss"], points.new_zeros(()))
+
+
+def test_canonical_proposal_targets_are_warped_from_true_domain_to_t0() -> None:
+    dtype = torch.float64
+    true_params = torch.linspace(0.0, 1.0, 9, dtype=dtype).unsqueeze(0)
+    proposal_params = true_params.square()
+    # The generating-domain knot t=0.5 denotes the same sampled location as
+    # t0=0.25 under this deliberately non-identity proposal parameterization.
+    true_knots = torch.tensor([[0.5]], dtype=dtype)
+    proposal_knots = torch.tensor([[0.25]], dtype=dtype)
+    points = torch.zeros(1, 9, 2, dtype=dtype)
+    output = {
+        "candidate_knots": proposal_knots,
+        "proposal_internal_knots": proposal_knots,
+        "internal_knots": proposal_knots,
+        "keep_logits": torch.full_like(proposal_knots, 4.0),
+        "keep_probability": torch.sigmoid(torch.full_like(proposal_knots, 4.0)),
+        "reconstructed_points": points.clone(),
+        "proposal_params": proposal_params,
+        "params": proposal_params,
+    }
+
+    losses = CandidatePruningLoss(
+        CandidatePruningLossWeights(redundant_candidate=1.0),
+        exact_deletion_supervision=False,
+        candidate_match_tolerance=0.01,
+    )(
+        output,
+        points,
+        true_params=true_params,
+        true_internal_knots=true_knots,
+        true_internal_knot_mask=torch.ones_like(true_knots, dtype=torch.bool),
+    )
+
+    torch.testing.assert_close(
+        losses["candidate_nearest_mae"], points.new_zeros(())
+    )
+    torch.testing.assert_close(
+        losses["candidate_coverage_loss"], points.new_zeros(())
+    )
+    torch.testing.assert_close(
+        losses["redundant_candidate_loss"], points.new_zeros(())
+    )
+    torch.testing.assert_close(losses["canonical_position_loss"], points.new_zeros(()))
+
+
+def test_redundant_targets_are_boehm_refined_before_nonlinear_t0_warp() -> None:
+    dtype = torch.float64
+    true_params = torch.linspace(0.0, 1.0, 9, dtype=dtype).unsqueeze(0)
+    proposal_params = true_params.square()
+    true_knots = torch.tensor([[0.5]], dtype=dtype)
+    true_mask = torch.ones_like(true_knots, dtype=torch.bool)
+    points = torch.zeros(1, 9, 2, dtype=dtype)
+
+    # True-domain refinement gives [0.25, 0.5, 0.75], which is then warped
+    # into t0 as [0.0625, 0.25, 0.5625].  Refining the already-warped knot
+    # would instead produce [0.25, 0.4375, 0.625].
+    expected = torch.tensor([[0.0625, 0.25, 0.5625]], dtype=dtype)
+    wrong_warp_then_refine = CandidatePruningLoss._redundant_candidate_targets(
+        torch.tensor([[0.25]], dtype=dtype),
+        true_mask,
+        candidate_count=3,
+    )
+    assert not torch.allclose(expected, wrong_warp_then_refine)
+
+    def redundant_loss(candidates: torch.Tensor) -> torch.Tensor:
+        output = {
+            "candidate_knots": candidates,
+            "proposal_internal_knots": candidates,
+            "internal_knots": candidates,
+            "keep_logits": torch.full_like(candidates, 4.0),
+            "keep_probability": torch.sigmoid(torch.full_like(candidates, 4.0)),
+            "reconstructed_points": points.clone(),
+            "proposal_params": proposal_params,
+            "params": proposal_params,
+        }
+        return CandidatePruningLoss(
+            CandidatePruningLossWeights(redundant_candidate=1.0),
+            exact_deletion_supervision=False,
+            candidate_match_tolerance=0.01,
+        )(
+            output,
+            points,
+            true_params=true_params,
+            true_internal_knots=true_knots,
+            true_internal_knot_mask=true_mask,
+        )["redundant_candidate_loss"]
+
+    torch.testing.assert_close(redundant_loss(expected), points.new_zeros(()))
+    assert redundant_loss(wrong_warp_then_refine) > 0
+
+
+def test_joint_position_targets_are_warped_from_true_domain_to_t1() -> None:
+    dtype = torch.float64
+    true_params = torch.linspace(0.0, 1.0, 9, dtype=dtype).unsqueeze(0)
+    corrected_params = true_params.square()
+    true_knots = torch.tensor([[0.5]], dtype=dtype)
+    proposal_knots = true_knots.clone()
+    deployed_knots = torch.tensor([[0.25]], dtype=dtype)
+    points = torch.zeros(1, 9, 2, dtype=dtype)
+    output = {
+        "candidate_knots": proposal_knots,
+        "proposal_internal_knots": proposal_knots,
+        "internal_knots": deployed_knots,
+        "keep_logits": torch.full_like(proposal_knots, 4.0),
+        "keep_probability": torch.sigmoid(torch.full_like(proposal_knots, 4.0)),
+        "final_hard_keep_mask": torch.ones_like(proposal_knots, dtype=torch.bool),
+        "reconstructed_points": points.clone(),
+        "proposal_params": true_params,
+        "params": corrected_params,
+    }
+
+    losses = CandidatePruningLoss(
+        exact_deletion_supervision=False,
+        joint_position_supervision=True,
+    )(
+        output,
+        points,
+        true_params=true_params,
+        true_internal_knots=true_knots,
+        true_internal_knot_mask=torch.ones_like(true_knots, dtype=torch.bool),
+        teacher_retained_mask=torch.ones_like(proposal_knots, dtype=torch.bool),
+        teacher_threshold_satisfied=torch.ones(1, dtype=torch.bool),
+    )
+
+    torch.testing.assert_close(
+        losses["joint_deployment_position_loss"], points.new_zeros(())
+    )
+    torch.testing.assert_close(losses["knot_position_loss"], points.new_zeros(()))

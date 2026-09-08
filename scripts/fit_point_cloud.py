@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+# Script entry points intentionally add ``src`` to sys.path before importing
+# the local package so they also run from an unpacked repository.
+# ruff: noqa: E402
+
 import argparse
 import json
 import math
 import sys
+import time
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -14,6 +19,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from spline_fitting.checkpointing import (
     COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
+    V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
     build_model_from_checkpoint,
 )
 from spline_fitting.data.point_cloud_io import (
@@ -30,6 +36,14 @@ from spline_fitting.evaluation.bspline_inference import (
 from spline_fitting.evaluation.minimal_knot_pruning import (
     MinimalKnotPruningResult,
     prune_knots_to_rms_tolerance,
+)
+from spline_fitting.evaluation.hybrid_knot_search import (
+    HybridKnotSearchResult,
+    hybrid_minimal_knot_search,
+)
+from spline_fitting.evaluation.verified_knot_repair import (
+    VerifiedKnotRepairResult,
+    verified_confidence_repair,
 )
 
 
@@ -54,6 +68,36 @@ def resolve_fit_tolerance(
     return tolerance
 
 
+def resolve_verified_refit_device(
+    requested: str,
+    *,
+    model_device: torch.device,
+) -> torch.device:
+    """Resolve the exact verified-refit device independently of the network."""
+
+    if requested not in {"auto", "cpu", "model"}:
+        raise ValueError("verified refit device must be one of auto, cpu, model")
+    if requested == "model":
+        return torch.device(model_device)
+    return torch.device("cpu")
+
+
+def scale_normalized_fit_errors(
+    normalized_mse: float,
+    normalized_rmse: float,
+    scale: float,
+) -> tuple[float, float]:
+    """Map normalized MSE/RMS back to the source coordinate scale."""
+
+    if not all(
+        math.isfinite(value) for value in (normalized_mse, normalized_rmse, scale)
+    ):
+        raise ValueError("fit errors and scale must be finite")
+    if normalized_mse < 0.0 or normalized_rmse < 0.0 or scale <= 0.0:
+        raise ValueError("fit errors must be non-negative and scale must be positive")
+    return normalized_mse * scale * scale, normalized_rmse * scale
+
+
 def candidate_mode_flags(
     checkpoint: dict[str, object], model_config: dict[str, object]
 ) -> tuple[bool, bool]:
@@ -62,8 +106,36 @@ def candidate_mode_flags(
     one_shot = (
         structure == "candidate_pruning_one_shot"
         or "candidate_pruning_one_shot" in objective
+        or objective == V12_COUPLED_RELOCATION_OBJECTIVE_VERSION
     )
     return one_shot or structure == "candidate_pruning", one_shot
+
+
+def resolve_deployment_mode(
+    requested: str,
+    *,
+    candidate_pruning: bool,
+    candidate_one_shot: bool,
+) -> str:
+    """Resolve a checkpoint-compatible deployment mode.
+
+    Historical one-shot checkpoints retain their learned single-refit default,
+    while v7 candidate checkpoints retain exhaustive greedy hard pruning.
+    Other historical structures continue through their existing deployment
+    path under the internal ``legacy`` mode.
+    """
+
+    if requested == "checkpoint":
+        if candidate_one_shot:
+            return "learned"
+        if candidate_pruning:
+            return "hard"
+        return "legacy"
+    if requested in {"learned", "hybrid", "verified"} and not candidate_one_shot:
+        raise ValueError(f"{requested} deployment requires a one-shot checkpoint")
+    if requested == "hard" and not candidate_pruning:
+        raise ValueError("hard deployment requires a candidate-pruning checkpoint")
+    return requested
 
 
 def one_shot_selection(
@@ -152,6 +224,167 @@ def pruning_result_as_deployed_fit(
     )
 
 
+def hybrid_result_as_deployed_fit(
+    result: HybridKnotSearchResult,
+    *,
+    sample_index: int = 0,
+) -> HardGatedBSplineFit:
+    """Adapt a slow hybrid-search result to the common deployment interface."""
+
+    return HardGatedBSplineFit(
+        sample_index=sample_index,
+        candidate_count=result.proposal_count,
+        retained_count=result.final_count,
+        retained_mask=result.retained_proposal_mask,
+        hard_gate=result.retained_proposal_mask,
+        spline=result.final_fit,
+    )
+
+
+def verified_result_as_deployed_fit(
+    result: VerifiedKnotRepairResult,
+    *,
+    sample_index: int = 0,
+) -> HardGatedBSplineFit:
+    """Adapt a verified confidence-repair result to the common fit interface."""
+
+    return HardGatedBSplineFit(
+        sample_index=sample_index,
+        candidate_count=result.deployment_candidate_count,
+        retained_count=result.final_count,
+        retained_mask=result.deployment_retained_mask,
+        hard_gate=result.deployment_retained_mask,
+        spline=result.final_fit,
+    )
+
+
+def run_verified_repair_full_resolution(
+    output: dict[str, torch.Tensor],
+    source_parameters: torch.Tensor,
+    full_resolution_points: torch.Tensor,
+    learned_mask: torch.Tensor,
+    *,
+    source_chord_parameters: torch.Tensor | None = None,
+    fit_tolerance_rms: float,
+    degree: int,
+    smoothness_weight: float,
+    control_ridge: float,
+    min_internal_knots: int = 0,
+    compact: bool = True,
+    hard_fallback: bool = True,
+    residual_fallback: bool = True,
+    max_residual_insertions: int = 8,
+    residual_min_gap: float = 1e-3,
+    refit_device: torch.device | str | None = None,
+    parameterization_policy: str = "network",
+) -> VerifiedKnotRepairResult:
+    """Verify and, only when needed, repair a one-shot full-resolution fit."""
+
+    if full_resolution_points.ndim != 3 or full_resolution_points.shape[0] != 1:
+        raise ValueError("full_resolution_points must have shape [1,M,D]")
+    if source_parameters.ndim != 1:
+        raise ValueError("source_parameters must have shape [M]")
+    if source_parameters.shape[0] != full_resolution_points.shape[1]:
+        raise ValueError("source parameters and full-resolution points must align")
+    if source_chord_parameters is not None and (
+        source_chord_parameters.ndim != 1
+        or source_chord_parameters.shape != source_parameters.shape
+    ):
+        raise ValueError("source chord parameters must share source shape [M]")
+    for key in ("internal_knots", "keep_probability"):
+        if key not in output:
+            raise KeyError(f"one-shot output is missing {key}")
+    proposal_knots = output.get("proposal_internal_knots", output["internal_knots"])[0]
+    deployment_knots = output.get(
+        "deployment_internal_knots", output["internal_knots"]
+    )[0]
+    keep_scores = output["keep_probability"][0]
+    target_device = (
+        source_parameters.device if refit_device is None else torch.device(refit_device)
+    )
+    return verified_confidence_repair(
+        source_parameters.detach().to(target_device),
+        full_resolution_points[0].detach().to(target_device),
+        proposal_knots.detach().to(target_device),
+        deployment_knots.detach().to(target_device),
+        learned_mask.detach().to(target_device),
+        keep_scores.detach().to(target_device),
+        fit_tolerance_rms=fit_tolerance_rms,
+        min_internal_knots=min_internal_knots,
+        degree=degree,
+        smoothness_weight=smoothness_weight,
+        control_ridge=control_ridge,
+        interpolate_endpoints=True,
+        compact=compact,
+        hard_fallback=hard_fallback,
+        residual_fallback=residual_fallback,
+        max_residual_insertions=max_residual_insertions,
+        residual_min_gap=residual_min_gap,
+        alternate_parameters=(
+            source_chord_parameters.detach().to(target_device)
+            if source_chord_parameters is not None
+            else None
+        ),
+        parameterization_policy=parameterization_policy,
+    )
+
+
+def run_hybrid_search_full_resolution(
+    output: dict[str, torch.Tensor],
+    source_parameters: torch.Tensor,
+    full_resolution_points: torch.Tensor,
+    learned_mask: torch.Tensor,
+    *,
+    fit_tolerance_rms: float,
+    degree: int,
+    smoothness_weight: float,
+    control_ridge: float,
+    beam_width: int,
+    branch_factor: int,
+    position_sweeps: int,
+    position_grid_size: int,
+    position_restarts: int,
+    position_refine_count_margin: int = 1,
+    position_refine_candidate_multiplier: int = 4,
+    min_gap: float = 1e-3,
+) -> HybridKnotSearchResult:
+    """Run slow search on source-resolution data with an MSE stopping bound."""
+
+    if full_resolution_points.ndim != 3 or full_resolution_points.shape[0] != 1:
+        raise ValueError("full_resolution_points must have shape [1,M,D]")
+    if source_parameters.ndim != 1:
+        raise ValueError("source_parameters must have shape [M]")
+    if source_parameters.shape[0] != full_resolution_points.shape[1]:
+        raise ValueError("source parameters and full-resolution points must align")
+    proposal_knots = output.get("proposal_internal_knots", output["internal_knots"])[0]
+    deployment_knots = output.get(
+        "deployment_internal_knots", output["internal_knots"]
+    )[0]
+    return hybrid_minimal_knot_search(
+        source_parameters,
+        full_resolution_points[0],
+        proposal_knots,
+        deployment_knots=deployment_knots,
+        learned_mask=learned_mask,
+        # Checkpoints store a geometric RMS tolerance.  The hybrid core
+        # deliberately ranks and stops on unrooted squared-Euclidean MSE.
+        mse_tolerance=fit_tolerance_rms * fit_tolerance_rms,
+        min_internal_knots=0,
+        degree=degree,
+        smoothness_weight=smoothness_weight,
+        control_ridge=control_ridge,
+        interpolate_endpoints=True,
+        beam_width=beam_width,
+        branch_factor=branch_factor,
+        position_sweeps=position_sweeps,
+        position_grid_size=position_grid_size,
+        position_restarts=position_restarts,
+        position_refine_count_margin=position_refine_count_margin,
+        position_refine_candidate_multiplier=position_refine_candidate_multiplier,
+        min_gap=min_gap,
+    )
+
+
 def _plot_result(
     source_points: torch.Tensor,
     dense_curve: torch.Tensor,
@@ -219,7 +452,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Historical activity threshold. For v8-v11 it is ignored by deployment; "
+            "Historical activity threshold. For v8-v12 it is ignored by deployment; "
             "the learned mask (or centered keep probability >= 0.5 fallback) is used."
         ),
     )
@@ -230,11 +463,106 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Normalized RMS limit for v7 hard candidate pruning. For v8-v11 it is "
-            "reporting-only: it measures satisfaction and never changes the learned "
-            "one-shot mask. Defaults to deployment_config.error_tolerance, then the "
-            "dataset canonical knot tolerance stored in the checkpoint."
+            "Normalized RMS fit bound. It is reporting-only for learned one-shot "
+            "deployment, but is the exact stopping bound for verified/hybrid/hard "
+            "deployment. The hybrid MSE core receives its square. Defaults to "
+            "deployment_config.error_tolerance, then the dataset canonical knot "
+            "tolerance."
         ),
+    )
+    parser.add_argument(
+        "--deployment-mode",
+        choices=("checkpoint", "learned", "verified", "hybrid", "hard"),
+        default="checkpoint",
+        help=(
+            "Deployment selector. checkpoint preserves the checkpoint-family "
+            "default (learned for v8-v12, hard for v7). verified checks the learned "
+            "fit and repairs only failures with confidence add-back and optional "
+            "compaction. hybrid runs a slower learned-initialized beam/position "
+            "search under the exact fit bound."
+        ),
+    )
+    parser.add_argument(
+        "--verified-compact",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Greedily compact a feasible verified confidence prefix. Disable with "
+            "--no-verified-compact for the fastest verified repair."
+        ),
+    )
+    parser.add_argument(
+        "--verified-hard-fallback",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Fall back to exhaustive proposal hard pruning when no confidence "
+            "prefix meets the fit bound. Disable with --no-verified-hard-fallback."
+        ),
+    )
+    parser.add_argument(
+        "--verified-residual-fallback",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "When the complete proposal set still misses the bound, insert knots "
+            "at the largest current point residuals before traditional hard fallback."
+        ),
+    )
+    parser.add_argument(
+        "--verified-max-residual-insertions",
+        type=int,
+        default=8,
+        help="Maximum exact-refit residual insertions for an extreme failed sample.",
+    )
+    parser.add_argument(
+        "--verified-residual-min-gap",
+        type=float,
+        default=None,
+        help=(
+            "Minimum parameter gap for residual insertions. Defaults to the "
+            "checkpoint model min_knot_gap."
+        ),
+    )
+    parser.add_argument(
+        "--verified-refit-device",
+        choices=("auto", "cpu", "model"),
+        default="auto",
+        help=(
+            "Device for verified exact standard-B-spline refits. auto uses CPU "
+            "for small least-squares systems even when the model runs on CUDA; "
+            "model keeps refits on the network device."
+        ),
+    )
+    parser.add_argument(
+        "--verified-parameterization",
+        choices=("network", "chord-fallback", "chord"),
+        default="chord-fallback",
+        help=(
+            "Exact-refit parameterization. chord-fallback preserves a feasible "
+            "network-domain fit and retries failed curves in deterministic chord "
+            "length; chord uses chord length for the full verified path."
+        ),
+    )
+    parser.add_argument("--hybrid-beam-width", type=int, default=4)
+    parser.add_argument(
+        "--hybrid-branch-factor",
+        type=int,
+        default=4,
+        help="Deletion children per beam state; zero evaluates every deletion.",
+    )
+    parser.add_argument("--hybrid-position-sweeps", type=int, default=2)
+    parser.add_argument("--hybrid-position-grid-size", type=int, default=7)
+    parser.add_argument("--hybrid-position-restarts", type=int, default=2)
+    parser.add_argument("--hybrid-position-refine-count-margin", type=int, default=1)
+    parser.add_argument(
+        "--hybrid-position-refine-candidate-multiplier", type=int, default=4
+    )
+    parser.add_argument(
+        "--hybrid-min-gap",
+        type=float,
+        default=None,
+        help="Minimum hybrid knot gap; defaults to the checkpoint min_knot_gap.",
     )
     parser.add_argument(
         "--count-selection", choices=("auto", "network", "bic"), default="auto"
@@ -256,6 +584,31 @@ def main() -> None:
         parser.error("--one-shot-safety-sigma must be non-negative")
     if args.one_shot_coverage_bins is not None and args.one_shot_coverage_bins < 0:
         parser.error("--one-shot-coverage-bins must be non-negative")
+    if args.hybrid_beam_width <= 0:
+        parser.error("--hybrid-beam-width must be positive")
+    if args.hybrid_branch_factor < 0:
+        parser.error("--hybrid-branch-factor must be non-negative")
+    if args.hybrid_position_sweeps < 0:
+        parser.error("--hybrid-position-sweeps must be non-negative")
+    if args.hybrid_position_grid_size < 3 or args.hybrid_position_grid_size % 2 == 0:
+        parser.error("--hybrid-position-grid-size must be odd and at least 3")
+    if args.hybrid_position_restarts <= 0:
+        parser.error("--hybrid-position-restarts must be positive")
+    if args.hybrid_position_refine_count_margin < 0:
+        parser.error("--hybrid-position-refine-count-margin must be non-negative")
+    if args.hybrid_position_refine_candidate_multiplier <= 0:
+        parser.error("--hybrid-position-refine-candidate-multiplier must be positive")
+    if args.hybrid_min_gap is not None and (
+        not math.isfinite(args.hybrid_min_gap) or args.hybrid_min_gap < 0.0
+    ):
+        parser.error("--hybrid-min-gap must be finite and non-negative")
+    if args.verified_max_residual_insertions < 0:
+        parser.error("--verified-max-residual-insertions must be non-negative")
+    if args.verified_residual_min_gap is not None and (
+        not math.isfinite(args.verified_residual_min_gap)
+        or args.verified_residual_min_gap < 0.0
+    ):
+        parser.error("--verified-residual-min-gap must be finite and non-negative")
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     try:
@@ -263,6 +616,16 @@ def main() -> None:
     except (TypeError, ValueError) as error:
         parser.error(str(error))
     model, model_config, legacy_checkpoint = build_model_from_checkpoint(checkpoint)
+    hybrid_min_gap = (
+        float(args.hybrid_min_gap)
+        if args.hybrid_min_gap is not None
+        else float(model_config.get("min_knot_gap", 1e-3))
+    )
+    verified_residual_min_gap = (
+        float(args.verified_residual_min_gap)
+        if args.verified_residual_min_gap is not None
+        else float(model_config.get("min_knot_gap", 1e-3))
+    )
     point_dim = int(model_config.get("point_dim", 2))
     source_points = load_ordered_point_cloud(args.point_cloud, point_dim=point_dim)
     if args.reverse_points:
@@ -289,6 +652,10 @@ def main() -> None:
         "scale"
     ]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    verified_refit_device = resolve_verified_refit_device(
+        args.verified_refit_device,
+        model_device=device,
+    )
     points = normalized["points"].unsqueeze(0).to(device)
     model.to(device).eval()
 
@@ -302,6 +669,14 @@ def main() -> None:
     candidate_pruning, candidate_one_shot = candidate_mode_flags(
         checkpoint, model_config
     )
+    try:
+        deployment_mode = resolve_deployment_mode(
+            args.deployment_mode,
+            candidate_pruning=candidate_pruning,
+            candidate_one_shot=candidate_one_shot,
+        )
+    except ValueError as error:
+        parser.error(str(error))
     if candidate_one_shot:
         if args.one_shot_selection_policy != "checkpoint":
             model.pruning_head.one_shot_selection_policy = (
@@ -329,7 +704,14 @@ def main() -> None:
         parser.error("v6 performs one network count decision and has no BIC branches")
 
     with torch.no_grad():
-        output = model(points)
+        # One-shot deployment immediately performs a standard B-spline refit;
+        # its final truncated-power surrogate is training-only.  Omitting that
+        # solve preserves params/proposals/KeepMask/relocation exactly.
+        output = (
+            model.forward_deployment(points)
+            if candidate_one_shot and hasattr(model, "forward_deployment")
+            else model(points)
+        )
         if structure_mode == "count_conditioned" and count_selection == "bic":
             deployment_output, _ = select_count_conditioned_output_by_bic(
                 output,
@@ -352,10 +734,23 @@ def main() -> None:
         )
         full_resolution_points = source_normalized_points.unsqueeze(0).to(device)
         pruning_result: MinimalKnotPruningResult | None = None
+        hybrid_result: HybridKnotSearchResult | None = None
+        verified_result: VerifiedKnotRepairResult | None = None
+        initial_learned_fit: HardGatedBSplineFit | None = None
+        initial_learned_refit_time_ms: float | None = None
+        hybrid_search_time_ms: float | None = None
+        verified_repair_time_ms: float | None = None
         one_shot_mask: torch.Tensor | None = None
         adaptive_keep_threshold: torch.Tensor | None = None
         one_shot_selection_source: str | None = None
         if candidate_one_shot:
+            masks, adaptive_thresholds, one_shot_selection_source = one_shot_selection(
+                output
+            )
+            one_shot_mask = masks[0]
+            adaptive_keep_threshold = adaptive_thresholds[0]
+
+        if deployment_mode == "learned":
             (
                 deployed,
                 one_shot_mask,
@@ -369,14 +764,100 @@ def main() -> None:
                 smoothness_weight=args.smoothness_weight,
                 control_ridge=args.control_ridge,
             )
-        elif candidate_pruning:
+        elif deployment_mode == "verified":
+            assert one_shot_mask is not None
+            raw_deployment_config = checkpoint.get("deployment_config", {})
+            deployment_config = (
+                raw_deployment_config if isinstance(raw_deployment_config, dict) else {}
+            )
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
+            started_at = time.perf_counter()
+            verified_result = run_verified_repair_full_resolution(
+                output,
+                source_parameters,
+                full_resolution_points,
+                one_shot_mask,
+                source_chord_parameters=source_chord.to(device),
+                fit_tolerance_rms=fit_tolerance,
+                degree=model.degree,
+                smoothness_weight=args.smoothness_weight,
+                control_ridge=args.control_ridge,
+                min_internal_knots=int(deployment_config.get("min_internal_knots", 0)),
+                compact=args.verified_compact,
+                hard_fallback=args.verified_hard_fallback,
+                residual_fallback=args.verified_residual_fallback,
+                max_residual_insertions=args.verified_max_residual_insertions,
+                residual_min_gap=verified_residual_min_gap,
+                refit_device=verified_refit_device,
+                parameterization_policy=args.verified_parameterization,
+            )
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
+            verified_repair_time_ms = 1e3 * (time.perf_counter() - started_at)
+            deployed = verified_result_as_deployed_fit(verified_result)
+        elif deployment_mode == "hybrid":
+            # Keep a separately measured one-shot baseline for the deployment
+            # report.  The actual slow search below independently refits every
+            # state and uses the learned mask only as one deterministic start.
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
+            started_at = time.perf_counter()
+            (
+                initial_learned_fit,
+                one_shot_mask,
+                adaptive_keep_threshold,
+                one_shot_selection_source,
+            ) = refit_one_shot_full_resolution(
+                output,
+                source_parameters,
+                full_resolution_points,
+                degree=model.degree,
+                smoothness_weight=args.smoothness_weight,
+                control_ridge=args.control_ridge,
+            )
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
+            initial_learned_refit_time_ms = 1e3 * (time.perf_counter() - started_at)
+
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
+            started_at = time.perf_counter()
+            hybrid_result = run_hybrid_search_full_resolution(
+                output,
+                source_parameters,
+                full_resolution_points,
+                one_shot_mask,
+                fit_tolerance_rms=fit_tolerance,
+                degree=model.degree,
+                smoothness_weight=args.smoothness_weight,
+                control_ridge=args.control_ridge,
+                beam_width=args.hybrid_beam_width,
+                branch_factor=args.hybrid_branch_factor,
+                position_sweeps=args.hybrid_position_sweeps,
+                position_grid_size=args.hybrid_position_grid_size,
+                position_restarts=args.hybrid_position_restarts,
+                position_refine_count_margin=(args.hybrid_position_refine_count_margin),
+                position_refine_candidate_multiplier=(
+                    args.hybrid_position_refine_candidate_multiplier
+                ),
+                min_gap=hybrid_min_gap,
+            )
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
+            hybrid_search_time_ms = 1e3 * (time.perf_counter() - started_at)
+            deployed = hybrid_result_as_deployed_fit(hybrid_result)
+        elif deployment_mode == "hard":
             # The learned keep probability is diagnostic only.  Actual
             # deployment starts from every proposed knot, refits on the
             # original-resolution point cloud, and verifies every deletion.
+            proposal_knots = output.get(
+                "proposal_internal_knots", output["internal_knots"]
+            )[0]
             pruning_result = prune_knots_to_rms_tolerance(
                 source_parameters,
                 full_resolution_points[0],
-                output["internal_knots"][0],
+                proposal_knots,
                 error_tolerance=fit_tolerance,
                 degree=model.degree,
                 smoothness_weight=args.smoothness_weight,
@@ -397,12 +878,31 @@ def main() -> None:
 
     scale = normalized["scale"].cpu()
     center = normalized["center"].cpu()
-    dense_params = torch.linspace(0.0, 1.0, 400, dtype=points.dtype, device=device)
+    deployed_parameters = (
+        verified_result.final_parameters
+        if verified_result is not None
+        else source_parameters
+    )
+    deployed_device = deployed.control_points.device
+    dense_params = torch.linspace(
+        0.0,
+        1.0,
+        400,
+        dtype=deployed.control_points.dtype,
+        device=deployed_device,
+    )
     dense_normalized = deployed.spline.evaluate(dense_params).cpu()
     controls_normalized = deployed.control_points.cpu()
     dense_curve = dense_normalized * scale + center
     control_points = controls_normalized * scale + center
-    fit_rmse_original = float(deployed.fit_rmse.cpu() * scale)
+    scale_value = float(scale)
+    fit_mse_normalized = float(deployed.fit_mse.cpu())
+    fit_rmse_normalized = float(deployed.fit_rmse.cpu())
+    fit_mse_original, fit_rmse_original = scale_normalized_fit_errors(
+        fit_mse_normalized,
+        fit_rmse_normalized,
+        scale_value,
+    )
     underdetermined_warning = deployed.control_points.shape[0] > source_points.shape[0]
     if underdetermined_warning:
         print(
@@ -411,15 +911,45 @@ def main() -> None:
             "treated as a reliable reconstruction.",
             flush=True,
         )
+    refit_observations = full_resolution_points[0].to(deployed_device)
     normalized_start_distance = float(
-        (deployed.reconstructed_points[0] - full_resolution_points[0, 0]).norm().cpu()
+        (deployed.reconstructed_points[0] - refit_observations[0]).norm().cpu()
     )
     normalized_end_distance = float(
-        (deployed.reconstructed_points[-1] - full_resolution_points[0, -1]).norm().cpu()
+        (deployed.reconstructed_points[-1] - refit_observations[-1]).norm().cpu()
     )
+    checkpoint_count_selection = (
+        "learned_one_shot_mask" if candidate_one_shot else count_selection
+    )
+    learned_relocation_shifts = torch.empty(0, dtype=points.dtype)
+    learned_total_shifts = torch.empty(0, dtype=points.dtype)
+    if candidate_one_shot:
+        assert one_shot_mask is not None
+        pre_relocation = output.get(
+            "pre_relocation_candidate_positions",
+            output.get("proposal_internal_knots", output["internal_knots"]),
+        )[0]
+        post_relocation = output.get(
+            "deployment_internal_knots", output["internal_knots"]
+        )[0]
+        learned_relocation_shifts = (
+            (post_relocation[one_shot_mask] - pre_relocation[one_shot_mask])
+            .abs()
+            .detach()
+            .cpu()
+        )
+        proposal_positions = output.get(
+            "proposal_internal_knots", output["internal_knots"]
+        )[0]
+        learned_total_shifts = (
+            (post_relocation[one_shot_mask] - proposal_positions[one_shot_mask])
+            .abs()
+            .detach()
+            .cpu()
+        )
 
     report = {
-        "schema_version": 4,
+        "schema_version": 6,
         "checkpoint": str(args.checkpoint),
         "point_cloud": str(args.point_cloud),
         "point_count": int(source_points.shape[0]),
@@ -427,14 +957,33 @@ def main() -> None:
         "point_dim": int(source_points.shape[1]),
         "reversed": bool(args.reverse_points),
         "structure_mode": structure_mode,
+        "deployment_mode_requested": args.deployment_mode,
+        "deployment_mode_resolved": deployment_mode,
+        "model_device": str(device),
+        "verified_refit_device_requested": args.verified_refit_device,
+        "verified_refit_device": str(verified_refit_device),
+        "verified_refit_device_used": deployment_mode == "verified",
+        "verified_parameterization_requested": args.verified_parameterization,
         "count_selection": (
-            "learned_one_shot_mask" if candidate_one_shot else count_selection
+            checkpoint_count_selection
+            if deployment_mode in {"learned", "legacy"}
+            else "verified_adaptive_exact_repair"
+            if deployment_mode == "verified"
+            else "learned_initialized_hybrid_mse_search"
+            if deployment_mode == "hybrid"
+            else "hard_rms_pruning"
+            if deployment_mode == "hard"
+            else count_selection
         ),
         "deployment_method": (
             "learned_one_shot_mask_single_standard_bspline_refit"
-            if candidate_one_shot
+            if deployment_mode == "learned"
+            else "verified_adaptive_repair_with_exact_standard_bspline_checks"
+            if deployment_mode == "verified"
+            else "learned_initialized_hybrid_mse_beam_position_search"
+            if deployment_mode == "hybrid"
             else "hard_standard_bspline_rms_pruning"
-            if candidate_pruning
+            if deployment_mode == "hard"
             else "legacy_structure_selection"
         ),
         "degree": int(model.degree),
@@ -443,24 +992,33 @@ def main() -> None:
         "open_knot_vector": deployed.spline.knot_vector.cpu().tolist(),
         "predicted_parameters": output["params"][0].detach().cpu().tolist(),
         "model_predicted_parameters": output["params"][0].detach().cpu().tolist(),
-        "full_resolution_refit_parameters": source_parameters.detach().cpu().tolist(),
+        "full_resolution_refit_parameters": (
+            deployed_parameters.detach().cpu().tolist()
+        ),
+        "full_resolution_refit_parameterization": (
+            verified_result.final_parameterization
+            if verified_result is not None
+            else "network_predicted"
+        ),
         "full_resolution_refit_point_count": int(source_points.shape[0]),
         "sparse_input_warning": bool(sparse_input_warning),
         "data_underdetermined_warning": bool(underdetermined_warning),
         "control_points": control_points.tolist(),
         "fitted_curve": dense_curve.tolist(),
         "normalization_center": center.tolist(),
-        "normalization_scale": float(scale),
-        "normalized_fit_rmse": float(deployed.fit_rmse.cpu()),
+        "normalization_scale": scale_value,
+        "normalized_fit_mse": fit_mse_normalized,
+        "normalized_fit_rmse": fit_rmse_normalized,
+        "original_scale_fit_mse": fit_mse_original,
         "original_scale_fit_rmse": fit_rmse_original,
         "normalized_start_endpoint_distance": normalized_start_distance,
         "normalized_end_endpoint_distance": normalized_end_distance,
         "original_scale_start_endpoint_distance": (
-            normalized_start_distance * float(scale)
+            normalized_start_distance * scale_value
         ),
-        "original_scale_end_endpoint_distance": (
-            normalized_end_distance * float(scale)
-        ),
+        "original_scale_end_endpoint_distance": (normalized_end_distance * scale_value),
+        "verified_deployment": None,
+        "hybrid_deployment": None,
     }
     if candidate_one_shot:
         assert one_shot_mask is not None
@@ -472,6 +1030,58 @@ def main() -> None:
         report["candidate_internal_knots"] = (
             output["internal_knots"][0].detach().cpu().tolist()
         )
+        report["proposal_internal_knots"] = (
+            output.get("proposal_internal_knots", output["internal_knots"])[0]
+            .detach()
+            .cpu()
+            .tolist()
+        )
+        report["deployment_candidate_internal_knots"] = (
+            output.get("deployment_internal_knots", output["internal_knots"])[0]
+            .detach()
+            .cpu()
+            .tolist()
+        )
+        report["pre_relocation_candidate_internal_knots"] = (
+            output.get(
+                "pre_relocation_candidate_positions",
+                output.get("proposal_internal_knots", output["internal_knots"]),
+            )[0]
+            .detach()
+            .cpu()
+            .tolist()
+        )
+        report["network_survivor_relocation"] = {
+            "enabled": bool(
+                getattr(model.pruning_head, "one_shot_survivor_relocation", False)
+            ),
+            "reference": "selected pre-relocation positions",
+            "selected_knot_mean_absolute_shift": (
+                float(learned_relocation_shifts.mean())
+                if learned_relocation_shifts.numel()
+                else 0.0
+            ),
+            "selected_knot_max_absolute_shift": (
+                float(learned_relocation_shifts.max())
+                if learned_relocation_shifts.numel()
+                else 0.0
+            ),
+            "selected_knot_moved_fraction_at_1e-6": (
+                float((learned_relocation_shifts > 1e-6).float().mean())
+                if learned_relocation_shifts.numel()
+                else 0.0
+            ),
+            "selected_knot_proposal_to_final_mean_absolute_shift": (
+                float(learned_total_shifts.mean())
+                if learned_total_shifts.numel()
+                else 0.0
+            ),
+            "selected_knot_proposal_to_final_max_absolute_shift": (
+                float(learned_total_shifts.max())
+                if learned_total_shifts.numel()
+                else 0.0
+            ),
+        }
         report["learned_keep_mask"] = one_shot_mask.detach().cpu().tolist()
         report["one_shot_selection_source"] = one_shot_selection_source
         report["one_shot_selection_policy"] = getattr(
@@ -485,24 +1095,219 @@ def main() -> None:
         )
         report["keep_probability_cutoff"] = 0.5
         report["activity_threshold_cli_used_for_selection"] = False
-        report["fit_tolerance_used_for_selection"] = False
+        report["fit_tolerance_used_for_selection"] = deployment_mode in {
+            "verified",
+            "hybrid",
+            "hard",
+        }
         report["adaptive_keep_logit_threshold"] = (
             adaptive_value if math.isfinite(adaptive_value) else None
         )
         report["fit_tolerance_normalized"] = fit_tolerance
-        report["fit_tolerance_original_scale"] = fit_tolerance * float(scale)
-        report["fit_tolerance_satisfied"] = (
-            float(deployed.fit_rmse.cpu()) <= fit_tolerance
+        report["fit_tolerance_normalized_rms"] = fit_tolerance
+        report["fit_tolerance_normalized_mse"] = fit_tolerance * fit_tolerance
+        report["fit_tolerance_original_scale"] = fit_tolerance * scale_value
+        report["fit_tolerance_original_scale_rms"] = fit_tolerance * scale_value
+        report["fit_tolerance_original_scale_mse"] = (
+            fit_tolerance * fit_tolerance * scale_value * scale_value
         )
-        report["standard_refit_count"] = 1
-        report["deployment_standard_refit_count"] = 1
+        report["fit_tolerance_satisfied"] = (
+            fit_mse_normalized <= fit_tolerance * fit_tolerance
+        )
+        report["standard_refit_count"] = (
+            1
+            if deployment_mode == "learned"
+            else verified_result.direct_refit_count
+            if verified_result is not None
+            else None
+        )
+        report["deployment_standard_refit_count"] = report["standard_refit_count"]
         report["model_forward_internal_proxy_solves_counted_as_deployment_refits"] = (
             False
         )
-        report["hard_pruning_used"] = False
+        report["hard_pruning_used"] = deployment_mode in {"hybrid", "hard"} or (
+            verified_result is not None
+            and (verified_result.cleanup_used or verified_result.hard_fallback_used)
+        )
+    if verified_result is not None:
+        assert verified_repair_time_ms is not None
+        report["verified_deployment"] = {
+            "method": "adaptive_exact_verify_add_back_residual_rescue",
+            "fit_tolerance_normalized_rms": fit_tolerance,
+            "fit_tolerance_normalized_mse": fit_tolerance * fit_tolerance,
+            "selection_rule": (
+                "learned_fast_path_else_confidence_prefix_exact_checks_then_"
+                "optional_greedy_compaction"
+            ),
+            "final_source": verified_result.final_source,
+            "threshold_satisfied": verified_result.threshold_satisfied,
+            "learned_threshold_satisfied": (
+                verified_result.learned_threshold_satisfied
+            ),
+            "fallback_used": verified_result.fallback_used,
+            "hard_fallback_used": verified_result.hard_fallback_used,
+            "residual_fallback_requested": bool(args.verified_residual_fallback),
+            "residual_fallback_used": verified_result.residual_fallback_used,
+            "max_residual_insertions": args.verified_max_residual_insertions,
+            "residual_min_gap": verified_residual_min_gap,
+            "parameterization_policy": verified_result.parameterization_policy,
+            "learned_parameterization": verified_result.learned_parameterization,
+            "final_parameterization": verified_result.final_parameterization,
+            "parameterization_fallback_attempted": (
+                verified_result.parameterization_fallback_attempted
+            ),
+            "parameterization_fallback_used": (
+                verified_result.parameterization_fallback_used
+            ),
+            "parameterization_fallback_full_fit_mse": (
+                verified_result.parameterization_fallback_full_fit_mse
+            ),
+            "parameterization_fallback_full_threshold_satisfied": (
+                verified_result.parameterization_fallback_full_threshold_satisfied
+            ),
+            "final_refit_parameters": (
+                verified_result.final_parameters.detach().cpu().tolist()
+            ),
+            "inserted_internal_knots": (
+                verified_result.inserted_internal_knots.detach().cpu().tolist()
+            ),
+            "inserted_internal_knot_count": verified_result.inserted_count,
+            "residual_insertion_fraction": float(verified_result.inserted_count > 0),
+            "residual_inserted_knot_count_mean": float(verified_result.inserted_count),
+            "residual_inserted_knot_count_max": verified_result.inserted_count,
+            "residual_fallback_refit_count": (
+                verified_result.residual_fallback_refit_count
+            ),
+            "compact_requested": bool(args.verified_compact),
+            "cleanup_used": verified_result.cleanup_used,
+            "hard_fallback_requested": bool(args.verified_hard_fallback),
+            "model_device": str(device),
+            "refit_device_requested": args.verified_refit_device,
+            "refit_device": str(verified_refit_device),
+            "learned_knot_count": int(one_shot_mask.sum().item()),
+            "final_knot_count": verified_result.final_count,
+            "learned_mse_normalized": float(verified_result.learned_fit.fit_mse),
+            "learned_rms_normalized": float(verified_result.learned_fit.fit_rmse),
+            "final_mse_normalized": float(verified_result.final_fit.fit_mse),
+            "final_rms_normalized": float(verified_result.final_fit.fit_rmse),
+            "retained_proposal_indices": (
+                verified_result.retained_proposal_indices.detach().cpu().tolist()
+            ),
+            "retained_proposal_mask": (
+                verified_result.retained_proposal_mask.detach().cpu().tolist()
+            ),
+            "deployment_candidate_count": (verified_result.deployment_candidate_count),
+            "deployment_retained_mask": (
+                verified_result.deployment_retained_mask.detach().cpu().tolist()
+            ),
+            "prefix_counts_evaluated": list(verified_result.prefix_counts_evaluated),
+            "prefix_fit_count": len(verified_result.prefix_counts_evaluated),
+            "direct_standard_refit_count": verified_result.direct_refit_count,
+            "exact_fit_evaluation_count": verified_result.fit_evaluation_count,
+            "fit_evaluation_count_semantics": (
+                "direct prefix/materialization refits plus every exact batched "
+                "single-deletion candidate state"
+            ),
+            "postprocess_time_ms": verified_repair_time_ms,
+            "global_minimum_guaranteed": False,
+        }
+    if hybrid_result is not None:
+        assert initial_learned_fit is not None
+        assert initial_learned_refit_time_ms is not None
+        assert hybrid_search_time_ms is not None
+        initial_learned_mse = float(initial_learned_fit.fit_mse.cpu())
+        initial_learned_rms = float(initial_learned_fit.fit_rmse.cpu())
+        greedy_mse = float(hybrid_result.greedy_fit.fit_mse.cpu())
+        greedy_rms = float(hybrid_result.greedy_fit.fit_rmse.cpu())
+        final_mse = float(hybrid_result.final_fit.fit_mse.cpu())
+        final_rms = float(hybrid_result.final_fit.fit_rmse.cpu())
+        mse_tolerance = fit_tolerance * fit_tolerance
+        report["hybrid_deployment"] = {
+            "method": "learned_initialized_beam_deletion_with_position_refinement",
+            "selection_rule": "feasible_first_then_minimum_k_then_minimum_mse",
+            "mse_definition": "mean_i ||C(t_i)-Q_i||_2^2",
+            "fit_tolerance_normalized_mse": mse_tolerance,
+            "fit_tolerance_normalized_rms": fit_tolerance,
+            "fit_tolerance_original_scale_mse": (
+                mse_tolerance * scale_value * scale_value
+            ),
+            "fit_tolerance_original_scale_rms": fit_tolerance * scale_value,
+            "initial_learned_knot_count": initial_learned_fit.retained_count,
+            "initial_learned_mse_normalized": initial_learned_mse,
+            "initial_learned_rms_normalized": initial_learned_rms,
+            "initial_learned_threshold_satisfied": (
+                initial_learned_mse <= mse_tolerance
+            ),
+            "greedy_knot_count": hybrid_result.greedy_count,
+            "greedy_mse_normalized": greedy_mse,
+            "greedy_rms_normalized": greedy_rms,
+            "greedy_threshold_satisfied": (hybrid_result.greedy_threshold_satisfied),
+            "final_knot_count": hybrid_result.final_count,
+            "final_mse_normalized": final_mse,
+            "final_rms_normalized": final_rms,
+            "final_mse_original_scale": final_mse * scale_value * scale_value,
+            "final_rms_original_scale": final_rms * scale_value,
+            "threshold_satisfied": hybrid_result.threshold_satisfied,
+            "retained_proposal_indices": (
+                hybrid_result.retained_proposal_indices.detach().cpu().tolist()
+            ),
+            "retained_proposal_mask": (
+                hybrid_result.retained_proposal_mask.detach().cpu().tolist()
+            ),
+            "greedy_retained_proposal_indices": (
+                hybrid_result.greedy_retained_proposal_indices.detach().cpu().tolist()
+            ),
+            "greedy_retained_proposal_mask": (
+                hybrid_result.greedy_retained_proposal_mask.detach().cpu().tolist()
+            ),
+            "visited_state_count": hybrid_result.visited_state_count,
+            "search_refit_count": hybrid_result.refit_count,
+            "search_fit_evaluation_count": hybrid_result.refit_count,
+            "search_refit_count_semantics": (
+                "exact candidate fit evaluations; batched deletion states are "
+                "counted individually"
+            ),
+            "initial_learned_diagnostic_refit_count": 1,
+            "search_time_ms": hybrid_search_time_ms,
+            "initial_learned_diagnostic_refit_time_ms": (initial_learned_refit_time_ms),
+            "total_postprocess_time_ms": (
+                initial_learned_refit_time_ms + hybrid_search_time_ms
+            ),
+            "levels_explored": list(hybrid_result.levels_explored),
+            "position_refined_counts": list(hybrid_result.position_refined_counts),
+            "final_source": hybrid_result.final_source,
+            "mean_absolute_proposal_to_final_position_shift": (
+                hybrid_result.mean_absolute_position_shift
+            ),
+            "max_absolute_proposal_to_final_position_shift": (
+                hybrid_result.max_absolute_position_shift
+            ),
+            "start_sources": list(hybrid_result.start_sources),
+            "search_options": {
+                "beam_width": args.hybrid_beam_width,
+                "branch_factor": args.hybrid_branch_factor,
+                "position_sweeps": args.hybrid_position_sweeps,
+                "position_grid_size": args.hybrid_position_grid_size,
+                "position_restarts": args.hybrid_position_restarts,
+                "position_refine_count_margin": (
+                    args.hybrid_position_refine_count_margin
+                ),
+                "position_refine_candidate_multiplier": (
+                    args.hybrid_position_refine_candidate_multiplier
+                ),
+                "min_gap": hybrid_min_gap,
+            },
+            "global_minimum_guaranteed": False,
+        }
     if pruning_result is not None:
         report["fit_tolerance_normalized"] = fit_tolerance
-        report["fit_tolerance_original_scale"] = fit_tolerance * float(scale)
+        report["fit_tolerance_normalized_rms"] = fit_tolerance
+        report["fit_tolerance_normalized_mse"] = fit_tolerance * fit_tolerance
+        report["fit_tolerance_original_scale"] = fit_tolerance * scale_value
+        report["fit_tolerance_original_scale_rms"] = fit_tolerance * scale_value
+        report["fit_tolerance_original_scale_mse"] = (
+            fit_tolerance * fit_tolerance * scale_value * scale_value
+        )
         report["candidate_internal_knot_count"] = pruning_result.initial_count
         report["candidate_internal_knots"] = (
             pruning_result.initial_internal_knots.cpu().tolist()
@@ -562,9 +1367,9 @@ def main() -> None:
         assert one_shot_mask is not None
         assert adaptive_keep_threshold is not None
         print(
-            "  one-shot learned selection: "
+            "  network one-shot selection: "
             f"{int(output['internal_knots'].shape[-1])} candidates -> "
-            f"{deployed.retained_count} retained"
+            f"{int(one_shot_mask.sum())} retained"
         )
         print(f"  selection source: {one_shot_selection_source}")
         print(
@@ -579,14 +1384,100 @@ def main() -> None:
             "  adaptive raw-importance logit beta: "
             f"{float(adaptive_keep_threshold.detach().cpu()):.9e}"
         )
+        print(
+            "  selected pre->post |shift| mean/max/moved@1e-6: "
+            f"{(float(learned_relocation_shifts.mean()) if learned_relocation_shifts.numel() else 0.0):.6e}/"
+            f"{(float(learned_relocation_shifts.max()) if learned_relocation_shifts.numel() else 0.0):.6e}/"
+            f"{(float((learned_relocation_shifts > 1e-6).float().mean()) if learned_relocation_shifts.numel() else 0.0):.3f}"
+        )
+        print(
+            "  selected proposal->final |shift| mean/max: "
+            f"{(float(learned_total_shifts.mean()) if learned_total_shifts.numel() else 0.0):.6e}/"
+            f"{(float(learned_total_shifts.max()) if learned_total_shifts.numel() else 0.0):.6e}"
+        )
         print(f"  normalized fit tolerance: {fit_tolerance:.9e}")
         print(
             f"  tolerance satisfied: {float(deployed.fit_rmse.cpu()) <= fit_tolerance}"
         )
+        if deployment_mode == "learned":
+            print(
+                "  deployment standard B-spline refits: 1; hard pruning: False "
+                "(network-forward proxy solves are not counted as deployment refits)"
+            )
+    if verified_result is not None:
+        assert verified_repair_time_ms is not None
+        assert one_shot_mask is not None
         print(
-            "  deployment standard B-spline refits: 1; hard pruning: False "
-            "(network-forward proxy solves are not counted as deployment refits)"
+            "  model / verified refit device: "
+            f"{device}/{verified_refit_device} "
+            f"(requested={args.verified_refit_device})"
         )
+        print(
+            "  verified confidence repair: learned/final K="
+            f"{int(one_shot_mask.sum().item())}/{verified_result.final_count}"
+        )
+        print(f"  verified final source: {verified_result.final_source}")
+        print(
+            "  verified parameterization policy/final/fallback-used: "
+            f"{verified_result.parameterization_policy}/"
+            f"{verified_result.final_parameterization}/"
+            f"{verified_result.parameterization_fallback_used}"
+        )
+        print(
+            "  learned/final threshold satisfied: "
+            f"{verified_result.learned_threshold_satisfied}/"
+            f"{verified_result.threshold_satisfied}"
+        )
+        print(
+            "  fallback/cleanup/residual/hard-fallback used: "
+            f"{verified_result.fallback_used}/"
+            f"{verified_result.cleanup_used}/"
+            f"{verified_result.residual_fallback_used}/"
+            f"{verified_result.hard_fallback_used}"
+        )
+        print(
+            "  residual inserted K/refits/max/min-gap: "
+            f"{verified_result.inserted_count}/"
+            f"{verified_result.residual_fallback_refit_count}/"
+            f"{args.verified_max_residual_insertions}/"
+            f"{verified_residual_min_gap:.6g}"
+        )
+        print(
+            "  confidence prefix counts evaluated: "
+            f"{list(verified_result.prefix_counts_evaluated)}"
+        )
+        print(
+            "  direct refits/exact fit evaluations/postprocess time: "
+            f"{verified_result.direct_refit_count}/"
+            f"{verified_result.fit_evaluation_count}/"
+            f"{verified_repair_time_ms:.2f} ms"
+        )
+        print("  global minimum guaranteed: False")
+    if hybrid_result is not None:
+        assert initial_learned_fit is not None
+        assert hybrid_search_time_ms is not None
+        print(
+            "  slow hybrid MSE search: learned/greedy/final K="
+            f"{initial_learned_fit.retained_count}/"
+            f"{hybrid_result.greedy_count}/{hybrid_result.final_count}"
+        )
+        print(
+            "  normalized MSE threshold/final: "
+            f"{fit_tolerance * fit_tolerance:.9e}/"
+            f"{float(hybrid_result.final_fit.fit_mse.cpu()):.9e}"
+        )
+        print(f"  threshold satisfied: {hybrid_result.threshold_satisfied}")
+        print(
+            "  proposal -> final knot-position |shift| mean/max: "
+            f"{hybrid_result.mean_absolute_position_shift:.6e}/"
+            f"{hybrid_result.max_absolute_position_shift:.6e}"
+        )
+        print(
+            "  search visited/fit-evaluations/time: "
+            f"{hybrid_result.visited_state_count}/"
+            f"{hybrid_result.refit_count}/{hybrid_search_time_ms:.2f} ms"
+        )
+        print("  global minimum guaranteed: False")
     if pruning_result is not None:
         print(
             "  hard RMS pruning: "
@@ -605,6 +1496,8 @@ def main() -> None:
             f"{int(output.get('count_mode_knot_count', output['predicted_knot_count'])[0])}"
         )
     print(f"  knot values: {deployed.retained_internal_knots.cpu().tolist()}")
+    print(f"  normalized MSE: {fit_mse_normalized:.9e}")
+    print(f"  original-scale MSE: {fit_mse_original:.9e}")
     print(f"  normalized RMS: {float(deployed.fit_rmse.cpu()):.9e}")
     print(f"  original-scale RMS: {fit_rmse_original:.9e}")
     print(

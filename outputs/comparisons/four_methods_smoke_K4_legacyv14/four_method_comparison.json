@@ -1,0 +1,317 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "checkpoint": "outputs\\candidate_pruning_one_shot_v14.pt",
+    "ours_mode": "learned",
+    "source_knot_range": [
+      4,
+      4
+    ],
+    "samples_per_source_knot_count": 1,
+    "selected_sample_indices": [
+      248
+    ],
+    "dataset_seed": 20000,
+    "selection_seed": 12345,
+    "network_device": "cuda",
+    "network_batch_size": 1,
+    "network_warmups": 1,
+    "network_repeats": 3,
+    "network_compiled": false,
+    "gradient_baseline_uniform_Kmax": 28,
+    "paper_initial_uniform_knot_count": 24,
+    "paper_absolute_jump_threshold": 1e-07,
+    "paper_relative_jump_threshold": 0.001,
+    "paper_non_paper_feasibility_repair_enabled": false,
+    "paper_endpoint_fallback_enabled": false,
+    "feature_cdf_max_internal_knots": 28,
+    "feature_cdf_density_limit": true,
+    "mse_tolerance": 2.5e-05,
+    "timing_scopes_are_asymmetric": true,
+    "reported_refit_policy": "all four methods are re-evaluated by unregularized standard B-spline least squares with exact endpoint interpolation"
+  },
+  "mse_definition": "mean_i ||C(t_i) - Q_i||_2^2 (no square root)",
+  "timing_warning": "Ours reports pure network-forward latency only; its final B-spline refit and optional verified repair are excluded. Kang, Yeh, and the uniform-gradient baseline report complete numerical-method time.",
+  "method_definitions": {
+    "ours": "One-shot learned keep mask and survivor relocation; quality may optionally use verified postprocessing.",
+    "kang_sparse_2015_adaptation": "Vector group-L1 ADMM adaptation of Kang et al. (2015), followed by active-cluster midpoint/bisection relocation and one exact refit. Repository-specific knot add-back and endpoint fallback are disabled so failure remains visible.",
+    "yeh_feature_cdf_2020": "Yeh et al. (2020) high-order finite-difference feature-CDF knot placement. A disclosed ascending cardinality scan replaces the paper's dataset-specific target-error regression.",
+    "uniform_gradient_pruning": "No network. Uniform Kmax initialization, full-set relocation, greedy one-knot deletion, differentiable variable-projection relocation, and exact refit checks."
+  },
+  "overall": {
+    "ours": {
+      "mse_mean": 4.67055095622961e-06,
+      "mse_median": 4.67055095622961e-06,
+      "final_internal_knot_count_mean": 9.0,
+      "elapsed_ms_mean": 20.6928,
+      "elapsed_ms_median": 20.6928,
+      "threshold_pass_rate": 1.0,
+      "canonical_count_bias": 5.0,
+      "canonical_count_mae": 5.0,
+      "source_count_bias": 5.0,
+      "source_count_mae": 5.0
+    },
+    "kang_sparse_2015_adaptation": {
+      "mse_mean": 6.619050139380405e-06,
+      "mse_median": 6.619050139380405e-06,
+      "final_internal_knot_count_mean": 5.0,
+      "elapsed_ms_mean": 1492.9841999983182,
+      "elapsed_ms_median": 1492.9841999983182,
+      "threshold_pass_rate": 1.0,
+      "canonical_count_bias": 1.0,
+      "canonical_count_mae": 1.0,
+      "source_count_bias": 1.0,
+      "source_count_mae": 1.0
+    },
+    "yeh_feature_cdf_2020": {
+      "mse_mean": 1.2605272792747942e-05,
+      "mse_median": 1.2605272792747942e-05,
+      "final_internal_knot_count_mean": 6.0,
+      "elapsed_ms_mean": 32.0337999946787,
+      "elapsed_ms_median": 32.0337999946787,
+      "threshold_pass_rate": 1.0,
+      "canonical_count_bias": 2.0,
+      "canonical_count_mae": 2.0,
+      "source_count_bias": 2.0,
+      "source_count_mae": 2.0
+    },
+    "uniform_gradient_pruning": {
+      "mse_mean": 7.359206067762027e-06,
+      "mse_median": 7.359206067762027e-06,
+      "final_internal_knot_count_mean": 5.0,
+      "elapsed_ms_mean": 13303.992500004824,
+      "elapsed_ms_median": 13303.992500004824,
+      "threshold_pass_rate": 1.0,
+      "canonical_count_bias": 1.0,
+      "canonical_count_mae": 1.0,
+      "source_count_bias": 1.0,
+      "source_count_mae": 1.0
+    }
+  },
+  "by_source_internal_knot_count": {
+    "4": {
+      "sample_count": 1,
+      "canonical_internal_knot_count_mean": 4.0,
+      "methods": {
+        "ours": {
+          "mse_mean": 4.67055095622961e-06,
+          "mse_stdev": 0.0,
+          "final_internal_knot_count_mean": 9.0,
+          "elapsed_ms_mean": 20.6928,
+          "pass_rate": 1.0,
+          "canonical_count_bias": 5.0,
+          "canonical_count_mae": 5.0,
+          "source_count_bias": 5.0,
+          "source_count_mae": 5.0
+        },
+        "kang_sparse_2015_adaptation": {
+          "mse_mean": 6.619050139380405e-06,
+          "mse_stdev": 0.0,
+          "final_internal_knot_count_mean": 5.0,
+          "elapsed_ms_mean": 1492.9841999983182,
+          "pass_rate": 1.0,
+          "canonical_count_bias": 1.0,
+          "canonical_count_mae": 1.0,
+          "source_count_bias": 1.0,
+          "source_count_mae": 1.0
+        },
+        "yeh_feature_cdf_2020": {
+          "mse_mean": 1.2605272792747942e-05,
+          "mse_stdev": 0.0,
+          "final_internal_knot_count_mean": 6.0,
+          "elapsed_ms_mean": 32.0337999946787,
+          "pass_rate": 1.0,
+          "canonical_count_bias": 2.0,
+          "canonical_count_mae": 2.0,
+          "source_count_bias": 2.0,
+          "source_count_mae": 2.0
+        },
+        "uniform_gradient_pruning": {
+          "mse_mean": 7.359206067762027e-06,
+          "mse_stdev": 0.0,
+          "final_internal_knot_count_mean": 5.0,
+          "elapsed_ms_mean": 13303.992500004824,
+          "pass_rate": 1.0,
+          "canonical_count_bias": 1.0,
+          "canonical_count_mae": 1.0,
+          "source_count_bias": 1.0,
+          "source_count_mae": 1.0
+        }
+      }
+    }
+  },
+  "samples": [
+    {
+      "sample_index": 248,
+      "source_internal_knot_count": 4,
+      "canonical_internal_knot_count": 4,
+      "source_mse": 1.967438720384962e-06,
+      "mse_tolerance": 2.5e-05,
+      "methods": [
+        {
+          "method": "ours",
+          "mse": 4.67055095622961e-06,
+          "final_internal_knot_count": 9,
+          "elapsed_ms": 20.6928,
+          "timing_scope": "synchronized batch-1 network forward only; input preloaded on device; final refit and verified repair excluded",
+          "parameterization": "network_predicted",
+          "internal_knots": [
+            0.17971903085708618,
+            0.21383805572986603,
+            0.3575252294540405,
+            0.38835856318473816,
+            0.41902080178260803,
+            0.44694411754608154,
+            0.4747709035873413,
+            0.7952649593353271,
+            0.8383511304855347
+          ],
+          "threshold_satisfied": true,
+          "diagnostics": {
+            "quality_mode": "learned",
+            "quality_contains_postprocessing": false,
+            "native_final_fit_mse": 4.670550963997934e-06,
+            "reported_refit": "standard B-spline least squares with exact endpoint interpolation",
+            "network_used": true,
+            "network_latency": {
+              "p50_ms": 20.6928,
+              "median_ms": 20.6928,
+              "mean_ms": 21.1392,
+              "p95_ms": 22.32405,
+              "minimum_ms": 20.2195,
+              "maximum_ms": 22.5053,
+              "repeat_ms": [
+                22.5053,
+                20.6928,
+                20.2195
+              ]
+            },
+            "compiled": false,
+            "device": "cuda"
+          }
+        },
+        {
+          "method": "kang_sparse_2015_adaptation",
+          "mse": 6.619050139380405e-06,
+          "final_internal_knot_count": 5,
+          "elapsed_ms": 1492.9841999983182,
+          "timing_scope": "complete sparse ADMM selection + relocation + one common endpoint-constrained final refit; no feasibility add-back/fallback",
+          "parameterization": "chord_length",
+          "internal_knots": [
+            0.2575,
+            0.40875000000000006,
+            0.5125,
+            0.6512499999999999,
+            0.7775000000000001
+          ],
+          "threshold_satisfied": true,
+          "diagnostics": {
+            "initial_internal_knot_count": 24,
+            "dense_initial_fit_mse": 8.55073719452494e-07,
+            "dense_initial_threshold_satisfied": true,
+            "network_used": false,
+            "active_internal_knot_count": 7,
+            "cluster_sizes": [
+              1,
+              2,
+              1,
+              2,
+              1
+            ],
+            "sparse_stage_mse": 2.4867082093244218e-05,
+            "sparse_stage_threshold_satisfied": true,
+            "sparse_iterations": 3800,
+            "sparse_solver_seconds": 1.3578449999986333,
+            "relocation_seconds": 0.12521530000230996,
+            "non_paper_feasibility_repair_enabled": false,
+            "local_refit_count": 40,
+            "method_note": "Vector-valued group-L1 ADMM adaptation of Kang et al. (2015) equation (12), followed by Algorithms-4-and-5-inspired active-cluster midpoint-bisection merging; not the paper's scalar CVX implementation.",
+            "absolute_jump_threshold": 1e-07,
+            "relative_jump_threshold": 0.001,
+            "effective_jump_threshold": 0.22147284548841717,
+            "paper_feasibility_repair_used": false,
+            "paper_feasibility_repair_added_count": 0,
+            "native_final_fit_mse_without_endpoint_constraint": 5.723305858871889e-06,
+            "native_endpoint_constrained_mse": 6.619050139380405e-06,
+            "endpoint_constraint_fallback": "disabled",
+            "reported_refit": "unregularized standard B-spline least squares with exact endpoint interpolation"
+          }
+        },
+        {
+          "method": "yeh_feature_cdf_2020",
+          "mse": 1.2605272792747942e-05,
+          "final_internal_knot_count": 6,
+          "elapsed_ms": 32.0337999946787,
+          "timing_scope": "complete derivative-feature construction + ascending cardinality scan + endpoint-constrained standard B-spline refits",
+          "parameterization": "chord_length",
+          "internal_knots": [
+            0.223564349175435,
+            0.32835596481624185,
+            0.4393111658467104,
+            0.5261459296660188,
+            0.6060182448032208,
+            0.7031683102887314
+          ],
+          "threshold_satisfied": true,
+          "diagnostics": {
+            "network_used": false,
+            "paper_placement_rule": "equal high-order derivative-feature mass",
+            "comparison_wrapper": "ascending cardinality scan replaces the paper's dataset-specific target-error regression",
+            "derivative_order": 4,
+            "density_limit": true,
+            "scanned_counts": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "scanned_mse": [
+              0.0033586798405764993,
+              0.0007691751050331202,
+              0.00031857535667928526,
+              0.0001255608326148447,
+              3.387951488774484e-05,
+              2.9235935284404476e-05,
+              1.2605272792747942e-05
+            ],
+            "exact_refit_count": 7,
+            "reported_refit": "unregularized standard B-spline least squares with exact endpoint interpolation"
+          }
+        },
+        {
+          "method": "uniform_gradient_pruning",
+          "mse": 7.359206067762027e-06,
+          "final_internal_knot_count": 5,
+          "elapsed_ms": 13303.992500004824,
+          "timing_scope": "complete uniform-Kmax initialization + all deletion scoring + gradient relocation + exact refit validation",
+          "parameterization": "chord_length",
+          "internal_knots": [
+            0.25946582248120853,
+            0.42557098717520314,
+            0.5781720475680789,
+            0.6102130863690675,
+            0.782743464139521
+          ],
+          "threshold_satisfied": true,
+          "diagnostics": {
+            "initial_internal_knot_count": 28,
+            "network_used": false,
+            "initial_location_update_accepted": true,
+            "uniform_initial_fit_mse": 8.336579018873489e-07,
+            "relocated_initial_fit_mse": 8.139643644845306e-07,
+            "accepted_deletions": 23,
+            "gradient_steps": 1588,
+            "variable_projection_evaluations": 1588,
+            "exact_refit_count": 794,
+            "native_final_fit_mse": 7.359206067762027e-06,
+            "reported_refit": "unregularized standard B-spline least squares with exact endpoint interpolation"
+          }
+        }
+      ],
+      "figure": null
+    }
+  ]
+}

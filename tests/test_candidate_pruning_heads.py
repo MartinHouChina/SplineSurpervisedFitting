@@ -99,6 +99,63 @@ class CandidateKnotHeadTests(unittest.TestCase):
         ).sum(dim=-1)
         self.assertTrue(torch.all(mean_distance < 0.10))
 
+    def test_bounded_interval_logits_limit_proposal_concentration(self) -> None:
+        torch.manual_seed(17)
+        head = CandidateKnotHead(
+            hidden_dim=16,
+            num_candidates=20,
+            min_gap=1e-3,
+            attention_heads=4,
+            interval_logit_limit=0.5,
+        )
+        with torch.no_grad():
+            head.interval_score.weight.normal_(std=100.0)
+        output = head(
+            torch.randn(2, 16),
+            torch.randn(2, 32, 16),
+            torch.linspace(0.0, 1.0, 32).expand(2, -1),
+        )
+
+        effective = output["effective_candidate_interval_logits"]
+        self.assertTrue(torch.all(effective <= 0.5 + 1e-7))
+        self.assertTrue(torch.all(effective >= -0.5 - 1e-7))
+        free_intervals = output["candidate_intervals"] - head.min_gap
+        free_ratio = free_intervals.max(dim=-1).values / free_intervals.min(
+            dim=-1
+        ).values
+        self.assertTrue(torch.all(free_ratio <= torch.exp(torch.tensor(1.0)) + 1e-5))
+
+    def test_bounded_anchor_residual_guarantees_global_coverage(self) -> None:
+        torch.manual_seed(19)
+        head = CandidateKnotHead(
+            hidden_dim=16,
+            num_candidates=20,
+            min_gap=1e-3,
+            attention_heads=4,
+            interval_logit_limit=0.5,
+            position_parameterization="bounded_anchor_residual",
+        )
+        with torch.no_grad():
+            head.interval_score.weight.normal_(std=100.0)
+        output = head(
+            torch.randn(2, 16),
+            torch.randn(2, 32, 16),
+            torch.linspace(0.0, 1.0, 32).expand(2, -1),
+        )
+
+        uniform_interval = 1.0 / 21.0
+        maximum_shift = 0.5 * (uniform_interval - head.min_gap)
+        self.assertTrue(
+            torch.all(output["candidate_position_residual"].abs() <= maximum_shift)
+        )
+        self.assertTrue(
+            torch.all(output["candidate_intervals"] >= head.min_gap - 1e-7)
+        )
+        # Even adversarial logits cannot leave either outer quarter empty.
+        positions = output["candidate_positions"]
+        self.assertTrue(torch.all((positions < 0.25).sum(dim=-1) > 0))
+        self.assertTrue(torch.all((positions > 0.75).sum(dim=-1) > 0))
+
 
 class InteractivePruningHeadTests(unittest.TestCase):
     def _inputs(self) -> tuple[torch.Tensor, ...]:

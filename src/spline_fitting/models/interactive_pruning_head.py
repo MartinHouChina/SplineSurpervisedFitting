@@ -26,6 +26,13 @@ class InteractivePruningHead(nn.Module):
     Position updates remain bounded to less than half of the available
     neighboring slack.  Consequently ordered inputs remain strictly ordered
     without sorting, preserving candidate/output correspondence.
+
+    With ``one_shot_survivor_relocation`` enabled, the final discrete subset
+    receives one additional fixed-depth relaxation pass.  Only retained knots
+    participate as attention keys/values, and every retained token receives
+    its adjacent-survivor spacing and compact rank/count.  This couples the
+    final deletion pattern to the deployed locations without an iterative
+    deployment loop.
     """
 
     def __init__(
@@ -44,6 +51,7 @@ class InteractivePruningHead(nn.Module):
         one_shot_selector_layers: int = 1,
         one_shot_coverage_bins: int = 0,
         one_shot_joint_position_refinement: bool = False,
+        one_shot_survivor_relocation: bool = False,
         one_shot_max_position_shift: float = 0.05,
     ) -> None:
         super().__init__()
@@ -89,6 +97,7 @@ class InteractivePruningHead(nn.Module):
         self.one_shot_joint_position_refinement = bool(
             one_shot_joint_position_refinement
         )
+        self.one_shot_survivor_relocation = bool(one_shot_survivor_relocation)
         self.one_shot_max_position_shift = float(one_shot_max_position_shift)
         if self.one_shot_fixed_proposal_geometry and not self.one_shot_adaptive:
             raise ValueError(
@@ -99,6 +108,15 @@ class InteractivePruningHead(nn.Module):
         ):
             raise ValueError(
                 "joint one-shot position refinement requires fixed adaptive proposals"
+            )
+        if self.one_shot_survivor_relocation and not (
+            self.one_shot_joint_position_refinement
+            and self.one_shot_fixed_proposal_geometry
+            and self.one_shot_adaptive
+        ):
+            raise ValueError(
+                "survivor relocation requires joint fixed-proposal one-shot "
+                "position refinement"
             )
 
         # position + coefficient energy + deletion delta + left/right spacing
@@ -227,6 +245,43 @@ class InteractivePruningHead(nn.Module):
                     ):
                         nn.init.zeros_(module.weight)
                         nn.init.zeros_(module.bias)
+                    if self.one_shot_survivor_relocation:
+                        # v12 adds a final survivor-only relaxation after the
+                        # v11 Keep -> position -> Keep -> position passes.  Its
+                        # keys/values contain only the final hard survivors,
+                        # while explicit relative geometry tells every
+                        # survivor where it lies inside the compact retained
+                        # sequence.  The zero-initialised output keeps a v11
+                        # checkpoint exactly neutral until this block is
+                        # trained against relocated teacher knots.
+                        survivor_feature_dim = 8
+                        self.survivor_relative_projection = nn.Sequential(
+                            nn.Linear(survivor_feature_dim, self.hidden_dim),
+                            nn.GELU(),
+                            nn.Linear(self.hidden_dim, self.hidden_dim),
+                        )
+                        self.survivor_relocation_input_norm = nn.LayerNorm(
+                            self.hidden_dim
+                        )
+                        self.survivor_relocation_attention = nn.MultiheadAttention(
+                            self.hidden_dim,
+                            attention_heads,
+                            batch_first=True,
+                        )
+                        self.survivor_relocation_attention_norm = nn.LayerNorm(
+                            self.hidden_dim
+                        )
+                        self.survivor_relocation_feed_forward = nn.Sequential(
+                            nn.Linear(self.hidden_dim, 2 * self.hidden_dim),
+                            nn.GELU(),
+                            nn.Linear(2 * self.hidden_dim, self.hidden_dim),
+                        )
+                        self.survivor_relocation_output_norm = nn.LayerNorm(
+                            self.hidden_dim
+                        )
+                        self.survivor_relocation_head = nn.Linear(self.hidden_dim, 1)
+                        nn.init.zeros_(self.survivor_relocation_head.weight)
+                        nn.init.zeros_(self.survivor_relocation_head.bias)
         self.deletion_cost_head = nn.Linear(self.hidden_dim, 1)
         nn.init.normal_(self.deletion_cost_head.weight, std=0.01)
         nn.init.constant_(self.deletion_cost_head.bias, -4.0)
@@ -303,6 +358,25 @@ class InteractivePruningHead(nn.Module):
                         key = module_prefix + name
                         if key not in state_dict:
                             state_dict[key] = value.detach().clone()
+                if self.one_shot_survivor_relocation:
+                    # Strictly load a v11 model into v12.  In particular, the
+                    # zero relocation head makes the newly created branch an
+                    # exact identity before v12 training starts.
+                    for module_name in (
+                        "survivor_relative_projection",
+                        "survivor_relocation_input_norm",
+                        "survivor_relocation_attention",
+                        "survivor_relocation_attention_norm",
+                        "survivor_relocation_feed_forward",
+                        "survivor_relocation_output_norm",
+                        "survivor_relocation_head",
+                    ):
+                        module = getattr(self, module_name)
+                        module_prefix = prefix + module_name + "."
+                        for name, value in module.state_dict().items():
+                            key = module_prefix + name
+                            if key not in state_dict:
+                                state_dict[key] = value.detach().clone()
         super()._load_from_state_dict(
             state_dict,
             prefix,
@@ -465,6 +539,386 @@ class InteractivePruningHead(nn.Module):
                 torch.minimum(residual, maximum_residual),
             )
         return residual.masked_fill(~active, 0.0)
+
+    def _project_ordered_positions(
+        self,
+        target_positions: torch.Tensor,
+        active_mask: torch.Tensor,
+        *,
+        reference_positions: torch.Tensor,
+        max_shift: float | None = None,
+    ) -> torch.Tensor:
+        """Project active slots to a feasible ordered parameter subsequence.
+
+        Selected-only relocation deliberately lets a survivor move across
+        dormant proposal slots.  Such a tensor is ordered on the survivor
+        subsequence, but not necessarily across all ``Kc`` storage slots.  A
+        later all-candidate pass must not silently assume otherwise.  This
+        fixed two-sweep projection repairs exactly that boundary condition.
+
+        The projection preserves slot identity, enforces the endpoint and
+        adjacent-active ``min_gap`` constraints, and limits every active slot
+        to ``max_shift`` from an ordered reference.  A backward sweep first
+        propagates future upper bounds; a forward sweep then clamps each slot
+        without an optimizer or a data-dependent iteration.  Gradients flow
+        through unclamped targets and through the active clamp boundary.
+
+        Inactive slots are returned unchanged.  Consequently callers may use
+        all valid candidates as ``active_mask`` before re-selection, or only
+        the final KeepMask when validating the deployed survivor sequence.
+        """
+
+        if target_positions.ndim != 2:
+            raise ValueError("target_positions must have shape [B,K]")
+        if reference_positions.shape != target_positions.shape:
+            raise ValueError("reference_positions must share target shape")
+        if active_mask.shape != target_positions.shape or active_mask.dtype != torch.bool:
+            raise ValueError("active_mask must be boolean with shape [B,K]")
+        if not target_positions.is_floating_point():
+            raise ValueError("target_positions must be floating-point")
+        if reference_positions.dtype != target_positions.dtype:
+            raise ValueError("reference_positions must share target dtype")
+        if reference_positions.device != target_positions.device:
+            raise ValueError("reference_positions must share target device")
+
+        shift = self.one_shot_max_position_shift if max_shift is None else max_shift
+        if not math.isfinite(shift) or shift < 0.0 or shift >= 0.5:
+            raise ValueError("max_shift must be finite and lie in [0, 0.5)")
+
+        dtype = target_positions.dtype
+        active_float = active_mask.to(dtype)
+        active_count = active_float.sum(dim=-1, keepdim=True)
+        active_rank = active_float.cumsum(dim=-1) - active_float
+
+        # Internal knots also keep ``min_gap`` from both domain endpoints.
+        domain_lower = (active_rank + 1.0) * self.min_gap
+        remaining = active_count - active_rank
+        domain_upper = 1.0 - remaining * self.min_gap
+        lower = torch.maximum(
+            domain_lower,
+            reference_positions - float(shift),
+        )
+        upper = torch.minimum(
+            domain_upper,
+            reference_positions + float(shift),
+        )
+
+        # Propagate the tightest future upper bound to every earlier active
+        # slot.  This prevents a greedy left-to-right clamp from consuming the
+        # space required by a later survivor.
+        batch, candidate_count = target_positions.shape
+        running_upper = target_positions.new_ones(batch)
+        has_next = torch.zeros(batch, dtype=torch.bool, device=target_positions.device)
+        feasible_upper_columns: list[torch.Tensor] = []
+        for index in range(candidate_count - 1, -1, -1):
+            is_active = active_mask[:, index]
+            candidate_upper = torch.where(
+                has_next,
+                torch.minimum(upper[:, index], running_upper - self.min_gap),
+                upper[:, index],
+            )
+            running_upper = torch.where(is_active, candidate_upper, running_upper)
+            has_next = has_next | is_active
+            feasible_upper_columns.append(candidate_upper)
+        feasible_upper = torch.stack(
+            list(reversed(feasible_upper_columns)),
+            dim=-1,
+        )
+
+        fallback = torch.where(
+            torch.isfinite(reference_positions),
+            reference_positions,
+            0.5 * (lower + feasible_upper),
+        )
+        finite_target = torch.where(
+            torch.isfinite(target_positions),
+            target_positions,
+            fallback,
+        )
+        previous = target_positions.new_zeros(batch)
+        has_previous = torch.zeros(
+            batch,
+            dtype=torch.bool,
+            device=target_positions.device,
+        )
+        projected_columns: list[torch.Tensor] = []
+        for index in range(candidate_count):
+            is_active = active_mask[:, index]
+            feasible_lower = torch.where(
+                has_previous,
+                torch.maximum(lower[:, index], previous + self.min_gap),
+                lower[:, index],
+            )
+            # A legal ordered reference makes this interval nonempty.  The
+            # minimum below is a round-off guard for float32 at the boundary.
+            feasible_lower = torch.minimum(
+                feasible_lower,
+                feasible_upper[:, index],
+            )
+            projected = torch.maximum(
+                feasible_lower,
+                torch.minimum(finite_target[:, index], feasible_upper[:, index]),
+            )
+            output_column = torch.where(
+                is_active,
+                projected,
+                target_positions[:, index],
+            )
+            projected_columns.append(output_column)
+            previous = torch.where(is_active, projected, previous)
+            has_previous = has_previous | is_active
+
+        return torch.stack(projected_columns, dim=-1)
+
+    @staticmethod
+    def _fill_inactive_ordered_slots(
+        selected_positions: torch.Tensor,
+        selected_mask: torch.Tensor,
+        candidate_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Canonicalize dormant storage slots without moving survivors.
+
+        A survivor is allowed to cross a deleted proposal slot, because the
+        latter contributes no spline basis column.  For downstream code that
+        consumes the complete fixed-width tensor, place each dormant slot by
+        linear interpolation between its adjacent survivors (or endpoints).
+        The selected geometry and KeepMask correspondence stay unchanged,
+        while every valid storage row becomes strictly left-to-right ordered.
+        """
+
+        if selected_positions.ndim != 2:
+            raise ValueError("selected_positions must have shape [B,K]")
+        if selected_mask.shape != selected_positions.shape or selected_mask.dtype != torch.bool:
+            raise ValueError("selected_mask must be boolean with shape [B,K]")
+        if candidate_mask.shape != selected_positions.shape or candidate_mask.dtype != torch.bool:
+            raise ValueError("candidate_mask must be boolean with shape [B,K]")
+
+        active = selected_mask & candidate_mask
+        batch, candidate_count = active.shape
+        indices = torch.arange(candidate_count, device=active.device).unsqueeze(0)
+        indices = indices.expand(batch, -1)
+        previous_index = torch.where(active, indices, -1).cummax(dim=-1).values
+        next_index = torch.flip(
+            torch.flip(
+                torch.where(active, indices, candidate_count),
+                dims=(-1,),
+            ).cummin(dim=-1).values,
+            dims=(-1,),
+        )
+
+        previous_position = selected_positions.gather(
+            1,
+            previous_index.clamp(min=0),
+        )
+        previous_position = torch.where(
+            previous_index >= 0,
+            previous_position,
+            torch.zeros_like(previous_position),
+        )
+        next_position = selected_positions.gather(
+            1,
+            next_index.clamp(max=candidate_count - 1),
+        )
+        next_position = torch.where(
+            next_index < candidate_count,
+            next_position,
+            torch.ones_like(next_position),
+        )
+        denominator = (next_index - previous_index).clamp_min(1).to(
+            selected_positions.dtype
+        )
+        fraction = (indices - previous_index).to(selected_positions.dtype) / denominator
+        filled = previous_position + fraction * (next_position - previous_position)
+        filled = torch.where(active, selected_positions, filled)
+
+        # With no survivor there is no authoritative geometry to interpolate
+        # around; retain the already ordered all-candidate input unchanged.
+        has_survivor = active.any(dim=-1, keepdim=True)
+        filled = torch.where(has_survivor, filled, selected_positions)
+        return torch.where(candidate_mask, filled, selected_positions)
+
+    def _survivor_relative_geometry(
+        self,
+        candidate_positions: torch.Tensor,
+        selected_mask: torch.Tensor,
+        candidate_mask: torch.Tensor,
+        straight_through_gate: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Describe each knot relative to the final retained subsequence.
+
+        Dense proposal spacing is the wrong geometry after pruning: two
+        adjacent survivors may have many deleted slots between them.  This
+        descriptor therefore uses the previous/next *selected* knot (or a
+        domain endpoint), together with retained rank and retained count.
+        Rank/count have hard values in the forward pass and sigmoid gradients
+        in the backward pass through ``straight_through_gate``.
+        """
+
+        if selected_mask.shape != candidate_positions.shape:
+            raise ValueError("selected_mask must share candidate shape")
+        if candidate_mask.shape != candidate_positions.shape:
+            raise ValueError("candidate_mask must share candidate shape")
+        if straight_through_gate.shape != candidate_positions.shape:
+            raise ValueError("straight_through_gate must share candidate shape")
+
+        active = selected_mask & candidate_mask
+        batch, candidate_count = active.shape
+        indices = torch.arange(candidate_count, device=active.device).unsqueeze(0)
+        indices = indices.expand(batch, -1)
+
+        previous_inclusive = torch.where(active, indices, -1).cummax(dim=-1).values
+        previous_exclusive = torch.cat(
+            [
+                torch.full_like(previous_inclusive[:, :1], -1),
+                previous_inclusive[:, :-1],
+            ],
+            dim=-1,
+        )
+        next_inclusive = torch.flip(
+            torch.flip(
+                torch.where(active, indices, candidate_count),
+                dims=(-1,),
+            )
+            .cummin(dim=-1)
+            .values,
+            dims=(-1,),
+        )
+        next_exclusive = torch.cat(
+            [
+                next_inclusive[:, 1:],
+                torch.full_like(next_inclusive[:, :1], candidate_count),
+            ],
+            dim=-1,
+        )
+
+        previous_position = candidate_positions.gather(
+            1, previous_exclusive.clamp(min=0)
+        )
+        previous_position = torch.where(
+            previous_exclusive >= 0,
+            previous_position,
+            torch.zeros_like(previous_position),
+        )
+        next_position = candidate_positions.gather(
+            1, next_exclusive.clamp(max=candidate_count - 1)
+        )
+        next_position = torch.where(
+            next_exclusive < candidate_count,
+            next_position,
+            torch.ones_like(next_position),
+        )
+
+        left_gap = (candidate_positions - previous_position).clamp_min(0.0)
+        right_gap = (next_position - candidate_positions).clamp_min(0.0)
+        survivor_cell_span = (next_position - previous_position).clamp_min(1e-6)
+        local_coordinate = (left_gap / survivor_cell_span).clamp(0.0, 1.0)
+
+        hard_count = active.to(candidate_positions.dtype).sum(dim=-1, keepdim=True)
+        st_count = straight_through_gate.sum(dim=-1, keepdim=True)
+        differentiable_count = hard_count + st_count - st_count.detach()
+        hard_rank = active.to(candidate_positions.dtype).cumsum(dim=-1)
+        st_rank = straight_through_gate.cumsum(dim=-1)
+        differentiable_rank = hard_rank + st_rank - st_rank.detach()
+        relative_rank = differentiable_rank / (differentiable_count + 1.0)
+        valid_count = candidate_mask.to(candidate_positions.dtype).sum(
+            dim=-1, keepdim=True
+        )
+        count_fraction = differentiable_count / valid_count.clamp_min(1.0)
+        count_fraction = count_fraction.expand_as(candidate_positions)
+        coverage_offset = relative_rank - candidate_positions
+
+        relative_features = torch.stack(
+            [
+                left_gap,
+                right_gap,
+                survivor_cell_span,
+                local_coordinate,
+                relative_rank,
+                count_fraction,
+                coverage_offset,
+                straight_through_gate,
+            ],
+            dim=-1,
+        )
+        relative_features = relative_features * active.to(
+            relative_features.dtype
+        ).unsqueeze(-1)
+        return relative_features, previous_position, next_position
+
+    def _relocate_survivors(
+        self,
+        decision_tokens: torch.Tensor,
+        candidate_positions: torch.Tensor,
+        selected_mask: torch.Tensor,
+        candidate_mask: torch.Tensor,
+        straight_through_gate: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        """Run one selected-only attention pass for final knot relocation."""
+
+        (
+            relative_features,
+            previous_position,
+            next_position,
+        ) = self._survivor_relative_geometry(
+            candidate_positions,
+            selected_mask,
+            candidate_mask,
+            straight_through_gate,
+        )
+        relocation_position_encoding = KnotHead._sinusoidal_position_encoding(
+            candidate_positions,
+            self.hidden_dim,
+        )
+        relocation_inputs = self.survivor_relocation_input_norm(
+            decision_tokens
+            + relocation_position_encoding
+            + self.survivor_relative_projection(relative_features)
+        )
+
+        active = selected_mask & candidate_mask
+        # MultiheadAttention cannot consume an all-masked key row.  A zero-
+        # valued fallback key makes K=0 finite; the final active mask still
+        # forces every relocation residual to exactly zero for that sample.
+        empty = ~active.any(dim=-1)
+        fallback_index = candidate_mask.to(torch.long).argmax(dim=-1, keepdim=True)
+        fallback_mask = torch.zeros_like(active).scatter(
+            1,
+            fallback_index,
+            True,
+        )
+        safe_key_mask = active | (fallback_mask & empty.unsqueeze(-1))
+        selected_values = relocation_inputs * straight_through_gate.unsqueeze(-1)
+        interacted, attention_weights = self.survivor_relocation_attention(
+            relocation_inputs,
+            selected_values,
+            selected_values,
+            key_padding_mask=~safe_key_mask,
+            need_weights=True,
+            average_attn_weights=True,
+        )
+        relocation_tokens = self.survivor_relocation_attention_norm(
+            relocation_inputs + interacted
+        )
+        relocation_tokens = self.survivor_relocation_output_norm(
+            relocation_tokens + self.survivor_relocation_feed_forward(relocation_tokens)
+        )
+        raw_signal = torch.tanh(
+            self.survivor_relocation_head(relocation_tokens).squeeze(-1)
+        )
+        diagnostic_attention = (
+            attention_weights
+            * active.to(attention_weights.dtype).unsqueeze(-1)
+            * active.to(attention_weights.dtype).unsqueeze(1)
+        )
+        return {
+            "relative_features": relative_features,
+            "previous_position": previous_position,
+            "next_position": next_position,
+            "input_tokens": relocation_inputs,
+            "tokens": relocation_tokens,
+            "attention_weights": diagnostic_attention,
+            "raw_signal": raw_signal,
+        }
 
     def _select_hard_keep_mask(
         self,
@@ -1228,6 +1682,61 @@ class InteractivePruningHead(nn.Module):
             position_residual = position_residual.masked_fill(~candidate_mask, 0.0)
             refined_candidates = candidate_positions + position_residual
 
+        # v12: the discrete subset is now known.  Relax the retained geometry
+        # once more using only final survivors as attention keys/values and
+        # using their compact-sequence neighbor/rank/count features.  This is
+        # deliberately an optional additive stage: its zero-initialised head
+        # makes a strict v11 -> v12 load exactly neutral.
+        pre_relocation_candidates = refined_candidates
+        relocation_relative_features = candidate_positions.new_zeros(
+            (*candidate_positions.shape, 8)
+        )
+        relocation_previous_position = candidate_positions.new_zeros(
+            candidate_positions.shape
+        )
+        relocation_next_position = candidate_positions.new_ones(
+            candidate_positions.shape
+        )
+        relocation_input_tokens = position_refinement_tokens
+        relocation_tokens = position_refinement_tokens
+        relocation_attention_weights = candidate_positions.new_zeros(
+            (
+                candidate_positions.shape[0],
+                candidate_positions.shape[1],
+                candidate_positions.shape[1],
+            )
+        )
+        relocation_raw_signal = candidate_positions.new_zeros(candidate_positions.shape)
+        relocation_position_residual = candidate_positions.new_zeros(
+            candidate_positions.shape
+        )
+        if self.one_shot_survivor_relocation:
+            relocation_output = self._relocate_survivors(
+                final_decision_tokens,
+                pre_relocation_candidates,
+                final_hard_keep_mask,
+                candidate_mask,
+                final_hard_st_keep_gate,
+            )
+            relocation_relative_features = relocation_output["relative_features"]
+            relocation_previous_position = relocation_output["previous_position"]
+            relocation_next_position = relocation_output["next_position"]
+            relocation_input_tokens = relocation_output["input_tokens"]
+            relocation_tokens = relocation_output["tokens"]
+            relocation_attention_weights = relocation_output["attention_weights"]
+            relocation_raw_signal = relocation_output["raw_signal"]
+            relocation_position_residual = self._bounded_selected_residual(
+                pre_relocation_candidates,
+                relocation_raw_signal,
+                final_hard_keep_mask,
+                candidate_mask,
+                reference_positions=fixed_proposal_candidates,
+            )
+            refined_candidates = (
+                pre_relocation_candidates + relocation_position_residual
+            )
+            position_residual = refined_candidates - fixed_proposal_candidates
+
         if not self.one_shot_adaptive:
             # Diagnostic aliases only.  They add no parameters and leave all
             # legacy output tensors and computations unchanged.
@@ -1337,6 +1846,17 @@ class InteractivePruningHead(nn.Module):
             "keep_conditioned_position_signal": keep_conditioned_signal,
             "position_residual": position_residual,
             "final_position_residual": final_position_residual,
+            "pre_relocation_candidate_positions": pre_relocation_candidates,
+            "pre_relocation_candidate_knots": pre_relocation_candidates,
+            "relocation_relative_features": relocation_relative_features,
+            "relocation_previous_survivor_position": (relocation_previous_position),
+            "relocation_next_survivor_position": relocation_next_position,
+            "relocation_input_tokens": relocation_input_tokens,
+            "relocation_tokens": relocation_tokens,
+            "relocation_attention_weights": relocation_attention_weights,
+            "relocation_raw_position_signal": relocation_raw_signal,
+            "relocation_position_residual": relocation_position_residual,
+            "relocation_selected_mask": final_hard_keep_mask,
             "proposal_candidate_positions": proposal_candidates,
             "proposal_candidate_knots": proposal_candidates,
             "refined_candidate_positions": refined_candidates,

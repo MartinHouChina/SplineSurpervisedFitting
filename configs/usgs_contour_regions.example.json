@@ -1,0 +1,16 @@
+{
+  "regions": [
+    {
+      "region_id": "colorado_front_range",
+      "bbox": [-105.45, 39.90, -105.25, 40.05]
+    },
+    {
+      "region_id": "california_tahoe",
+      "bbox": [-120.15, 38.85, -119.95, 39.05]
+    },
+    {
+      "region_id": "north_carolina_smokies",
+      "bbox": [-83.65, 35.50, -83.45, 35.70]
+    }
+  ]
+}

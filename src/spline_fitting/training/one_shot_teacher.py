@@ -11,12 +11,21 @@ from typing import Any
 import torch
 from torch.utils.data import Dataset
 
-from ..evaluation.minimal_knot_pruning import prune_knots_to_rms_tolerance
+from ..evaluation.bspline_inference import (
+    BSplineLeastSquaresFit,
+    refit_bspline_control_points,
+)
+from ..evaluation.hybrid_knot_search import refine_knot_positions
+from ..evaluation.minimal_knot_pruning import (
+    MinimalKnotPruningResult,
+    prune_knots_to_rms_tolerance,
+)
 from ..spline.bspline_deletion_teacher import single_knot_deletion_rmse_batch
 
 
 _CACHE_FORMAT = "spline_fitting.one_shot_teacher"
-_CACHE_VERSION = 2
+_CACHE_VERSION = 3
+_LEGACY_CACHE_VERSION = 2
 _INPUT_NAMES = ("parameters", "points", "candidate_knots")
 _LOSS_KEYS = (
     "teacher_retained_mask",
@@ -25,9 +34,15 @@ _LOSS_KEYS = (
     "teacher_internal_knot_mask",
     "teacher_count",
     "teacher_fit_rms",
+    "teacher_fit_mse",
     "teacher_threshold_satisfied",
     "teacher_deletion_order",
     "teacher_single_deletion_rms",
+    "teacher_greedy_count",
+    "teacher_greedy_fit_rms",
+    "teacher_relocation_mean_abs",
+    "teacher_relocation_max_abs",
+    "teacher_extra_deleted_after_relocation",
 )
 
 
@@ -52,6 +67,13 @@ class OneShotTeacherConfig:
     rcond: float | None = None
     proposal_fingerprint: str = ""
     dataset_fingerprint: str = ""
+    relocation_strategy: str = "none"
+    relocation_rounds: int = 2
+    relocation_sweeps: int = 1
+    relocation_grid_size: int = 5
+    relocation_restarts: int = 1
+    relocation_min_gap: float = 1e-4
+    relocation_max_shift: float = 0.15
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.error_tolerance) or self.error_tolerance <= 0.0:
@@ -82,6 +104,34 @@ class OneShotTeacherConfig:
             raise TypeError("proposal_fingerprint must be a string")
         if not isinstance(self.dataset_fingerprint, str):
             raise TypeError("dataset_fingerprint must be a string")
+        if self.relocation_strategy not in {"none", "delete_then_relax"}:
+            raise ValueError(
+                "relocation_strategy must be 'none' or 'delete_then_relax'"
+            )
+        integer_options = {
+            "relocation_rounds": self.relocation_rounds,
+            "relocation_sweeps": self.relocation_sweeps,
+            "relocation_grid_size": self.relocation_grid_size,
+            "relocation_restarts": self.relocation_restarts,
+        }
+        for name, value in integer_options.items():
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(f"{name} must be an integer")
+        if self.relocation_rounds < 1:
+            raise ValueError("relocation_rounds must be positive")
+        if self.relocation_sweeps < 1:
+            raise ValueError("relocation_sweeps must be positive")
+        if self.relocation_grid_size < 3 or self.relocation_grid_size % 2 == 0:
+            raise ValueError("relocation_grid_size must be odd and at least 3")
+        if self.relocation_restarts < 1:
+            raise ValueError("relocation_restarts must be positive")
+        if not math.isfinite(self.relocation_min_gap) or self.relocation_min_gap < 0.0:
+            raise ValueError("relocation_min_gap must be finite and non-negative")
+        if (
+            not math.isfinite(self.relocation_max_shift)
+            or not 0.0 < self.relocation_max_shift < 0.5
+        ):
+            raise ValueError("relocation_max_shift must lie in (0, 0.5)")
 
     def as_dict(self) -> dict[str, int | float | bool | str | None]:
         return {field.name: getattr(self, field.name) for field in fields(self)}
@@ -90,6 +140,17 @@ class OneShotTeacherConfig:
     def from_dict(cls, values: Mapping[str, object]) -> OneShotTeacherConfig:
         expected = {field.name for field in fields(cls)}
         supplied = set(values)
+        legacy = expected - {
+            "relocation_strategy",
+            "relocation_rounds",
+            "relocation_sweeps",
+            "relocation_grid_size",
+            "relocation_restarts",
+            "relocation_min_gap",
+            "relocation_max_shift",
+        }
+        if supplied == legacy:
+            return cls(**dict(values))  # type: ignore[arg-type]
         if supplied != expected:
             missing = sorted(expected - supplied)
             extra = sorted(supplied - expected)
@@ -99,18 +160,26 @@ class OneShotTeacherConfig:
         return cls(**dict(values))  # type: ignore[arg-type]
 
     def fingerprint(self) -> str:
-        canonical = {
-            "cache_format": _CACHE_FORMAT,
-            "cache_version": _CACHE_VERSION,
-            "config": self.as_dict(),
-        }
-        encoded = json.dumps(
-            canonical,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
+        return _config_fingerprint(self.as_dict(), version=_CACHE_VERSION)
+
+
+def _config_fingerprint(
+    values: Mapping[str, object],
+    *,
+    version: int,
+) -> str:
+    canonical = {
+        "cache_format": _CACHE_FORMAT,
+        "cache_version": version,
+        "config": dict(values),
+    }
+    encoded = json.dumps(
+        canonical,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _normalize_sample_indices(
@@ -164,9 +233,15 @@ class OneShotTeacherBatch:
     teacher_internal_knot_mask: torch.Tensor
     teacher_count: torch.Tensor
     teacher_fit_rms: torch.Tensor
+    teacher_fit_mse: torch.Tensor
     teacher_threshold_satisfied: torch.Tensor
     teacher_deletion_order: torch.Tensor
     teacher_single_deletion_rms: torch.Tensor
+    teacher_greedy_count: torch.Tensor
+    teacher_greedy_fit_rms: torch.Tensor
+    teacher_relocation_mean_abs: torch.Tensor
+    teacher_relocation_max_abs: torch.Tensor
+    teacher_extra_deleted_after_relocation: torch.Tensor
 
     def __post_init__(self) -> None:
         shapes = _normalize_shapes(self.input_shapes)
@@ -194,7 +269,15 @@ class OneShotTeacherBatch:
         sample_shapes = {
             "teacher_count": self.teacher_count,
             "teacher_fit_rms": self.teacher_fit_rms,
+            "teacher_fit_mse": self.teacher_fit_mse,
             "teacher_threshold_satisfied": self.teacher_threshold_satisfied,
+            "teacher_greedy_count": self.teacher_greedy_count,
+            "teacher_greedy_fit_rms": self.teacher_greedy_fit_rms,
+            "teacher_relocation_mean_abs": self.teacher_relocation_mean_abs,
+            "teacher_relocation_max_abs": self.teacher_relocation_max_abs,
+            "teacher_extra_deleted_after_relocation": (
+                self.teacher_extra_deleted_after_relocation
+            ),
         }
         for name, value in sample_shapes.items():
             if not isinstance(value, torch.Tensor) or value.shape != (batch_size,):
@@ -208,6 +291,12 @@ class OneShotTeacherBatch:
             raise ValueError("teacher_threshold_satisfied must be Boolean")
         if self.teacher_count.dtype != torch.long:
             raise ValueError("teacher_count must use torch.long")
+        if self.teacher_greedy_count.dtype != torch.long:
+            raise ValueError("teacher_greedy_count must use torch.long")
+        if self.teacher_extra_deleted_after_relocation.dtype != torch.long:
+            raise ValueError(
+                "teacher_extra_deleted_after_relocation must use torch.long"
+            )
         if self.teacher_deletion_order.dtype != torch.long:
             raise ValueError("teacher_deletion_order must use torch.long")
 
@@ -215,7 +304,11 @@ class OneShotTeacherBatch:
             self.teacher_soft_keep_risk,
             self.teacher_internal_knots,
             self.teacher_fit_rms,
+            self.teacher_fit_mse,
             self.teacher_single_deletion_rms,
+            self.teacher_greedy_fit_rms,
+            self.teacher_relocation_mean_abs,
+            self.teacher_relocation_max_abs,
         )
         if not all(value.is_floating_point() for value in floating):
             raise ValueError(
@@ -229,6 +322,18 @@ class OneShotTeacherBatch:
             raise ValueError("teacher_soft_keep_risk must lie in [0, 1]")
         if torch.any((self.teacher_count < 0) | (self.teacher_count > candidate_count)):
             raise ValueError("teacher_count lies outside the candidate range")
+        if torch.any(
+            (self.teacher_greedy_count < self.teacher_count)
+            | (self.teacher_greedy_count > candidate_count)
+        ):
+            raise ValueError("teacher_greedy_count lies outside the valid range")
+        if not torch.equal(
+            self.teacher_extra_deleted_after_relocation.cpu(),
+            (self.teacher_greedy_count - self.teacher_count).cpu(),
+        ):
+            raise ValueError(
+                "teacher_extra_deleted_after_relocation disagrees with counts"
+            )
         if not torch.equal(
             self.teacher_count.cpu(),
             self.teacher_retained_mask.sum(dim=-1).to(torch.long).cpu(),
@@ -245,6 +350,17 @@ class OneShotTeacherBatch:
             self.teacher_internal_knot_mask.cpu(), expected_packed_mask.cpu()
         ):
             raise ValueError("teacher_internal_knot_mask must be a packed prefix mask")
+        if not torch.allclose(
+            self.teacher_fit_mse.cpu(),
+            self.teacher_fit_rms.square().cpu(),
+            rtol=1e-5,
+            atol=1e-12,
+        ):
+            raise ValueError("teacher_fit_mse must equal teacher_fit_rms squared")
+        if torch.any(self.teacher_relocation_mean_abs < 0.0) or torch.any(
+            self.teacher_relocation_max_abs < self.teacher_relocation_mean_abs
+        ):
+            raise ValueError("teacher relocation distances are inconsistent")
         valid_deletion = (self.teacher_deletion_order == -1) | (
             (self.teacher_deletion_order >= 0)
             & (self.teacher_deletion_order < candidate_count)
@@ -302,6 +418,126 @@ def _validate_model_inputs(
         raise ValueError("min_internal_knots exceeds the candidate knot count")
 
 
+def _map_pruning_slots(
+    result: MinimalKnotPruningResult,
+    starting_slots: list[int],
+) -> tuple[list[int], list[int]]:
+    """Map current-state greedy removals back to immutable proposal slots."""
+    retained_slots = list(starting_slots)
+    removed_slots: list[int] = []
+    for step in result.accepted_steps:
+        removed_slots.append(retained_slots.pop(step.removed_index))
+    if len(retained_slots) != result.final_count:
+        raise RuntimeError("teacher pruning lost immutable proposal-slot alignment")
+    return retained_slots, removed_slots
+
+
+def _prune_teacher_state(
+    parameters: torch.Tensor,
+    points: torch.Tensor,
+    knots: torch.Tensor,
+    slots: list[int],
+    config: OneShotTeacherConfig,
+) -> tuple[MinimalKnotPruningResult, list[int], list[int]]:
+    result = prune_knots_to_rms_tolerance(
+        parameters,
+        points,
+        knots,
+        error_tolerance=config.error_tolerance,
+        min_internal_knots=config.min_internal_knots,
+        degree=config.degree,
+        smoothness_weight=config.smoothness_weight,
+        control_ridge=config.control_ridge,
+        interpolate_endpoints=True,
+        rcond=config.rcond,
+    )
+    retained_slots, removed_slots = _map_pruning_slots(result, slots)
+    return result, retained_slots, removed_slots
+
+
+def _project_relocated_knots(
+    proposed: torch.Tensor,
+    anchors: torch.Tensor,
+    *,
+    min_gap: float,
+    max_shift: float,
+) -> torch.Tensor:
+    """Project ordered teacher knots into the student's reachable domain."""
+    count = int(proposed.numel())
+    if count == 0:
+        return proposed
+    gap = proposed.new_tensor(min_gap)
+    index = torch.arange(count, device=proposed.device, dtype=proposed.dtype)
+    lower = torch.maximum(
+        anchors - max_shift,
+        (index + 1.0) * gap,
+    )
+    upper = torch.minimum(
+        anchors + max_shift,
+        1.0 - (count - index) * gap,
+    )
+    for knot_index in range(1, count):
+        lower[knot_index] = torch.maximum(
+            lower[knot_index], lower[knot_index - 1] + gap
+        )
+    for knot_index in range(count - 2, -1, -1):
+        upper[knot_index] = torch.minimum(
+            upper[knot_index], upper[knot_index + 1] - gap
+        )
+    if torch.any(lower > upper):
+        raise ValueError("teacher relocation constraints have no feasible solution")
+    projected = torch.maximum(torch.minimum(proposed, upper), lower)
+    for knot_index in range(1, count):
+        projected[knot_index] = torch.maximum(
+            projected[knot_index], projected[knot_index - 1] + gap
+        )
+    return projected
+
+
+def _relax_teacher_state(
+    parameters: torch.Tensor,
+    points: torch.Tensor,
+    knots: torch.Tensor,
+    anchors: torch.Tensor,
+    config: OneShotTeacherConfig,
+) -> BSplineLeastSquaresFit:
+    relaxed = refine_knot_positions(
+        parameters,
+        points,
+        knots,
+        degree=config.degree,
+        smoothness_weight=config.smoothness_weight,
+        control_ridge=config.control_ridge,
+        interpolate_endpoints=True,
+        rcond=config.rcond,
+        min_gap=config.relocation_min_gap,
+        sweeps=config.relocation_sweeps,
+        grid_size=config.relocation_grid_size,
+        restarts=config.relocation_restarts,
+    )
+    projected = _project_relocated_knots(
+        relaxed.final_fit.internal_knots,
+        anchors,
+        min_gap=config.relocation_min_gap,
+        max_shift=config.relocation_max_shift,
+    )
+    if torch.equal(projected, relaxed.final_fit.internal_knots):
+        return relaxed.final_fit
+    projected_fit = refit_bspline_control_points(
+        parameters,
+        points,
+        projected,
+        degree=config.degree,
+        smoothness_weight=config.smoothness_weight,
+        control_ridge=config.control_ridge,
+        interpolate_endpoints=True,
+        rcond=config.rcond,
+    )
+    if float(projected_fit.fit_mse) <= float(relaxed.initial_fit.fit_mse):
+        return projected_fit
+    return relaxed.initial_fit
+
+
 @torch.no_grad()
 def build_one_shot_teacher_batch(
     parameters: torch.Tensor,
@@ -336,6 +572,20 @@ def build_one_shot_teacher_batch(
     packed_knot_mask = torch.zeros_like(candidate_knots, dtype=torch.bool)
     counts = torch.zeros(batch_size, dtype=torch.long, device=candidate_knots.device)
     final_rms = torch.zeros(batch_size, dtype=points.dtype, device=points.device)
+    final_mse = torch.zeros(batch_size, dtype=points.dtype, device=points.device)
+    greedy_counts = torch.zeros(
+        batch_size, dtype=torch.long, device=candidate_knots.device
+    )
+    greedy_rms = torch.zeros(batch_size, dtype=points.dtype, device=points.device)
+    relocation_mean_abs = torch.zeros(
+        batch_size, dtype=points.dtype, device=points.device
+    )
+    relocation_max_abs = torch.zeros(
+        batch_size, dtype=points.dtype, device=points.device
+    )
+    extra_deleted = torch.zeros(
+        batch_size, dtype=torch.long, device=candidate_knots.device
+    )
     threshold_satisfied = torch.zeros(
         batch_size, dtype=torch.bool, device=points.device
     )
@@ -347,31 +597,74 @@ def build_one_shot_teacher_batch(
     )
 
     for batch_index in range(batch_size):
-        result = prune_knots_to_rms_tolerance(
+        original_slots = list(range(candidate_count))
+        result, current_slots, accepted_original_slots = _prune_teacher_state(
             parameters[batch_index],
             points[batch_index],
             candidate_knots[batch_index],
-            error_tolerance=config.error_tolerance,
-            min_internal_knots=config.min_internal_knots,
-            degree=config.degree,
-            smoothness_weight=config.smoothness_weight,
-            control_ridge=config.control_ridge,
-            interpolate_endpoints=True,
-            rcond=config.rcond,
+            original_slots,
+            config,
         )
-        original_slots = list(range(candidate_count))
-        accepted_original_slots: list[int] = []
-        for step in result.accepted_steps:
-            accepted_original_slots.append(original_slots.pop(step.removed_index))
+        greedy_count = len(current_slots)
+        greedy_counts[batch_index] = greedy_count
+        greedy_rms[batch_index] = result.final_fit.fit_rmse
+        current_knots = result.final_internal_knots
+        current_fit = result.final_fit
 
-        retained_mask[batch_index, original_slots] = True
-        count = len(original_slots)
+        if config.relocation_strategy == "delete_then_relax":
+            needs_final_relax = False
+            for _ in range(config.relocation_rounds):
+                if not current_slots:
+                    break
+                current_fit = _relax_teacher_state(
+                    parameters[batch_index],
+                    points[batch_index],
+                    current_knots,
+                    candidate_knots[batch_index, current_slots],
+                    config,
+                )
+                current_knots = current_fit.internal_knots
+                if len(current_slots) <= config.min_internal_knots:
+                    break
+
+                relaxed_pruning, next_slots, newly_removed = _prune_teacher_state(
+                    parameters[batch_index],
+                    points[batch_index],
+                    current_knots,
+                    current_slots,
+                    config,
+                )
+                accepted_original_slots.extend(newly_removed)
+                current_slots = next_slots
+                current_fit = relaxed_pruning.final_fit
+                current_knots = relaxed_pruning.final_internal_knots
+                needs_final_relax = bool(newly_removed)
+                if not newly_removed:
+                    break
+
+            # A successful deletion in the last allowed re-pruning round
+            # creates a new survivor set. Always relax that final set once,
+            # without opening another deletion round, so packed labels never
+            # degenerate into an unchanged subset of the previous boundary.
+            if current_slots and needs_final_relax:
+                current_fit = _relax_teacher_state(
+                    parameters[batch_index],
+                    points[batch_index],
+                    current_knots,
+                    candidate_knots[batch_index, current_slots],
+                    config,
+                )
+                current_knots = current_fit.internal_knots
+
+        retained_mask[batch_index, current_slots] = True
+        count = len(current_slots)
         counts[batch_index] = count
         if count:
-            packed_knots[batch_index, :count] = candidate_knots[
-                batch_index, original_slots
-            ]
+            packed_knots[batch_index, :count] = current_knots
             packed_knot_mask[batch_index, :count] = True
+            shifts = (current_knots - candidate_knots[batch_index, current_slots]).abs()
+            relocation_mean_abs[batch_index] = shifts.mean()
+            relocation_max_abs[batch_index] = shifts.max()
         if accepted_original_slots:
             deletion_order[batch_index, : len(accepted_original_slots)] = torch.tensor(
                 accepted_original_slots,
@@ -379,39 +672,31 @@ def build_one_shot_teacher_batch(
                 device=candidate_knots.device,
             )
 
-        if original_slots:
-            # Greedy pruning normally terminates with one rejected round. Its
-            # RMS vector is the exact leave-one-out risk of each knot in the
-            # final retained state. Map that current-state order back to the
-            # immutable original candidate slots.
-            rejected_step = (
-                result.steps[-1]
-                if result.steps and not result.steps[-1].accepted
-                else None
-            )
-            if rejected_step is None:
-                # Reaching min_internal_knots is the only normal stop without
-                # a rejected round. Those slots are mandatory by configuration.
-                final_keep_risk = candidate_knots.new_ones(len(original_slots))
+        if current_slots:
+            if len(current_slots) <= config.min_internal_knots:
+                final_keep_risk = candidate_knots.new_ones(len(current_slots))
             else:
-                if rejected_step.all_candidate_rmse.shape != (len(original_slots),):
-                    raise RuntimeError(
-                        "final pruning rejection does not match retained slots"
-                    )
-                final_knots = candidate_knots[batch_index, original_slots]
-                if not torch.equal(rejected_step.knots_before, final_knots):
-                    raise RuntimeError(
-                        "final pruning rejection lost original slot alignment"
-                    )
-                normalized_margin = (
-                    rejected_step.all_candidate_rmse / config.error_tolerance - 1.0
-                )
+                final_leave_one_out = single_knot_deletion_rmse_batch(
+                    parameters[batch_index : batch_index + 1],
+                    points[batch_index : batch_index + 1],
+                    current_knots.unsqueeze(0),
+                    degree=config.degree,
+                    smoothness_weight=config.smoothness_weight,
+                    control_ridge=config.control_ridge,
+                    interpolate_endpoints=True,
+                    rcond=config.rcond,
+                )[0]
+                normalized_margin = final_leave_one_out / config.error_tolerance - 1.0
                 final_keep_risk = torch.sigmoid(
                     normalized_margin / config.temperature
                 ).clamp_min(0.5)
-            soft_keep_risk[batch_index, original_slots] = final_keep_risk
-        final_rms[batch_index] = result.final_fit.fit_rmse
-        threshold_satisfied[batch_index] = result.threshold_satisfied
+            soft_keep_risk[batch_index, current_slots] = final_keep_risk
+        final_rms[batch_index] = current_fit.fit_rmse
+        final_mse[batch_index] = current_fit.fit_mse
+        threshold_satisfied[batch_index] = (
+            float(current_fit.fit_rmse) <= config.error_tolerance
+        )
+        extra_deleted[batch_index] = greedy_count - count
 
     return OneShotTeacherBatch(
         sample_indices=normalized_indices,
@@ -427,9 +712,15 @@ def build_one_shot_teacher_batch(
         teacher_internal_knot_mask=packed_knot_mask,
         teacher_count=counts,
         teacher_fit_rms=final_rms,
+        teacher_fit_mse=final_mse,
         teacher_threshold_satisfied=threshold_satisfied,
         teacher_deletion_order=deletion_order,
         teacher_single_deletion_rms=single_deletion_rms,
+        teacher_greedy_count=greedy_counts,
+        teacher_greedy_fit_rms=greedy_rms,
+        teacher_relocation_mean_abs=relocation_mean_abs,
+        teacher_relocation_max_abs=relocation_max_abs,
+        teacher_extra_deleted_after_relocation=extra_deleted,
     )
 
 
@@ -490,19 +781,22 @@ def load_one_shot_teacher_cache(
     payload = _load_tensor_payload(source)
     if payload.get("format") != _CACHE_FORMAT:
         raise ValueError("not a one-shot teacher cache")
-    if payload.get("version") != _CACHE_VERSION:
-        raise ValueError(
-            f"unsupported teacher cache version: {payload.get('version')!r}"
-        )
+    version = payload.get("version")
+    if version not in {_LEGACY_CACHE_VERSION, _CACHE_VERSION}:
+        raise ValueError(f"unsupported teacher cache version: {version!r}")
 
     raw_config = payload.get("config")
     if not isinstance(raw_config, Mapping):
         raise ValueError("teacher cache config is missing or invalid")
     cached_config = OneShotTeacherConfig.from_dict(raw_config)
     stored_fingerprint = payload.get("config_fingerprint")
-    if stored_fingerprint != cached_config.fingerprint():
+    expected_cached_fingerprint = _config_fingerprint(
+        raw_config,
+        version=int(version),
+    )
+    if stored_fingerprint != expected_cached_fingerprint:
         raise ValueError("teacher cache config fingerprint is corrupted")
-    if cached_config.fingerprint() != expected_config.fingerprint():
+    if cached_config != expected_config:
         raise ValueError("teacher cache config does not match expected_config")
 
     normalized_shapes = _normalize_shapes(expected_input_shapes)
@@ -531,18 +825,45 @@ def load_one_shot_teacher_cache(
     raw_labels = payload.get("labels")
     if not isinstance(raw_labels, Mapping):
         raise ValueError("teacher cache labels are missing or invalid")
-    if set(raw_labels) != set(_LOSS_KEYS):
-        missing = sorted(set(_LOSS_KEYS) - set(raw_labels))
-        extra = sorted(set(raw_labels) - set(_LOSS_KEYS))
+    legacy_loss_keys = {
+        "teacher_retained_mask",
+        "teacher_soft_keep_risk",
+        "teacher_internal_knots",
+        "teacher_internal_knot_mask",
+        "teacher_count",
+        "teacher_fit_rms",
+        "teacher_threshold_satisfied",
+        "teacher_deletion_order",
+        "teacher_single_deletion_rms",
+    }
+    expected_label_keys = (
+        legacy_loss_keys if version == _LEGACY_CACHE_VERSION else set(_LOSS_KEYS)
+    )
+    if set(raw_labels) != expected_label_keys:
+        missing = sorted(expected_label_keys - set(raw_labels))
+        extra = sorted(set(raw_labels) - expected_label_keys)
         raise ValueError(
             f"invalid teacher label keys: missing={missing}, extra={extra}"
         )
     labels: dict[str, torch.Tensor] = {}
-    for name in _LOSS_KEYS:
+    for name in expected_label_keys:
         value = raw_labels[name]
         if not isinstance(value, torch.Tensor):
             raise ValueError(f"cached {name} is not a tensor")
         labels[name] = value.to(device)
+    if version == _LEGACY_CACHE_VERSION:
+        count = labels["teacher_count"]
+        fit_rms = labels["teacher_fit_rms"]
+        labels.update(
+            {
+                "teacher_fit_mse": fit_rms.square(),
+                "teacher_greedy_count": count.clone(),
+                "teacher_greedy_fit_rms": fit_rms.clone(),
+                "teacher_relocation_mean_abs": fit_rms.new_zeros(fit_rms.shape),
+                "teacher_relocation_max_abs": fit_rms.new_zeros(fit_rms.shape),
+                "teacher_extra_deleted_after_relocation": count.new_zeros(count.shape),
+            }
+        )
 
     return OneShotTeacherBatch(
         sample_indices=cached_indices,

@@ -1,0 +1,497 @@
+{
+  "schema_version": 1,
+  "checkpoint": "outputs\\candidate_pruning_one_shot_v12.pt",
+  "objective_version": "candidate_pruning_coupled_relocation_teacher_v12",
+  "model_device": "cuda",
+  "refit_device": "cpu",
+  "pytorch_version": "2.12.0+cu126",
+  "python_version": "3.13.9",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "cuda_device": "NVIDIA GeForce GTX 1070",
+  "torch_num_threads": 4,
+  "warmup": 3,
+  "repeats": 10,
+  "latency_target_ms": 10.0,
+  "fit_tolerance_rms": 0.005,
+  "fit_tolerance_mse": 2.5e-05,
+  "timing_scope": "resident normalized input -> synchronized result; deployment modes include network forward and standard B-spline refits; excludes dataset generation, file I/O, plotting, and request transport",
+  "latency_semantics": "batch latency is request latency; median_ms_per_curve is throughput amortization and must not be reported as batch=1 latency",
+  "rows": [
+    {
+      "mode": "network-forward",
+      "batch_size": 1,
+      "median_ms": 29.619950000000003,
+      "mean_ms": 30.52713,
+      "p95_ms": 40.59912999999999,
+      "minimum_ms": 25.4827,
+      "maximum_ms": 46.3864,
+      "repeat_ms": [
+        26.5695,
+        29.4448,
+        25.4827,
+        27.26,
+        33.5258,
+        30.5545,
+        46.3864,
+        29.7951,
+        25.9239,
+        30.3286
+      ],
+      "median_ms_per_curve": 29.619950000000003,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": false
+    },
+    {
+      "mode": "learned-network",
+      "batch_size": 1,
+      "median_ms": 33.1094,
+      "mean_ms": 33.37717,
+      "p95_ms": 35.93537,
+      "minimum_ms": 31.0607,
+      "maximum_ms": 36.0539,
+      "repeat_ms": [
+        36.0539,
+        31.0607,
+        33.1514,
+        31.9926,
+        33.0674,
+        34.1908,
+        32.4476,
+        35.7905,
+        34.0902,
+        31.9266
+      ],
+      "median_ms_per_curve": 33.1094,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": false,
+      "quality": {
+        "mse_mean": 0.00019801221787929535,
+        "mse_p95": 0.00019801221787929535,
+        "threshold_satisfied_fraction": 0.0,
+        "retained_knots_mean": 13.0
+      }
+    },
+    {
+      "mode": "learned-chord",
+      "batch_size": 1,
+      "median_ms": 27.55865,
+      "mean_ms": 26.32703,
+      "p95_ms": 29.006619999999998,
+      "minimum_ms": 21.8591,
+      "maximum_ms": 29.3542,
+      "repeat_ms": [
+        27.9943,
+        29.3542,
+        27.123,
+        24.2498,
+        28.3219,
+        28.347,
+        24.8487,
+        28.5818,
+        22.5905,
+        21.8591
+      ],
+      "median_ms_per_curve": 27.55865,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": false,
+      "quality": {
+        "mse_mean": 0.00011777002509916201,
+        "mse_p95": 0.00011777002509916201,
+        "threshold_satisfied_fraction": 0.0,
+        "retained_knots_mean": 13.0
+      }
+    },
+    {
+      "mode": "verified-fast",
+      "batch_size": 1,
+      "median_ms": 40.9544,
+      "mean_ms": 44.273109999999996,
+      "p95_ms": 60.29147499999998,
+      "minimum_ms": 36.7374,
+      "maximum_ms": 68.6212,
+      "repeat_ms": [
+        68.6212,
+        50.1107,
+        39.2345,
+        38.1661,
+        44.2131,
+        46.5092,
+        36.7374,
+        37.2301,
+        42.39,
+        39.5188
+      ],
+      "median_ms_per_curve": 40.9544,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": false,
+      "quality": {
+        "mse_mean": 1.720709951769095e-05,
+        "mse_p95": 1.720709951769095e-05,
+        "threshold_satisfied_fraction": 1.0,
+        "retained_knots_mean": 19.0
+      },
+      "verified": {
+        "learned_feasible_fraction": 0.0,
+        "repair_fraction": 1.0,
+        "fit_evaluations_mean": 7.0
+      }
+    },
+    {
+      "mode": "network-forward",
+      "batch_size": 4,
+      "median_ms": 27.9768,
+      "mean_ms": 28.124180000000003,
+      "p95_ms": 32.469745,
+      "minimum_ms": 21.906,
+      "maximum_ms": 32.5552,
+      "repeat_ms": [
+        29.0206,
+        31.2733,
+        28.3638,
+        27.399,
+        27.0583,
+        21.906,
+        23.7105,
+        32.3653,
+        27.5898,
+        32.5552
+      ],
+      "median_ms_per_curve": 6.9942,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": true
+    },
+    {
+      "mode": "learned-network",
+      "batch_size": 4,
+      "median_ms": 44.5842,
+      "mean_ms": 46.45646,
+      "p95_ms": 62.94272999999999,
+      "minimum_ms": 34.7459,
+      "maximum_ms": 66.0165,
+      "repeat_ms": [
+        52.768,
+        51.8743,
+        66.0165,
+        59.1859,
+        47.5245,
+        41.6439,
+        38.1557,
+        34.7459,
+        34.9135,
+        37.7364
+      ],
+      "median_ms_per_curve": 11.14605,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": false,
+      "quality": {
+        "mse_mean": 8.40592319946154e-05,
+        "mse_p95": 0.00017068927154468834,
+        "threshold_satisfied_fraction": 0.0,
+        "retained_knots_mean": 9.0
+      }
+    },
+    {
+      "mode": "learned-chord",
+      "batch_size": 4,
+      "median_ms": 37.2636,
+      "mean_ms": 37.02085,
+      "p95_ms": 40.835589999999996,
+      "minimum_ms": 30.1707,
+      "maximum_ms": 41.5636,
+      "repeat_ms": [
+        39.9458,
+        35.9883,
+        41.5636,
+        35.9584,
+        30.1707,
+        36.7893,
+        39.4206,
+        34.8449,
+        37.7379,
+        37.789
+      ],
+      "median_ms_per_curve": 9.3159,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": true,
+      "quality": {
+        "mse_mean": 4.6857459892635234e-05,
+        "mse_p95": 0.00010883338545681906,
+        "threshold_satisfied_fraction": 0.5,
+        "retained_knots_mean": 9.0
+      }
+    },
+    {
+      "mode": "verified-fast",
+      "batch_size": 4,
+      "median_ms": 67.1971,
+      "mean_ms": 78.05431,
+      "p95_ms": 129.9887799999999,
+      "minimum_ms": 61.7778,
+      "maximum_ms": 174.814,
+      "repeat_ms": [
+        70.8345,
+        174.814,
+        67.1233,
+        63.7136,
+        67.2709,
+        62.4417,
+        71.7785,
+        61.7778,
+        75.2024,
+        65.5864
+      ],
+      "median_ms_per_curve": 16.799275,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": false,
+      "quality": {
+        "mse_mean": 1.985303197216126e-05,
+        "mse_p95": 2.338096883249818e-05,
+        "threshold_satisfied_fraction": 1.0,
+        "retained_knots_mean": 12.25
+      },
+      "verified": {
+        "learned_feasible_fraction": 0.5,
+        "repair_fraction": 0.5,
+        "fit_evaluations_mean": 4.0
+      }
+    },
+    {
+      "mode": "network-forward",
+      "batch_size": 8,
+      "median_ms": 24.76075,
+      "mean_ms": 24.017220000000002,
+      "p95_ms": 27.24024,
+      "minimum_ms": 20.0195,
+      "maximum_ms": 28.3638,
+      "repeat_ms": [
+        25.2749,
+        25.867,
+        25.1374,
+        24.8787,
+        24.6428,
+        21.7562,
+        23.7731,
+        20.0195,
+        28.3638,
+        20.4588
+      ],
+      "median_ms_per_curve": 3.09509375,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": true
+    },
+    {
+      "mode": "learned-network",
+      "batch_size": 8,
+      "median_ms": 46.254099999999994,
+      "mean_ms": 46.92472,
+      "p95_ms": 51.957655,
+      "minimum_ms": 38.3729,
+      "maximum_ms": 53.1871,
+      "repeat_ms": [
+        53.1871,
+        50.3702,
+        49.3177,
+        45.4357,
+        46.2371,
+        50.455,
+        38.3729,
+        46.2711,
+        45.6,
+        44.0004
+      ],
+      "median_ms_per_curve": 5.781762499999999,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": true,
+      "quality": {
+        "mse_mean": 5.959916529718612e-05,
+        "mse_p95": 0.00012143183048465286,
+        "threshold_satisfied_fraction": 0.0,
+        "retained_knots_mean": 8.375
+      }
+    },
+    {
+      "mode": "learned-chord",
+      "batch_size": 8,
+      "median_ms": 53.784400000000005,
+      "mean_ms": 54.26737000000001,
+      "p95_ms": 65.99877000000001,
+      "minimum_ms": 42.5476,
+      "maximum_ms": 66.5313,
+      "repeat_ms": [
+        49.8463,
+        42.5476,
+        49.5541,
+        53.164,
+        48.9247,
+        54.4048,
+        55.9953,
+        65.3479,
+        56.3577,
+        66.5313
+      ],
+      "median_ms_per_curve": 6.723050000000001,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": true,
+      "quality": {
+        "mse_mean": 3.447318573535085e-05,
+        "mse_p95": 9.838406695052978e-05,
+        "threshold_satisfied_fraction": 0.625,
+        "retained_knots_mean": 8.375
+      }
+    },
+    {
+      "mode": "verified-fast",
+      "batch_size": 8,
+      "median_ms": 91.76974999999999,
+      "mean_ms": 91.38338999999999,
+      "p95_ms": 101.617515,
+      "minimum_ms": 79.7752,
+      "maximum_ms": 102.5496,
+      "repeat_ms": [
+        100.4783,
+        96.7225,
+        83.5681,
+        79.7752,
+        85.8238,
+        96.7471,
+        99.4401,
+        102.5496,
+        86.817,
+        81.9122
+      ],
+      "median_ms_per_curve": 11.471218749999998,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": false,
+      "quality": {
+        "mse_mean": 1.4210491258381808e-05,
+        "mse_p95": 2.267898225909448e-05,
+        "threshold_satisfied_fraction": 1.0,
+        "retained_knots_mean": 10.0
+      },
+      "verified": {
+        "learned_feasible_fraction": 0.625,
+        "repair_fraction": 0.375,
+        "fit_evaluations_mean": 3.375
+      }
+    },
+    {
+      "mode": "network-forward",
+      "batch_size": 16,
+      "median_ms": 20.80695,
+      "mean_ms": 21.06961,
+      "p95_ms": 24.099040000000002,
+      "minimum_ms": 18.2856,
+      "maximum_ms": 24.3595,
+      "repeat_ms": [
+        23.7807,
+        23.4779,
+        20.9683,
+        22.3189,
+        24.3595,
+        20.6456,
+        18.6057,
+        18.2856,
+        18.7505,
+        19.5034
+      ],
+      "median_ms_per_curve": 1.300434375,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": true
+    },
+    {
+      "mode": "learned-network",
+      "batch_size": 16,
+      "median_ms": 62.5167,
+      "mean_ms": 65.47085,
+      "p95_ms": 82.18365,
+      "minimum_ms": 55.7965,
+      "maximum_ms": 87.1809,
+      "repeat_ms": [
+        59.8166,
+        63.9316,
+        76.0759,
+        55.7965,
+        62.0721,
+        62.9613,
+        60.0118,
+        59.021,
+        87.1809,
+        67.8408
+      ],
+      "median_ms_per_curve": 3.90729375,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": true,
+      "quality": {
+        "mse_mean": 7.080780505930306e-05,
+        "mse_p95": 0.0002369060857745353,
+        "threshold_satisfied_fraction": 0.125,
+        "retained_knots_mean": 8.8125
+      }
+    },
+    {
+      "mode": "learned-chord",
+      "batch_size": 16,
+      "median_ms": 74.90415,
+      "mean_ms": 76.07589,
+      "p95_ms": 95.59965999999997,
+      "minimum_ms": 57.9295,
+      "maximum_ms": 105.3445,
+      "repeat_ms": [
+        74.4153,
+        66.834,
+        57.9295,
+        66.5567,
+        75.393,
+        80.9576,
+        70.3922,
+        79.2468,
+        105.3445,
+        83.6893
+      ],
+      "median_ms_per_curve": 4.681509375,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": true,
+      "quality": {
+        "mse_mean": 3.7219837395241484e-05,
+        "mse_p95": 0.00010752236630651169,
+        "threshold_satisfied_fraction": 0.5,
+        "retained_knots_mean": 8.8125
+      }
+    },
+    {
+      "mode": "verified-fast",
+      "batch_size": 16,
+      "median_ms": 179.9984,
+      "mean_ms": 187.07642,
+      "p95_ms": 221.14245,
+      "minimum_ms": 168.3854,
+      "maximum_ms": 230.6055,
+      "repeat_ms": [
+        168.3854,
+        183.5439,
+        176.6638,
+        230.6055,
+        187.4626,
+        179.2516,
+        209.5765,
+        180.7045,
+        175.2781,
+        179.2923
+      ],
+      "median_ms_per_curve": 11.2499,
+      "batch_under_target": false,
+      "amortized_per_curve_under_target": false,
+      "quality": {
+        "mse_mean": 1.5757111412995073e-05,
+        "mse_p95": 2.4423100512649398e-05,
+        "threshold_satisfied_fraction": 1.0,
+        "retained_knots_mean": 11.0
+      },
+      "verified": {
+        "learned_feasible_fraction": 0.5,
+        "repair_fraction": 0.5,
+        "fit_evaluations_mean": 4.0625
+      }
+    }
+  ]
+}

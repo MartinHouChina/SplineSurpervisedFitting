@@ -9,12 +9,13 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from spline_fitting.evaluation.knot_diagnostics import (
+from spline_fitting.evaluation.knot_diagnostics import (  # noqa: E402
     activity_statistics,
     build_open_knot_vector,
     hard_prune_and_refit,
     match_internal_knots,
     point_fit_statistics,
+    warp_internal_knots_to_parameterization,
 )
 
 
@@ -24,7 +25,9 @@ class KnotDiagnosticsTests(unittest.TestCase):
         result = activity_statistics(activity, threshold=0.5)
 
         torch.testing.assert_close(result["activity_mass"], torch.tensor([1.5, 0.3]))
-        torch.testing.assert_close(result["hard_active_count"], torch.tensor([2.0, 0.0]))
+        torch.testing.assert_close(
+            result["hard_active_count"], torch.tensor([2.0, 0.0])
+        )
         torch.testing.assert_close(
             result["candidate_knot_count"], torch.tensor([3.0, 3.0])
         )
@@ -85,6 +88,67 @@ class KnotDiagnosticsTests(unittest.TestCase):
         self.assertAlmostEqual(result.precision, 2.0 / 3.0)
         self.assertAlmostEqual(result.recall, 1.0)
         self.assertAlmostEqual(result.matched_mae, 0.01, places=6)
+
+    def test_parameterization_warp_is_identity_and_preserves_tensor_metadata(
+        self,
+    ) -> None:
+        parameters = torch.tensor(
+            [0.0, 0.2, 0.55, 1.0],
+            dtype=torch.float64,
+        )
+        knots = torch.tensor([0.1, 0.55, 0.9], dtype=torch.float64)
+
+        warped = warp_internal_knots_to_parameterization(
+            knots,
+            parameters,
+            parameters,
+        )
+
+        torch.testing.assert_close(warped, knots)
+        self.assertEqual(warped.dtype, knots.dtype)
+        self.assertEqual(warped.device, knots.device)
+
+    def test_parameterization_warp_interpolates_corresponding_samples(self) -> None:
+        source = torch.tensor([0.0, 0.25, 0.5, 1.0], dtype=torch.float64)
+        target = torch.tensor([0.0, 0.1, 0.6, 1.0], dtype=torch.float64)
+        knots = torch.tensor([0.0, 0.125, 0.375, 0.75, 1.0], dtype=torch.float64)
+
+        warped = warp_internal_knots_to_parameterization(knots, source, target)
+
+        torch.testing.assert_close(
+            warped,
+            torch.tensor([0.0, 0.05, 0.35, 0.8, 1.0], dtype=torch.float64),
+        )
+
+    def test_parameterization_warp_handles_no_internal_knots(self) -> None:
+        knots = torch.empty(0, dtype=torch.float64)
+        source = torch.tensor([0.0, 0.4, 1.0], dtype=torch.float64)
+        target = torch.tensor([0.0, 0.2, 1.0], dtype=torch.float64)
+
+        warped = warp_internal_knots_to_parameterization(knots, source, target)
+
+        self.assertEqual(warped.shape, (0,))
+        self.assertEqual(warped.dtype, knots.dtype)
+        self.assertEqual(warped.device, knots.device)
+
+    def test_parameterization_warp_rejects_invalid_inputs(self) -> None:
+        valid = torch.tensor([0.0, 0.5, 1.0])
+        knots = torch.tensor([0.25, 0.75])
+
+        invalid_calls = (
+            (knots.unsqueeze(0), valid, valid),
+            (knots, valid, torch.tensor([0.0, 1.0])),
+            (knots, torch.tensor([0.0]), torch.tensor([0.0])),
+            (knots, torch.tensor([0.0, 0.5, 0.5]), valid),
+            (knots, valid, torch.tensor([0.0, 0.7, 0.6])),
+            (knots, torch.tensor([0.0, float("nan"), 1.0]), valid),
+            (torch.tensor([-0.01, 0.5]), valid, valid),
+            (knots.to(torch.float64), valid, valid),
+        )
+        for arguments in invalid_calls:
+            with self.subTest(arguments=arguments):
+                with self.assertRaises((TypeError, ValueError)):
+                    warp_internal_knots_to_parameterization(*arguments)
 
     def test_invalid_activity_is_rejected(self) -> None:
         with self.assertRaises(ValueError):

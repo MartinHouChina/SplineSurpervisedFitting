@@ -10,10 +10,66 @@ from torch.utils.data import DataLoader
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from spline_fitting.data.synthetic import SyntheticCubicBSplineDataset
+from spline_fitting.data.synthetic import (  # noqa: E402
+    SyntheticCubicBSplineDataset,
+    certify_source_knot_minimality,
+)
 
 
 class CanonicalLabelTests(unittest.TestCase):
+    def test_minimality_certificate_rejects_redundant_polynomial_knots(self) -> None:
+        parameters = torch.linspace(0.0, 1.0, 129, dtype=torch.float64)
+        polynomial_curve = torch.stack(
+            [parameters, parameters.square() - 0.25 * parameters], dim=-1
+        )
+        certificate = certify_source_knot_minimality(
+            parameters,
+            polynomial_curve,
+            torch.tensor([0.3, 0.7], dtype=torch.float64),
+            error_tolerance=5e-3,
+            margin=0.2,
+        )
+
+        self.assertFalse(certificate.certified)
+        self.assertLess(float(certificate.full_fit_rms), 1e-10)
+        self.assertLess(float(certificate.minimum_single_deletion_rms), 1e-10)
+
+    def test_certified_dataset_has_noise_invariant_minimal_labels(self) -> None:
+        common = {
+            "size": 4,
+            "num_points": 96,
+            "min_control_points": 8,
+            "max_control_points": 24,
+            "canonical_knot_tolerance": 5e-3,
+            "certified_minimal_source": True,
+            "minimality_margin": 0.2,
+            "minimality_audit_points": 128,
+            "seed": 7654,
+            "dtype": torch.float64,
+        }
+        clean_dataset = SyntheticCubicBSplineDataset(noise_std=0.0, **common)
+        noisy_dataset = SyntheticCubicBSplineDataset(noise_std=0.01, **common)
+
+        for index in range(4):
+            clean = clean_dataset[index]
+            noisy = noisy_dataset[index]
+            clean_count = int(clean["true_internal_knot_mask"].sum())
+            noisy_count = int(noisy["true_internal_knot_mask"].sum())
+
+            self.assertTrue(clean["source_minimality_certified"])
+            self.assertTrue(noisy["source_minimality_certified"])
+            self.assertEqual(clean_count, clean["source_internal_knot_count"])
+            self.assertEqual(noisy_count, noisy["source_internal_knot_count"])
+            self.assertGreater(
+                float(noisy["source_min_single_deletion_rms"]),
+                float(noisy["source_minimality_required_rms"]),
+            )
+            torch.testing.assert_close(
+                clean["true_internal_knots"], noisy["true_internal_knots"]
+            )
+            torch.testing.assert_close(clean["clean_points"], noisy["clean_points"])
+            self.assertFalse(torch.equal(noisy["points"], noisy["clean_points"]))
+
     def test_canonical_labels_are_consistent_and_deterministic(self) -> None:
         dataset = SyntheticCubicBSplineDataset(
             size=8,

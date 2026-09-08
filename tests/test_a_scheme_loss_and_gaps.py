@@ -9,10 +9,10 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from spline_fitting.losses.total_loss import LossWeights, SplineFittingLoss
-from spline_fitting.models.knot_head import KnotHead
-from spline_fitting.models.parameter_head import ParameterHead
-from spline_fitting.training.trainer import Trainer
+from spline_fitting.losses.total_loss import LossWeights, SplineFittingLoss  # noqa: E402
+from spline_fitting.models.knot_head import KnotHead  # noqa: E402
+from spline_fitting.models.parameter_head import ParameterHead  # noqa: E402
+from spline_fitting.training.trainer import Trainer  # noqa: E402
 
 
 class ASchemeLossAndGapTests(unittest.TestCase):
@@ -184,6 +184,54 @@ class ASchemeLossAndGapTests(unittest.TestCase):
         self.assertTrue(torch.all(gaps >= 0.02 - 1e-7))
         torch.testing.assert_close(gaps.sum(dim=-1), torch.ones(2))
 
+    def test_chord_residual_parameter_head_starts_at_reference(self) -> None:
+        head = ParameterHead(
+            hidden_dim=16,
+            min_gap=1e-4,
+            gap_reference="chord_residual",
+            residual_logit_limit=0.5,
+        )
+        local = torch.randn(2, 6, 16)
+        global_features = torch.randn(2, 16)
+        reference = torch.tensor(
+            [
+                [0.0, 0.05, 0.20, 0.50, 0.75, 1.0],
+                [0.0, 0.10, 0.25, 0.40, 0.90, 1.0],
+            ]
+        )
+        output = head(
+            local,
+            global_features,
+            reference_params=reference,
+        )
+
+        torch.testing.assert_close(output["params"], reference, atol=2e-7, rtol=0.0)
+        assert torch.count_nonzero(output["raw_parameter_gaps"]) == 0
+        loss = output["params"][:, 2].sum()
+        loss.backward()
+        assert head.mlp[-1].weight.grad is not None
+        assert float(head.mlp[-1].weight.grad.abs().sum()) > 0.0
+
+    def test_uniform_residual_parameter_head_starts_strictly_uniform(self) -> None:
+        head = ParameterHead(
+            hidden_dim=16,
+            min_gap=0.01,
+            gap_reference="uniform_residual",
+            residual_logit_limit=0.5,
+        )
+        local = torch.randn(2, 6, 16)
+        global_features = torch.randn(2, 16)
+        output = head(local, global_features)
+
+        expected = torch.linspace(0.0, 1.0, 6).expand(2, -1)
+        torch.testing.assert_close(output["params"], expected, atol=1e-7, rtol=0.0)
+        assert torch.count_nonzero(output["raw_parameter_gaps"]) == 0
+        assert torch.all(output["parameter_gaps"] > 0.0)
+        assert output["parameter_reference_params"].numel() == 0
+        loss = output["params"][:, 2].sum()
+        loss.backward()
+        assert head.mlp[-1].weight.grad is not None
+        assert float(head.mlp[-1].weight.grad.abs().sum()) > 0.0
 
 if __name__ == "__main__":
     unittest.main()

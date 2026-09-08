@@ -20,6 +20,7 @@ from spline_fitting.checkpointing import (
     CANDIDATE_PRUNING_OBJECTIVE_VERSION,
     COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
     CURRENT_OBJECTIVE_VERSION,
+    V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
     build_model_from_checkpoint,
     migrate_loss_config,
 )
@@ -34,6 +35,10 @@ from spline_fitting.evaluation.bspline_inference import (
     select_count_conditioned_output_by_bic,
 )
 from spline_fitting.evaluation.knot_diagnostics import match_internal_knots
+from spline_fitting.evaluation.hybrid_knot_search import (
+    HybridKnotSearchResult,
+    hybrid_minimal_knot_search,
+)
 from spline_fitting.evaluation.minimal_knot_pruning import (
     MinimalKnotPruningResult,
     prune_knots_to_rms_tolerance,
@@ -138,6 +143,7 @@ def candidate_mode_flags(
     one_shot = (
         structure == "candidate_pruning_one_shot"
         or "candidate_pruning_one_shot" in objective
+        or objective == V12_COUPLED_RELOCATION_OBJECTIVE_VERSION
     )
     return one_shot or structure == "candidate_pruning", one_shot
 
@@ -194,6 +200,21 @@ def pruning_result_as_deployed_fit(
         retained_count=result.final_count,
         retained_mask=retained_mask,
         hard_gate=retained_mask,
+        spline=result.final_fit,
+    )
+
+
+def hybrid_result_as_deployed_fit(
+    result: HybridKnotSearchResult,
+) -> HardGatedBSplineFit:
+    """Adapt the slow quality-search result to the common plotting interface."""
+
+    return HardGatedBSplineFit(
+        sample_index=0,
+        candidate_count=result.proposal_count,
+        retained_count=result.final_count,
+        retained_mask=result.retained_proposal_mask,
+        hard_gate=result.retained_proposal_mask,
         spline=result.final_fit,
     )
 
@@ -271,6 +292,12 @@ def candidate_loss_from_checkpoint(
         joint_position_supervision=bool(
             config.get("joint_position_supervision", False)
         ),
+        teacher_relocation_supervision=bool(
+            config.get("teacher_relocation_supervision", False)
+        ),
+        teacher_survivor_spacing_weight=float(
+            config.get("teacher_survivor_spacing_weight", 0.25)
+        ),
     )
 
 
@@ -292,7 +319,7 @@ def main() -> None:
         type=float,
         default=None,
         help=(
-            "Historical activity threshold. For v8-v11 it is ignored by deployment; "
+            "Historical activity threshold. For v8-v12 it is ignored by deployment; "
             "the learned mask (or centered keep probability >= 0.5 fallback) is used."
         ),
     )
@@ -304,18 +331,19 @@ def main() -> None:
         default=None,
         help=(
             "Normalized RMS reference for one-shot satisfaction reporting "
-            "and optional offline hard diagnostics. It never changes the v8-v11 "
+            "and optional offline hard diagnostics. It never changes the v8-v12 "
             "learned mask."
         ),
     )
     parser.add_argument(
         "--pruning-view",
-        choices=("all", "learned", "hard", "comparison"),
+        choices=("all", "learned", "hard", "hybrid", "comparison"),
         default=None,
         help=(
             "Candidate-pruning visualization: all candidates, learned "
-            "one-shot mask, offline hard RMS teacher, or comparison. "
-            "Defaults to learned for v8-v11 and hard for v7."
+            "one-shot mask, offline hard RMS teacher, slow hybrid search, "
+            "or comparison. "
+            "Defaults to learned for v8-v12 and hard for v7."
         ),
     )
     parser.add_argument(
@@ -340,6 +368,16 @@ def main() -> None:
     )
     parser.add_argument("--one-shot-safety-sigma", type=float, default=None)
     parser.add_argument("--one-shot-coverage-bins", type=int, default=None)
+    parser.add_argument("--hybrid-beam-width", type=int, default=4)
+    parser.add_argument("--hybrid-branch-factor", type=int, default=4)
+    parser.add_argument("--hybrid-position-sweeps", type=int, default=2)
+    parser.add_argument("--hybrid-position-grid-size", type=int, default=7)
+    parser.add_argument("--hybrid-position-restarts", type=int, default=2)
+    parser.add_argument("--hybrid-position-refine-count-margin", type=int, default=1)
+    parser.add_argument(
+        "--hybrid-position-refine-candidate-multiplier", type=int, default=4
+    )
+    parser.add_argument("--hybrid-min-gap", type=float, default=None)
     parser.add_argument(
         "--count-selection", choices=("auto", "network", "bic"), default="auto"
     )
@@ -353,6 +391,20 @@ def main() -> None:
         parser.error("--one-shot-safety-sigma must be non-negative")
     if args.one_shot_coverage_bins is not None and args.one_shot_coverage_bins < 0:
         parser.error("--one-shot-coverage-bins must be non-negative")
+    if args.hybrid_beam_width <= 0 or args.hybrid_branch_factor < 0:
+        parser.error(
+            "hybrid beam width must be positive and branch factor non-negative"
+        )
+    if args.hybrid_position_sweeps < 0 or args.hybrid_position_restarts <= 0:
+        parser.error("hybrid sweeps must be non-negative and restarts positive")
+    if args.hybrid_position_grid_size < 3 or args.hybrid_position_grid_size % 2 == 0:
+        parser.error("--hybrid-position-grid-size must be an odd integer >= 3")
+    if args.hybrid_position_refine_count_margin < 0:
+        parser.error("--hybrid-position-refine-count-margin must be non-negative")
+    if args.hybrid_position_refine_candidate_multiplier <= 0:
+        parser.error("--hybrid-position-refine-candidate-multiplier must be positive")
+    if args.hybrid_min_gap is not None and args.hybrid_min_gap < 0.0:
+        parser.error("--hybrid-min-gap must be non-negative")
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     try:
@@ -390,6 +442,8 @@ def main() -> None:
         parser.error("one-shot selection overrides require a one-shot checkpoint")
     if args.pruning_view is None:
         args.pruning_view = "learned" if candidate_one_shot else "hard"
+    if args.pruning_view == "hybrid" and not candidate_one_shot:
+        parser.error("--pruning-view hybrid requires a one-shot checkpoint")
     if not candidate_pruning and args.pruning_view != "hard":
         parser.error(
             "--pruning-view all/learned/comparison requires a "
@@ -461,6 +515,7 @@ def main() -> None:
         else:
             deployment_output = output
         pruning_result: MinimalKnotPruningResult | None = None
+        hybrid_result: HybridKnotSearchResult | None = None
         candidate_fits: dict[str, HardGatedBSplineFit] = {}
         candidate_postprocess_ms: dict[str, float] = {}
         adaptive_keep_threshold: torch.Tensor | None = None
@@ -516,6 +571,40 @@ def main() -> None:
                     repeats=args.timing_repeats,
                 )
                 candidate_fits["hard"] = pruning_result_as_deployed_fit(pruning_result)
+            if "hybrid" in requested_views:
+                hybrid_min_gap = (
+                    float(args.hybrid_min_gap)
+                    if args.hybrid_min_gap is not None
+                    else float(model_config.get("min_knot_gap", 1e-3))
+                )
+                hybrid_result, candidate_postprocess_ms["hybrid"] = timed_call(
+                    lambda: hybrid_minimal_knot_search(
+                        output["params"][0],
+                        points[0],
+                        proposal_knots,
+                        deployment_knots=deployment_knots,
+                        learned_mask=learned_mask,
+                        mse_tolerance=fit_tolerance * fit_tolerance,
+                        degree=model.degree,
+                        smoothness_weight=args.smoothness_weight,
+                        control_ridge=args.control_ridge,
+                        interpolate_endpoints=True,
+                        beam_width=args.hybrid_beam_width,
+                        branch_factor=args.hybrid_branch_factor,
+                        position_sweeps=args.hybrid_position_sweeps,
+                        position_grid_size=args.hybrid_position_grid_size,
+                        position_restarts=args.hybrid_position_restarts,
+                        position_refine_count_margin=(
+                            args.hybrid_position_refine_count_margin
+                        ),
+                        position_refine_candidate_multiplier=(
+                            args.hybrid_position_refine_candidate_multiplier
+                        ),
+                        min_gap=hybrid_min_gap,
+                    ),
+                    repeats=args.timing_repeats,
+                )
+                candidate_fits["hybrid"] = hybrid_result_as_deployed_fit(hybrid_result)
             primary_view = args.pruning_view
             if primary_view == "comparison":
                 primary_view = "learned" if candidate_one_shot else "hard"
@@ -654,10 +743,38 @@ def main() -> None:
             alpha=0.45,
             label="control polygon",
         )
+        if args.pruning_view == "hybrid" and fit.retained_internal_knots.numel():
+            # Plot the *optimized* final u values on the deployed curve.  The
+            # structure panel below still owns candidate identities, so using
+            # proposal positions here used to make relocation invisible.
+            final_knots = fit.retained_internal_knots
+            final_knot_basis = bspline_basis_matrix(
+                final_knots,
+                fit.spline.knot_vector,
+                model.degree,
+                num_control_points=fit.control_points.shape[0],
+            )
+            final_knot_locations = (
+                (final_knot_basis @ fit.control_points).detach().cpu().numpy()
+            )
+            axis.scatter(
+                final_knot_locations[:, 0],
+                final_knot_locations[:, 1],
+                s=42,
+                marker="D",
+                facecolors="none",
+                edgecolors="tab:red",
+                linewidths=1.3,
+                label="refined knots C(u*)",
+                zorder=5,
+            )
         axis.set_aspect("equal", adjustable="box")
-        axis.set_title(
-            f"{title}\nK={fit.retained_count} | RMS={float(fit.fit_rmse):.4e}"
+        metric_text = (
+            f"MSE={float(fit.fit_mse):.4e} | RMS={float(fit.fit_rmse):.4e}"
+            if candidate_pruning and args.pruning_view == "hybrid"
+            else f"RMS={float(fit.fit_rmse):.4e}"
         )
+        axis.set_title(f"{title}\nK={fit.retained_count} | {metric_text}")
         axis.legend(fontsize="small")
 
     def plot_comparison_panel(
@@ -842,11 +959,15 @@ def main() -> None:
                     if candidate_one_shot
                     else f"Hard RMS pruning (epsilon={fit_tolerance:.2e})"
                 ),
+                "hybrid": (
+                    f"Slow hybrid quality search (MSE <= {fit_tolerance**2:.2e})"
+                ),
             }
             spline_labels = {
                 "all": "all-candidate B-spline",
                 "learned": "learned-pruned B-spline",
                 "hard": "hard-pruned B-spline",
+                "hybrid": "hybrid quality B-spline",
             }
             plot_curve(
                 ax_curve,
@@ -892,7 +1013,12 @@ def main() -> None:
         ax_structure.set_xticks(counts)
     elif candidate_pruning and not comparison_view:
         keep_probability = output["keep_probability"][0].detach().numpy()
-        knots = output["internal_knots"][0].detach().numpy()
+        displayed_knots = (
+            proposal_knots
+            if args.pruning_view in {"all", "hard", "hybrid"}
+            else output["internal_knots"][0]
+        )
+        knots = displayed_knots.detach().numpy()
         if args.pruning_view == "all":
             displayed_mask = candidate_fits["all"].retained_mask
             selection_description = "selected in all-candidate fit"
@@ -903,75 +1029,114 @@ def main() -> None:
                 if candidate_one_shot
                 else f"learned p >= {threshold:.2f}"
             )
-        else:
+        elif args.pruning_view == "hard":
             displayed_mask = candidate_fits["hard"].retained_mask
             selection_description = (
                 "offline hard teacher"
                 if candidate_one_shot
                 else "retained by hard RMS pruning"
             )
-        kept = displayed_mask.cpu().numpy()
-        colors = ["tab:orange" if value else "tab:blue" for value in kept]
-        raw_importance_tensor = output.get(
-            "keep_importance_logits",
-            output.get("raw_keep_importance", output.get("raw_importance")),
-        )
-        if candidate_one_shot and raw_importance_tensor is not None:
-            structure_values = raw_importance_tensor[0].detach().numpy()
-            adaptive_value = float(adaptive_keep_threshold)
-            ax_structure.bar(
-                range(len(structure_values)), structure_values, color=colors
-            )
-            if math.isfinite(adaptive_value):
-                ax_structure.axhline(
-                    adaptive_value,
-                    color="black",
-                    linestyle="--",
-                    label="adaptive logit beta",
-                )
-            structure_ylabel = "raw learned keep-importance logit"
         else:
-            structure_values = keep_probability
-            ax_structure.bar(
-                range(len(structure_values)), structure_values, color=colors
-            )
-            decision_cutoff = 0.5 if candidate_one_shot else threshold
-            ax_structure.axhline(decision_cutoff, color="black", linestyle="--")
-            structure_ylabel = (
-                "threshold-centered keep probability"
-                if candidate_one_shot
-                else "learned keep probability (diagnostic only)"
-            )
-        if comparison_view:
-            learned_indices = (
-                torch.nonzero(candidate_fits["learned"].retained_mask, as_tuple=False)
-                .squeeze(-1)
-                .cpu()
-                .numpy()
+            displayed_mask = candidate_fits["hybrid"].retained_mask
+            selection_description = "retained by slow hybrid MSE search"
+        kept = displayed_mask.cpu().numpy()
+        if args.pruning_view == "hybrid":
+            assert hybrid_result is not None
+            retained_ids = hybrid_result.retained_proposal_indices.detach().cpu()
+            retained_proposals = knots[retained_ids.numpy()]
+            final_values = hybrid_result.final_internal_knots.detach().cpu().numpy()
+            deleted = ~kept
+            ax_structure.scatter(
+                knots[deleted],
+                [0.0] * int(deleted.sum()),
+                s=30,
+                color="tab:blue",
+                alpha=0.55,
+                label="deleted proposal",
             )
             ax_structure.scatter(
-                learned_indices,
-                structure_values[learned_indices],
-                marker="D",
-                facecolors="none",
-                edgecolors="tab:green",
-                label="learned keep",
+                retained_proposals,
+                [1.0] * len(retained_proposals),
+                s=42,
+                color="tab:orange",
+                label="retained proposal position",
                 zorder=3,
             )
-            ax_structure.legend(fontsize="small")
-        ax_structure.set_xticks(
-            range(len(knots)), [f"{value:.3f}" for value in knots], rotation=45
-        )
-        ax_structure.set_xlabel(f"candidate knot (orange = {selection_description})")
-        ax_structure.set_ylabel(structure_ylabel)
-        if comparison_view:
-            ax_structure.set_title(
-                "(d) Candidate decisions\n"
-                f"learned K={candidate_fits['learned'].retained_count} | "
-                f"hard K={candidate_fits['hard'].retained_count}"
-                + (" (offline diagnostic)" if candidate_one_shot else "")
+            for proposal_value, final_value in zip(retained_proposals, final_values):
+                ax_structure.plot(
+                    [proposal_value, final_value],
+                    [1.0, 2.0],
+                    color="0.55",
+                    linewidth=0.9,
+                    alpha=0.8,
+                )
+            ax_structure.scatter(
+                final_values,
+                [2.0] * len(final_values),
+                s=48,
+                marker="D",
+                facecolors="none",
+                edgecolors="tab:red",
+                linewidths=1.3,
+                label="refined final position u*",
+                zorder=4,
             )
+            ax_structure.set_xlim(-0.02, 1.02)
+            ax_structure.set_ylim(-0.35, 2.35)
+            ax_structure.set_yticks(
+                [0.0, 1.0, 2.0],
+                ["deleted", "retained proposal", "refined final"],
+            )
+            ax_structure.set_xlabel("normalized parameter u")
+            ax_structure.set_ylabel("selection / relocation stage")
+            ax_structure.set_title(
+                f"Joint deletion + relocation: {len(knots)} -> "
+                f"{deployed.retained_count}\n"
+                f"mean/max |delta u| = "
+                f"{hybrid_result.mean_absolute_position_shift:.3e}/"
+                f"{hybrid_result.max_absolute_position_shift:.3e}"
+            )
+            ax_structure.grid(axis="x", alpha=0.2)
+            ax_structure.legend(fontsize="small", loc="best")
         else:
+            colors = ["tab:orange" if value else "tab:blue" for value in kept]
+            raw_importance_tensor = output.get(
+                "keep_importance_logits",
+                output.get("raw_keep_importance", output.get("raw_importance")),
+            )
+            if candidate_one_shot and raw_importance_tensor is not None:
+                structure_values = raw_importance_tensor[0].detach().numpy()
+                adaptive_value = float(adaptive_keep_threshold)
+                ax_structure.bar(
+                    range(len(structure_values)), structure_values, color=colors
+                )
+                if math.isfinite(adaptive_value):
+                    ax_structure.axhline(
+                        adaptive_value,
+                        color="black",
+                        linestyle="--",
+                        label="adaptive logit beta",
+                    )
+                structure_ylabel = "raw learned keep-importance logit"
+            else:
+                structure_values = keep_probability
+                ax_structure.bar(
+                    range(len(structure_values)), structure_values, color=colors
+                )
+                decision_cutoff = 0.5 if candidate_one_shot else threshold
+                ax_structure.axhline(decision_cutoff, color="black", linestyle="--")
+                structure_ylabel = (
+                    "threshold-centered keep probability"
+                    if candidate_one_shot
+                    else "learned keep probability (diagnostic only)"
+                )
+            ax_structure.set_xticks(
+                range(len(knots)), [f"{value:.3f}" for value in knots], rotation=45
+            )
+            ax_structure.set_xlabel(
+                f"candidate knot (orange = {selection_description})"
+            )
+            ax_structure.set_ylabel(structure_ylabel)
             ax_structure.set_title(
                 f"{args.pruning_view.capitalize()} selection "
                 f"{len(knots)} -> {deployed.retained_count}"
@@ -1007,6 +1172,7 @@ def main() -> None:
     selected_fit_is_deployment = (
         not candidate_pruning
         or (candidate_one_shot and args.pruning_view in {"learned", "comparison"})
+        or (candidate_one_shot and args.pruning_view == "hybrid")
         or (not candidate_one_shot and args.pruning_view in {"hard", "comparison"})
     )
     selected_fit_role = (
@@ -1029,7 +1195,9 @@ def main() -> None:
         print(f"  pruning view: {args.pruning_view}")
         if candidate_one_shot:
             assert adaptive_keep_threshold is not None
-            if selected_fit_is_deployment:
+            if args.pruning_view == "hybrid":
+                print("  selected result role: slow hybrid quality deployment")
+            elif selected_fit_is_deployment:
                 print("  selected result role: learned one-shot deployment")
             else:
                 print(
@@ -1053,11 +1221,17 @@ def main() -> None:
                 "  adaptive raw-importance logit beta: "
                 f"{float(adaptive_keep_threshold):.6f}"
             )
-            print(
-                "  fit tolerance is reporting-only for learned deployment; "
-                "it does not change the mask"
-            )
-            if selected_fit_is_deployment:
+            if args.pruning_view == "hybrid":
+                print(
+                    "  fit tolerance drives hybrid selection: "
+                    f"RMS={fit_tolerance:.9e}, MSE={fit_tolerance**2:.9e}"
+                )
+            else:
+                print(
+                    "  fit tolerance is reporting-only for learned deployment; "
+                    "it does not change the mask"
+                )
+            if selected_fit_is_deployment and args.pruning_view != "hybrid":
                 print(
                     "  deployment standard B-spline refits: 1 "
                     "(network-forward proxy solves are excluded)"
@@ -1068,6 +1242,8 @@ def main() -> None:
             role = (
                 " (offline diagnostic only)"
                 if candidate_one_shot and name in {"all", "hard"}
+                else " (slow quality deployment)"
+                if candidate_one_shot and name == "hybrid"
                 else " (deployment)"
                 if candidate_one_shot and name == "learned"
                 else ""
@@ -1077,7 +1253,13 @@ def main() -> None:
                 f"RMS={float(fit.fit_rmse):.9e}"
             )
             if name in candidate_postprocess_ms:
-                postprocess_name = "prune" if name == "hard" else "refit"
+                postprocess_name = (
+                    "search"
+                    if name == "hybrid"
+                    else "prune"
+                    if name == "hard"
+                    else "refit"
+                )
                 print(
                     f"    CPU time: total="
                     f"{network_forward_ms + candidate_postprocess_ms[name]:.3f} ms "
@@ -1111,6 +1293,28 @@ def main() -> None:
             )
             print(f"  threshold satisfied: {pruning_result.threshold_satisfied}")
             print(f"  RMS trajectory: {pruning_result.rms_trajectory.cpu().tolist()}")
+        if hybrid_result is not None:
+            print(
+                "  hybrid greedy -> final: "
+                f"K={hybrid_result.greedy_count} -> {hybrid_result.final_count}, "
+                f"MSE={float(hybrid_result.greedy_fit.fit_mse):.9e} -> "
+                f"{float(hybrid_result.final_fit.fit_mse):.9e}"
+            )
+            print(
+                "  hybrid threshold satisfied: "
+                f"{hybrid_result.threshold_satisfied}; exact refit evaluations="
+                f"{hybrid_result.refit_count}; visited deletion states="
+                f"{hybrid_result.visited_state_count}"
+            )
+            print(
+                "  proposal -> final knot-position |shift| mean/max: "
+                f"{hybrid_result.mean_absolute_position_shift:.6e}/"
+                f"{hybrid_result.max_absolute_position_shift:.6e}"
+            )
+            print(
+                "  hybrid optimality: beam/local search; global minimum is not "
+                "guaranteed"
+            )
         print(
             (
                 "  threshold-centered keep probabilities "
