@@ -1,0 +1,2 @@
+﻿dataset,method,status,mse,reference_mse,fit_pass,reference_pass,final_k,total_ms,network_ms
+Synthetic,ours,ok,1e-06,,True,,2,3,1

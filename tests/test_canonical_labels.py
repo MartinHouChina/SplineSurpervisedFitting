@@ -64,11 +64,44 @@ class CanonicalLabelTests(unittest.TestCase):
                 float(noisy["source_min_single_deletion_rms"]),
                 float(noisy["source_minimality_required_rms"]),
             )
+            self.assertAlmostEqual(
+                float(noisy["source_full_fit_mse"]),
+                float(noisy["source_full_fit_rms"]) ** 2,
+                places=12,
+            )
+            self.assertGreater(
+                float(noisy["source_min_single_deletion_mse"]),
+                float(noisy["source_minimality_required_mse"]),
+            )
             torch.testing.assert_close(
                 clean["true_internal_knots"], noisy["true_internal_knots"]
             )
             torch.testing.assert_close(clean["clean_points"], noisy["clean_points"])
             self.assertFalse(torch.equal(noisy["points"], noisy["clean_points"]))
+
+    def test_certified_metadata_is_cached_without_ground_truth_payload(self) -> None:
+        dataset = SyntheticCubicBSplineDataset(
+            size=1,
+            num_points=48,
+            min_control_points=8,
+            max_control_points=8,
+            canonical_knot_tolerance=5e-3,
+            certified_minimal_source=True,
+            minimality_audit_points=64,
+            return_ground_truth=False,
+            cache_samples=True,
+            seed=9182,
+        )
+        first = dataset[0]
+        repeated = dataset[0]
+        self.assertIs(first, repeated)
+        self.assertTrue(first["source_minimality_certified"])
+        self.assertEqual(tuple(first["true_params"].shape), (48,))
+        self.assertEqual(tuple(first["true_internal_knots"].shape), (4,))
+        self.assertEqual(tuple(first["true_internal_knot_mask"].shape), (4,))
+        self.assertEqual(int(first["true_internal_knot_mask"].sum()), 4)
+        self.assertEqual(first["source_internal_knot_count"], 4)
+        self.assertNotIn("true_control_points", first)
 
     def test_canonical_labels_are_consistent_and_deterministic(self) -> None:
         dataset = SyntheticCubicBSplineDataset(

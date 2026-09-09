@@ -868,11 +868,34 @@ class SyntheticCubicBSplineDataset(Dataset):
         if self.certified_minimal_source:
             if minimality_certificate is None:
                 raise RuntimeError("minimality certificate was not generated")
+            certified_internal = source_internal_for_certificate.detach().clone()
+            padded_certified_internal = torch.zeros(
+                self.max_internal_knots,
+                dtype=self.dtype,
+            )
+            certified_internal_mask = torch.zeros(
+                self.max_internal_knots,
+                dtype=torch.bool,
+            )
+            padded_certified_internal[: certified_internal.numel()] = (
+                certified_internal
+            )
+            certified_internal_mask[: certified_internal.numel()] = True
             result.update(
                 {
                     "clean_points": clean_points,
+                    # These compact fields are required by mixed supervised
+                    # training even when the full control-point payload is
+                    # disabled.  They add no extra least-squares solve.
+                    "true_params": sample.parameters.detach().clone(),
+                    "true_internal_knots": padded_certified_internal,
+                    "true_internal_knot_mask": certified_internal_mask,
+                    "source_internal_knot_count": certified_internal.numel(),
                     "source_minimality_certified": minimality_certificate.certified,
                     "source_full_fit_rms": minimality_certificate.full_fit_rms.to(
+                        dtype=self.dtype
+                    ),
+                    "source_full_fit_mse": minimality_certificate.full_fit_rms.square().to(
                         dtype=self.dtype
                     ),
                     "source_min_single_deletion_rms": (
@@ -880,8 +903,17 @@ class SyntheticCubicBSplineDataset(Dataset):
                             dtype=self.dtype
                         )
                     ),
+                    "source_min_single_deletion_mse": (
+                        minimality_certificate.minimum_single_deletion_rms.square().to(
+                            dtype=self.dtype
+                        )
+                    ),
                     "source_minimality_required_rms": torch.tensor(
                         minimality_certificate.required_single_deletion_rms,
+                        dtype=self.dtype,
+                    ),
+                    "source_minimality_required_mse": torch.tensor(
+                        minimality_certificate.required_single_deletion_rms ** 2,
                         dtype=self.dtype,
                     ),
                     "source_generation_attempts": generation_attempts,
@@ -889,6 +921,8 @@ class SyntheticCubicBSplineDataset(Dataset):
             )
 
         if not self.return_ground_truth:
+            if self.cache_samples:
+                self._sample_cache[index] = result
             return result
 
         source_internal = sample.knot_vector[sample.degree + 1 : -(sample.degree + 1)]

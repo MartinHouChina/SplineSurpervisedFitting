@@ -1,291 +1,252 @@
-# v13–v15 数据与训练流程
+# v16 训练流程
 
-> 当前默认 v15 保留 v14_joint 数据流，但把联合校准目标改为实际 `mass_topk` 计数和标准 B 样条部署 MSE；训练与部署差异及推荐命令见 [v15 部署对齐优化](v15_deployment_aligned_optimization.md)。
+本文只描述当前 `scripts/train_v16.py`。旧版 v8–v15 仅用于说明设计来源，不再作为当前训练入口。
 
-> 当前默认的 `v14_joint` 在 v13 结构之后先得到结构条件参数 `t1`，再让候选节点读取
-> `t1` 位置编码的局部几何，联合更新 Keep logits、节点位置和 token；最终 mask 重新选择
-> 后只用最终 survivors 再重定位。完整命令和兼容规则见
-> [v14_joint 参数—节点联合反馈](v14_joint_parameter_structure_feedback.md)。
+## 1. 任务与符号
 
-v13 沿用 v12 的 proposal、一次性 KeepMask 和 survivor relocation 部署图，修复训练端的五个问题：完整解冻位置到 Keep 的交互路径；按实际预测 survivors 做有序集合位置匹配；用 relocated teacher set 构造槽位无关的 soft coverage；默认关闭会支配校准的截断幂 surrogate；最终同时比较 distill 与 calibrated checkpoint。旧 v12 checkpoint 仍可加载，但需要重新训练才能获得这些修复。
-
-## 1. 学习目标
-
-训练目标不是机械复原生成曲线时的源节点向量，而是在归一化 RMS 阈值 `epsilon` 下学习较小且可行的节点集合：
+输入是一条按曲线顺序排列、归一化到统一尺度的点序列：
 
 \[
-\min |U|\quad\text{s.t.}\quad
-\operatorname{RMS}(C_U,Q)\le\varepsilon.
+Q\in\mathbb R^{M\times D},\qquad D\in\{2,3\}.
 \]
 
-同一条曲线可能有多套近似等价的 B 样条表示，因此训练同时使用 canonical 几何标签和固定 proposal 上的离线 Hard-RMS 教师。
-
-## 2. 数据集构成
-
-兼容模式下，`SyntheticCubicBSplineDataset` 对每条样本执行：
-
-1. 随机生成开放三次 B 样条的控制顶点和非均匀内部节点；
-2. 生成严格有序但可非均匀的参数，并沿曲线采样；
-3. 加入坐标噪声；
-4. 中心化并按最大半径归一化；
-5. 从源节点出发，用真实参数和标准 B 样条 refit 构造阈值简化后的 canonical 标签；
-6. 同时保存源样条、canonical 节点、真实参数和有序点云。
-
-默认训练配置：
-
-| 项目 | 值 |
-|---|---:|
-| train / validation | 10000 / 2000 |
-| train / validation seed | 42 / 10000 |
-| 独立测试 seed | 20000 |
-| 点数 | 192 |
-| 维度 | 2，可选 3 |
-| 源控制顶点 | 8–24 |
-| 源内部节点 | 4–20 |
-| proposal 槽位 | 28 |
-| 噪声标准差 | 0.001 |
-| RMS 阈值 | 0.005 |
-
-关键样本字段：
-
-```text
-points
-chord_params
-true_params
-true_internal_knots
-true_internal_knot_mask
-source_control_points
-source_control_mask
-source_knot_vector
-source_knot_mask
-canonical_fit_rms
-sample_id
-```
-
-当前数据中的 `true_internal_knots` 表示 canonical 内部节点；`source_*` 表示生成时的原始样条。
-
-正式重训建议增加 `--certified-minimal-source`。该模式先固定目标 K，在无噪声高密度参考曲线上用 float64、无正则标准 B 样条 refit 检查全部单节点删除；只有完整节点集通过阈值且任一删除都超过 `epsilon * (1 + margin)` 才接受。观测噪声在证书和标签固定后才加入，因此不再改变 K 或节点位置标签。
-
-```text
---certified-minimal-source
---minimality-margin 0.2
---minimality-max-attempts 16
---minimality-audit-points 512
---oscillation-amplitude 0.3
-```
-
-该证书证明的是 source knot 的所有子集中的阈值最少基数，不代表允许任意连续节点重定位后的全局最优。开启后数据分布与 fingerprint 改变，必须重新训练 proposal 并重建 teacher cache。完整审计、字段和迁移说明见[合成数据最简性修正](synthetic_data_minimality_report.md)。
-
-真实 CAD、等高线、海岸线、道路和手写轨迹不能直接把折线顶点当作节点标签。UJI、Natural Earth 和 USGS 已可用于分组隔离的外部测试；也可以冻结 proposal/selector/relocation，仅对 v14 参数反馈头做无标签几何适配。它们仍不进入节点位置或 KeepMask 真值监督。命令和指标口径见[真实数据训练适配与部署测试](real_world_evaluation.md)。
-
-## 3. v11 教师为什么限制了节点移动
-
-v11 的 greedy teacher 在固定 proposal 上删除节点后，把保留 proposal 位置直接写入 `teacher_internal_knots`：
-
-```text
-teacher position = U_prop[retained slots]
-```
-
-这能监督“保留哪些槽位”，却没有提供删除后连续调整位置的目标。位置损失因而把零移动视为正确答案，尤其容易保留局部聚集的节点。
-
-v12 将教师和 student 一起改为删除与移动联动。
-
-## 4. 阶段 1：高召回 proposal
-
-proposal 预训练更新 GeometryEncoder、ParameterHead 和 CandidateKnotHead；selector、联合位置模块和 survivor relocation 模块冻结。主要目标包括：
-
-- 真实参数监督；
-- canonical 节点最近距离和有序位置监督；
-- `0.005 / 0.01 / 0.02` 多尺度 candidate coverage；
-- 候选排斥与代理拟合约束。
-
-此阶段强制打开全部候选，避免尚未成熟的 selector 阻断 proposal 学习。proposal 目标是高召回，不负责决定最终数量。
-
-若已有语义一致的 v11 proposal，可使用：
-
-```text
---candidate-pretrain-epochs 0
---proposal-checkpoint <v11 proposal checkpoint>
-```
-
-脚本会从 checkpoint 恢复 local-attention 带宽，并检查会改变 proposal 的配置。若要继续适配 proposal，则把预训练 epoch 设为正数；给定 checkpoint 会作为初始化，而不是被忽略。
-
-## 5. 阶段 2：delete-then-relax 离线教师
-
-教师输入是固定 `U_prop`，不是源节点标签。每条样本执行：
-
-```text
-固定 proposal
-  -> greedy Hard-RMS 单节点删除，直到下一次删除会超阈值
-  -> 对当前 survivors 做有序 coordinate 位置优化
-  -> 在调整后的位置上再次 greedy 删除
-  -> 重复有限个 delete/relax round
-  -> 若最后一轮仍删除了节点，再对最终 survivors 做一次位置优化
-  -> 计算最终 leave-one-out keep risk
-  -> 缓存原 proposal 槽位 mask + 优化后 packed knot positions
-```
-
-每个位置优化都执行标准 B 样条 refit，并把结果投影到 student 可达域：
-
-- 保持 `[0,1]` 内严格有序；
-- 遵守 `relocation_min_gap`；
-- 相对原 proposal survivor anchor 的移动不超过 `relocation_max_shift`。
-
-默认教师参数：
-
-| CLI | 默认值 |
-|---|---:|
-| `--teacher-survivor-relaxation` | 开启 |
-| `--teacher-relaxation-rounds` | 2 |
-| `--teacher-relaxation-sweeps` | 2 |
-| `--teacher-relaxation-grid-size` | 7 |
-| `--teacher-relaxation-restarts` | 1 |
-| `--one-shot-max-position-shift` | 0.15 |
-
-`--teacher-relaxation-min-gap` 未设置时严格使用 `--min-knot-gap`，默认 `0.001`，且 CLI 不允许它大于 `--min-knot-gap`，因为固定 proposal 必须先满足该间距。它不使用 `--candidate-match-tolerance`；后者只是匹配/监督容差。若要抑制聚集，直接调大 `--min-knot-gap`，让 proposal、student 和 teacher 同步采用该约束。增大 min-gap 是额外建模先验，不是无损的数值技巧。
-
-旧 proposal 的 min-gap 属于固定几何语义。若从 `0.001` 改为 `0.005`，必须令 `--candidate-pretrain-epochs` 大于零以重新适配 proposal，并使用新的 teacher cache；脚本不会允许在零适配模式下静默改变该值。
-
-v12 cache 还保存：
-
-```text
-teacher_retained_mask
-teacher_soft_keep_risk
-teacher_internal_knots
-teacher_internal_knot_mask
-teacher_count
-teacher_fit_rms / teacher_fit_mse
-teacher_deletion_order
-teacher_single_deletion_rms
-teacher_greedy_count / teacher_greedy_fit_rms
-teacher_relocation_mean_abs / teacher_relocation_max_abs
-teacher_extra_deleted_after_relocation
-```
-
-这些标签绑定 proposal 指纹、数据集指纹、教师参数与张量形状。当前版本还在同目录保存 `train.pt.start_domains.json` 与 `val.pt.start_domains.json`，记录 `calibrated/true/chord` 起始域计数。正式训练默认要求真值/弦长 fallback 为 0；非零 fallback 只用于诊断，因为它得到的 mask 不保证在网络部署参数域仍可行。旧 v11/v12/v13 cache 没有这组认证元数据，不能直接复用；第一次迁移必须使用 `--no-reuse-teacher-cache` 重建，之后仅在 proposal、数据和配置完全一致时才可使用 `--reuse-teacher-cache`。
-
-## 6. 阶段 3：一次性选择蒸馏
-
-proposal 冻结，student 学习：
-
-- 最终 hard KeepMask；
-- teacher soft keep risk 与 ranking；
-- teacher count / probability-mass count；
-- canonical 集合辅助监督；
-- 复杂度惩罚。
-
-该阶段的主要职责是学组合。标准 B 样条教师给出真实选择标签，截断幂代理默认只做诊断，避免通过“全部保留”轻易降低代理拟合损失。
-
-`mass_topk` 是默认选择策略。它由 keep probability mass 估计 `K`，然后一次性选 Top-K；不需要 CountHead，也不在部署时逐节点试删。
-
-## 7. 阶段 4：KeepMask 与 survivor relocation 联合校准
-
-校准阶段从最佳蒸馏 checkpoint 开始，用较低学习率更新 selector 和完整位置交互模块。v13 的训练目标为：
-
-```text
-final KeepMask
-  -> selected-only survivor attention
-  -> deployment positions
-  -> actual predicted survivors 与 relocated teacher set 有序匹配
-  + 等长集合的端点/相邻 survivor gap Smooth-L1
-  + slot-invariant soft teacher-set coverage
-  + mask、risk、count、复杂度监督
-  + 可选的代理 fit/threshold 诊断项（默认权重 0）
-```
-
-hard KeepMask 在前向中决定实际 survivors；位置损失训练实际存活节点，soft set coverage 直接向 Keep logits 和节点位置提供可微梯度。Key/Value 只来自最终 survivors，位置残差也只施加到 survivors。
-
-校准学习率为：
+网络预测参数序列、一个高召回候选内部节点集，以及一次性保留的节点子集。最终误差统一定义为平均平方欧氏距离：
 
 \[
-lr_{relocation}=lr_{selector}\times\texttt{--relocation-lr-scale}.
+\operatorname{MSE}=\frac1M\sum_{i=1}^{M}\lVert \hat Q_i-Q_i\rVert_2^2.
 \]
 
-默认 scale 为 `0.25`。`--keep-position-calibration-epochs` 默认 20；如果设为 `0`，relocation head 的零初始化不会得到训练，不适合作为 v13 联动效果实验。
+当前默认阈值为 `2.5e-5`。它是 MSE，不开平方，也不再除以坐标维数。
 
-最终 checkpoint 始终在 distillation 与 calibration 两个候选中，按真实标准 B 样条验证 rank 选择。若校准破坏通过率或 MSE，脚本会保留 distillation checkpoint，而不是强制采用较差的校准结果。
+## 2. 容量一定要分清
 
-## 8. checkpoint 选择
+`--candidate-knots Kc` 表示 **内部候选节点数**。对三次开区间 B 样条：
 
-验证使用真实标准 B 样条部署指标，而不只看代理 loss：
+\[
+K_{\mathrm{full}}=K_c+8,\qquad N_{\mathrm{ctrl}}=K_c+4.
+\]
 
-1. 在通过率尚未达到 `--deployment-pass-rate-target` 前，优先真实 pass rate、mean/P95 RMS；
-2. 达到目标后，优先更少的保留节点；
-3. 再以拟合和节点定位指标打破平局。
+因此：
 
-该规则是有限验证集上的模型选择，不构成逐样本误差保证。
+| 命令 | 内部候选 | 全节点向量（全部保留时） | 控制顶点（全部保留时） |
+|---|---:|---:|---:|
+| `--full-knot-vector-size 64` | 56 | 64 | 60 |
+| `--candidate-knots 64` | 64 | 72 | 68 |
+| `--candidate-knots 96` | 96 | 104 | 100 |
 
-## 9. 推荐 PowerShell 命令
+二者互斥。复杂真实曲线建议以 `Kc=96` 为主实验，并把 `Kc=64` 作为容量消融；主对照表中，所有允许设置容量的方法必须使用相同的**内部节点上限**。
 
-从 v12 权重迁移，并为稳定 pilot 路径重建 v13 teacher cache：
+## 3. 每批数据怎样进入网络
+
+### 3.1 数据来源
+
+训练批次由以下来源混合：
+
+- 在线生成的三次 B 样条合成曲线；
+- UJI Pen Characters；
+- Natural Earth coastline；
+- USGS contours。
+
+`--real-fraction` 控制真实样本占比。真实数据没有真节点标签，训练依赖点重建、阈值可行性和在线子集比较，不伪造节点真值。
+
+正式合成样本默认启用 `--certified-minimal-source`：先固定 K，在干净曲线上用 512 个均匀审计点验证完整源节点满足阈值、任意单节点删除均以 20% RMS margin 失败，随后才加入观测噪声。v16 的公开阈值是 MSE，因此证书接收 `sqrt(mse_tolerance)`；完整证明范围见[合成曲线最简性报告](synthetic_data_minimality_report.md)。认证成功的 Synthetic 样本同时返回：
+
+- `target_params`：真采样参数；
+- `target_internal_knots` 与 `target_internal_knot_mask`：补齐后的真内部节点及有效位；
+- `target_internal_knot_count`：真内部节点数；
+- 对应的 `*_valid` 标志。
+
+这些标签只在 certified Synthetic 上有效。UJI、Natural Earth 和 USGS 的有效标志为 false，不进入真参数、真节点或真计数损失。
+
+### 3.2 一次前向的数据流
+
+1. `GeometryEncoder(Q)` 编码坐标、弦长位置、一阶差分和二阶差分。
+2. `ParameterHead` 读取编码特征，输出严格递增的采样参数 `t`。
+3. `CandidateKnotHead` 同时读取编码特征与参数位置信息，输出固定长度 `Kc` 的有序高召回候选 `U_prop`。
+4. `InteractiveSelector` 为每个候选输出 `raw_importance`。
+5. 曲线级阈值头输出一个自适应标量 `beta`；选择概率为
+
+   \[
+   p_j=\sigma\!\left((r_j-\bar r)-\beta\right).
+   \]
+
+   减去曲线内均值后，`raw_importance` 主要学习节点排序，`beta` 主要学习该曲线应保留多少节点，避免二者漂移造成不可辨识。
+6. `mass_topk` 预测保留数量：
+
+   \[
+   \hat K=\operatorname{ceil}\!\left(
+   \sum_jp_j+\sigma_s\sqrt{\sum_jp_j(1-p_j)}+K_s
+   \right).
+   \]
+
+   训练开始默认 `sigma_s=0.25`、`K_s=2`、`K_min=4`。worst-source pass 达到 92% 时全速退火到 `sigma_s=0.05`、`K_s=0`，在 90%～92% 时以 0.5 倍速度继续退火，跌破 90% 时以 2 倍速度恢复。随后只做一次全局 Top-K；四个参数区间锚点用于防止节点全部挤在局部。空分区不会生成 anchor，也不会覆盖其他分区已经选出的有效 anchor。
+7. `SurvivorRelocation` 只读取最终幸存节点及其局部特征，同时更新保留节点的位置；初始 `--relocation-blend 0`，先保持恒等映射，再由训练学习移动。
+8. 用部署节点执行一次标准三次 B 样条最小二乘 refit，得到控制顶点和拟合曲线。
+
+这里没有 `CountHead`，也没有部署时的 BIC、阈值扫描或反复试拟合。最终节点向量长度由 `beta + mass_topk` 一次性确定。
+
+## 4. 两个训练阶段
+
+### 4.1 Proposal 阶段
+
+前 `--proposal-epochs` 轮先确保参数头和候选网络具有足够高的拟合可行性。显式目标包括全候选标准 B 样条 refit 的对数拟合惩罚、批内高误差尾部项，以及 certified Synthetic 的真参数和 proposal-to-true-node 覆盖监督。严格参数顺序、候选全域覆盖和最小间距仍由网络参数化本身保证；真实数据不使用伪造标签。
+
+只有每个验证来源的 dense proposal 通过率达到
+
+\[
+R_{proposal}+\texttt{complexity-pass-margin}
+\]
+
+后，才进入联合筛选阶段。默认 margin 为 `0.02`。若候选集本身不够可行，脚本会停止，而不是让筛选头为 proposal 缺陷背锅。
+
+### 4.2 Joint 阶段
+
+同一批候选上会执行两类用途不同的评价：
+
+- 原始 IID Bernoulli 采样只用于无偏 score-function 策略梯度，不经过最小节点数投影，也不允许成为结构化教师；
+- 结构化教师以当前 Selector 排序为固定顺序，在前缀长度上做 training-only 的粗到细可行性搜索：先对所有曲线检查低 K 加密的二次网格；`Kc=96`、`Kmin=4`、7 个区间时约为 `4, 6, 12, 21, 34, 51, 72, 96`。certified Synthetic 额外检查自己的真 K；随后在首个粗网格可行边界内批量二分，再检查最佳前缀的 `K±2` 邻域以及局部增、删、交换组合。这些 mask 复用部署的最小数量与分区覆盖约束。
+
+这些拟合均由网络当前预测的参数和节点位置在线得到，不使用固定离线教师缓存。若结构化教师池中存在满足阈值的子集，先选节点数最少者，再以 MSE 打破同节点数平局；若全部不可行，则选择 MSE 最低者作为临时教师。由于节点重定位和参数反馈会破坏 MSE 对前缀长度的严格单调性，这只是有限搜索预算内的 **coarse-to-fine approximate minimum feasible ranked-prefix teacher**，不构成全局最优证明。该搜索只参与训练；部署没有前缀搜索。
+
+筛选损失包含：
+
+- 加权 mask BCE：漏删教师要求保留的节点代价更高；
+- 容量无关数量损失：在 `log1p` 空间监督 requested count score 与教师计数，取消旧式除以 `Kc` 的缩放，因此 Kc=20 和 Kc=96 的梯度尺度可比；
+- certified Synthetic 真计数损失：部署尚不可行时只纠正 requested count 低于真值的情况；部署可行后才在 `log1p` 空间对称拉向 `max(K_true-0.25,0)`，使后续 `ceil` 恰好得到逐样本真计数；
+- certified Synthetic 额外过预测损失：只对部署 MSE 已可行的有标签样本单边惩罚预测数高于真计数；
+- 成对排序损失：教师保留节点分数应高于删除节点；
+- 策略损失：低误差、少节点的子集得到更高回报；
+- 节点重定位和参数反馈后的真实 refit 误差；
+- certified Synthetic 的 proposal/final 真参数监督，以及统一真参数域中的节点监督：proposal 使用真节点到候选的定向覆盖损失；存活节点使用停梯度的一维单调最大基数一一匹配，再对匹配坐标施加 SmoothL1；
+- 仅在安全曲线上启用的复杂度惩罚。
+
+位置损失前，proposal 根据 `proposal_params -> true_params`、部署节点根据 `final_params -> true_params` 做分段线性可微 warp，避免直接比较不同参数化的节点值。一一匹配的组合索引由 detached 坐标求得，梯度只通过匹配后的预测坐标；多出来或缺少的未匹配节点交给真计数损失处理。这取代了容易发生多对一聚集的双向 Chamfer。
+
+## 5. 为什么不会再次塌缩到 0 或全部节点
+
+旧版固定 `p>=0.5` 对 logit 整体漂移非常敏感。当前版本使用四层保护与一个可逆课程：
+
+1. 自适应 `beta` 逐曲线调节保留强度；
+2. 概率质量而非逐元素阈值决定数量；
+3. `safety sigma + safety knots + coverage bins + Kmin` 保护召回和全域覆盖；
+4. certified Synthetic 的真计数、统一参数域和一一匹配节点位置监督约束“少而接近真值”；
+5. 复杂度权重只在验证通过率稳定高于目标后逐步增加，跌破目标时自动回退，同时安全储备反向恢复。
+
+`complexity_scale` 的默认升降周期由 `--complexity-ramp-epochs 10` 控制，最大为 `--complexity-max-scale 4`。这个机制应称为 **validation-pass feedback complexity multiplier**；它不是严格 Lagrangian/primal-dual 算法，也不是部署参数。以默认 90% target 和 2% margin 为例：pass≥92% 时复杂度全速增加且安全储备全速下降，90%≤pass<92% 时以 0.5 倍速度继续简化，pass<90% 时以 2 倍速度回滚。选择储备由 `--safety-anneal-epochs 10` 在 `2+0.25σ` 与 `0+0.05σ` 之间变化。
+
+## 6. 验证与模型选择
+
+每轮验证分别报告 Synthetic、UJI、Natural Earth 和 USGS：
+
+- dense proposal 通过率；
+- 一次性 deployment 通过率；
+- worst-source 通过率；
+- mean/P95 MSE；
+- 最终内部节点数；
+- 概率质量与 `beta`。
+
+对 certified Synthetic 还报告：真计数均值、count MAE/bias、exact/within-one rate、参数 RMSE、knot-match precision/recall/F1 与 matched MAE。验证会先按预测参数与真参数的单调对应关系把最终节点 warp 到真参数域，再做一维一对一匹配；`--knot-match-tolerance 0.01` 是节点匹配容差，不是拟合 MSE 阈值。
+
+checkpoint 选择遵循约束优化：
+
+1. 未达到部署目标时，先提高 worst-source 通过率并降低尾部误差；
+2. 达到目标但简化课程尚未成熟时，仍按可靠性排序；
+3. 成熟且可行后，先偏好同时达到正式 count/F1/matched-MAE 与 dense-pass 门槛的 checkpoint；
+4. 正式质量状态相同时，先偏好越过安全余量，再按 0.25 个节点宽度对 Synthetic count MAE 分档；同档内先最大化 knot-match F1、最小化 matched knot MAE，再比较原始 count MAE；
+5. 最后才以总体节点数、P95 MSE 和平均 MSE 打破平局。
+
+这对应目标：
+
+\[
+\min K\quad\text{s.t.}\quad
+\Pr(\operatorname{MSE}\le\varepsilon)\ge R_{target}.
+\]
+
+## 7. 推荐训练命令
+
+### 7.1 复杂真实曲线主实验：96 个内部候选
 
 ```powershell
-python scripts/train_candidate_pruning.py `
-  --epochs 150 `
-  --candidate-pretrain-epochs 0 `
-  --keep-position-calibration-epochs 20 `
-  --proposal-checkpoint outputs/candidate_pruning_one_shot_v12.pt `
-  --train-size 10000 `
-  --val-size 2000 `
-  --batch-size 16 `
-  --min-control-points 8 `
-  --max-control-points 24 `
-  --candidate-knots 28 `
-  --num-points 192 `
-  --fit-tolerance 0.005 `
-  --teacher-survivor-relaxation `
-  --teacher-relaxation-rounds 2 `
-  --teacher-relaxation-sweeps 2 `
-  --teacher-relaxation-grid-size 7 `
-  --teacher-relaxation-restarts 1 `
-  --one-shot-max-position-shift 0.15 `
-  --relocation-lr-scale 0.25 `
-  --teacher-cache-dir outputs/candidate_pruning_one_shot_v13_teacher `
-  --no-resample-train-each-epoch `
-  --output outputs/candidate_pruning_one_shot_v13.pt
+python scripts/train_v16.py `
+  --epochs 60 --proposal-epochs 20 `
+  --train-size 2400 --val-size 500 --real-val-size 100 `
+  --batch-size 16 --num-points 192 `
+  --min-control-points 8 --max-control-points 24 `
+  --candidate-knots 96 `
+  --mse-tolerance 2.5e-5 `
+  --knot-match-tolerance 0.01 `
+  --certified-minimal-source `
+  --minimality-margin 0.2 --minimality-max-attempts 16 `
+  --minimality-audit-points 512 --oscillation-amplitude 0.3 `
+  --proposal-pass-target 0.90 --deployment-pass-target 0.90 `
+  --one-shot-selection-policy mass_topk `
+  --one-shot-safety-sigma 0.25 --one-shot-safety-knots 2 `
+  --final-safety-sigma 0.05 --final-safety-knots 0 `
+  --safety-anneal-epochs 10 `
+  --one-shot-coverage-bins 4 --min-selected-knots 4 `
+  --relocation-blend 0 `
+  --teacher-prefix-search-steps 7 `
+  --count-weight 2.0 --supervised-count-weight 1.0 `
+  --supervised-over-count-weight 1.0 `
+  --true-parameter-weight 0.1 `
+  --proposal-knot-coverage-weight 1.0 `
+  --selected-knot-position-weight 1.0 --knot-position-beta 0.01 `
+  --complexity-weight 0.05 `
+  --complexity-ramp-epochs 10 --complexity-max-scale 4.0 `
+  --complexity-pass-margin 0.02 `
+  --real-fraction 0.5 `
+  --real-manifest data/splits/uji_pen_v2.jsonl `
+  --real-manifest data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
+  --real-manifest data/processed/usgs_contours/large_scale/manifest.jsonl `
+  --init-checkpoint outputs/checkpoints/candidate_selection_v16.proposal.pt `
+  --device cuda `
+  --output outputs/checkpoints/candidate_selection_v16_simplified_certified_k96.pt
 ```
 
-v13 的 `stable_pilot_descriptors=True` 使用 detached float64 pilot solve，避免条件数约 `1e8` 的 float32 正规方程把微小 CUDA 舍入误差放大成不同 KeepMask。该语义写入 proposal 指纹。当前版本又增加了教师起始域认证，因此包括旧 v14 在内的历史 cache 都不可直接复用：首次运行须显式使用 `--no-reuse-teacher-cache` 生成 `.pt` 和对应的 `.pt.start_domains.json`；只有同一个 proposal、固定数据样本、教师配置、shape 和认证元数据全部不变时，后续运行才可添加 `--reuse-teacher-cache`。
+这是工程 warm start：只复制形状兼容的 Encoder、ParameterHead 和候选生成张量；Kc=96 新 query、Selector 与 subset decoder 仍重新初始化。严格 Kc 容量消融应去掉 `--init-checkpoint`，并让两组采用相同随机初始化协议。proposal 阶段按 `--proposal-pass-target 0.90` 判断能否进入 Joint；0.02 安全余量只控制 Joint 中复杂度压力的全速/半速区间，不再把 proposal 门槛暗中提高到 92%。未达到 90% 时不会生成主 `.pt`。
 
-主要输出：
-
-```text
-candidate_pruning_one_shot_v13_distill.pt
-candidate_pruning_one_shot_v13_calibrated.pt
-candidate_pruning_one_shot_v13.pt
-candidate_pruning_one_shot_v13_last.pt
-candidate_pruning_one_shot_v13_teacher/train.pt
-candidate_pruning_one_shot_v13_teacher/val.pt
-candidate_pruning_one_shot_v13_teacher/train.pt.start_domains.json
-candidate_pruning_one_shot_v13_teacher/val.pt.start_domains.json
-```
-
-当 `candidate-pretrain-epochs > 0` 时，还会生成 `*_proposal.pt`。
-
-## 10. 小规模链路验证
-
-先用少量固定样本检查缓存、蒸馏和校准链路，再开始正式训练：
+### 7.2 “完整节点向量最多 64 项”消融
 
 ```powershell
-python scripts/train_candidate_pruning.py `
-  --epochs 4 `
-  --candidate-pretrain-epochs 0 `
-  --keep-position-calibration-epochs 1 `
-  --proposal-checkpoint outputs/candidate_pruning_one_shot_v12.pt `
-  --train-size 8 `
-  --val-size 4 `
-  --batch-size 2 `
-  --teacher-batch-size 2 `
-  --min-control-points 8 `
-  --max-control-points 24 `
-  --candidate-knots 28 `
-  --num-points 192 `
-  --teacher-relaxation-rounds 1 `
-  --teacher-relaxation-sweeps 1 `
-  --teacher-relaxation-grid-size 3 `
-  --teacher-cache-dir outputs/tmp/_smoke_v13_teacher `
-  --no-resample-train-each-epoch `
-  --output outputs/tmp/_smoke_v13.pt
+python scripts/train_v16.py `
+  --epochs 60 --proposal-epochs 20 `
+  --train-size 2400 --val-size 500 --real-val-size 100 `
+  --batch-size 16 --num-points 192 `
+  --min-control-points 8 --max-control-points 24 `
+  --full-knot-vector-size 64 `
+  --mse-tolerance 2.5e-5 `
+  --proposal-pass-target 0.90 --deployment-pass-target 0.90 `
+  --real-fraction 0.5 `
+  --real-manifest data/splits/uji_pen_v2.jsonl `
+  --real-manifest data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
+  --real-manifest data/processed/usgs_contours/large_scale/manifest.jsonl `
+  --device cuda `
+  --output outputs/checkpoints/candidate_selection_v16_full64.pt
 ```
 
-这条命令只验证代码路径，不代表正式训练配置或性能结论。
+不要用旧 v16 checkpoint 的 `--resume` 进入新结构；旧模型没有 adaptive-beta 参数。若只想迁移编码器、ParameterHead 和 proposal 权重，使用 `--init-checkpoint`，其余新头重新训练。
+
+## 8. 训练后检查
+
+```powershell
+python scripts/inspect_v16_checkpoint.py `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_simplified_certified_k96.pt
+```
+
+检查输出中的：
+
+- `one_shot_selection_policy = mass_topk`；
+- `adaptive threshold = True`；
+- `candidate capacity (internal) = 96`；
+- worst-source deployment pass rate 是否达到 90%；
+- 最终 K 是否明显低于 Kc，而不是固定为 0 或 Kc。
+- `simplification_ready = True`，且实际安全储备已经等于最终配置；
+- Synthetic count MAE/bias、knot-match F1 和 matched MAE。
+
+对于 certified Synthetic 的 source K=4～20，本轮训练目标是平均预测 K 落在 10～14，并让每条曲线的预测计数和节点位置尽量接近真值。因为该生成范围的真计数均值约为 12，优化中心是真值而不是盲目删到更少。10～14 是重新训练后的验收目标，不是未经训练即可保证的常数。即使平均 K 落入区间，也必须同时满足 MSE/pass、较小 count MAE/bias 和较高 knot-match F1；只看均值可能掩盖一部分曲线过删、另一部分过留。
+
+正式 checkpoint 的硬性节点真值门槛为 `count MAE<=2.0`、`knot-match F1@0.01>=0.60`、`matched-knot MAE<=0.005`；worst-source dense/deployment pass 均须达到 90%，最终固定安全节点为 0 且 safety sigma 不大于 0.05。达不到任一项时，检查脚本返回 2，只能作为诊断权重。
+
+该 10～14 范围不强加给没有节点真值的 UJI、Natural Earth 或 USGS；真实曲线的最终 K 仍由误差约束和学习到的复杂度决定。
+
+正式对比协议、论文适配方法和命令见 [v16 在线反事实子集学习](v16_counterfactual_subset.md) 与 [公开节点方法适配说明](published_knot_methods_reproduction.md)。

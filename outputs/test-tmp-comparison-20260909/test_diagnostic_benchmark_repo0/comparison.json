@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "checkpoint": "v16.pt",
+    "epoch": 1,
+    "mse_tolerance": 2.5e-05,
+    "objective_version": "candidate_selection_counterfactual_bspline_v16",
+    "hardware": {
+      "device": "cpu"
+    },
+    "num_points": 24,
+    "diagnostic_not_final": true,
+    "checkpoint_qualification": {
+      "reasons": [
+        "configured target below 97%"
+      ]
+    }
+  },
+  "summary": [
+    {
+      "dataset": "Synthetic",
+      "method": "ours",
+      "n": 1,
+      "failed": 0,
+      "mse_mean": 1e-06,
+      "mse_p95": 1e-06,
+      "fit_pass_rate": 1.0,
+      "reference_mse_mean": null,
+      "reference_pass_rate": null,
+      "final_k_mean": 2.0,
+      "canonical_k_mean": null,
+      "canonical_count_mae": null,
+      "canonical_count_bias": null,
+      "canonical_count_exact_rate": null,
+      "canonical_count_within_one_rate": null,
+      "total_ms_mean": 3.0,
+      "network_ms_mean": 1.0
+    }
+  ],
+  "measurements": [
+    {
+      "dataset": "Synthetic",
+      "method": "ours",
+      "status": "ok",
+      "mse": 1e-06,
+      "reference_mse": null,
+      "fit_pass": true,
+      "reference_pass": null,
+      "final_k": 2,
+      "total_ms": 3,
+      "network_ms": 1
+    }
+  ]
+}

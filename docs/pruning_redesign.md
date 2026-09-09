@@ -1,6 +1,8 @@
 # 节点结构方案演化
 
-当前主版本是 v12；历史 checkpoint 通过兼容层读取，但保持各自原有部署语义。
+当前主版本是 v16；历史 checkpoint 通过兼容层读取，但保持各自原有部署语义。
+v16 使用在线反事实组合学习和 selected-only 联合解码，完整说明见
+[v16 主流程](v16_counterfactual_subset.md)。本页其余内容按版本记录演化，不代表当前部署。
 
 ## v3–v6：直接结构预测
 
@@ -60,6 +62,26 @@ straight-through gate 让位置损失可以影响 keep score，因此删除和�
 
 v12 仍是固定深度一次性网络：它没有在线逐节点试删，也没有第二次网络 forward。标准 B 样条只在最终部署节点上 refit 一次。
 
+## v13–v15：修正监督与部署损失对齐
+
+- v13 改为按实际预测 survivor 集合匹配位置，并补充槽位无关的集合覆盖监督；
+- v14 让结构输出反馈到参数头，再把候选映射到更新参数域；
+- v15 用实际离散 mask 的标准 B 样条部署 MSE 校准，并对齐 mass-TopK 的计数语义。
+
+它们仍依赖固定离线 Hard-RMS 教师，候选是否可行与 selector 是否可行没有形成严格的两阶段 gate。
+
+## v16：候选可行性 + 在线反事实组合
+
+v16 使用独立模型和训练入口：
+
+~~~text
+proposal：全候选真实 refit → worst-source 可行性 gate
+joint：随机/反事实 KeepMask → selected-only 参数与位置联合解码 → 真实 refit
+deployment：adaptive beta + probability-mass Top-K 一次选择 → 一次 refit
+~~~
+
+它取消离线 teacher 和旧 checkpoint 的隐式兼容迁移，重新引入曲线级自适应 beta 与 mass-TopK，并明确把“候选空间足够”和“组合足够小”分开验证。
+
 ## hybrid：独立的离线质量搜索
 
 hybrid 不是 v12 网络层。它在一次网络预测后执行 beam 删除、coordinate 位置精修和多次标准 refit；传统 greedy 作为 fallback。它会实际移动节点，当前图显示 `proposal u -> refined u*`。
@@ -74,9 +96,15 @@ hybrid 适合时间不敏感、需要逐样本继续压缩的场景。有限 bea
 | v8–v10 | 离线教师蒸馏的一次性 mask | 固定/弱 | 一次 forward + 一次 refit |
 | v11 | 一次性 mask 与位置反馈 | 有头，但教师偏向零位移 | 一次 forward + 一次 refit |
 | v12 | final-mask 条件化 selector + relocation | delete-then-relax 监督、selected-only attention | 一次 forward + 一次 refit |
+| v13–v15 | 离线教师的一次性 mask | 参数、mask、位置逐步联动并对齐部署 MSE | 一次 forward + 一次 refit |
+| v16 | 在线 Bernoulli/反事实组合学习 | selected-only 参数更新、warp 与重定位 | 一次 forward + 一次 refit |
 | hybrid | beam/greedy 子集搜索 | coordinate refinement | 一次 forward + 多次 refit |
 
 ## 兼容边界
+
+- v16 使用独立 objective 和入口，v8–v15 checkpoint 不能改名后当作 v16。
+- v16 不读取旧离线 teacher cache；只允许通过 init-checkpoint 部分迁移形状兼容的 encoder/candidate tensors。
+- v16 正式结果要求完成 joint 且 worst-source deployment pass 达到协议目标。
 
 - v11 权重可以严格载入 v12；新增 relocation head 零初始化，初始行为保持中性。
 - 载入不等于训练完成。需要 v12 delete-then-relax teacher 和联合校准才能获得非零重定位。

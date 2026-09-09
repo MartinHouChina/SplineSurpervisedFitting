@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 from typing import Any, Mapping
+
+from torch import nn
 
 from .models.spline_network import SplineFittingNetwork
 
@@ -39,7 +42,386 @@ V14_JOINT_PARAMETER_STRUCTURE_OBJECTIVE_VERSION = (
 V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION = (
     "candidate_pruning_deployment_aligned_feedback_v15"
 )
+V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION = (
+    "candidate_selection_counterfactual_bspline_v16"
+)
+V16_ADAPTIVE_SELECTION_REVISION = "v16_ranked_prefix_count_coupled_mass_topk"
+V16_CERTIFIED_SYNTHETIC_CONTRACT = "source_subset_threshold_minimal_v1"
+V16_SIMPLIFICATION_CONTRACT = (
+    "ranked_prefix_certified_cardinality_adaptive_complexity_v1"
+)
+V16_MINIMALITY_MARGIN = 0.2
+V16_MINIMALITY_AUDIT_POINTS = 512
+# Engineering acceptance protocol selected for v16.  Keep this distinct from
+# the MSE tolerance: 0.90 is the minimum worst-source *fraction* of curves that
+# must satisfy the unchanged per-curve MSE budget.
+V16_FORMAL_PASS_RATE = 0.90
+V16_FORMAL_KNOT_MATCH_TOLERANCE = 0.01
+V16_FORMAL_SYNTHETIC_COUNT_MAE_MAX = 2.0
+V16_FORMAL_SYNTHETIC_KNOT_F1_MIN = 0.60
+V16_FORMAL_SYNTHETIC_MATCHED_MAE_MAX = 0.005
+V16_FORMAL_FINAL_SAFETY_SIGMA_MAX = 0.05
+# Historical training scripts import this alias. Keep their v15 defaults and
+# checkpoint labels unchanged; v16 has a dedicated trainer and explicit label.
 LATEST_OBJECTIVE_VERSION = V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION
+
+
+def _finite_checkpoint_float(value: Any) -> float | None:
+    """Return a finite scalar checkpoint value without accepting booleans."""
+    if isinstance(value, bool):
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
+
+def assess_v16_checkpoint(
+    checkpoint: Mapping[str, Any],
+    *,
+    required_pass_rate: float = V16_FORMAL_PASS_RATE,
+    required_mse_tolerance: float | None = None,
+) -> dict[str, Any]:
+    """Audit whether a v16 checkpoint is eligible for formal reporting.
+
+    ``checkpoint_quality`` records whether the *configured* training target was
+    met.  That target is intentionally configurable for ablations, so formal
+    evaluation must also inspect the configured target and measured worst-source
+    validation rate instead of trusting the historical boolean/string fields.
+    """
+    required = _finite_checkpoint_float(required_pass_rate)
+    if required is None or not 0.0 <= required <= 1.0:
+        raise ValueError("required_pass_rate must be finite and lie in [0,1]")
+    required_tolerance = None
+    if required_mse_tolerance is not None:
+        required_tolerance = _finite_checkpoint_float(required_mse_tolerance)
+        if required_tolerance is None or required_tolerance <= 0.0:
+            raise ValueError("required_mse_tolerance must be finite and positive")
+
+    training = checkpoint.get("training_config")
+    validation = checkpoint.get("validation_metrics")
+    deployment = checkpoint.get("deployment_config")
+    model_config = checkpoint.get("model_config")
+    dataset_config = checkpoint.get("dataset_config")
+    loss_config = checkpoint.get("loss_config")
+    training = training if isinstance(training, Mapping) else {}
+    validation = validation if isinstance(validation, Mapping) else {}
+    deployment = deployment if isinstance(deployment, Mapping) else {}
+    model_config = model_config if isinstance(model_config, Mapping) else {}
+    dataset_config = dataset_config if isinstance(dataset_config, Mapping) else {}
+    loss_config = loss_config if isinstance(loss_config, Mapping) else {}
+    loss_weights = loss_config.get("weights")
+    loss_weights = loss_weights if isinstance(loss_weights, Mapping) else {}
+    configured_proposal = _finite_checkpoint_float(
+        training.get("proposal_pass_target")
+    )
+    configured_deployment = _finite_checkpoint_float(
+        training.get("deployment_pass_target")
+    )
+    observed_dense = _finite_checkpoint_float(
+        validation.get("worst_dense_pass_rate")
+    )
+    observed_deployment = _finite_checkpoint_float(
+        validation.get("worst_deployment_pass_rate")
+    )
+    recorded_tolerance = _finite_checkpoint_float(
+        deployment.get("mse_tolerance", training.get("mse_tolerance"))
+    )
+    recorded_match_tolerance = _finite_checkpoint_float(
+        deployment.get(
+            "knot_match_tolerance", training.get("knot_match_tolerance")
+        )
+    )
+    certificate_rms_tolerance = _finite_checkpoint_float(
+        dataset_config.get("canonical_knot_tolerance")
+    )
+    minimality_margin = _finite_checkpoint_float(
+        dataset_config.get("minimality_margin")
+    )
+    minimality_audit_points = dataset_config.get("minimality_audit_points")
+    candidate_capacity = _finite_checkpoint_float(
+        model_config.get("max_internal_knots", training.get("candidate_knots"))
+    )
+    observed_keep_count = _finite_checkpoint_float(
+        validation.get("keep_count")
+    )
+    final_safety_sigma = _finite_checkpoint_float(
+        training.get("final_safety_sigma")
+    )
+    applied_safety_sigma = _finite_checkpoint_float(
+        model_config.get(
+            "one_shot_safety_sigma", deployment.get("one_shot_safety_sigma")
+        )
+    )
+    final_safety_knots = training.get("final_safety_knots")
+    applied_safety_knots = model_config.get(
+        "one_shot_safety_knots", deployment.get("one_shot_safety_knots")
+    )
+    synthetic_count_mae = _finite_checkpoint_float(
+        validation.get("synthetic_count_mae")
+    )
+    synthetic_knot_match_f1 = _finite_checkpoint_float(
+        validation.get("synthetic_knot_match_f1")
+    )
+    synthetic_knot_matched_mae = _finite_checkpoint_float(
+        validation.get("synthetic_knot_matched_mae")
+    )
+    configured_target_met = (
+        configured_deployment is not None
+        and observed_deployment is not None
+        and observed_deployment >= configured_deployment
+    )
+    configured_checkpoint_accepted = (
+        checkpoint.get("stage") == "joint" and configured_target_met
+    )
+    reasons: list[str] = []
+    if checkpoint.get("objective_version") != V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
+        reasons.append("objective_version is not v16")
+    architecture_revision = checkpoint.get("architecture_revision")
+    selection_policy = model_config.get(
+        "one_shot_selection_policy",
+        deployment.get("one_shot_selection_policy"),
+    )
+    adaptive_threshold = model_config.get(
+        "one_shot_adaptive_threshold",
+        deployment.get("adaptive_keep_threshold"),
+    )
+    if architecture_revision != V16_ADAPTIVE_SELECTION_REVISION:
+        reasons.append(
+            "checkpoint is not the current v16 adaptive-beta mass-TopK revision"
+        )
+    if selection_policy != "mass_topk":
+        reasons.append("formal v16 selection policy is not mass_topk")
+    if adaptive_threshold is not True:
+        reasons.append("formal v16 adaptive keep threshold is not enabled")
+    simplification_contract = checkpoint.get("simplification_contract")
+    if simplification_contract != V16_SIMPLIFICATION_CONTRACT:
+        reasons.append(
+            "checkpoint is not the ranked-prefix/count-coupled simplification revision"
+        )
+    if checkpoint.get("simplification_ready") is not True:
+        reasons.append("joint simplification curriculum was not mature when saved")
+    if (
+        final_safety_sigma is None
+        or applied_safety_sigma is None
+        or not math.isclose(
+            final_safety_sigma, applied_safety_sigma, rel_tol=1e-12, abs_tol=1e-12
+        )
+    ):
+        reasons.append("checkpoint was not evaluated at the final safety sigma")
+    elif final_safety_sigma > V16_FORMAL_FINAL_SAFETY_SIGMA_MAX:
+        reasons.append(
+            "final safety sigma exceeds the formal simplification allowance"
+        )
+    if (
+        isinstance(final_safety_knots, bool)
+        or not isinstance(final_safety_knots, int)
+        or isinstance(applied_safety_knots, bool)
+        or not isinstance(applied_safety_knots, int)
+        or final_safety_knots != applied_safety_knots
+    ):
+        reasons.append("checkpoint was not evaluated at the final safety-knot reserve")
+    elif final_safety_knots != 0:
+        reasons.append("formal simplification requires zero fixed safety knots")
+    synthetic_contract = checkpoint.get("synthetic_data_contract")
+    certified_synthetic = dataset_config.get("certified_minimal_source")
+    if synthetic_contract != V16_CERTIFIED_SYNTHETIC_CONTRACT:
+        reasons.append(
+            "synthetic data contract is not the certified source-subset minimality revision"
+        )
+    if certified_synthetic is not True:
+        reasons.append("certified-minimal synthetic source generation is not enabled")
+    if certificate_rms_tolerance is None or certificate_rms_tolerance <= 0:
+        reasons.append("synthetic minimality RMS tolerance is missing or invalid")
+    elif (
+        recorded_tolerance is not None
+        and not math.isclose(
+            certificate_rms_tolerance * certificate_rms_tolerance,
+            recorded_tolerance,
+            rel_tol=1e-12,
+            abs_tol=0.0,
+        )
+    ):
+        reasons.append("synthetic certificate RMS tolerance does not match sqrt(MSE tolerance)")
+    if minimality_margin is None or minimality_margin < V16_MINIMALITY_MARGIN:
+        reasons.append(
+            f"synthetic minimality margin is below {V16_MINIMALITY_MARGIN:g}"
+        )
+    if (
+        isinstance(minimality_audit_points, bool)
+        or not isinstance(minimality_audit_points, int)
+        or minimality_audit_points < V16_MINIMALITY_AUDIT_POINTS
+    ):
+        reasons.append(
+            f"synthetic minimality audit grid has fewer than "
+            f"{V16_MINIMALITY_AUDIT_POINTS} points"
+        )
+    if candidate_capacity is None or candidate_capacity <= 0:
+        reasons.append("candidate-knot capacity is missing or invalid")
+    if observed_keep_count is None or observed_keep_count < 0:
+        reasons.append("validation mean retained-knot count is missing or invalid")
+    elif (
+        candidate_capacity is not None
+        and candidate_capacity > 0
+        and observed_keep_count >= candidate_capacity - 1e-9
+    ):
+        reasons.append(
+            "validation deployment retains the entire candidate set (degenerate all-keep solution)"
+        )
+    if synthetic_count_mae is None or synthetic_count_mae < 0:
+        reasons.append("certified synthetic count MAE is missing or invalid")
+    elif synthetic_count_mae > V16_FORMAL_SYNTHETIC_COUNT_MAE_MAX:
+        reasons.append(
+            "certified synthetic count MAE exceeds the formal limit "
+            f"{V16_FORMAL_SYNTHETIC_COUNT_MAE_MAX:g}"
+        )
+    if (
+        synthetic_knot_match_f1 is None
+        or not 0 <= synthetic_knot_match_f1 <= 1
+    ):
+        reasons.append("certified synthetic knot-match F1 is missing or invalid")
+    elif synthetic_knot_match_f1 < V16_FORMAL_SYNTHETIC_KNOT_F1_MIN:
+        reasons.append(
+            "certified synthetic knot-match F1 is below the formal minimum "
+            f"{V16_FORMAL_SYNTHETIC_KNOT_F1_MIN:g}"
+        )
+    if synthetic_knot_matched_mae is None or synthetic_knot_matched_mae < 0:
+        reasons.append("certified synthetic matched-knot MAE is missing or invalid")
+    elif synthetic_knot_matched_mae > V16_FORMAL_SYNTHETIC_MATCHED_MAE_MAX:
+        reasons.append(
+            "certified synthetic matched-knot MAE exceeds the formal limit "
+            f"{V16_FORMAL_SYNTHETIC_MATCHED_MAE_MAX:g}"
+        )
+    if (
+        recorded_match_tolerance is None
+        or not math.isclose(
+            recorded_match_tolerance,
+            V16_FORMAL_KNOT_MATCH_TOLERANCE,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+    ):
+        reasons.append(
+            "formal knot diagnostics must use match@"
+            f"{V16_FORMAL_KNOT_MATCH_TOLERANCE:g}"
+        )
+    required_positive_weights = (
+        "count_weight",
+        "supervised_count_weight",
+        "supervised_over_count_weight",
+        "complexity_weight",
+        "true_parameter_weight",
+        "proposal_knot_coverage_weight",
+        "selected_knot_position_weight",
+    )
+    inactive_weights = [
+        name
+        for name in required_positive_weights
+        if (
+            (weight := _finite_checkpoint_float(loss_weights.get(name))) is None
+            or weight <= 0
+        )
+    ]
+    if inactive_weights:
+        reasons.append(
+            "formal simplification supervision is inactive: "
+            + ", ".join(inactive_weights)
+        )
+    if loss_config.get("ranked_prefix_teacher") is not True:
+        reasons.append("ranked-prefix teacher is not enabled")
+    if checkpoint.get("stage") != "joint":
+        reasons.append("checkpoint is not from the joint stage")
+    if configured_proposal is None:
+        reasons.append("configured proposal pass target is missing or invalid")
+    elif configured_proposal < required:
+        reasons.append(
+            f"configured proposal pass target {configured_proposal:.3%} is below "
+            f"the required {required:.3%}"
+        )
+    if configured_deployment is None:
+        reasons.append("configured deployment pass target is missing or invalid")
+    elif configured_deployment < required:
+        reasons.append(
+            f"configured deployment pass target {configured_deployment:.3%} is below "
+            f"the required {required:.3%}"
+        )
+    if observed_deployment is None:
+        reasons.append("worst-source deployment pass rate is missing or invalid")
+    elif observed_deployment < required:
+        reasons.append(
+            f"observed worst-source deployment pass rate {observed_deployment:.3%} "
+            f"is below the required {required:.3%}"
+        )
+    if observed_dense is None:
+        reasons.append("worst-source dense proposal pass rate is missing or invalid")
+    elif observed_dense < required:
+        reasons.append(
+            f"observed worst-source dense proposal pass rate {observed_dense:.3%} "
+            f"is below the required {required:.3%}"
+        )
+    if checkpoint.get("proposal_ready") is not True:
+        reasons.append("proposal feasibility gate was not satisfied")
+    if training.get("allow_infeasible_proposals") is True:
+        reasons.append("infeasible-proposal ablation was enabled")
+    stored_constraint = checkpoint.get("best_deployment_pass_constraint_satisfied")
+    if stored_constraint is not configured_checkpoint_accepted:
+        reasons.append("saved deployment-target flag is inconsistent with measured metrics")
+    expected_quality = (
+        "deployment_target_met" if configured_checkpoint_accepted else "target_not_met"
+    )
+    if checkpoint.get("checkpoint_quality") != expected_quality:
+        reasons.append("checkpoint_quality is inconsistent with measured metrics")
+    if required_tolerance is not None:
+        if recorded_tolerance is None:
+            reasons.append("checkpoint MSE tolerance is missing or invalid")
+        elif not math.isclose(
+            recorded_tolerance, required_tolerance, rel_tol=1e-12, abs_tol=0.0
+        ):
+            reasons.append(
+                f"checkpoint MSE tolerance {recorded_tolerance:.6g} differs from "
+                f"the requested formal tolerance {required_tolerance:.6g}"
+            )
+
+    return {
+        "schema_version": 2,
+        "required_reporting_pass_rate": required,
+        "required_mse_tolerance": required_tolerance,
+        "configured_proposal_pass_target": configured_proposal,
+        "configured_deployment_pass_target": configured_deployment,
+        "observed_worst_dense_pass_rate": observed_dense,
+        "observed_worst_deployment_pass_rate": observed_deployment,
+        "recorded_mse_tolerance": recorded_tolerance,
+        "recorded_knot_match_tolerance": recorded_match_tolerance,
+        "candidate_knot_capacity": candidate_capacity,
+        "observed_mean_retained_knots": observed_keep_count,
+        "configured_target_met": configured_target_met,
+        "configured_checkpoint_accepted": configured_checkpoint_accepted,
+        "architecture_revision": architecture_revision,
+        "selection_policy": selection_policy,
+        "adaptive_keep_threshold": adaptive_threshold,
+        "simplification_contract": simplification_contract,
+        "simplification_ready": checkpoint.get("simplification_ready"),
+        "final_safety_sigma": final_safety_sigma,
+        "applied_safety_sigma": applied_safety_sigma,
+        "final_safety_knots": final_safety_knots,
+        "applied_safety_knots": applied_safety_knots,
+        "synthetic_count_mae": synthetic_count_mae,
+        "synthetic_knot_match_f1": synthetic_knot_match_f1,
+        "synthetic_knot_matched_mae": synthetic_knot_matched_mae,
+        "formal_synthetic_count_mae_max": V16_FORMAL_SYNTHETIC_COUNT_MAE_MAX,
+        "formal_synthetic_knot_f1_min": V16_FORMAL_SYNTHETIC_KNOT_F1_MIN,
+        "formal_synthetic_matched_mae_max": (
+            V16_FORMAL_SYNTHETIC_MATCHED_MAE_MAX
+        ),
+        "synthetic_data_contract": synthetic_contract,
+        "certified_minimal_source": certified_synthetic,
+        "synthetic_certificate_rms_tolerance": certificate_rms_tolerance,
+        "synthetic_minimality_margin": minimality_margin,
+        "synthetic_minimality_audit_points": minimality_audit_points,
+        "formal_reporting_eligible": not reasons,
+        "reasons": reasons,
+    }
 
 
 LEGACY_LOSS_CONFIG: dict[str, Any] = {
@@ -361,6 +743,13 @@ def migrate_model_config(
         raise KeyError("checkpoint is missing model_config")
     config = dict(checkpoint["model_config"])
     objective_version = checkpoint.get("objective_version")
+    if objective_version == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
+        # A separate architecture, not another set of defaults for the legacy
+        # SplineFittingNetwork. Never inject old head/gate configuration fields.
+        config.setdefault("structure_mode", "candidate_pruning_one_shot")
+        if config["structure_mode"] != "candidate_pruning_one_shot":
+            raise ValueError("v16 requires candidate_pruning_one_shot structure_mode")
+        return config, False
     if "structure_mode" not in config:
         if objective_version in {
             ONE_SHOT_PRUNING_OBJECTIVE_VERSION,
@@ -824,8 +1213,15 @@ def migrate_loss_config(
 
 def build_model_from_checkpoint(
     checkpoint: Mapping[str, Any],
-) -> tuple[SplineFittingNetwork, dict[str, Any], bool]:
-    """Construct v7, v6, or a strictly migrated historical model."""
+) -> tuple[nn.Module, dict[str, Any], bool]:
+    """Strictly restore v16 or the unchanged historical network architecture."""
+    if checkpoint.get("objective_version") == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
+        from .models.v16_network import V16CandidateSelectionNetwork
+
+        config, legacy = migrate_model_config(checkpoint)
+        model = V16CandidateSelectionNetwork(**config)
+        model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+        return model, model.get_config(), legacy
     config, legacy = migrate_model_config(checkpoint)
     model = SplineFittingNetwork(**config)
     model.load_state_dict(checkpoint["model_state_dict"])

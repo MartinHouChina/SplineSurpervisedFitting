@@ -48,10 +48,22 @@ from .feature_cdf_knot_placement import (
     fit_feature_cdf_to_tolerance,
     place_feature_cdf_knots,
 )
+from .dung_direct_knot import DungDirectKnotResult, fit_dung_direct_knots
+from .liang_feature_iki import LiangFeatureIKIResult, fit_liang_feature_iki
+from .luo_linf_de import LuoLinfDEResult, fit_luo_linf_de
 from .minimal_knot_pruning import (
     KnotDeletionStep,
     MinimalKnotPruningResult,
     prune_knots_to_rms_tolerance,
+)
+from .park_dominant_point import ParkDominantPointResult, fit_park_dominant_points
+from .published_baselines import (
+    COMPARISON_BASELINE_METHODS,
+    NUMERICAL_BASELINE_METHODS,
+    PUBLISHED_ADAPTATION_METHODS,
+    PUBLISHED_BASELINE_METHODS,
+    PublishedBaselineResult,
+    run_published_baseline,
 )
 from .sparse_knot_paper import (
     SparseKnotPaperResult,
@@ -68,16 +80,25 @@ __all__ = [
     "GradientKnotDeletionStep",
     "GradientKnotPruningResult",
     "FeatureCDFKnotPlacementResult",
+    "DungDirectKnotResult",
     "HybridKnotSearchResult",
     "KnotMatchStatistics",
     "KnotDeletionStep",
     "MinimalKnotPruningResult",
     "KnotPositionRefinementResult",
+    "LiangFeatureIKIResult",
+    "LuoLinfDEResult",
+    "ParkDominantPointResult",
+    "COMPARISON_BASELINE_METHODS",
+    "NUMERICAL_BASELINE_METHODS",
+    "PUBLISHED_ADAPTATION_METHODS",
+    "PUBLISHED_BASELINE_METHODS",
     "PrunedSplineFit",
     "PolylineSimplificationResult",
     "REFERENCE_CERTIFICATE_SCOPE",
     "ReferenceCertifiedFitResult",
     "SparseKnotPaperResult",
+    "PublishedBaselineResult",
     "VerifiedKnotRepairResult",
     "activity_statistics",
     "build_open_knot_vector",
@@ -87,6 +108,10 @@ __all__ = [
     "fit_gradient_knot_pruning",
     "finite_difference_feature",
     "fit_feature_cdf_to_tolerance",
+    "fit_dung_direct_knots",
+    "fit_liang_feature_iki",
+    "fit_luo_linf_de",
+    "fit_park_dominant_points",
     "gradient_knot_pruning_baseline",
     "gradient_prune_knots",
     "hard_gate_mask",
@@ -102,6 +127,7 @@ __all__ = [
     "refit_hard_gated_bspline_batch",
     "refit_model_output_as_bsplines",
     "refine_knot_positions",
+    "run_published_baseline",
     "second_difference_matrix",
     "simplify_polyline_to_mse",
     "verified_confidence_repair",

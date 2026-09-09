@@ -1,0 +1,5602 @@
+[
+  {
+    "epoch": 1,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.18553530140871888,
+      "dense_mse": 5.975475727084001e-06,
+      "dense_pass_rate": 0.94525,
+      "deployment_mse": 5.975475727084001e-06,
+      "deployment_pass_rate": 0.94525,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.94525,
+      "subset_best_mse": 5.975475727084001e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.94525,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.8741602729105188e-06,
+      "dense_pass_rate": 0.9846153846153847,
+      "deployment_mse": 1.8744196711045816e-06,
+      "deployment_pass_rate": 0.9846153846153847,
+      "deployment_mse_p95": 3.211547343099459e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 7.100634244877512e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 7.100728719805894e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.787092202942152e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 4.923381552915021e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 4.926319787487192e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.980402002796923e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 9.126263610305836e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 9.126938088841796e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.4147577355335235e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 7.644847537361895e-06,
+          "dense_pass_rate": 0.88,
+          "deployment_mse": 7.647156936963152e-06,
+          "deployment_pass_rate": 0.88,
+          "deployment_mse_p95": 3.1182782398758446e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.88,
+      "worst_deployment_pass_rate": 0.88
+    },
+    "seconds": 156.9179531000009
+  },
+  {
+    "epoch": 2,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.15936921972209114,
+      "dense_mse": 5.3079013176177115e-06,
+      "dense_pass_rate": 0.95325,
+      "deployment_mse": 5.3079013176177115e-06,
+      "deployment_pass_rate": 0.95325,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95325,
+      "subset_best_mse": 5.3079013176177115e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95325,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.8427558737449956e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.843371384584231e-06,
+      "deployment_pass_rate": 0.9853846153846154,
+      "deployment_mse_p95": 2.853640724536512e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 7.053447043900731e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 7.051811819766625e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.749518972728478e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 4.1711094141503453e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 4.183571724093369e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.450164559230612e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 9.150463266798447e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 9.185089359105926e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.469432297768741e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 7.334805106570733e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 7.308569648313117e-06,
+          "deployment_pass_rate": 0.89,
+          "deployment_mse_p95": 3.045671436444496e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.89
+    },
+    "seconds": 137.9643485000015
+  },
+  {
+    "epoch": 3,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.15003798548042846,
+      "dense_mse": 5.172082395444805e-06,
+      "dense_pass_rate": 0.9525,
+      "deployment_mse": 5.172082395444805e-06,
+      "deployment_pass_rate": 0.9525,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9525,
+      "subset_best_mse": 5.172082395444805e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9525,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.8219679772705394e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.8212135773570285e-06,
+      "deployment_pass_rate": 0.9853846153846154,
+      "deployment_mse_p95": 3.0579218092186995e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 7.119179486314961e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 7.12054924981046e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.871602980119879e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 4.412259576021815e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 4.426981382278574e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.5915230430834577e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 8.683236248167964e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 8.674572310337734e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.429140367997169e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 7.441942012431907e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 7.437956807265319e-06,
+          "deployment_pass_rate": 0.89,
+          "deployment_mse_p95": 3.2990734328012434e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.89
+    },
+    "seconds": 131.4517596000005
+  },
+  {
+    "epoch": 4,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.15408072432305786,
+      "dense_mse": 5.003640788230151e-06,
+      "dense_pass_rate": 0.95225,
+      "deployment_mse": 5.003640788230151e-06,
+      "deployment_pass_rate": 0.95225,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95225,
+      "subset_best_mse": 5.003640788230151e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95225,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.7635729214471992e-06,
+      "dense_pass_rate": 0.9846153846153847,
+      "deployment_mse": 1.7672925518851869e-06,
+      "deployment_pass_rate": 0.9846153846153847,
+      "deployment_mse_p95": 3.0352298847489564e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.567923832495235e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.572210338401503e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.451316446425716e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 3.653032349480811e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 3.683774665685298e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.3857668482847985e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 8.767295271639671e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 8.78624836469347e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.2774393142294294e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 7.225925639730601e-06,
+          "dense_pass_rate": 0.88,
+          "deployment_mse": 7.247967004843926e-06,
+          "deployment_pass_rate": 0.88,
+          "deployment_mse_p95": 3.0335298374391306e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.88,
+      "worst_deployment_pass_rate": 0.88
+    },
+    "seconds": 129.64707329999874
+  },
+  {
+    "epoch": 5,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.15694261918344254,
+      "dense_mse": 5.205796363919987e-06,
+      "dense_pass_rate": 0.95375,
+      "deployment_mse": 5.205796363919987e-06,
+      "deployment_pass_rate": 0.95375,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95375,
+      "subset_best_mse": 5.205796363919987e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95375,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.736604471432988e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.739321941979886e-06,
+      "deployment_pass_rate": 0.9853846153846154,
+      "deployment_mse_p95": 2.713161007454406e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.677988502328162e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.681144962753206e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.807847602615243e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 3.596646463605082e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 3.6103886370410536e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.3877565826805572e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 8.42046321238087e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 8.434486644394677e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.4250806769055693e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 7.117741767559305e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 7.134514774886529e-06,
+          "deployment_pass_rate": 0.89,
+          "deployment_mse_p95": 2.9638804528559864e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.89
+    },
+    "seconds": 126.97056629999861
+  },
+  {
+    "epoch": 6,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.15155698659914527,
+      "dense_mse": 4.740926398496204e-06,
+      "dense_pass_rate": 0.952,
+      "deployment_mse": 4.740926398496204e-06,
+      "deployment_pass_rate": 0.952,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.952,
+      "subset_best_mse": 4.740926398496204e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.952,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6882805850197928e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.6875286549343495e-06,
+      "deployment_pass_rate": 0.9853846153846154,
+      "deployment_mse_p95": 2.770733998809832e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.450242228065713e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.458659000264085e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.219510198302903e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 3.4624096201649137e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 3.502820662450891e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.448952687320626e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 8.127118068932078e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 8.10789196191091e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.103393750942214e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 7.024046346243026e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 7.021039485726462e-06,
+          "deployment_pass_rate": 0.89,
+          "deployment_mse_p95": 2.9865114359236527e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.89
+    },
+    "seconds": 125.50976500000252
+  },
+  {
+    "epoch": 7,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.14212882654612244,
+      "dense_mse": 4.447437281304139e-06,
+      "dense_pass_rate": 0.95525,
+      "deployment_mse": 4.447437281304139e-06,
+      "deployment_pass_rate": 0.95525,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95525,
+      "subset_best_mse": 4.447437281304139e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95525,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6895547495369875e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.6932527562951815e-06,
+      "deployment_pass_rate": 0.9853846153846154,
+      "deployment_mse_p95": 2.5824790851775107e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.490955891830695e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.501853893861129e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.402197507690621e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 3.335708168434348e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 3.393789714359062e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.3157791851973025e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 8.064547333457565e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 8.115473213359832e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.231911018995034e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 7.075137701849143e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 7.055579753180493e-06,
+          "deployment_pass_rate": 0.89,
+          "deployment_mse_p95": 3.016537093058894e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.89
+    },
+    "seconds": 123.15418870000212
+  },
+  {
+    "epoch": 8,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.14824005148418257,
+      "dense_mse": 4.822177836492163e-06,
+      "dense_pass_rate": 0.95675,
+      "deployment_mse": 4.822177836492163e-06,
+      "deployment_pass_rate": 0.95675,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95675,
+      "subset_best_mse": 4.822177836492163e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95675,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6457654992631457e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.6462152397418386e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.5372548138410636e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.361621775370494e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.37485887944694e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.164152156103292e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 3.293290502390346e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 3.348884530239093e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.2227484815946825e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.769431070262066e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.752251059316899e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.153512535497032e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.934569594549297e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.938799724856154e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.945179369256107e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 121.98659630000111
+  },
+  {
+    "epoch": 9,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.14987525408270277,
+      "dense_mse": 5.0218414952488475e-06,
+      "dense_pass_rate": 0.956,
+      "deployment_mse": 5.0218414952488475e-06,
+      "deployment_pass_rate": 0.956,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.956,
+      "subset_best_mse": 5.0218414952488475e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.956,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.669595472635267e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.6747996654093655e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.709412365907488e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.475137885503068e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.495263488674246e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.408523663080545e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 3.632902910779234e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 3.7101667880471493e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.5359124213781132e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.767899779721053e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.837678671741831e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.158604149697805e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 7.0984131879564274e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 7.0684368111009585e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.9670935825195913e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 121.14990279999984
+  },
+  {
+    "epoch": 10,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1332087856731367,
+      "dense_mse": 4.122926751896372e-06,
+      "dense_pass_rate": 0.958,
+      "deployment_mse": 4.122926751896372e-06,
+      "deployment_pass_rate": 0.958,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.958,
+      "subset_best_mse": 4.122926751896372e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.958,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6709979915932136e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.6771994427751687e-06,
+      "deployment_pass_rate": 0.9853846153846154,
+      "deployment_mse_p95": 2.6092565376681997e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.624485612453037e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.641413032236433e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.804597613909797e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 3.3377366678433706e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 3.437479267255396e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.8162026439546583e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.791305606197402e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.861336843535163e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.1708864266928337e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.973409005277002e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 6.95709495358006e-06,
+          "deployment_pass_rate": 0.89,
+          "deployment_mse_p95": 2.9385396964633478e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.89
+    },
+    "seconds": 120.30161600000065
+  },
+  {
+    "epoch": 11,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12883787993357074,
+      "dense_mse": 4.122669027970612e-06,
+      "dense_pass_rate": 0.9595,
+      "deployment_mse": 4.122669027970612e-06,
+      "deployment_pass_rate": 0.9595,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9595,
+      "subset_best_mse": 4.122669027970612e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9595,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.623436318584737e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.6282667389804067e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.4300349935151237e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.299426012501854e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.31587733534617e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.016843512655737e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.817913510413416e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.8858079254546404e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.735039819977525e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.6178876782915444e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.683852343853604e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.1655697535321584e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.905567099766838e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.8791571350000485e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 3.0283444330916364e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 120.1079404000011
+  },
+  {
+    "epoch": 12,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1319351769047368,
+      "dense_mse": 4.170717944823061e-06,
+      "dense_pass_rate": 0.959,
+      "deployment_mse": 4.170717944823061e-06,
+      "deployment_pass_rate": 0.959,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.959,
+      "subset_best_mse": 4.170717944823061e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.959,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6281526667061122e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.6305646009981608e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 2.522866506535276e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.229712428150144e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.249145093876776e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.928012302336017e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.8704942953744337e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.982393380993602e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.1318639107564596e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 8.039993073768664e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 8.04552262881848e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.998318865818295e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.609229735723209e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.6044327521814785e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.9153651129477976e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 119.3832928999982
+  },
+  {
+    "epoch": 13,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.14037032218822645,
+      "dense_mse": 4.549708667965474e-06,
+      "dense_pass_rate": 0.95575,
+      "deployment_mse": 4.549708667965474e-06,
+      "deployment_pass_rate": 0.95575,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95575,
+      "subset_best_mse": 4.549708667965474e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95575,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6227523075680127e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.625391210978273e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.6073812796421405e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.20114671966177e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.219936542164637e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.922124130403102e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.851576179821157e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.920585577058675e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.0083357227791775e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.838691068145522e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.886554178422577e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.8181559914945415e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.770784592594758e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.73153646442447e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.8537726407632723e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 118.39177759999802
+  },
+  {
+    "epoch": 14,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.13438269583472906,
+      "dense_mse": 4.300487902006672e-06,
+      "dense_pass_rate": 0.95775,
+      "deployment_mse": 4.300487902006672e-06,
+      "deployment_pass_rate": 0.95775,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95775,
+      "subset_best_mse": 4.300487902006672e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95775,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6226838724765338e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.6242242851090082e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.434985510791662e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.177254474183983e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.198287921440623e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.816997926837046e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.7156400791967567e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.8112521223998436e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.001024736557761e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.990539561115432e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.999143303373495e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.069241068253612e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.655532298975851e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.636359269363e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.7497440141092668e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 118.40502969999943
+  },
+  {
+    "epoch": 15,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.14259687202769256,
+      "dense_mse": 4.3490502001696e-06,
+      "dense_pass_rate": 0.95425,
+      "deployment_mse": 4.3490502001696e-06,
+      "deployment_pass_rate": 0.95425,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95425,
+      "subset_best_mse": 4.3490502001696e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95425,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6302736999797068e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.631273063705577e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.596324622130249e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.193737902471038e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.213193485166178e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.841119531667309e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.688456827551559e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.782966184842222e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.618510651337178e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.824608890245534e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.848279321015131e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.946402871431863e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.906365624264463e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.866780403506966e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 3.3488069873550836e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 117.29313069999989
+  },
+  {
+    "epoch": 16,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12165368661631593,
+      "dense_mse": 3.790552618452575e-06,
+      "dense_pass_rate": 0.963,
+      "deployment_mse": 3.790552618452575e-06,
+      "deployment_pass_rate": 0.963,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.963,
+      "subset_best_mse": 3.790552618452575e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.963,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6205524026500814e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.6199647266723734e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.343864251343944e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.159637354537282e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.176110831521143e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.833065911236925e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.6502001554648504e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.718508648209353e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.589338069074603e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.862972650576353e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.879543143447526e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.316180599294722e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.7795512137909376e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.73203660695125e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 3.0239789004339222e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 119.24227610000162
+  },
+  {
+    "epoch": 17,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.14389683301737263,
+      "dense_mse": 4.377234792092535e-06,
+      "dense_pass_rate": 0.951,
+      "deployment_mse": 4.377234792092535e-06,
+      "deployment_pass_rate": 0.951,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.951,
+      "subset_best_mse": 4.377234792092535e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.951,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6331638563713325e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.6373439148588129e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.5695192165415212e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.217645793363815e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.240881907659003e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.933052546513167e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.7803512870294113e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.85954085683674e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.0628824183661207e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.8783105974394e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.962476619826928e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.003903772002179e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.857138613321169e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.7961582799949615e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 3.063858146264294e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 118.64324320000014
+  },
+  {
+    "epoch": 18,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12919080019507798,
+      "dense_mse": 4.099900643779863e-06,
+      "dense_pass_rate": 0.9575,
+      "deployment_mse": 4.099900643779863e-06,
+      "deployment_pass_rate": 0.9575,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9575,
+      "subset_best_mse": 4.099900643779863e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9575,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6244396041360281e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.6256261681569258e-06,
+      "deployment_pass_rate": 0.9853846153846154,
+      "deployment_mse_p95": 2.6667423679611366e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.196752021510796e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.221039838562909e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.926628822699585e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.654824453815985e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.7435503830409534e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.1708396854944258e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.661114978436862e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.707734305183332e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.917496198850725e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.994365408439111e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.930011003989698e-06,
+          "deployment_pass_rate": 0.89,
+          "deployment_mse_p95": 2.771922706628818e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.89
+    },
+    "seconds": 117.75347859999965
+  },
+  {
+    "epoch": 19,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12403674522193471,
+      "dense_mse": 4.067786652730164e-06,
+      "dense_pass_rate": 0.9615,
+      "deployment_mse": 4.067786652730164e-06,
+      "deployment_pass_rate": 0.9615,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9615,
+      "subset_best_mse": 4.067786652730164e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9615,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.619887779224927e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.6173302589715036e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.2748249729162006e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.114490792700352e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.134419495298535e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.739022911077601e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.512023038584023e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.6210741499279143e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.0212243569136295e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.751998619113028e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.750588621961401e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.1889457018720575e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.9408494142522705e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.878177834376819e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.9269167346341703e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 123.58339790000173
+  },
+  {
+    "epoch": 20,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12160080695972829,
+      "dense_mse": 3.6637521193502456e-06,
+      "dense_pass_rate": 0.95925,
+      "deployment_mse": 3.6637521193502456e-06,
+      "deployment_pass_rate": 0.95925,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95925,
+      "subset_best_mse": 3.6637521193502456e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95925,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6067679067084391e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.6106185409920967e-06,
+      "deployment_pass_rate": 0.9853846153846154,
+      "deployment_mse_p95": 2.4303188720363505e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.133004099300087e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.154540167463906e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.807848552355243e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.626239415667665e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.689774365202634e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.547795822679352e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.77572550069881e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.828220204956229e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.0371453822642894e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.716629245644047e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 6.686303223956857e-06,
+          "deployment_pass_rate": 0.89,
+          "deployment_mse_p95": 2.7342780683161237e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.89
+    },
+    "seconds": 119.98076270000092
+  },
+  {
+    "epoch": 21,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.13282064233833346,
+      "dense_mse": 4.333787426127116e-06,
+      "dense_pass_rate": 0.956,
+      "deployment_mse": 4.333787426127116e-06,
+      "deployment_pass_rate": 0.956,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.956,
+      "subset_best_mse": 4.333787426127116e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.956,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6148556535575653e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.6146398001114409e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.1969995316091454e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.086198400862524e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.098594340709358e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.732342539349962e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.4629065548517916e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.550070303771374e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.999032653828492e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.985703495633118e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 8.007925302590154e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.790951765510057e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.67493094426753e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.628790727772084e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.8537548577425698e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 141.2134902000107
+  },
+  {
+    "epoch": 22,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.13510716770922104,
+      "dense_mse": 4.318736260009072e-06,
+      "dense_pass_rate": 0.957,
+      "deployment_mse": 4.318736260009072e-06,
+      "deployment_pass_rate": 0.957,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.957,
+      "subset_best_mse": 4.318736260009072e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.957,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6487468205024618e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.6432489573574107e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 2.4069538063767797e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.141503331103785e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.167806883973242e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.821909549500433e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.542016347667998e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.614868573180282e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.617604725314725e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 8.07268607640002e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 8.020242972794619e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.018392692606884e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.965317624261402e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.9126997315604485e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.856627300000518e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 131.54376919999777
+  },
+  {
+    "epoch": 23,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12651951362410951,
+      "dense_mse": 3.992050610039663e-06,
+      "dense_pass_rate": 0.9565,
+      "deployment_mse": 3.992050610039663e-06,
+      "deployment_pass_rate": 0.9565,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9565,
+      "subset_best_mse": 3.992050610039663e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9565,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6211915919796323e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.6193779796461768e-06,
+      "deployment_pass_rate": 0.9853846153846154,
+      "deployment_mse_p95": 2.3202130921120717e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.107865253817201e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.125176257840807e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.788401160441077e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.3579132406549932e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.444614201427977e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.467947245841915e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.96992578685872e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.970986246904023e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.9336642154586386e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.761908330993802e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 6.711289810512669e-06,
+          "deployment_pass_rate": 0.89,
+          "deployment_mse_p95": 2.843713692528211e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.89
+    },
+    "seconds": 128.08248019999883
+  },
+  {
+    "epoch": 24,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1264956664774667,
+      "dense_mse": 3.6548944435551426e-06,
+      "dense_pass_rate": 0.95775,
+      "deployment_mse": 3.6548944435551426e-06,
+      "deployment_pass_rate": 0.95775,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95775,
+      "subset_best_mse": 3.6548944435551426e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95775,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6058942782178308e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.6044873954544185e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.21089619997097e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.081081456733387e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.094626319995933e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.748020738090314e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.41143206149886e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.5188186398793295e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.75519354243274e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.877847388107286e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.869137294323343e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.15030475436257e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.6765535658412415e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.642690662600233e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.9194237749474773e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 130.2758974999888
+  },
+  {
+    "epoch": 25,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12260690212437748,
+      "dense_mse": 4.0579416724705184e-06,
+      "dense_pass_rate": 0.96125,
+      "deployment_mse": 4.0579416724705184e-06,
+      "deployment_pass_rate": 0.96125,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96125,
+      "subset_best_mse": 4.0579416724705184e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96125,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.611243076766475e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.6118578787406588e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.267404004009877e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.14882704775701e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.170256789169464e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.853124563470162e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.416312551118712e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.4998801227903686e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.81338693314019e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.883935893801497e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.894707216420274e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.8548462939198766e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.671765801293795e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.6392004057597915e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.814894110590833e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 128.19855010000174
+  },
+  {
+    "epoch": 26,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.13853319450245194,
+      "dense_mse": 4.338291119291955e-06,
+      "dense_pass_rate": 0.95525,
+      "deployment_mse": 4.338291119291955e-06,
+      "deployment_pass_rate": 0.95525,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95525,
+      "subset_best_mse": 4.338291119291955e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95525,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6160312167342099e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.6164619769204049e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.4887376936845757e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.139631330822747e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.163047235549581e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.820334126965072e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.625094449584139e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.696200757428059e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 1.0405484958123028e-06,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.758388306510289e-06,
+          "dense_pass_rate": 0.93,
+          "deployment_mse": 7.787450390417819e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.8090350934536594e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.847876735253277e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.793887998255058e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.718424146216647e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 145.5019192000036
+  },
+  {
+    "epoch": 27,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12086412856153174,
+      "dense_mse": 3.698463859676183e-06,
+      "dense_pass_rate": 0.9625,
+      "deployment_mse": 3.698463859676183e-06,
+      "deployment_pass_rate": 0.9625,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9625,
+      "subset_best_mse": 3.698463859676183e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9625,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.6023396394951443e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.6053644077077908e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.160637111990646e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.103972454941091e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.12188216080199e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.767481417467008e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.300812251576151e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.3873139763019427e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.683101828408674e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.798837923567036e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.844832525191716e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.9274722350262495e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.697523709771133e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.6642912165773785e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.9293342214359083e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 129.8517353000061
+  },
+  {
+    "epoch": 28,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1335024070020795,
+      "dense_mse": 4.20378506694895e-06,
+      "dense_pass_rate": 0.9555,
+      "deployment_mse": 4.20378506694895e-06,
+      "deployment_pass_rate": 0.9555,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9555,
+      "subset_best_mse": 4.20378506694895e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9555,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.605457537664912e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.609471253448687e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.097293295289401e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.132691669302463e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.158033524634744e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.813066113213513e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.416772868206863e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.4955449320895556e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.711375979397706e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.760749381511426e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.834342105746919e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.8828940225306474e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.735829652009278e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.681196171242311e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.8519552277915422e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 128.74897070000588
+  },
+  {
+    "epoch": 29,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11564374016086913,
+      "dense_mse": 3.5860848917865296e-06,
+      "dense_pass_rate": 0.964,
+      "deployment_mse": 3.5860848917865296e-06,
+      "deployment_pass_rate": 0.964,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.964,
+      "subset_best_mse": 3.5860848917865296e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.964,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5911637140674202e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.5916118075521696e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.1461190415207165e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.105455844787602e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.127570924647002e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.776000590935878e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.2972557295386374e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.3779866052659777e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.201217875900857e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.634342870034617e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.693058512247062e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.918686705564806e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.7156039951003775e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.632525400757545e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.8239027601517594e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 130.03301549999742
+  },
+  {
+    "epoch": 30,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.13167012045058207,
+      "dense_mse": 4.0145641402292906e-06,
+      "dense_pass_rate": 0.95525,
+      "deployment_mse": 4.0145641402292906e-06,
+      "deployment_pass_rate": 0.95525,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95525,
+      "subset_best_mse": 4.0145641402292906e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95525,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.589872566498135e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.591571193932941e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.2309314066106742e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.082495138872491e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.098717188831399e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.730849848932766e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.3639466495839236e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.4307510247096143e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.792986531857499e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.614574083406091e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.661309291665279e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.0264339931103115e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.734879477238778e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.687323938160593e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.7898849376708097e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 127.80160029999388
+  },
+  {
+    "epoch": 31,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12798914177348797,
+      "dense_mse": 3.9520423690801084e-06,
+      "dense_pass_rate": 0.9555,
+      "deployment_mse": 3.9520423690801084e-06,
+      "deployment_pass_rate": 0.9555,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9555,
+      "subset_best_mse": 3.9520423690801084e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9555,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5794496741554257e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.584947658685866e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.1793937392872103e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.066813972246312e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.085566350890873e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.690550837429251e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.2405635578273742e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.332056698309645e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.241989766399757e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.625715248312298e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.719741829800826e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.852668311742519e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.61626018767919e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.565805712393594e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.7947275234842057e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 132.1606182999967
+  },
+  {
+    "epoch": 32,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.13880063608985593,
+      "dense_mse": 4.27120940236705e-06,
+      "dense_pass_rate": 0.954,
+      "deployment_mse": 4.27120940236705e-06,
+      "deployment_pass_rate": 0.954,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.954,
+      "subset_best_mse": 4.27120940236705e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.954,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.600041129682384e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.6010753257864476e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.1297093904686948e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.051161822755814e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.06899002274721e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.661161885188995e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.2062268835296028e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.2986042906963743e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.008994768010071e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.767047839208401e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.809704714122426e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.985645688553796e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.761702335553817e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.705424069284546e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 3.080566206930635e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 129.4799711000087
+  },
+  {
+    "epoch": 33,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12496334448716884,
+      "dense_mse": 3.946188182172363e-06,
+      "dense_pass_rate": 0.95925,
+      "deployment_mse": 3.946188182172363e-06,
+      "deployment_pass_rate": 0.95925,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95925,
+      "subset_best_mse": 3.946188182172363e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95925,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.596672984530516e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.5991321802934966e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.129592626085125e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.041349118600874e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.055399552953176e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.688829510434623e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.18497200824938e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.2903479923956222e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.025417066818596e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.806259909916141e-06,
+          "dense_pass_rate": 0.93,
+          "deployment_mse": 7.875843342131515e-06,
+          "deployment_pass_rate": 0.93,
+          "deployment_mse_p95": 3.9736491581616796e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.690642569554755e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.6284406494912015e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.7945704307499252e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 125.04293199999665
+  },
+  {
+    "epoch": 34,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12801662079737725,
+      "dense_mse": 3.914356834692208e-06,
+      "dense_pass_rate": 0.95775,
+      "deployment_mse": 3.914356834692208e-06,
+      "deployment_pass_rate": 0.95775,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95775,
+      "subset_best_mse": 3.914356834692208e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95775,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.605127955493609e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.6022055820290748e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 2.1132931488990216e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.046606376049805e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.065074803739143e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.671991226741058e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.226698011570832e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.2903480827785333e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.260212974939444e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.878724443156422e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.91626266859918e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.0291664536581224e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.718662801053605e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.6183002857617984e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.7916377914016194e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 128.81211349999649
+  },
+  {
+    "epoch": 35,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.13414682394434607,
+      "dense_mse": 4.165966109824626e-06,
+      "dense_pass_rate": 0.9535,
+      "deployment_mse": 4.165966109824626e-06,
+      "deployment_pass_rate": 0.9535,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9535,
+      "subset_best_mse": 4.165966109824626e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9535,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5713318363160496e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.5806210185042548e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.0990461711637556e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.036039805213964e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.051674093939421e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.681375753048909e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.1833505609674841e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.2325404113143194e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.664524660542472e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.59984107759477e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.709273358636488e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.012257280198069e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.573097933203163e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.563871746847973e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.8271965469519125e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 132.74417960000574
+  },
+  {
+    "epoch": 36,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11860102500841019,
+      "dense_mse": 3.524138441061446e-06,
+      "dense_pass_rate": 0.96075,
+      "deployment_mse": 3.524138441061446e-06,
+      "deployment_pass_rate": 0.96075,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96075,
+      "subset_best_mse": 3.524138441061446e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96075,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.564982943642673e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.5700626976292827e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.0844953574316252e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.028415082702705e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.04457200497691e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.695250354566315e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.1982043218787704e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.2698591040504182e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.137593286441563e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.517200302202237e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.572015695401087e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.896970306503021e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.57934245026193e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.567241458397636e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.7888597755540244e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 131.6112209999992
+  },
+  {
+    "epoch": 37,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1224673114855329,
+      "dense_mse": 3.6549034683116385e-06,
+      "dense_pass_rate": 0.957,
+      "deployment_mse": 3.6549034683116385e-06,
+      "deployment_pass_rate": 0.957,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.957,
+      "subset_best_mse": 3.6549034683116385e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.957,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.565916635502154e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.57210450140968e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.1201330101176676e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.027144137851485e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.043364809981077e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.651270395619984e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.132117371652884e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.2031252054834592e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.646190586321925e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.585023149555574e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.675494400555435e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.8421887938869645e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.531537236955655e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.4981867872409855e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.716712527261937e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 129.80272630001127
+  },
+  {
+    "epoch": 38,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12424650284652004,
+      "dense_mse": 3.6686070853733997e-06,
+      "dense_pass_rate": 0.95875,
+      "deployment_mse": 3.6686070853733997e-06,
+      "deployment_pass_rate": 0.95875,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95875,
+      "subset_best_mse": 3.6686070853733997e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95875,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5896216690664452e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.5899096045502999e-06,
+      "deployment_pass_rate": 0.9853846153846154,
+      "deployment_mse_p95": 2.1657514106693583e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.022811310297844e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.03832796391343e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.670558443982e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.2058831977040975e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.2797479199267194e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 9.687014934428783e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.813503655293291e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.85868348370239e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.7308587859002914e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.608178412502242e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 6.543838619545406e-06,
+          "deployment_pass_rate": 0.89,
+          "deployment_mse_p95": 2.9182391456936012e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.89
+    },
+    "seconds": 135.71407570000156
+  },
+  {
+    "epoch": 39,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12450031982205913,
+      "dense_mse": 3.8133965110349765e-06,
+      "dense_pass_rate": 0.95825,
+      "deployment_mse": 3.8133965110349765e-06,
+      "deployment_pass_rate": 0.95825,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95825,
+      "subset_best_mse": 3.8133965110349765e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95825,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5839983744422467e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.5848330460889106e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.1255392269173206e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.020667432628642e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.039031593086678e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.666646346891207e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0993844919051078e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.1509476893866157e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.326786683036449e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.636185765399256e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.681299931600487e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.946997297005706e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.7251872205307985e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.66740330553001e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.885110993653064e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 123.85297350000474
+  },
+  {
+    "epoch": 40,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1334230166689488,
+      "dense_mse": 4.018753267105576e-06,
+      "dense_pass_rate": 0.957,
+      "deployment_mse": 4.018753267105576e-06,
+      "deployment_pass_rate": 0.957,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.957,
+      "subset_best_mse": 4.018753267105576e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.957,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5676644913153513e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.5726381816353525e-06,
+      "deployment_pass_rate": 0.9853846153846154,
+      "deployment_mse_p95": 2.134318657482264e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.998186667514483e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.013000119766416e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.67118370390366e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0778838581363447e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.1642517644087497e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.079368705146921e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.630769990089836e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.729831108865206e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.248954724004182e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.542893343681614e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 6.485039956187088e-06,
+          "deployment_pass_rate": 0.89,
+          "deployment_mse_p95": 2.870775495081753e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.89
+    },
+    "seconds": 123.65586519999488
+  },
+  {
+    "epoch": 41,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1080535376526698,
+      "dense_mse": 3.2491701266149125e-06,
+      "dense_pass_rate": 0.964,
+      "deployment_mse": 3.2491701266149125e-06,
+      "deployment_pass_rate": 0.964,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.964,
+      "subset_best_mse": 3.2491701266149125e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.964,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5679102793656012e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.5735442968782332e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 2.156544369825829e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.011025725912858e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.03009572317558e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.672560627945746e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0787082453021427e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.1392761655463632e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.37249182535697e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.565663708044809e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.677793040020318e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.871555083337891e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.598273373264934e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.534259479666495e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.8420541402804054e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 126.59730759999366
+  },
+  {
+    "epoch": 42,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11576115934992365,
+      "dense_mse": 3.646574072290852e-06,
+      "dense_pass_rate": 0.96125,
+      "deployment_mse": 3.646574072290852e-06,
+      "deployment_pass_rate": 0.96125,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96125,
+      "subset_best_mse": 3.646574072290852e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96125,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5621184592591453e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.5679035493253116e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.110683577885236e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.981412046658629e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.995542378988508e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.658226614522316e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0794332498811386e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.155474984138567e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.0034774849471e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.635517977647831e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.715123516251475e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.760976270254699e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.482666621074316e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.4565327475752085e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 3.133756887197787e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 123.87889839999843
+  },
+  {
+    "epoch": 43,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12540949643285865,
+      "dense_mse": 3.8569965821933515e-06,
+      "dense_pass_rate": 0.957,
+      "deployment_mse": 3.8569965821933515e-06,
+      "deployment_pass_rate": 0.957,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.957,
+      "subset_best_mse": 3.8569965821933515e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.957,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5677428691450415e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.5742374881096738e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.0464916019299483e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.99902909955401e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.01616563264148e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.626731601886363e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0790478074291031e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.1220830088653236e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.561134588074775e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.590335016319599e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.725340479554235e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.9259883742845245e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.583388402269023e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.5113729323435105e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.765685994776305e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 122.8366182000027
+  },
+  {
+    "epoch": 44,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12271761096828529,
+      "dense_mse": 3.694396931202475e-06,
+      "dense_pass_rate": 0.96,
+      "deployment_mse": 3.694396931202475e-06,
+      "deployment_pass_rate": 0.96,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96,
+      "subset_best_mse": 3.694396931202475e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.580396209257769e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.5854714682056346e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.106492474191948e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.073149702549318e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.093262063960376e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.749863823924628e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.083051110343102e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.121779043882081e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.995203142072715e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.667083912397428e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.766700516873446e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.879680620583919e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.5966119943699405e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.538988601451218e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.7449662710085214e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 122.663902100001
+  },
+  {
+    "epoch": 45,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11727087632145607,
+      "dense_mse": 3.7305994908906725e-06,
+      "dense_pass_rate": 0.95825,
+      "deployment_mse": 3.7305994908906725e-06,
+      "deployment_pass_rate": 0.95825,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95825,
+      "subset_best_mse": 3.7305994908906725e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95825,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.572560889667304e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.5814038355624024e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.1012641182191115e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.998227653506988e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.019443668641803e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.617253870717316e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0626447478226436e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.111369111117606e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.609308721901897e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.595881475796849e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.723513679287329e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.5641718825363436e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.642917961588853e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.604155603270337e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.828576802038757e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 122.13178560000961
+  },
+  {
+    "epoch": 46,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12169937942450912,
+      "dense_mse": 3.596245071748945e-06,
+      "dense_pass_rate": 0.95825,
+      "deployment_mse": 3.596245071748945e-06,
+      "deployment_pass_rate": 0.95825,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95825,
+      "subset_best_mse": 3.596245071748945e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95825,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5510840272043285e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.5608739172864408e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.0970729659030967e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.988585948618953e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.006204550059934e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.674521461839502e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0437231043536748e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.096367100441093e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.189918862527305e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.529987685573972e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.654458563690499e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.91177235445967e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.441146409027975e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.421061100929189e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.723279526668436e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 120.33612659999926
+  },
+  {
+    "epoch": 47,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11457444958795741,
+      "dense_mse": 3.379953178468275e-06,
+      "dense_pass_rate": 0.961,
+      "deployment_mse": 3.379953178468275e-06,
+      "deployment_pass_rate": 0.961,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.961,
+      "subset_best_mse": 3.379953178468275e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.961,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5491141107161308e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.559313059973157e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 2.1102323594197738e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.021419588321196e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.043913775372053e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.629579802684658e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0384893402558268e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.0857449963638478e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.906217015517854e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.415314776608419e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.560205770412588e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.726401306326231e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.497900140354505e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.4583757342300145e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.7578944953422798e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 123.41595939999388
+  },
+  {
+    "epoch": 48,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.10017065235597336,
+      "dense_mse": 3.117496703458433e-06,
+      "dense_pass_rate": 0.968,
+      "deployment_mse": 3.117496703458433e-06,
+      "deployment_pass_rate": 0.968,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.968,
+      "subset_best_mse": 3.117496703458433e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.968,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5643472738913356e-06,
+      "dense_pass_rate": 0.9884615384615385,
+      "deployment_mse": 1.5731689014775891e-06,
+      "deployment_pass_rate": 0.9884615384615385,
+      "deployment_mse_p95": 2.0559644837195247e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.996975778305547e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.01844416776052e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.601504401179999e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0575018610975235e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.0857905506305993e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.690835307643672e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.694855751487109e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.827612044621491e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.895361598042789e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.438932844684956e-06,
+          "dense_pass_rate": 0.93,
+          "deployment_mse": 6.396560451763587e-06,
+          "deployment_pass_rate": 0.93,
+          "deployment_mse_p95": 2.724937751132221e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 130.22304460000305
+  },
+  {
+    "epoch": 49,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.128042504462368,
+      "dense_mse": 3.95382417216145e-06,
+      "dense_pass_rate": 0.95775,
+      "deployment_mse": 3.95382417216145e-06,
+      "deployment_pass_rate": 0.95775,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95775,
+      "subset_best_mse": 3.95382417216145e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95775,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5833542526158089e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.580634008317194e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.076857495989918e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.065635513369076e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.082991659812672e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.757006512647319e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0497627384656057e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.0839570180912204e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.507663773027345e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.815772763407799e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.82246210126719e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.94554599807459e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.4972207333820796e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 6.43439264523454e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.8114593254011402e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 123.82992990000639
+  },
+  {
+    "epoch": 50,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11633774154312743,
+      "dense_mse": 3.5519375626329245e-06,
+      "dense_pass_rate": 0.96175,
+      "deployment_mse": 3.5519375626329245e-06,
+      "deployment_pass_rate": 0.96175,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96175,
+      "subset_best_mse": 3.5519375626329245e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96175,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5566010703942954e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.5627255324093583e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 2.197750014398109e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 6.008262590302877e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 6.030896627676241e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.629979451880803e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0124734722758292e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.0657148427492647e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.441942212318714e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.527522663752037e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.626735623283384e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.8675581763883864e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.498781313843345e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.451228186087106e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.7483619684420732e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 123.55787540000165
+  },
+  {
+    "epoch": 51,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1225621494804611,
+      "dense_mse": 3.7754554821377676e-06,
+      "dense_pass_rate": 0.9605,
+      "deployment_mse": 3.7754554821377676e-06,
+      "deployment_pass_rate": 0.9605,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9605,
+      "subset_best_mse": 3.7754554821377676e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9605,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5505605370147146e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.5607814149922272e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.1289338038700574e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.957874875351519e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.975714022977711e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.641549064148043e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0051203258183548e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.0695579374042054e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.407235966512598e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.64995471683448e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.751058395890695e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.067599598631311e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.348945356423457e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.356430182290127e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.806277347735253e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 124.95171229999687
+  },
+  {
+    "epoch": 52,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11377380251255258,
+      "dense_mse": 3.4240726534203792e-06,
+      "dense_pass_rate": 0.96125,
+      "deployment_mse": 3.4240726534203792e-06,
+      "deployment_pass_rate": 0.96125,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96125,
+      "subset_best_mse": 3.4240726534203792e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96125,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5363489974656402e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.546335450674758e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.1183405572934446e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.949681047783339e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.968844383435816e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.618066993828123e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.969744376885724e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.032417198118017e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.315399631335145e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.468874314619321e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.588302679063919e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.818529252911885e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.357007166962091e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.341972076460319e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.7513522728953936e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 127.69966099999147
+  },
+  {
+    "epoch": 53,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.10596616989976035,
+      "dense_mse": 3.2573252288139467e-06,
+      "dense_pass_rate": 0.9645,
+      "deployment_mse": 3.2573252288139467e-06,
+      "deployment_pass_rate": 0.9645,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9645,
+      "subset_best_mse": 3.2573252288139467e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9645,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5548445370175512e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.5621857885172667e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.127480445151831e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.94699624553221e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.960507192012443e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.599478462486812e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9615145346965997e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.0270086101503783e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.573394666624666e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.639681256325536e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.705744795304886e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.076219008377254e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.430150025900758e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.439462402392098e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 3.335184474215001e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 128.27869320000173
+  },
+  {
+    "epoch": 54,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12404592239734664,
+      "dense_mse": 3.8372973482538835e-06,
+      "dense_pass_rate": 0.96,
+      "deployment_mse": 3.8372973482538835e-06,
+      "deployment_pass_rate": 0.96,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96,
+      "subset_best_mse": 3.8372973482538835e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5602242493086282e-06,
+      "dense_pass_rate": 0.9884615384615385,
+      "deployment_mse": 1.5699406651777361e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 2.0458810734488216e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.976882238933216e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.998197487190005e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.692482999751678e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.032773671796917e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.0842211127167234e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.660533979860892e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.627357554347645e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.740333277151047e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.933276846397249e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.475398080551612e-06,
+          "dense_pass_rate": 0.93,
+          "deployment_mse": 6.462275771697842e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.7528651796223658e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 126.14237430000503
+  },
+  {
+    "epoch": 55,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11866668532825589,
+      "dense_mse": 3.4987987338326e-06,
+      "dense_pass_rate": 0.95975,
+      "deployment_mse": 3.4987987338326e-06,
+      "deployment_pass_rate": 0.95975,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95975,
+      "subset_best_mse": 3.4987987338326e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95975,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5474562786774104e-06,
+      "dense_pass_rate": 0.9861538461538462,
+      "deployment_mse": 1.555418542151878e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.0923660083470044e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.932249230666336e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.951414485662136e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.582991444369974e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9576902025265127e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.022724358167026e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.991265072398611e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.538048923668908e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.625488619267186e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.805318269482617e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.450864448218441e-06,
+          "dense_pass_rate": 0.9,
+          "deployment_mse": 6.44126550722839e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.7255905863569746e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.9,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 127.76494629999797
+  },
+  {
+    "epoch": 56,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11743769849540081,
+      "dense_mse": 3.445369247321635e-06,
+      "dense_pass_rate": 0.959,
+      "deployment_mse": 3.445369247321635e-06,
+      "deployment_pass_rate": 0.959,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.959,
+      "subset_best_mse": 3.445369247321635e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.959,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5687810553953049e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.574836667335015e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 2.101447158548042e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.960804855723795e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.984579932437929e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.605054308387281e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 2.0517950739862665e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.092923622400179e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.160929404470703e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.634394640678826e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.733464761596427e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.824710677654591e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.593774716337717e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.545539619080825e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.6326829815815073e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 132.96439010000904
+  },
+  {
+    "epoch": 57,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1127267213647087,
+      "dense_mse": 3.5193509741723254e-06,
+      "dense_pass_rate": 0.96375,
+      "deployment_mse": 3.5193509741723254e-06,
+      "deployment_pass_rate": 0.96375,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96375,
+      "subset_best_mse": 3.5193509741723254e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96375,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5603789998323383e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.567009120899747e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.12036130640366e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.953878256084901e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.974670124200521e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.592596287488547e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9726774926085476e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.03155723472764e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.675403536166584e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.651817424878076e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.749091574184782e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.0247010064470195e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.481963567596569e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 6.444201149838641e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.966819430612106e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 134.17866050000885
+  },
+  {
+    "epoch": 58,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12150935118223045,
+      "dense_mse": 3.5655926118235746e-06,
+      "dense_pass_rate": 0.95925,
+      "deployment_mse": 3.5655926118235746e-06,
+      "deployment_pass_rate": 0.95925,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95925,
+      "subset_best_mse": 3.5655926118235746e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95925,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5495250207909141e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.5559005238495273e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 2.095697773058844e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.928780913431217e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.950874557612732e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.605397185036713e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9605059486220645e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.019208231682127e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.13332357951804e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.559297708357962e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.646538553643327e-06,
+          "deployment_pass_rate": 0.93,
+          "deployment_mse_p95": 3.866673879110208e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.459696053630497e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.427372875619582e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.679774590493326e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 133.68186989999958
+  },
+  {
+    "epoch": 59,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11296491011874586,
+      "dense_mse": 3.43684476068138e-06,
+      "dense_pass_rate": 0.96225,
+      "deployment_mse": 3.43684476068138e-06,
+      "deployment_pass_rate": 0.96225,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96225,
+      "subset_best_mse": 3.43684476068138e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96225,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5519771631237598e-06,
+      "dense_pass_rate": 0.9892307692307692,
+      "deployment_mse": 1.557373919753404e-06,
+      "deployment_pass_rate": 0.9884615384615385,
+      "deployment_mse_p95": 2.1046174742644642e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.934361191526648e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.954579067710037e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.571290545893551e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9584719205297982e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.012054091438602e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.472021201920778e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.626365677301503e-06,
+          "dense_pass_rate": 0.93,
+          "deployment_mse": 7.703291510456383e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.727951040863092e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.419129059727743e-06,
+          "dense_pass_rate": 0.93,
+          "deployment_mse": 6.386784969483972e-06,
+          "deployment_pass_rate": 0.93,
+          "deployment_mse_p95": 2.646260123390342e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.93,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 161.39263870001014
+  },
+  {
+    "epoch": 60,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12506570670768266,
+      "dense_mse": 3.867949831924729e-06,
+      "dense_pass_rate": 0.95925,
+      "deployment_mse": 3.867949831924729e-06,
+      "deployment_pass_rate": 0.95925,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95925,
+      "subset_best_mse": 3.867949831924729e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95925,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5444676656603193e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.5533565588703776e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 2.0918398246758138e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.933605289903726e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.954385673064319e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.624904622189026e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.8904088705982424e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9515089232931328e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.393897948033976e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.554314995411582e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.637901997292304e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.822120413932007e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.401118481209017e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.4061967026289735e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.8135405941296166e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 132.35252939999918
+  },
+  {
+    "epoch": 61,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.115439376200217,
+      "dense_mse": 3.439057718829447e-06,
+      "dense_pass_rate": 0.9605,
+      "deployment_mse": 3.439057718829447e-06,
+      "deployment_pass_rate": 0.9605,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9605,
+      "subset_best_mse": 3.439057718829447e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9605,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5473160063266293e-06,
+      "dense_pass_rate": 0.9884615384615385,
+      "deployment_mse": 1.5540737248433056e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.0106918188814003e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.919158026035486e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.940240757286631e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.588932676892171e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9001092499526253e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.942616087156546e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.202809158618842e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.597575903580752e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.707444328215423e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.8532193721742643e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.4083632276346784e-06,
+          "dense_pass_rate": 0.93,
+          "deployment_mse": 6.361011728745267e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.655015292588162e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 129.7008560999966
+  },
+  {
+    "epoch": 62,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.10613157520662675,
+      "dense_mse": 3.360437145325083e-06,
+      "dense_pass_rate": 0.964,
+      "deployment_mse": 3.360437145325083e-06,
+      "deployment_pass_rate": 0.964,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.964,
+      "subset_best_mse": 3.360437145325083e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.964,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5453168775828874e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.5497407118511632e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.0413686508968347e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.921116696657477e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.942632193049939e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.569908367356931e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9091127369825086e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9516638853869677e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.917406075434435e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.508686397680966e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.590220909004228e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.82109308272625e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.46840504054084e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 6.418609763472258e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.7931820720512287e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 134.4405090999935
+  },
+  {
+    "epoch": 63,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11253490417346437,
+      "dense_mse": 3.420673344375244e-06,
+      "dense_pass_rate": 0.96325,
+      "deployment_mse": 3.420673344375244e-06,
+      "deployment_pass_rate": 0.96325,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96325,
+      "subset_best_mse": 3.420673344375244e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96325,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5499691543156147e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.5563970615970262e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.06535200231714e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.94621966460091e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.96655192025219e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.612884553203677e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9301508029176853e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9805998896952693e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.009248593586036e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.54091790895488e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.667431154452032e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.8841835765549815e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.469446352255432e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.401118737087593e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.7018913461495614e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 125.8580576999957
+  },
+  {
+    "epoch": 64,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12219549539285543,
+      "dense_mse": 3.837604646088203e-06,
+      "dense_pass_rate": 0.96025,
+      "deployment_mse": 3.837604646088203e-06,
+      "deployment_pass_rate": 0.96025,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96025,
+      "subset_best_mse": 3.837604646088203e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96025,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5624569594736542e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.5652220707646527e-06,
+      "deployment_pass_rate": 0.9853846153846154,
+      "deployment_mse_p95": 2.13111745315595e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.911822790973698e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.932596782823071e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.601421132432582e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9398125835538282e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9869600474768417e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.119799709097515e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.742754201849885e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.784387795245623e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.0966768631640934e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.463382221978538e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 6.432206337124104e-06,
+          "deployment_pass_rate": 0.89,
+          "deployment_mse_p95": 3.1805830462850016e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.89
+    },
+    "seconds": 127.19315639999695
+  },
+  {
+    "epoch": 65,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.12152969820537196,
+      "dense_mse": 3.77692177478923e-06,
+      "dense_pass_rate": 0.9575,
+      "deployment_mse": 3.77692177478923e-06,
+      "deployment_pass_rate": 0.9575,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9575,
+      "subset_best_mse": 3.77692177478923e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9575,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.54682904663215e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.551788685054433e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 2.003513912714563e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.928733845950923e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.952025282366418e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.565139433854693e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9709245856300652e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9911101678851593e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.238083969720363e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.542971533908019e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.650211061098736e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.919875905160314e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.439979767795999e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.371905545453956e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.7075410455749207e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 130.7959533999965
+  },
+  {
+    "epoch": 66,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11056217216442883,
+      "dense_mse": 3.3873123664863324e-06,
+      "dense_pass_rate": 0.96325,
+      "deployment_mse": 3.3873123664863324e-06,
+      "deployment_pass_rate": 0.96325,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96325,
+      "subset_best_mse": 3.3873123664863324e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96325,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5615871603197314e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.5605889814818022e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.023909614959993e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.918666270849778e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.943071594399463e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.580744284185742e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.911638298035708e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9447559208653358e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.226477363753734e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.731016819484618e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.750574222604596e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.9864593973344376e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.459786164018542e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.399535350172836e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.895490463619481e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 128.8790841000009
+  },
+  {
+    "epoch": 67,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11853345889530313,
+      "dense_mse": 3.5337019730227513e-06,
+      "dense_pass_rate": 0.9615,
+      "deployment_mse": 3.5337019730227513e-06,
+      "deployment_pass_rate": 0.9615,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9615,
+      "subset_best_mse": 3.5337019730227513e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9615,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5515638418773776e-06,
+      "dense_pass_rate": 0.9892307692307692,
+      "deployment_mse": 1.5509909482808544e-06,
+      "deployment_pass_rate": 0.9884615384615385,
+      "deployment_mse_p95": 1.9347412537341145e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.934431100157691e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.95750478539091e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.549942088925513e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9061535814123945e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9549183203022548e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.572525097195174e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.570090271476306e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.588590875867781e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.89911975300866e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.475193214630674e-06,
+          "dense_pass_rate": 0.94,
+          "deployment_mse": 6.421294834362192e-06,
+          "deployment_pass_rate": 0.93,
+          "deployment_mse_p95": 2.7054140773119102e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 125.91395770000236
+  },
+  {
+    "epoch": 68,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.13072571520776122,
+      "dense_mse": 3.993824515338145e-06,
+      "dense_pass_rate": 0.953,
+      "deployment_mse": 3.993824515338145e-06,
+      "deployment_pass_rate": 0.953,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.953,
+      "subset_best_mse": 3.993824515338145e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.953,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5509203226301384e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.5570527168482708e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.022288705153583e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.929733525171006e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.951768313572555e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.569495990498804e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9258153956371098e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9805768033265624e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.846461651598085e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.678260447964389e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.766423577580474e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.757323394201194e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.361388681492696e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.325435747541834e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 3.017999562270697e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 126.20183350000298
+  },
+  {
+    "epoch": 69,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11486516111535255,
+      "dense_mse": 3.5330474128170513e-06,
+      "dense_pass_rate": 0.96275,
+      "deployment_mse": 3.5330474128170513e-06,
+      "deployment_pass_rate": 0.96275,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96275,
+      "subset_best_mse": 3.5330474128170513e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96275,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5384621369882035e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.5474885225731445e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.0407654339207454e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.91577700007991e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.940959024381299e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.567825691876742e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.878759553624638e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9262986486409418e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.057389676454234e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.523351666227119e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.645959774314481e-06,
+          "deployment_pass_rate": 0.93,
+          "deployment_mse_p95": 3.8500269796404524e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.373003159177152e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.337802129891007e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 2.8818147315110774e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 126.8789711999998
+  },
+  {
+    "epoch": 70,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1096034904305159,
+      "dense_mse": 3.3507125992233076e-06,
+      "dense_pass_rate": 0.96325,
+      "deployment_mse": 3.3507125992233076e-06,
+      "deployment_pass_rate": 0.96325,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96325,
+      "subset_best_mse": 3.3507125992233076e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96325,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5293966509941935e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.5367292563619917e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 2.0323199930051766e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.91211403280553e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.934979971044964e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.558997787021889e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9521551675195793e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9997634656307315e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.419786303392923e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.402377288359779e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.523337522060161e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.80961939808062e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.37244962500725e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.319186493037695e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.7509261625454164e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 128.83332649999647
+  },
+  {
+    "epoch": 71,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11247844953635949,
+      "dense_mse": 3.2443775149871976e-06,
+      "dense_pass_rate": 0.9615,
+      "deployment_mse": 3.2443775149871976e-06,
+      "deployment_pass_rate": 0.9615,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9615,
+      "subset_best_mse": 3.2443775149871976e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9615,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5418113574583253e-06,
+      "dense_pass_rate": 0.9884615384615385,
+      "deployment_mse": 1.5474859226104996e-06,
+      "deployment_pass_rate": 0.9884615384615385,
+      "deployment_mse_p95": 2.055199719764343e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.926315557097672e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.951181960122592e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.631665082977691e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9069148681785135e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9571532922115658e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.257880390802633e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.5024191736597094e-06,
+          "dense_pass_rate": 0.93,
+          "deployment_mse": 7.596647839348941e-06,
+          "deployment_pass_rate": 0.93,
+          "deployment_mse_p95": 3.7648918782707314e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.4241214293829975e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.373771865243803e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.6848382539301113e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 126.45378530000744
+  },
+  {
+    "epoch": 72,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11906068007868356,
+      "dense_mse": 3.5743839307142935e-06,
+      "dense_pass_rate": 0.95925,
+      "deployment_mse": 3.5743839307142935e-06,
+      "deployment_pass_rate": 0.95925,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95925,
+      "subset_best_mse": 3.5743839307142935e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95925,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5416276441489178e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.553394906447572e-06,
+      "deployment_pass_rate": 0.9861538461538462,
+      "deployment_mse_p95": 2.1428139137159982e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.907616412192465e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.931614256947348e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.565852954286627e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9583912569965023e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 2.0179597466377843e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.9709439991917e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.531738572506273e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.674290537723035e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.998220159450187e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.405965263537544e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 6.386433014484273e-06,
+          "deployment_pass_rate": 0.9,
+          "deployment_mse_p95": 3.135836186374851e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.9
+    },
+    "seconds": 126.33689979999326
+  },
+  {
+    "epoch": 73,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.11982076865614608,
+      "dense_mse": 3.83801999424025e-06,
+      "dense_pass_rate": 0.9595,
+      "deployment_mse": 3.83801999424025e-06,
+      "deployment_pass_rate": 0.9595,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9595,
+      "subset_best_mse": 3.83801999424025e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9595,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.539835422215587e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.5462547581931141e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.118800710232114e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.897324279198865e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.922853970959516e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.549810832165575e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.9128581108369568e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9717622302691366e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.778916712095349e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.4965248592006195e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.579037050495388e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.823361708795555e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.432725539319453e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.4022446120286694e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.949710772496836e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 124.40309609999531
+  },
+  {
+    "epoch": 74,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.10573873317557025,
+      "dense_mse": 3.187358819317954e-06,
+      "dense_pass_rate": 0.9655,
+      "deployment_mse": 3.187358819317954e-06,
+      "deployment_pass_rate": 0.9655,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9655,
+      "subset_best_mse": 3.187358819317954e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9655,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.550718589251221e-06,
+      "dense_pass_rate": 0.9869230769230769,
+      "deployment_mse": 1.5528694902761845e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.0067061473438104e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.900559670258633e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.923334057257582e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.567551769408132e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.8540426102814222e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.8962183067873157e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.910506869333087e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.687580004380759e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.717721199318158e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.975009264350304e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.385797724598342e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.356626286335924e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.7884525311186233e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 125.8788465999969
+  },
+  {
+    "epoch": 75,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1153590469665543,
+      "dense_mse": 3.307373501546639e-06,
+      "dense_pass_rate": 0.9605,
+      "deployment_mse": 3.307373501546639e-06,
+      "deployment_pass_rate": 0.9605,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9605,
+      "subset_best_mse": 3.307373501546639e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9605,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5479924577414733e-06,
+      "dense_pass_rate": 0.9884615384615385,
+      "deployment_mse": 1.5461115149562356e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 2.0356627940780932e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.942308463174307e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.96224913523899e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.666970721523597e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.923992996058716e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.949082808035544e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.188378484385917e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.6086441074385525e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.643391076101395e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.714104035101954e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.380550080420423e-06,
+          "dense_pass_rate": 0.93,
+          "deployment_mse": 6.298901202287123e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.61533644668268e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 126.69534909998765
+  },
+  {
+    "epoch": 76,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.10863990348203356,
+      "dense_mse": 3.2800944567454745e-06,
+      "dense_pass_rate": 0.96475,
+      "deployment_mse": 3.2800944567454745e-06,
+      "deployment_pass_rate": 0.96475,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96475,
+      "subset_best_mse": 3.2800944567454745e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96475,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5483601884383803e-06,
+      "dense_pass_rate": 0.9853846153846154,
+      "deployment_mse": 1.552046101472607e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 1.9419911395800655e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.918775946082433e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.942555452200392e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.551686743511701e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.8924609857253091e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9652894377858573e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.002096783431084e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.683417672921522e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.723932552523093e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 4.140530746144173e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.3372427321224594e-06,
+          "dense_pass_rate": 0.89,
+          "deployment_mse": 6.3135823706418225e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.932095278771568e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.89,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 128.15896479999356
+  },
+  {
+    "epoch": 77,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1081339132585586,
+      "dense_mse": 3.2872764921479446e-06,
+      "dense_pass_rate": 0.964,
+      "deployment_mse": 3.2872764921479446e-06,
+      "deployment_pass_rate": 0.964,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.964,
+      "subset_best_mse": 3.2872764921479446e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.964,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5359038590277324e-06,
+      "dense_pass_rate": 0.9884615384615385,
+      "deployment_mse": 1.5423853235430128e-06,
+      "deployment_pass_rate": 0.9884615384615385,
+      "deployment_mse_p95": 2.01441064212376e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.897593087116827e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.924048936955014e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.567872302676397e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.879363862184814e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.9334587831736302e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.992561996378887e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.513999279646009e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.617126546218825e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.926396191543623e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.367221414379202e-06,
+          "dense_pass_rate": 0.93,
+          "deployment_mse": 6.316487844567966e-06,
+          "deployment_pass_rate": 0.93,
+          "deployment_mse_p95": 2.7673946197391947e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 125.3233629000024
+  },
+  {
+    "epoch": 78,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.1106251084602885,
+      "dense_mse": 3.256027049992795e-06,
+      "dense_pass_rate": 0.95975,
+      "deployment_mse": 3.256027049992795e-06,
+      "deployment_pass_rate": 0.95975,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.95975,
+      "subset_best_mse": 3.256027049992795e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.95975,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5305630644568951e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.5349229471399964e-06,
+      "deployment_pass_rate": 0.9884615384615385,
+      "deployment_mse_p95": 2.0194820740127503e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.899060503122719e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.923661239044983e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.548596048315506e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.8424869415656904e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.902167820551671e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.135087632941329e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.487127039267743e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.57020460182726e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.8913094063354075e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.326883601392607e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.2699156898925435e-06,
+          "deployment_pass_rate": 0.93,
+          "deployment_mse_p95": 2.603257573198182e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 126.95304680000118
+  },
+  {
+    "epoch": 79,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.10548624304024236,
+      "dense_mse": 3.1412893649915404e-06,
+      "dense_pass_rate": 0.9665,
+      "deployment_mse": 3.1412893649915404e-06,
+      "deployment_pass_rate": 0.9665,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.9665,
+      "subset_best_mse": 3.1412893649915404e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.9665,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.557172722332367e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.5584714906530439e-06,
+      "deployment_pass_rate": 0.9869230769230769,
+      "deployment_mse_p95": 1.9989386311555475e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.900507910584605e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.926759499578463e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.533593048168536e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.8600187829175172e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.909732302327961e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.006975981805628e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.703059913050406e-06,
+          "dense_pass_rate": 0.93,
+          "deployment_mse": 7.71321236579619e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.9423652379049984e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.453675688394009e-06,
+          "dense_pass_rate": 0.91,
+          "deployment_mse": 6.429184282882121e-06,
+          "deployment_pass_rate": 0.91,
+          "deployment_mse_p95": 2.6667982200366152e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.91,
+      "worst_deployment_pass_rate": 0.91
+    },
+    "seconds": 129.17615800000203
+  },
+  {
+    "epoch": 80,
+    "stage": "proposal",
+    "train": {
+      "loss": 0.10999203284710309,
+      "dense_mse": 3.295475217610646e-06,
+      "dense_pass_rate": 0.96275,
+      "deployment_mse": 3.295475217610646e-06,
+      "deployment_pass_rate": 0.96275,
+      "keep_count": 64.0,
+      "policy_loss": 0.0,
+      "mask_distillation_loss": 0.0,
+      "proposal_feasible_fraction": 0.96275,
+      "subset_best_mse": 3.295475217610646e-06,
+      "subset_best_count": 64.0,
+      "subset_best_pass_rate": 0.96275,
+      "mask_entropy": 0.0,
+      "feasible_complexity_loss": 0.0
+    },
+    "validation": {
+      "n": 1300,
+      "dense_mse": 1.5362331209963023e-06,
+      "dense_pass_rate": 0.9876923076923076,
+      "deployment_mse": 1.5411965951598313e-06,
+      "deployment_pass_rate": 0.9876923076923076,
+      "deployment_mse_p95": 1.99746467282052e-06,
+      "keep_count": 64.0,
+      "by_source": {
+        "Synthetic": {
+          "n": 1000,
+          "dense_mse": 5.892314362384723e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 5.91855761124766e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 7.557467793600453e-07,
+          "keep_count": 64.0
+        },
+        "uji_pen_characters_v2": {
+          "n": 100,
+          "dense_mse": 1.8511804675187738e-07,
+          "dense_pass_rate": 1.0,
+          "deployment_mse": 1.902840125605655e-07,
+          "deployment_pass_rate": 1.0,
+          "deployment_mse_p95": 8.095597159086963e-07,
+          "keep_count": 64.0
+        },
+        "natural_earth_10m_coastline": {
+          "n": 100,
+          "dense_mse": 7.577139120550088e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 7.652210921537904e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 3.931076787867246e-05,
+          "keep_count": 64.0
+        },
+        "usgs_tnm_contours_large_scale": {
+          "n": 100,
+          "dense_mse": 6.3164590432652435e-06,
+          "dense_pass_rate": 0.92,
+          "deployment_mse": 6.274503191731678e-06,
+          "deployment_pass_rate": 0.92,
+          "deployment_mse_p95": 2.6857840621443904e-05,
+          "keep_count": 64.0
+        }
+      },
+      "worst_dense_pass_rate": 0.92,
+      "worst_deployment_pass_rate": 0.92
+    },
+    "seconds": 136.96902029999183
+  }
+]

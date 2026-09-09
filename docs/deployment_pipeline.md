@@ -1,375 +1,212 @@
-# v12/v13/v14_joint 部署、评估与可视化
+# v16 部署、评估与可视化
 
-> `v14_joint` 先由初始结构反馈修正 `t0 -> t1`，再让候选节点读取带 `t1` 编码的
-> 局部特征并联合更新 KeepMask 与位置；重新选择后只用最终存活节点完成重定位。
-> 网络仍是一条固定深度前向。详见
-> [v14_joint_parameter_structure_feedback.md](v14_joint_parameter_structure_feedback.md)。
+v16 的部署路径固定为一次网络前向和一次标准 B 样条 refit。训练时的随机集合、反事实编辑、策略梯度和多次 refit 都不会进入部署。
 
-## 1. 快速 learned 部署
+## 1. 用户输入
 
-对一条有序点云，v12 默认执行：
+输入是沿曲线方向排序的 CSV 或 TXT 点云，每行包含二维或三维坐标。脚本会：
 
-```text
-读取并归一化有序点云
-  -> 网络 forward 一次
-       预测参数 t
-       生成固定 proposal U_prop
-       预测 final KeepMask
-       基于 final survivors 一次性重定位 U_deploy
-  -> 取 U_deploy[KeepMask]
-  -> 标准开放三次 B 样条 refit 一次
-  -> 反归一化并输出曲线、控制顶点与节点
-```
+1. 检查文件存在、维度一致且数值有限；
+2. 按累计弦长重采样到模型要求的 M 个点；
+3. 中心化并按尺度归一化；
+4. 把归一化点云和 MSE 阈值送入网络。
 
-网络内部的初始 keep、位置反馈、最终 keep 和 relocation 是同一固定深度计算图，不是多次调用网络。快速部署不逐节点试删，不执行 beam search，也不根据误差循环。
+无序点集不能直接使用；本项目没有在部署中求解点的拓扑顺序。
 
-`--fit-tolerance` 在 learned 模式仅用于报告阈值通过率，不能在部署时修改 mask。因此 v12 是统计近似，不提供逐样本阈值保证。
+## 2. 固定深度部署
 
-## 2. 节点张量语义
+~~~text
+normalized points + ε
+  → forward_deployment() × 1
+       encode geometry
+       predict t0
+       generate Kc candidates
+       adaptive β + probability-mass Top-K → KeepMask
+       update t1 and relocate selected knots
+  → materialize U = internal_knots[KeepMask]
+  → endpoint-constrained standard cubic B-spline refit × 1
+  → denormalize curve and control points
+~~~
 
-| 张量 | 含义 |
+KeepMask 使用一次性结构化规则：
+
+\[
+p_j=\sigma((s_j-\bar s)-\beta),\qquad
+\hat K=\left\lceil\sum p_j+0.25\sqrt{\sum p_j(1-p_j)}+2\right\rceil,
+\]
+
+再按分数执行一次 Top-K。β由每条曲线的候选池、全局几何和误差阈值共同预测；这不是部署后的阈值扫描。部署不执行：
+
+- CountHead；
+- BIC；
+- Hard-Concrete 采样；
+- 逐节点删除；
+- beam search；
+- 根据最终 MSE 回补节点。
+
+所以它给出统计意义的可行率，而不是逐曲线误差保证。未通过阈值的样本必须如实计入失败。
+
+容量统一按内部节点计数。三次样条的完整节点向量还包含4个零和4个一，所以完整长度64等价于内部上限56；benchmark 可用 `--full-knot-vector-size 64` 显式采用这种记法。
+
+## 3. checkpoint 正式资格
+
+部署和论文对比入口默认执行统一资格审计；当前 `V16_FORMAL_PASS_RATE=0.90`。正式 checkpoint 需要：
+
+| 条件 | 要求 |
 |---|---|
-| `proposal_internal_knots` | 高召回、与教师槽位绑定的固定候选 |
-| `provisional_candidate_knots` | 最终选择前的位置反馈结果 |
-| `pre_relocation_candidate_knots` | final KeepMask 已知、survivor relocation 之前的位置 |
-| `final_hard_keep_mask` | 一次性最终离散子集 |
-| `relocation_position_residual` | v12 最后一阶段的存活节点位移 |
-| `deployment_internal_knots` | 最终位置，真正交给标准 B 样条 refit |
-| `internal_knots` | `deployment_internal_knots` 的兼容别名 |
+| objective | candidate_selection_counterfactual_bspline_v16 |
+| stage | joint |
+| 配置的 proposal / deployment target | 均不低于 0.90 |
+| 实测 worst-source deployment pass | 不低于 0.90 |
+| proposal_ready | true |
+| allow-infeasible-proposals | false |
+| 元数据一致性 | 旧质量字段与实测指标不冲突 |
 
-最终节点向量是 `deployment_internal_knots[final_hard_keep_mask]`，而不是从 proposal 原位置直接取子集。
+旧 `fast90` 联合训练 checkpoint 使用固定0.5离散化，不能被静默解释成新的动态策略。新的动态β模型必须输出到新文件。若只需要排查旧模型，可添加：
 
-## 3. 一次性节点数量
+~~~text
+--allow-unqualified-diagnostic
+~~~
 
-默认 `mass_topk` 的顺序是：
+诊断模式必须在 JSON、Markdown 和 PNG 上显示 DIAGNOSTIC NOT FINAL，不能用于论文结论。新建 90% 实验可按工程协议取得正式资格；旧 97% checkpoint 不能通过 `--resume` 修改 target 后重新解释。
 
-1. 预测每个候选的 keep probability；
-2. 汇总 probability mass，并加入 `--one-shot-safety-sigma` 控制的不确定性储备；
-3. 得到一次性保留数量；
-4. 全局选择分数最高的 K 个有效槽位。
+## 4. 点云部署命令
 
-可用 `--one-shot-selection-policy threshold` 做阈值策略消融。`--activity-threshold` 是历史参数，对 v8–v12 默认部署不起作用。
+正式 checkpoint：
 
-## 4. 独立评估
+~~~powershell
+python scripts/fit_v16_point_cloud.py --checkpoint outputs/checkpoints/candidate_selection_v16_simplified_certified_k96.pt --point-cloud data/my_curve.csv --mse-tolerance 2.5e-5 --output-dir outputs/fits/v16/my_curve
+~~~
 
-```powershell
-python scripts/evaluate_checkpoint.py `
-  --checkpoint outputs/candidate_pruning_one_shot_v12.pt `
-  --num-samples 512 `
-  --batch-size 32 `
-  --seed 20000 `
-  --fit-tolerance 0.005 `
-  --knot-tolerance 0.01 `
-  --json-output outputs/logs/v12/candidate_pruning_one_shot_v12_evaluation.json
-```
+当前 proposal 仅作诊断：
 
-训练、验证和独立测试默认 seed 分别为 `42 / 10000 / 20000`。不要用训练集或验证集结果代替独立测试结果。
+~~~powershell
+python scripts/fit_v16_point_cloud.py --checkpoint outputs/checkpoints/candidate_selection_v16.proposal.pt --point-cloud data/my_curve.csv --mse-tolerance 2.5e-5 --allow-unqualified-diagnostic --output-dir outputs/fits/v16/diagnostic_my_curve
+~~~
 
-建议同时报告：
+输出：
 
-- proposal recall：候选是否覆盖 canonical 节点；
-- deployment precision / recall / F1：最终节点与 canonical 节点的一维有序匹配；
-- `selected pre->post |shift|`：最终 KeepMask 下 survivor relocation 的平均/最大位移与实际移动比例；
-- mean / P95 / max RMS 与 threshold-satisfied fraction；
-- 平均、最小、最大保留节点数及直方图；
-- 标准 refit 的 MSE；
-- ParameterHead 的参数误差。
+| 文件 | 内容 |
+|---|---|
+| fit.png | 输入点、拟合曲线、控制多边形和节点在曲线上的位置 |
+| report.json | 参数、内部节点、控制顶点、MSE、计时、checkpoint 资格和输入信息 |
 
-节点匹配只有在共享或足够接近的参数化下才有直接几何含义。`--knot-tolerance` 是匹配容差，不是拟合阈值，也不是最小节点间距。
+## 5. MSE 与通过率
 
-## 5. 传统 Hard-RMS 对照
-
-在 learned 评估中附加传统 greedy 对照：
-
-```powershell
-python scripts/evaluate_checkpoint.py `
-  --checkpoint outputs/candidate_pruning_one_shot_v12.pt `
-  --num-samples 128 `
-  --seed 20000 `
-  --fit-tolerance 0.005 `
-  --run-hard-diagnostic `
-  --json-output outputs/logs/v12/v12_learned_vs_hard.json
-```
-
-Hard-RMS 从固定 proposal 开始，反复测试单节点删除并执行标准 B 样条 refit。它是慢速诊断，不使用 v12 relocation 后的位置，也不会替换 checkpoint 的默认 learned 部署。
-
-需要把 hard 作为实际部署结果时，显式使用：
-
-```text
---deployment-mode hard
-```
-
-## 6. verified：快速质量守卫
-
-`verified` 位于纯一次性 `learned` 和慢速 `hybrid` 之间：
-
-```text
-网络 forward 一次
-  -> 对 LearnedKeep + relocation 结果做标准 B 样条精确 refit
-  -> 若满足 RMS 阈值：直接返回
-  -> 否则保留 learned proposal 身份，并按 keep probability 补回未选候选
-  -> 对置信度前缀做少量精确 refit，返回第一个实测可行状态
-  -> 可选：从该较小可行集出发做 greedy compact
-  -> 若完整 proposal 仍失败：可选残差引导动态插点
-```
-
-前缀二分只用于减少试验次数；由于平滑项存在时 MSE 不保证随节点数严格单调，任何最终接受状态都必须通过真实标准 B 样条 refit 检查。该流程是自适应部署，不是纯 one-shot，也不证明全局最少节点。
-
-参数域必须显式记录。`--verified-parameterization network` 始终使用网络预测参数；默认 `chord-fallback` 仅在网络域完整 proposal 失败后，把节点按采样点对应关系映射到弦长域再验证；`chord` 在整个 verified 流程使用弦长域。结果中的节点只能配合 `final_parameters` 解释和求值；评估时先把部署节点映射回真实参数域，再计算节点匹配指标。
-
-### 两个速度/复杂度档位
-
-最快档保留较多节点，不执行二次压缩：
-
-```powershell
-python scripts/evaluate_checkpoint.py `
-  --checkpoint outputs/candidate_pruning_one_shot_v12.pt `
-  --deployment-mode verified `
-  --no-verified-compact `
-  --verified-parameterization chord-fallback `
-  --verified-refit-device auto `
-  --num-samples 512 `
-  --batch-size 32 `
-  --seed 20000 `
-  --fit-tolerance 0.005 `
-  --json-output outputs/logs/v12/v12_verified_fast.json
-```
-
-复杂度优先档使用 `--verified-compact`，会从已验证可行的 learned 子集或置信度前缀继续删除冗余节点。两档默认均启用 `--verified-residual-fallback`，仅当完整 proposal 精确失败时，才在当前最大点残差的合法参数位置逐次插入节点；默认最多 8 次，且每次插入后重新精确 refit。消融时可关闭：
-
-```text
---no-verified-residual-fallback
-```
-
-残差插点可能使最终节点数超过网络 `Kc`，因此报告会把 immutable proposal slots 与 dynamic inserted knots 分开记录。它优先保证拟合阈值，不用于声称一次性固定长度或最小复杂度。
-
-### 求解设备与时间
-
-`--verified-refit-device auto` 默认让 CUDA 执行网络 forward、CPU 执行小规模 rank-revealing 最小二乘。可选值为 `auto / cpu / model`。JSON 同时记录 model device、refit device、网络外 repair 时间、精确 refit 次数、残差兜底比例和动态插点数量。
-
-完整部署诊断仍应单独记录检查、补回、可选 compact 和残差兜底的时间；当前论文/PPT 主时间按用户指定只报告同步后的纯 `forward_deployment()`。因此 verified 的最终 MSE 可以来自网络外质量守卫，但其主显示时间不能称为 verified 端到端延迟。
-
-## 7. hybrid：离线质量模式
-
-hybrid 用更多推理时间联合搜索“删谁”和“剩余节点移动到哪里”：
-
-```text
-网络 forward 一次并固定参数 t
-  -> proposal、LearnedKeep、传统 greedy 构造搜索起点
-  -> learned 起点先做位置精修
-  -> beam 展开单节点删除组合
-  -> 在 greedy 停止边界附近先精修多个 child，再截断 beam
-  -> 对 survivors 做有序 coordinate refinement
-  -> 每个候选状态执行标准 B 样条 refit并测量真实 MSE
-  -> 字典序选择：满足阈值优先，其次 K 少，再其次 MSE 低
-```
-
-`--hybrid-position-refine-candidate-multiplier` 控制 beam 截断前接受位置精修的 child 数量，默认是 `4 × beam width`。它避免某个删除组合只因“尚未移动时误差较高”而过早被丢弃。
-
-hybrid 的 coordinate refinement 会实际返回移动后的 `final_fit.internal_knots`。当前可视化把 refined knots 画在最终部署曲线上，并在结构轴显示 `proposal u -> refined u*`，不再只用 retained proposal 索引着色。
-
-### 阈值定义
-
-hybrid 核心使用平均平方欧氏误差：
+默认指标为归一化点上的平均平方欧氏误差：
 
 \[
-\operatorname{MSE}=\frac1M\sum_i\|C(t_i)-Q_i\|_2^2=\operatorname{RMS}^2.
+\operatorname{MSE}
+=\frac{1}{M}\sum_{i=0}^{M-1}
+\lVert C(t_i)-q_i\rVert_2^2.
 \]
 
-CLI 的 `--fit-tolerance` 延续 RMS 语义，进入 hybrid 后自动平方：
+它不取平方根。MSE≤2.5e-5 等价于 RMS≤0.005。
 
-```text
---fit-tolerance 0.005  <=>  hybrid MSE tolerance = 2.5e-5
-```
+90% 验收条件是 `worst-source pass rate≥0.90`，其中每条曲线仍只有在 MSE≤2.5e-5 时才计为通过。降低数据集通过率要求不会改变 MSE 阈值，也不会修改失败曲线的误差。
 
-传统 greedy 的可行结果保留为 fallback，但有限 beam 和离散网格 refinement 仍不构成全局最优证明。
+真实数据还应报告 original-reference MSE：在原始密度参考折线上衡量重采样之外的形状保真度。训练和 checkpoint 选择当前只使用 M 个输入点的 MSE，original-reference MSE 是独立部署诊断。
 
-### 默认参数
+通过率必须同时给出：
 
-| 参数 | 默认值 | 作用 |
-|---|---:|---|
-| `--hybrid-beam-width` | 4 | 每层保留状态数 |
-| `--hybrid-branch-factor` | 4 | 每个父状态展开的删除数；`0` 为全部 |
-| `--hybrid-position-sweeps` | 2 | coordinate sweep 次数 |
-| `--hybrid-position-grid-size` | 7 | 单坐标奇数网格大小 |
-| `--hybrid-position-restarts` | 2 | 确定性位置重启次数 |
-| `--hybrid-position-refine-count-margin` | 1 | 精修覆盖到 greedy 边界上方的 K 层数 |
-| `--hybrid-position-refine-candidate-multiplier` | 4 | beam 截断前精修候选倍数 |
+- 每个数据源单独的 pass rate；
+- worst-source pass rate；
+- 总体 pass rate。
 
-### 批量评估
+正式验收以前两项中的 worst-source 为准，防止大量简单合成样本掩盖地理曲线失败。
 
-```powershell
-python scripts/evaluate_checkpoint.py `
-  --checkpoint outputs/candidate_pruning_one_shot_v12.pt `
-  --deployment-mode hybrid `
-  --num-samples 32 `
-  --seed 20000 `
-  --fit-tolerance 0.005 `
-  --hybrid-beam-width 4 `
-  --hybrid-branch-factor 4 `
-  --hybrid-position-sweeps 2 `
-  --hybrid-position-grid-size 7 `
-  --hybrid-position-restarts 2 `
-  --hybrid-position-refine-count-margin 1 `
-  --hybrid-position-refine-candidate-multiplier 4 `
-  --json-output outputs/logs/v12/v12_hybrid_evaluation.json
-```
+## 6. 时间口径
 
-时间允许时可以增大 beam、全部展开分支、增加 sweep/grid/restart，但应先在少量独立样本上测量耗时；文档不预设这些参数一定提高所有样本。
+报告保存两种 Ours 时间：
 
-## 8. 单样本图
+| 指标 | 范围 |
+|---|---|
+| network time | 一次 forward_deployment；排除数据搬运、refit、绘图和 I/O |
+| full deployment time | 预处理后的网络前向、节点物化和一次最终 refit |
 
-快速 learned：
+CUDA 测量在计时前后同步并先预热。论文速度比较应使用同一设备、dtype、batch size 和计时边界。若数值基线报告完整搜索时间，就应与 Ours 的 full deployment time 比较；纯 network time 只能标成网络延迟，不能解释成端到端加速比。
 
-```powershell
-python scripts/visualize_result.py `
-  --checkpoint outputs/candidate_pruning_one_shot_v12.pt `
-  --seed 20000 `
-  --sample-index 0 `
-  --pruning-view learned `
-  --fit-tolerance 0.005 `
-  --timing-repeats 5 `
-  --dpi 600 `
-  --output outputs/figures/current/v12_learned_000.png
-```
+3090 通常会显著降低网络前向时间，但对 CPU 小矩阵 refit、数据读取和绘图帮助有限；最终数字仍应在目标硬件重新测量。
 
-慢速 hybrid：
+## 7. 八方法配对测试
 
-```powershell
-python scripts/visualize_result.py `
-  --checkpoint outputs/candidate_pruning_one_shot_v12.pt `
-  --seed 20000 `
-  --sample-index 0 `
-  --pruning-view hybrid `
-  --fit-tolerance 0.005 `
-  --hybrid-position-refine-candidate-multiplier 4 `
-  --dpi 600 `
-  --output outputs/figures/current/v12_hybrid_000.png
-```
+~~~powershell
+python scripts/benchmark_v16_datasets.py --checkpoint outputs/checkpoints/candidate_selection_v16_simplified_certified_k96.pt --samples-per-knot-count 2 --real-samples-per-dataset 20 --mse-tolerance 2.5e-5 --max-internal-knots 96 --paper-initial-knots 96 --liang-dense-knots 96 --torch-num-threads 1 --output-dir outputs/comparisons/v16_K4_20_n2_real20
+~~~
 
-图中的时间含义：
+同一批曲线比较：
 
-- `net`：一次网络 forward；
-- `prune`：hard/hybrid 的离线组合与位置搜索；
-- `refit`：最终标准 B 样条控制顶点求解。
+1. Ours v16；
+2. Park–Lee 适配；
+3. Liang 适配；
+4. Dung–Tjahjowidodo 适配；
+5. Kang 稀疏适配；
+6. Luo–Kang–Yang 适配；
+7. Yeh 特征 CDF 适配；
+8. 从统一均匀最大节点初始化的贪心删除＋位置更新。
 
-GPU 操作是异步的，正式论文计时建议预热并设置 `--timing-repeats 3` 或 `5`，同时报告硬件和 batch size。
+这些论文方法是根据公开目标重新实现的可审计 adaptation，不应称为作者官方代码。各方法容量、停止条件、MSE 和时间边界写入 comparison.json。完整协议见 [公开方法复现](published_knot_methods_reproduction.md)。
 
-## 9. 批量四联对比图
+中断后可在完全相同实验指纹下增加 `--resume`。正式方法对比图只读取实测 JSON，不重新运行任何方法，也不得人工缩放、裁剪或替换 Ours 的误差：
 
-下面的命令按 source 内部节点数，从 `K=4` 到数据集上限，每层随机抽取一条独立
-测试曲线。省略 `--max-knot-count` 时上限自动从数据集配置读取；默认控制顶点范围
-`8–24` 对应 source `K=4–20`。
+~~~powershell
+python scripts/plot_v16_method_comparison.py `
+  --input outputs/comparisons/v16_K4_20_n2_real20/comparison.json `
+  --output-dir outputs/figures/v16_simplified_certified_k96/method_comparison `
+  --dpi 300
+~~~
 
-```powershell
-python scripts/visualize_batch_comparison.py `
-  --checkpoint outputs/candidate_pruning_one_shot_v12.pt `
-  --output-dir outputs/comparisons/current/v12_sourceK_4_to_max `
-  --samples-per-knot-count 1 `
-  --min-knot-count 4 `
-  --scan-size 512 `
-  --seed 20000 `
-  --selection-seed 12345 `
-  --stratify-by source `
-  --timing-repeats 5 `
-  --dpi 600
-```
+默认 `--method-set published` 比较 Ours、Park、Liang、Dung、Kang 和 Luo，输出 `v16_published_methods_input.png`。`--reference` 默认启用；若 JSON 含原始真实曲线参考指标，还会生成 `v16_published_methods_reference.png`，可用 `--no-reference` 关闭。增加 `--method-set all` 可把 Yeh 和统一贪心也放入同一张 2×2 图。四个子图依次是 MSE、阈值通过率、最终内部节点数和完整算法时间；Ours 的 network time 只作为独立文字注释，不能替代端到端时间柱。
 
-需要每个 K 两个随机样本时，把 `--samples-per-knot-count` 改为 `2`。如果明确只画
-到某个上限，可加 `--max-knot-count 20`。`--scan-size` 是先扫描的确定性测试池大小；
-若某个指定 K 在池中没有足够样本，脚本会明确报错，而不会拿其他层补齐。
+## 8. Ours 拟合案例
 
-四个面板分别为：
+只展示当前方法的论文案例时使用专用入口：
 
-1. 源 B 样条、原始观测点、源控制顶点/控制多边形及源内部节点；
-2. 网络产生的全部冗余 proposal、使用预测参数得到的标准 B 样条 refit、控制顶点及节点；
-3. v12 LearnedKeep + survivor relocation 的一次性部署结果、最终 refit、控制顶点及节点；
-4. 从同一份已物化 proposal 出发的传统 proposal-only greedy hard pruning、控制顶点及节点。
+~~~powershell
+python scripts/visualize_v16_ours_cases.py `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_simplified_certified_k96.pt `
+  --real-samples-per-dataset 2 `
+  --selection-seed 20260909 `
+  --mse-tolerance 2.5e-5 `
+  --device cuda `
+  --dpi 300 `
+  --output-dir outputs/figures/v16_simplified_certified_k96/ours_cases
+~~~
 
-第 2 栏表示 `CandidateKnotHead` 预测的高召回冗余候选，不是 Boehm 算法对源样条做的
-精确等形插入。第 2–4 栏共享同一次网络输出的预测参数和 proposal；第 1 栏使用数据生成
-时的真实参数，所以它是源曲线/噪声基线，不应与后三栏解释成完全相同的参数估计任务。
+每条留出测试曲线生成一个 `ours__<dataset>__<sample-id>.png`，同时生成 `ours_cases_overview.png` 和 `deployment_visualizations.json`。单例图包含：
 
-### 9.1 MSE 口径
+- 原始参考折线（仅用于评价）和网络实际读取的采样点；
+- Ours 最终部署 B 样条；
+- 控制多边形、带索引的控制顶点 `P_i`；
+- 曲线上的内部节点 `C(u_i)`、带索引的节点位置和完整参数域节点条；
+- 最终内部节点数、输入点 MSE、参考点 MSE、是否通过阈值、network time 与 network+refit 时间。
 
-四栏标题、CSV 和 JSON manifest 中的误差统一为：
+总览图用于快速展示多条曲线的拟合形态，精确节点值、完整节点向量和控制顶点坐标以 JSON 为准。脚本默认使用 UJI、Natural Earth 和 USGS 的独立 test split；可重复传入 `--manifest NAME=PATH` 指定其他已准备的真实数据 manifest。
 
-\[
-\operatorname{MSE}=\frac1M\sum_{i=0}^{M-1}
-\|C(t_i)-Q_i\|_2^2.
-\]
+## 9. 真实曲线四方法诊断图
 
-它是在归一化坐标中对“每个点的平方欧氏距离”取平均，不开平方，也不是先对所有坐标
-元素取平均的 coordinate-wise MSE。若未显式传入 `--mse-tolerance`，传统 hard pruning
-会把 checkpoint 中历史 RMS 阈值平方；例如 `RMS=0.005` 对应 `MSE=2.5e-5`。
+几何可视化故意只展示 Ours、Kang、Yeh 和统一贪心四种方法，以保持版面可读；这不等于定量 benchmark 只有四个方法。
 
-### 9.2 计时边界
+~~~powershell
+python scripts/visualize_v16_real_deployments.py --checkpoint outputs/checkpoints/candidate_selection_v16_simplified_certified_k96.pt --real-samples-per-dataset 2 --selection-seed 20260909 --mse-tolerance 2.5e-5 --device auto --output-dir outputs/figures/v16_simplified_certified_k96/four_method_cases
+~~~
 
-图和 manifest 使用预热后的 batch-size 1 wall time，并对 `--timing-repeats` 次运行取
-中位数。建议展示使用 `3` 或 `5` 次，并同时记录 CPU/GPU 型号。
+每幅图包含原始参考折线、共同输入点、最终曲线、控制顶点和节点位置；标题给出输入 MSE、参考 MSE、节点数、network time 与完整方法时间。
 
-- `ours network forward`：只统计 `forward_deployment()`，包含 ParameterHead、冗余
-  proposal、KeepMask 与 survivor relocation；输入提前驻留，排除标准 refit、verified
-  repair、数据搬运、绘图和 I/O。完整质量管线时间仅作为 diagnostic 保存。
-- `hard pruning`：只从已经物化的预测参数和同一份 proposal 开始计时。它包含 greedy
-  单节点删除、停止判断及其内部全部标准 B 样条 refit，但明确排除生成 proposal 的网络
-  forward。
+## 10. 正式与诊断产物边界
 
-这两个数字服从本实验指定的非对称边界：前者是纯网络预测，后者是给定 proposal 后的
-传统剪枝阶段。可以用于回答各自指定范围花了多久，但不能声称它们是边界完全一致的
-端到端加速比。独立传统基线应改用均匀最大节点初始化的删除+梯度重定位流程，而不是
-读取网络 proposal。
+`candidate_selection_v16_simplified_certified_k96.pt` 是当前正式训练的目标路径，不是文件名本身即可证明合格的随仓库结果。运行上述两种绘图前必须先执行 `inspect_v16_checkpoint.py` 并得到返回码 0；当前若尚未训练出合格主 `.pt`，就不能声称已经生成正式比较图或正式案例图。
 
-脚本按 source 或 canonical 节点数分层随机抽样，输出 PNG、JSON manifest 和 CSV。面板误差统一使用 MSE，不开平方。该批量脚本的第四栏是传统 hard，对 hybrid 应另用 `visualize_result.py --pruning-view hybrid`。
+为排查旧权重，可在两个绘图入口增加 `--allow-unqualified-diagnostic`。此时输入 benchmark JSON 本身也必须是允许诊断生成的报告；所有 PNG 和 JSON 会保留 `DIAGNOSTIC NOT FINAL` 标记，不得进入正式论文表格或结论。
 
-## 10. 用户有序点云
+## 11. 结果发布检查
 
-```powershell
-python scripts/fit_point_cloud.py `
-  --checkpoint outputs/candidate_pruning_one_shot_v12.pt `
-  --point-cloud data/my_curve.csv `
-  --deployment-mode verified `
-  --verified-refit-device auto `
-  --fit-tolerance 0.005 `
-  --json-output outputs/predictions/my_curve_v12.json `
-  --figure-output outputs/predictions/my_curve_v12.png
-```
+1. 先检查 checkpoint qualification，不把 proposal 或 target_not_met 权重当正式模型；
+2. 固定独立 test split、seed、manifest 和 checkpoint SHA-256；
+3. 对所有方法使用同一输入、参数归一化和 MSE 定义；
+4. 同时报告平均、P95、最大 MSE、通过率和节点数；
+5. 区分 network time 与 full method time；
+6. 失败样本不得删除，诊断回退不得伪装成一次性网络结果；
+7. PNG 必须由保存的逐样本 JSON 重绘。
 
-脚本会检查文件、按 checkpoint 训练长度重采样、归一化、执行一次 forward，并在全部源点上做最终标准 refit。输入必须沿曲线方向排序；`--reverse-points` 可整体反向。
-
-`verified` 会在全部源点上执行阈值检查与必要修复。改为 `learned` 可测纯一次性延迟；改为 `hybrid` 会启用更慢的组合与位置搜索。对于明显偏离合成训练分布的实测点云，必须单独检查曲线覆盖、端点、MSE 和节点分布，不能由合成测试指标外推。
-
-## 11. 真实数据集批量测试
-
-`prepare_uji_pen.py`、`prepare_natural_earth.py` 和 `prepare_usgs_contours.py` 生成统一 JSONL manifest。批量 learned 部署使用：
-
-```powershell
-python scripts/evaluate_real_world.py `
-  --checkpoint outputs/checkpoints/current/candidate_pruning_one_shot_v14_feedback.pt `
-  --manifest data/splits/uji_pen_v2.jsonl `
-  --split test `
-  --max-samples 1000 `
-  --json-output outputs/real_world/uji_v14_learned_1000.json `
-  --overwrite
-```
-
-该脚本在 192 点输入上求控制点，在 manifest 保存的原始密度参考线上评价 MSE、P95、Chamfer 和 Hausdorff。主时间仅包括 `forward_deployment()`；标准 B 样条 refit、读取与指标计算不计时。真实折线没有节点真值，因此不输出 knot Precision/Recall/F1。完整协议见[真实数据训练适配与部署测试](real_world_evaluation.md)。
-
-真实域纯网络不达标时，可显式选择效果优先路径：
-
-```powershell
-python scripts/evaluate_real_world.py `
-  --checkpoint outputs/checkpoints/current/candidate_pruning_one_shot_v14_feedback.pt `
-  --manifest data/splits/uji_pen_v2.jsonl `
-  --split test `
-  --deployment-mode certified `
-  --certified-mse-target 1e-5 `
-  --json-output outputs/real_world/uji_v14_certified.json `
-  --overwrite
-```
-
-它始终保留 `learned_*` 纯网络结果，再独立记录 reference refit、节点联合移动/增结和
-兜底耗时。常规搜索失败后先构造满足实测 MSE 的简化折线 B 样条，仅在必要时才精确
-表示完整输入折线。认证范围仅是 manifest 提供的 normalized 离散参考点，不是未知连续
-真曲线；简化折线和完整折线兜底都可能超过 adaptive 节点上限，必须连同最终 K、控制
-点数和 fallback 类型一起报告。
+代码入口：[fit_v16_point_cloud.py](../scripts/fit_v16_point_cloud.py)、[benchmark_v16_datasets.py](../scripts/benchmark_v16_datasets.py)、[plot_v16_method_comparison.py](../scripts/plot_v16_method_comparison.py)、[visualize_v16_ours_cases.py](../scripts/visualize_v16_ours_cases.py)、[visualize_v16_real_deployments.py](../scripts/visualize_v16_real_deployments.py)。

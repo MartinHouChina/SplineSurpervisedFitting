@@ -1,6 +1,13 @@
 *.pyc
+__pycache__/
+.pytest_cache/
+.ruff_cache/
 .codex_tmp/
 tmp/
+outputs/smoke/
+outputs/v16_smoke/
+outputs/tmp/
+outputs/test_tmp*/
 outputs/archive/recoverable_cleanup_*/
 data/raw/
 data/processed/

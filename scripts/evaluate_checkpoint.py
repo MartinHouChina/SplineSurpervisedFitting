@@ -24,6 +24,7 @@ from spline_fitting.checkpointing import (
     COUNT_CONDITIONED_V5_OBJECTIVE_VERSION,
     CURRENT_OBJECTIVE_VERSION,
     V12_COUPLED_RELOCATION_OBJECTIVE_VERSION,
+    V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
     build_model_from_checkpoint,
     migrate_loss_config,
 )
@@ -726,6 +727,13 @@ def main() -> None:
         parser.error("--verified-residual-min-gap must be finite and non-negative")
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
+    if checkpoint.get("objective_version") == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
+        parser.error(
+            "v16 has a different counterfactual subset objective and no legacy "
+            "surrogate loss. Use scripts/benchmark_v16_datasets.py for paired "
+            "synthetic/real-data MSE, pass-rate and timing evaluation; use "
+            "scripts/fit_v16_point_cloud.py for a point cloud."
+        )
     try:
         fit_tolerance = resolve_fit_tolerance(checkpoint, args.fit_tolerance)
     except (TypeError, ValueError) as error:
