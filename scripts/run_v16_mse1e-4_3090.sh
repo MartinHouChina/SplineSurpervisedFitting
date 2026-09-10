@@ -24,6 +24,7 @@ NETWORK_REPEATS=100
 END_TO_END_REPEATS=3
 OUTPUT_ROOT=""
 INIT_CHECKPOINT="outputs/checkpoints/candidate_selection_v16_mse5e-5_k64.proposal.pt"
+PREPARE_REAL_DATA=0
 DIAGNOSTIC=0
 DRY_RUN=0
 
@@ -46,6 +47,7 @@ Main options:
   --output-root PATH             Output root (default: repository outputs/)
   --init-checkpoint PATH         Optional proposal-only warm start
   --no-init-checkpoint           Train all modules from scratch
+  --prepare-real-data            Download/prepare missing UJI, Natural Earth and USGS data
   --diagnostic                   Allow unqualified diagnostic continuation
   --dry-run                      Print every command without executing Python
   -h, --help                     Show this help
@@ -95,6 +97,7 @@ while (($#)); do
     --output-root) need_value "$@"; OUTPUT_ROOT="$2"; shift 2 ;;
     --init-checkpoint) need_value "$@"; INIT_CHECKPOINT="$2"; shift 2 ;;
     --no-init-checkpoint) INIT_CHECKPOINT=""; shift ;;
+    --prepare-real-data) PREPARE_REAL_DATA=1; shift ;;
     --diagnostic) DIAGNOSTIC=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -175,9 +178,52 @@ done
 UJI_MANIFEST="$REPOSITORY_ROOT/data/splits/uji_pen_v2.jsonl"
 NATURAL_EARTH_MANIFEST="$REPOSITORY_ROOT/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl"
 USGS_MANIFEST="$REPOSITORY_ROOT/data/processed/usgs_contours/large_scale/manifest.jsonl"
+
+prepare_missing_real_data() {
+  if [[ ! -f "$UJI_MANIFEST" ]]; then
+    printf '\n[prepare_uji] downloading and preparing UJI Pen Characters v2\n'
+    if ((DRY_RUN)); then
+      printf ' %q' "$PYTHON_BIN" scripts/prepare_uji_pen.py --download
+      printf '\n'
+    else
+      "$PYTHON_BIN" scripts/prepare_uji_pen.py --download
+    fi
+  fi
+  if [[ ! -f "$NATURAL_EARTH_MANIFEST" ]]; then
+    printf '\n[prepare_natural_earth] downloading and preparing 10m coastline\n'
+    if ((DRY_RUN)); then
+      printf ' %q' "$PYTHON_BIN" scripts/prepare_natural_earth.py \
+        --resolution 10m --layer coastline --reference-points 768
+      printf '\n'
+    else
+      "$PYTHON_BIN" scripts/prepare_natural_earth.py \
+        --resolution 10m --layer coastline --reference-points 768
+    fi
+  fi
+  if [[ ! -f "$USGS_MANIFEST" ]]; then
+    printf '\n[prepare_usgs] downloading and preparing example contour regions\n'
+    if ((DRY_RUN)); then
+      printf ' %q' "$PYTHON_BIN" scripts/prepare_usgs_contours.py \
+        --bbox-file configs/usgs_contour_regions.example.json \
+        --max-features-per-region 2000 \
+        --output-dir data/processed/usgs_contours/large_scale
+      printf '\n'
+    else
+      "$PYTHON_BIN" scripts/prepare_usgs_contours.py \
+        --bbox-file configs/usgs_contour_regions.example.json \
+        --max-features-per-region 2000 \
+        --output-dir data/processed/usgs_contours/large_scale
+    fi
+  fi
+}
+
+if ((PREPARE_REAL_DATA)); then
+  prepare_missing_real_data
+fi
 if ((DRY_RUN == 0)); then
   for manifest in "$UJI_MANIFEST" "$NATURAL_EARTH_MANIFEST" "$USGS_MANIFEST"; do
-    [[ -f "$manifest" ]] || die "required real-data manifest does not exist: $manifest"
+    [[ -f "$manifest" ]] || die \
+      "required real-data manifest does not exist: $manifest; rerun with --prepare-real-data"
   done
   if [[ "$DEVICE" == "cuda" ]]; then
     "$PYTHON_BIN" -c \

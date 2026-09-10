@@ -52,12 +52,15 @@ Linux 原生 Bash：
 
 ```bash
 bash scripts/run_v16_mse1e-4_3090.sh \
+  --prepare-real-data \
   --device cuda \
   --run-name candidate_selection_v16_mse1e-4_k56_linux
 ```
 
 若当前环境已经激活，可用 `--python "$(command -v python)"` 明确指定解释器；脚本
-不负责切换 Conda/venv。`--dry-run` 只打印完整命令，`--help` 查看可调训练与评测参数。
+不负责切换 Conda/venv。首次换机使用 `--prepare-real-data` 下载并生成三个缺失的
+manifest；已存在的数据不会重复处理。`--dry-run` 只打印完整命令，`--help` 查看可调
+训练与评测参数。
 
 该入口按顺序执行：
 

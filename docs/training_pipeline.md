@@ -98,11 +98,14 @@ Linux 推荐直接运行完整流水线：
 
 ```bash
 bash scripts/run_v16_mse1e-4_3090.sh \
+  --prepare-real-data \
   --device cuda \
   --run-name candidate_selection_v16_mse1e-4_k56_linux
 ```
 
 它会串行完成 fresh 训练、正式资格审计、六方法 benchmark、四指标图和真实数据案例图。
+Linux 新工作区中的 `data/raw`、`data/processed`、`data/splits` 不随 Git 分发，首次运行
+必须保留 `--prepare-real-data`；它只准备缺失的数据集。
 运行 `bash scripts/run_v16_mse1e-4_3090.sh --help` 可查看参数；脚本使用当前已经激活的
 Python 环境，也可通过 `--python /path/to/python` 指定。
 

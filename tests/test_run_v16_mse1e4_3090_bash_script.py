@@ -22,6 +22,7 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
         "--candidate-knots 56",
         "--knot-min-span 0.01",
         "--synthetic-boundary-val-size 32",
+        "--prepare-real-data",
         "--mse-tolerance 1e-4",
         "--initial-keep-fraction 0.5357142857142857",
         "--min-knot-count 4 --max-knot-count 56",
@@ -56,6 +57,7 @@ def test_linux_runner_refuses_unknown_options_and_documents_help() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
     assert "unknown option" in source
     assert "--no-init-checkpoint" in source
+    assert "rerun with --prepare-real-data" in source
     assert "--diagnostic" in source
     assert "--dry-run" in source
     assert "--python PATH" in source
