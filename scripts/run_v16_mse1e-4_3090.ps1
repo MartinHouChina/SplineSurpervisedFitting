@@ -9,7 +9,7 @@
 [CmdletBinding()]
 param(
     [string]$Python = "python",
-    [string]$RunName = "candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost",
+    [string]$RunName = "candidate_selection_v16_mse1e-4_k56_supervised",
     [ValidateSet("auto", "cpu", "cuda")]
     [string]$Device = "cuda",
     [int]$Epochs = 104,
@@ -17,7 +17,6 @@ param(
     [int]$TrainSize = 3000,
     [int]$ValSize = 600,
     [int]$RealValSize = 100,
-    [double]$RealFraction = 0.35,
     [double]$ProposalHighKFraction = 0.50,
     [int]$ProposalHighKMinKnots = 40,
     [int]$BatchSize = 64,
@@ -31,10 +30,7 @@ param(
     [int]$NetworkRepeats = 100,
     [int]$EndToEndRepeats = 3,
     [string]$OutputRoot = "",
-    [string]$InitCheckpoint = (
-        "outputs/checkpoints/" +
-        "candidate_selection_v16_mse5e-5_k64.proposal.pt"
-    ),
+    [string]$InitCheckpoint = "",
     [switch]$Diagnostic,
     [switch]$DryRun
 )
@@ -77,14 +73,6 @@ if ($NumWorkers -lt 0) {
 }
 if ($LuoDePopulation -lt 5) {
     throw "LuoDePopulation must be at least 5."
-}
-if (
-    [double]::IsNaN($RealFraction) -or
-    [double]::IsInfinity($RealFraction) -or
-    $RealFraction -lt 0.0 -or
-    $RealFraction -gt 1.0
-) {
-    throw "RealFraction must lie in [0,1]."
 }
 if (
     [double]::IsNaN($ProposalHighKFraction) -or
@@ -162,9 +150,9 @@ $RunState = [ordered]@{
     diagnostic_requested = [bool]$Diagnostic
     checkpoint = [System.IO.Path]::GetFullPath($CheckpointPath)
     requested_profile = [ordered]@{
-        simplification_contract = "ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3"
+        simplification_contract = "synthetic_ground_truth_ordered_keep_and_relocation_v4"
         checkpoint_selection = "mean_per_curve_subset_cost_v1"
-        qualification_contract = "v16_structural_integrity_pass_rates_report_only_v3"
+        qualification_contract = "v16_supervised_synthetic_only_pass_rates_report_only_v4"
         aggregate_pass_role = "reporting_reference_only"
         simplification_curriculum = "deterministic_linear_by_joint_epoch"
         aggregate_pass_feedback = $false
@@ -181,17 +169,17 @@ $RunState = [ordered]@{
         validation_size = $ValSize
         synthetic_boundary_validation_size = [Math]::Min(32, $ValSize)
         real_validation_size_per_source = $RealValSize
-        real_fraction = $RealFraction
+        training_data = "certified_synthetic_only"
+        real_data_role = "validation_and_test_only"
         proposal_high_k_fraction = $ProposalHighKFraction
         proposal_high_k_min_knots = $ProposalHighKMinKnots
         proposal_knot_assignment_weight = 1.0
         batch_size = $BatchSize
         selection_policy = "mass_topk"
         initial_keep_fraction = 0.5357142857142857
-        teacher_low_count_sweep = 16
-        synthetic_count_role = "upper_bound"
-        synthetic_geometry_oracle_teacher = $true
-        oracle_teacher_extra_knots = 2
+        joint_supervision = "synthetic_ground_truth"
+        online_teacher = $false
+        synthetic_count_role = "exact"
         coverage_bins = 0
         synthetic_samples_per_k = $SyntheticSamplesPerK
         real_samples_per_dataset = $RealSamplesPerDataset
@@ -265,8 +253,8 @@ try {
         "train/val=$TrainSize/$ValSize, batch=$BatchSize."
     )
     Write-Host (
-        "The selector uses adaptive mass-TopK; simple-curve teachers exhaustively " +
-        "check K<=16 and may use fewer knots than the certified source."
+        "The selector uses adaptive mass-TopK. Its count, KeepMask and surviving " +
+        "positions are supervised directly by certified synthetic labels."
     )
     Write-Host (
         "Proposal synthetic sampling uses " +
@@ -299,6 +287,8 @@ try {
         "--knot-min-span", "0.01",
         "--mse-tolerance", "1e-4",
         "--knot-match-tolerance", "0.01",
+        "--tolerance-factor-min", "1",
+        "--tolerance-factor-max", "1",
         "--certified-minimal-source",
         "--minimality-margin", "0.2",
         "--minimality-max-attempts", "16",
@@ -307,25 +297,20 @@ try {
         "--proposal-knot-assignment-weight", "1.0",
         "--one-shot-selection-policy", "mass_topk",
         "--initial-keep-fraction", "0.5357142857142857",
-        "--teacher-low-count-sweep", "16",
-        "--synthetic-count-role", "upper_bound",
-        "--synthetic-geometry-oracle-teacher",
-        "--oracle-teacher-extra-knots", "2",
+        "--joint-supervision", "synthetic_ground_truth",
+        "--synthetic-count-role", "exact",
+        "--no-synthetic-geometry-oracle-teacher",
         "--one-shot-coverage-bins", "0",
         "--min-selected-knots", "4",
-        "--one-shot-safety-sigma", "0.20",
-        "--one-shot-safety-knots", "2",
-        "--final-safety-sigma", "0.03",
+        "--one-shot-safety-sigma", "0",
+        "--one-shot-safety-knots", "0",
+        "--final-safety-sigma", "0",
         "--final-safety-knots", "0",
         "--safety-anneal-epochs", "12",
         "--complexity-ramp-epochs", "12",
-        "--complexity-max-scale", "6.0",
-        "--policy-samples", "2",
-        "--counterfactual-edits", "4",
-        "--teacher-prefix-search-steps", "7",
-        "--real-fraction", ([string]::Format(
-            [Globalization.CultureInfo]::InvariantCulture, "{0:R}", $RealFraction
-        )),
+        "--complexity-max-scale", "1.0",
+        "--complexity-weight", "0",
+        "--real-fraction", "0",
         "--real-manifest", $UjiManifest,
         "--real-manifest", $NaturalEarthManifest,
         "--real-manifest", $UsgsManifest,

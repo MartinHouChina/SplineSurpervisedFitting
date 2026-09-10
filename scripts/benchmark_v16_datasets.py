@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from benchmark_v15_datasets import main as shared_main
-from spline_fitting.checkpointing import V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+from spline_fitting.checkpointing import V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION
 
 
 def _has_option(arguments: list[str], option: str) -> bool:
@@ -31,13 +31,13 @@ def main(argv=None):
         arguments.extend(("--max-knot-count", "56"))
     return shared_main(
         arguments,
-        expected_objective=V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        expected_objective=V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         default_checkpoint=Path(
             "outputs/checkpoints/"
-            "candidate_selection_v16_mse1e-4_k56_ordered_highk.pt"
+            "candidate_selection_v16_mse1e-4_k56_supervised.pt"
         ),
         default_output_dir=Path(
-            "outputs/comparisons/v16_mse1e-4_k56_ordered_highk"
+            "outputs/comparisons/v16_mse1e-4_k56_supervised"
         ),
     )
 

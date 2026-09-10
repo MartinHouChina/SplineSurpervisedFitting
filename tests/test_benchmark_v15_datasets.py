@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from spline_fitting.checkpointing import (
     V16_ADAPTIVE_SELECTION_REVISION,
     V16_CERTIFIED_SYNTHETIC_CONTRACT,
+    V16_JOINT_CHECKPOINT_QUALITY,
     V16_SIMPLIFICATION_CONTRACT,
 )
 spec = importlib.util.spec_from_file_location("benchmark_v15", ROOT / "scripts/benchmark_v15_datasets.py")
@@ -26,7 +27,7 @@ spec.loader.exec_module(benchmark)
 def v16_checkpoint(*, target=0.90, observed=0.92, stage="joint"):
     accepted = stage == "joint" and observed >= target
     return {
-        "objective_version": benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
         "simplification_contract": V16_SIMPLIFICATION_CONTRACT,
         "simplification_ready": True,
@@ -50,6 +51,7 @@ def v16_checkpoint(*, target=0.90, observed=0.92, stage="joint"):
         },
         "stage": stage,
         "training_config": {
+            "real_fraction": 0.0,
             "proposal_pass_target": target,
             "deployment_pass_target": target,
             "mse_tolerance": 2.5e-5,
@@ -83,12 +85,17 @@ def v16_checkpoint(*, target=0.90, observed=0.92, stage="joint"):
             "one_shot_safety_knots": 0,
         },
         "loss_config": {
-            "ranked_prefix_teacher": True,
+            "joint_supervision": "synthetic_ground_truth",
+            "online_teacher": False,
+            "ranked_prefix_teacher": False,
+            "synthetic_count_role": "exact",
             "weights": {
+                "fit_weight": 1.0,
+                "distillation_weight": 2.0,
                 "count_weight": 2.0,
                 "supervised_count_weight": 1.0,
                 "supervised_over_count_weight": 1.0,
-                "complexity_weight": 0.05,
+                "complexity_weight": 0.0,
                 "true_parameter_weight": 0.1,
                 "proposal_knot_coverage_weight": 1.0,
                 "proposal_knot_assignment_weight": 1.0,
@@ -98,7 +105,7 @@ def v16_checkpoint(*, target=0.90, observed=0.92, stage="joint"):
         "proposal_ready": True,
         "best_deployment_pass_constraint_satisfied": accepted,
         "checkpoint_selection": "mean_per_curve_subset_cost_v1",
-        "checkpoint_quality": "soft_fit_complexity_selected",
+        "checkpoint_quality": V16_JOINT_CHECKPOINT_QUALITY,
     }
 
 
@@ -228,7 +235,7 @@ def test_recover_torn_journal_preserves_complete_records(tmp_path):
 
 def test_version_gate_rejects_v15_as_v16_and_unknown_objectives():
     v15 = benchmark.V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION
-    v16 = benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+    v16 = benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION
     assert benchmark.benchmark_version(v15, expected_objective=v15) == "v15"
     assert benchmark.benchmark_version(v16, expected_objective=v16) == "v16"
     with pytest.raises(ValueError, match="requires"):
@@ -309,7 +316,7 @@ def test_v16_forwards_reported_mse_budget_but_v15_has_no_new_argument():
     ) is points
     result = benchmark.deployment_forward(
         V16Model(), points,
-        objective_version=benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        objective_version=benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         mse_tolerance=1e-5,
     )
     assert result[0] is points
@@ -355,12 +362,12 @@ def test_v16_wrapper_uses_explicit_objective_and_dedicated_paths(monkeypatch):
     monkeypatch.setattr(wrapper, "shared_main", capture)
     wrapper.main(["--skip-real"])
     assert called["argv"] == ["--skip-real", "--max-knot-count", "56"]
-    assert called["expected_objective"] == benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+    assert called["expected_objective"] == benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION
     assert (
         called["default_checkpoint"].name
-        == "candidate_selection_v16_mse1e-4_k56_ordered_highk.pt"
+        == "candidate_selection_v16_mse1e-4_k56_supervised.pt"
     )
-    assert called["default_output_dir"].name == "v16_mse1e-4_k56_ordered_highk"
+    assert called["default_output_dir"].name == "v16_mse1e-4_k56_supervised"
 
     called.clear()
     wrapper.main(["--max-knot-count=12"])
@@ -370,7 +377,7 @@ def test_v16_wrapper_uses_explicit_objective_and_dedicated_paths(monkeypatch):
 def test_v16_report_labels_cannot_claim_v15(tmp_path):
     metadata = {
         "checkpoint": "v16.pt", "epoch": 1, "mse_tolerance": 1e-5,
-        "objective_version": benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         "hardware": {"device": "cpu"}, "num_points": 24,
     }
     row = {"dataset": "Synthetic", "method": "ours", "status": "ok",
@@ -386,7 +393,7 @@ def test_v16_report_labels_cannot_claim_v15(tmp_path):
 def test_diagnostic_benchmark_report_has_unmissable_warning(tmp_path):
     metadata = {
         "checkpoint": "v16.pt", "epoch": 1, "mse_tolerance": 2.5e-5,
-        "objective_version": benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         "hardware": {"device": "cpu"}, "num_points": 24,
         "diagnostic_not_final": True,
         "checkpoint_qualification": {"reasons": ["configured target below 97%"]},
@@ -407,7 +414,7 @@ def test_comparison_caps_keep_v15_defaults_and_match_v16_checkpoint(v16, expecte
         liang_dense_knots=None,
     )
     checkpoint = {
-        "objective_version": (benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+        "objective_version": (benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION
                               if v16 else benchmark.V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION),
         "model_config": {"max_internal_knots": 64},
     }
@@ -422,7 +429,7 @@ def test_explicit_numerical_capacities_are_retained_and_disclosed():
         max_internal_knots=28, paper_initial_knots=40,
         liang_dense_knots=None,
     )
-    checkpoint = {"objective_version": benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+    checkpoint = {"objective_version": benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
                   "model_config": {"max_internal_knots": 64}}
     caps = benchmark.resolve_comparison_capacities(args, checkpoint)
     assert caps == {
@@ -449,7 +456,7 @@ def test_full_knot_vector_notation_maps_to_internal_capacity():
         liang_dense_knots=None,
     )
     checkpoint = {
-        "objective_version": benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         "model_config": {"max_internal_knots": 56, "degree": 3},
     }
     caps = benchmark.resolve_comparison_capacities(args, checkpoint)
@@ -461,7 +468,7 @@ def test_full_knot_vector_notation_maps_to_internal_capacity():
 
 def test_v16_seed_reservations_include_later_configured_and_resumed_epochs():
     checkpoint = {
-        "objective_version": benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         "epoch": 2, "history": [{"epoch": 1}, {"epoch": 2}],
         "training_config": {"train_seed": 42, "train_size": 4000, "epochs": 5,
                             "train_seed_stride": 10_000_000, "resample_train_each_epoch": True,
@@ -482,7 +489,7 @@ def test_v16_seed_reservations_include_later_configured_and_resumed_epochs():
 
 def test_v16_rejects_test_seed_colliding_with_later_epoch(monkeypatch):
     checkpoint = {
-        "objective_version": benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         "training_config": {"train_seed": 42, "train_size": 4000, "epochs": 5,
                             "val_seed": 1_000_000, "val_size": 1000},
     }

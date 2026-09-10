@@ -41,7 +41,7 @@ from benchmark_v15_datasets import (  # noqa: E402
     resolve_comparison_capacities,
 )
 from spline_fitting.checkpointing import (  # noqa: E402
-    V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+    V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
     V16_FORMAL_PASS_RATE,
     assess_v16_checkpoint,
     build_model_from_checkpoint,
@@ -66,13 +66,13 @@ def parser() -> argparse.ArgumentParser:
         "--checkpoint", type=Path,
         default=Path(
             "outputs/checkpoints/"
-            "candidate_selection_v16_mse1e-4_k56_ordered_highk.pt"
+            "candidate_selection_v16_mse1e-4_k56_supervised.pt"
         ),
     )
     result.add_argument(
         "--output-dir", type=Path,
         default=Path(
-            "outputs/figures/candidate_selection_v16_mse1e-4_k56_ordered_highk/"
+            "outputs/figures/candidate_selection_v16_mse1e-4_k56_supervised/"
             "six_method_cases"
         ),
     )
@@ -147,10 +147,10 @@ def validate_checkpoint_for_visualization(
 ) -> bool:
     """Return whether results require an unqualified-checkpoint watermark."""
     objective = checkpoint.get("objective_version")
-    if objective != V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
+    if objective != V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION:
         raise ValueError(
             "visualize_v16_real_deployments.py requires objective_version="
-            f"{V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION!r}; got {objective!r}"
+            f"{V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION!r}; got {objective!r}"
         )
     qualification = assess_v16_checkpoint(
         checkpoint,

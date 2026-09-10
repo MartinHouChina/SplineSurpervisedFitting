@@ -4,15 +4,14 @@
 set -Eeuo pipefail
 
 PYTHON_BIN="python"
-SIMPLIFICATION_CONTRACT="ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3"
-RUN_NAME="candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux"
+SIMPLIFICATION_CONTRACT="synthetic_ground_truth_ordered_keep_and_relocation_v4"
+RUN_NAME="candidate_selection_v16_mse1e-4_k56_supervised_linux"
 DEVICE="cuda"
 EPOCHS=104
 PROPOSAL_EPOCHS=40
 TRAIN_SIZE=3000
 VAL_SIZE=600
 REAL_VAL_SIZE=100
-REAL_FRACTION=0.35
 PROPOSAL_HIGH_K_FRACTION=0.50
 PROPOSAL_HIGH_K_MIN_KNOTS=40
 BATCH_SIZE=64
@@ -26,7 +25,7 @@ LUO_DE_ITERATIONS=100
 NETWORK_REPEATS=100
 END_TO_END_REPEATS=3
 OUTPUT_ROOT=""
-INIT_CHECKPOINT="outputs/checkpoints/candidate_selection_v16_mse5e-5_k64.proposal.pt"
+INIT_CHECKPOINT=""
 PREPARE_REAL_DATA=0
 DIAGNOSTIC=0
 DRY_RUN=0
@@ -44,7 +43,8 @@ Main options:
   --train-size N                 Training draws per epoch (default: 3000)
   --val-size N                   Synthetic validation curves (default: 600)
   --real-val-size N              Validation curves per real source (default: 100)
-  --real-fraction X              Real-data training fraction (default: 0.35)
+                                  Training is always 100% labelled Synthetic;
+                                  real manifests are validation/test only.
   --proposal-high-k-fraction X   Proposal synthetic high-K share (default: 0.50)
   --proposal-high-k-min-knots N  High-K stratum begins here (default: 40)
   --batch-size N                 Batch size (default: 64)
@@ -88,7 +88,6 @@ while (($#)); do
     --train-size) need_value "$@"; TRAIN_SIZE="$2"; shift 2 ;;
     --val-size) need_value "$@"; VAL_SIZE="$2"; shift 2 ;;
     --real-val-size) need_value "$@"; REAL_VAL_SIZE="$2"; shift 2 ;;
-    --real-fraction) need_value "$@"; REAL_FRACTION="$2"; shift 2 ;;
     --proposal-high-k-fraction) need_value "$@"; PROPOSAL_HIGH_K_FRACTION="$2"; shift 2 ;;
     --proposal-high-k-min-knots) need_value "$@"; PROPOSAL_HIGH_K_MIN_KNOTS="$2"; shift 2 ;;
     --batch-size) need_value "$@"; BATCH_SIZE="$2"; shift 2 ;;
@@ -146,8 +145,6 @@ nonnegative_integer "NUM_WORKERS" "$NUM_WORKERS"
 [[ "$RUN_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "run name contains unsupported characters"
 [[ "$DEVICE" == "auto" || "$DEVICE" == "cpu" || "$DEVICE" == "cuda" ]] || \
   die "device must be auto, cpu or cuda"
-[[ "$REAL_FRACTION" =~ ^(0([.][0-9]+)?|1([.]0+)?)$ ]] || \
-  die "real fraction must lie in [0,1]"
 [[ "$PROPOSAL_HIGH_K_FRACTION" =~ ^(0([.][0-9]+)?|1([.]0+)?)$ ]] || \
   die "proposal high-K fraction must lie in [0,1]"
 ((PROPOSAL_HIGH_K_MIN_KNOTS >= 4 && PROPOSAL_HIGH_K_MIN_KNOTS <= 56)) || \
@@ -269,6 +266,7 @@ printf 'Fresh v16 Linux profile: MSE=1e-4, Kc=56, source K=4..56, train/val=%s/%
   "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
 printf 'Simplification contract: %s\n' "$SIMPLIFICATION_CONTRACT"
 printf 'Checkpoint selection: mean_per_curve_subset_cost_v1; aggregate pass is reporting only.\n'
+printf 'Training supervision: certified Synthetic labels only; online Teacher disabled; real data is validation/test only.\n'
 printf 'Proposal synthetic high-K share=%s at K>=%s; Joint restores K=4..56.\n' \
   "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS"
 
@@ -290,6 +288,8 @@ TRAIN_ARGS=(
   --knot-min-span 0.01
   --mse-tolerance 1e-4
   --knot-match-tolerance 0.01
+  --tolerance-factor-min 1
+  --tolerance-factor-max 1
   --certified-minimal-source
   --minimality-margin 0.2
   --minimality-max-attempts 16
@@ -298,23 +298,20 @@ TRAIN_ARGS=(
   --proposal-knot-assignment-weight 1.0
   --one-shot-selection-policy mass_topk
   --initial-keep-fraction 0.5357142857142857
-  --teacher-low-count-sweep 16
-  --synthetic-count-role upper_bound
-  --synthetic-geometry-oracle-teacher
-  --oracle-teacher-extra-knots 2
+  --joint-supervision synthetic_ground_truth
+  --synthetic-count-role exact
+  --no-synthetic-geometry-oracle-teacher
   --one-shot-coverage-bins 0
   --min-selected-knots 4
-  --one-shot-safety-sigma 0.20
-  --one-shot-safety-knots 2
-  --final-safety-sigma 0.03
+  --one-shot-safety-sigma 0
+  --one-shot-safety-knots 0
+  --final-safety-sigma 0
   --final-safety-knots 0
   --safety-anneal-epochs 12
   --complexity-ramp-epochs 12
-  --complexity-max-scale 6.0
-  --policy-samples 2
-  --counterfactual-edits 4
-  --teacher-prefix-search-steps 7
-  --real-fraction "$REAL_FRACTION"
+  --complexity-max-scale 1.0
+  --complexity-weight 0
+  --real-fraction 0
   --real-manifest "$UJI_MANIFEST"
   --real-manifest "$NATURAL_EARTH_MANIFEST"
   --real-manifest "$USGS_MANIFEST"

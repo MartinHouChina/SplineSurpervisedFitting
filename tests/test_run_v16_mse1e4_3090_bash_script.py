@@ -16,9 +16,10 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
     required = (
         "#!/usr/bin/env bash",
         "set -Eeuo pipefail",
-        'RUN_NAME="candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux"',
-        'SIMPLIFICATION_CONTRACT="ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3"',
+        'RUN_NAME="candidate_selection_v16_mse1e-4_k56_supervised_linux"',
+        'SIMPLIFICATION_CONTRACT="synthetic_ground_truth_ordered_keep_and_relocation_v4"',
         "Checkpoint selection: mean_per_curve_subset_cost_v1; aggregate pass is reporting only.",
+        "Training supervision: certified Synthetic labels only; online Teacher disabled; real data is validation/test only.",
         "EPOCHS=104",
         "PROPOSAL_EPOCHS=40",
         "--min-control-points 8",
@@ -29,6 +30,10 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
         "--proposal-high-k-fraction \"$PROPOSAL_HIGH_K_FRACTION\"",
         "--proposal-high-k-min-knots \"$PROPOSAL_HIGH_K_MIN_KNOTS\"",
         "--proposal-knot-assignment-weight 1.0",
+        "--joint-supervision synthetic_ground_truth",
+        "--synthetic-count-role exact",
+        "--no-synthetic-geometry-oracle-teacher",
+        "--real-fraction 0",
         "--prepare-real-data",
         "--mse-tolerance 1e-4",
         "--initial-keep-fraction 0.5357142857142857",
@@ -63,6 +68,11 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
     assert "--complexity-pass-margin" not in source
     assert "--allow-infeasible-proposals" not in source
     assert "--required-pass-rate" not in source
+    assert "--teacher-low-count-sweep" not in source
+    assert "--teacher-prefix-search-steps" not in source
+    assert "--counterfactual-edits" not in source
+    assert "--policy-samples" not in source
+    assert "--synthetic-geometry-oracle-teacher\n" not in source
 
 
 def test_linux_runner_refuses_unknown_options_and_documents_help() -> None:

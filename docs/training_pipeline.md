@@ -1,295 +1,137 @@
-# v16 训练与验证流程
+# v16 supervised-only 训练流程
 
-本文描述当前 `MSE=1e-4、Kc=56` 的 v16 主协议。更完整的教师、计时和公开方法复现边界见 [v16 在线反事实子集学习](v16_counterfactual_subset.md)。目标 checkpoint 尚需训练并通过结构完整性审计，本文不预设实验结果。
+本文描述当前正式协议，不描述 v8–v15 的 Teacher-cache 训练。
 
-## 1. 实验合同
+## 1. 数据边界
 
-| 项目 | 当前设置 |
-|---|---:|
-| 输入 | 192 个归一化有序点 |
-| 样条 | 三次开放 B 样条 |
-| 合成源控制顶点 | 8～60 |
-| 合成源内部节点 | 4～56 |
-| 合成节点最小 span | 0.01（命令必须显式给出） |
-| 网络内部候选容量 | 56 |
-| 拟合阈值 | `MSE <= 1e-4`，不开方 |
-| aggregate pass | 按来源与 K=56 边界报告；不控制阶段、checkpoint 或 benchmark 资格 |
-| 训练集/合成验证集 | 3000/600 |
-| 每个真实来源验证上限 | 100 |
-| Batch | 64 |
-| 总训练/Proposal epoch | 104/40（Joint 仍为 64） |
-| Proposal 合成高 K 分层 | 50% 来自 `K>=40`；Joint 不使用该过采样 |
-| Proposal 节点监督 | directed coverage + monotone one-to-one assignment，权重均为 1.0 |
-| 简化合同 | `ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3` |
-| checkpoint 选择 | `mean_per_curve_subset_cost_v1` |
+训练集只含在线生成的 certified Synthetic。每条训练样本包含：
 
-`Kc=56` 是高召回容量，不是部署节点数。三次开放样条全部保留时完整节点向量有 64 项、控制顶点有 60 个；最终 K 由每条曲线的自适应选择概率质量决定。
+- 归一化有序点云 `Q`；
+- 干净源曲线上的真参数 `t*`；
+- 真内部节点 `U*` 与有效 mask；
+- 精确源节点数 `K*`；
+- source-subset minimality 证书字段。
 
-## 2. 数据怎样进入网络
+正式参数为 source `K=4..56`、控制顶点 8–60、每条曲线 192 点、`knot_min_span=0.01`、`MSE tolerance=1e-4`。噪声只加到网络观测，标签来自干净源曲线。
 
-每个 batch 约 65% 为在线生成的 certified Synthetic，35% 从 UJI、Natural Earth 和 USGS 三个真实训练 split 中抽取。Proposal 阶段在 synthetic draws 内精确分层：约 50% 从 `K=40..56` 抽取，其余从 `K=4..39` 抽取；它不改变 35% 的真实数据比例。进入 Joint 后关闭该分层，synthetic draws 恢复原始 K=4..56 分布，避免 Selector 把 Proposal 的高 K 采样频率误学为部署节点数先验。
+UJI Pen、Natural Earth 和 USGS manifest 可以传给训练入口，但只建立留出验证集；正式配置必须是 `--real-fraction 0`。真实样本不进入 optimizer step。
 
-Synthetic 返回点序列、真采样参数、真内部节点及有效 mask。认证只保证源节点在**固定源位置的所有子集**中不可继续删除；允许节点重定位后，源 K 只作为计数上界，不作为全局最少节点的精确标签。
+## 2. Proposal 阶段（epoch 1–40）
 
-当前生成命令显式使用 `--knot-min-span 0.01`。`K=56` 有 57 个 span，底层
-通用 synthetic 生成器的旧默认 0.02 会要求总长度至少 1.14，数学上不可行；
-该底层默认只为兼容历史调用。checkpoint/manifest 必须记录本轮实际值 0.01。
+该阶段训练 GeometryEncoder、ParameterHead 和 CandidateKnotHead，Selector 与 selected-only decoder 尚不承担最终组合学习。
 
-真实曲线没有真节点向量，不构造伪标签，只使用：
+主要监督为：
 
-- 点重建与稠密候选可行性；
-- 在线教师的组合比较；
-- 阈值约束与复杂度学习。
+1. 真参数回归；
+2. 真节点到候选集的 recall-direction coverage；
+3. 有序、单调、一一匹配的候选位置损失；
+4. 全候选可微 B 样条拟合损失。
 
-数据前向顺序为：
+当 `Kc>K*` 时，一一匹配只选择 `K*` 个互异且保持顺序的候选；当 `Kc=K*` 时每个候选必须与相同序位的真节点对应。Proposal 的合成抽样有 50% 来自 `K>=40`，其余来自低 K 区间，以加强容量边界召回。
+
+第 40 个 epoch 后按计划无条件进入 Joint。aggregate pass 不会延长 Proposal 或触发 STOP。
+
+## 3. Joint 阶段（epoch 41–104）
+
+Joint 恢复 source `K=4..56` 的原始抽样分布，并对每条合成样本执行：
 
 ```text
-有序点 Q
-  -> GeometryEncoder：局部几何 + 全局几何
-  -> ParameterHead：严格递增参数 t0
-  -> CandidateKnotHead：56 个有序高召回候选 U0
-  -> InteractiveSelector：候选重要度 + 逐曲线 beta
-  -> mass-TopK：一次生成 KeepMask
-  -> selected-only parameter feedback + survivor relocation
-  -> 最终有序内部节点 Udeploy
-  -> 一次 float64、端点约束标准 B 样条 refit
+U_prop + U* -> 有序最小代价一一匹配 -> target KeepMask
+K*                                      -> count target
+t*, U*                                  -> parameter/relocation targets
 ```
 
-部署没有 CountHead、Hard-Concrete、BIC、逐次删除或教师搜索。
+直接监督项包括：
 
-## 3. 两个训练阶段
+- existence/KeepMask 的类别平衡 BCE；
+- 正候选应排在负候选之前的 ranking loss；
+- 自适应 probability mass 对真 K 的 count loss 与 over-count loss；
+- 部署 mask 和标签 mask 两条 selected-only 解码路径的参数、节点位置及拟合损失；其中真节点到存活节点的定向覆盖项会显式惩罚漏节点；
+- Proposal 阶段的参数、coverage 和 ordered-assignment 监督继续保留。
 
-### 3.1 Proposal：前 40 个 epoch
+因为 `K*` 是精确标签，正式监督模式固定 `--complexity-weight 0`；否则额外的自由稀疏惩罚会与真节点数监督冲突。
 
-全保留 56 个候选，优先学习：
+正式 Joint 不调用在线 subset search，不运行 ranked-prefix、counterfactual 或 geometry-oracle Teacher，也不读取/写入 Teacher cache。每批仅计算 dense、实际部署 mask 和标签 mask 所需的拟合分支。
 
-- 稳定的几何编码与参数化；
-- 覆盖全参数域的候选位置；
-- 四个验证数据源上的 dense proposal 拟合可行性。
+## 4. 选择与 checkpoint
 
-有真节点的 certified Synthetic 同时使用两种位置监督：
+Proposal checkpoint 按 dense proposal 指标选择，仅作为初始化。成熟 Joint checkpoint 使用 `mean_per_curve_subset_cost_v1` 排名：
 
-- directed coverage：每个真节点至少靠近一个候选，直接保护召回；
-- monotone one-to-one assignment：先把候选 warp 到真参数域，再用 detached 的一维最小 L1 单调匹配为每个真节点分配不同候选，坐标 SmoothL1 梯度仍回传到匹配候选。
+- 单曲线可行时，优先较少节点，MSE 只作有界 tie-break；
+- 单曲线不可行时，只按相对阈值的 MSE 惩罚，不奖励少节点；
+- 全数据集 pass rate 只报告，不参与排名或训练门控。
 
-当 `Kc>Ktrue` 时恰好匹配 `Ktrue` 个不同候选，未匹配候选不接收该项梯度；当 `Kc=Ktrue=56` 时退化为严格 rank-to-rank 配对。该监督缓解 nearest coverage 的多对一塌缩，但不会增加 Kc，因而不等价于为 K=56 提供冗余容量。
+正式 checkpoint 还必须记录：supervised objective、synthetic-only、`joint_supervision=synthetic_ground_truth`、`online_teacher=false`、有序标签映射、最终 safety 设置、K56 数据/容量合同，以及已经完成的 Joint 课程。
 
-Selector 在 Proposal 阶段不更新，因此新实验把 Joint 初始保留比例设为
-`30/56=0.5357142857142857`；Kc=56 时目标初始概率质量约为 30。它只是训练
-起点，不是部署最终 K；部署仍由逐曲线 beta 与 mass-TopK 决定。
+训练会产生：
 
-第 40 个 Proposal epoch 完成后无条件进入 Joint；验证 pass 不会延长 Proposal、阻止
-切换或触发 STOP。保存的 `.proposal.pt` 是最低 dense subset cost 的初始化器，而不是
-“已通过某个 aggregate pass 门槛”的证明。
+```text
+<run>.pt          最佳成熟 Joint
+<run>.proposal.pt 最佳 Proposal
+<run>.last.pt     最新优化器/RNG/训练状态，用于恢复
+<run>.history.json
+```
 
-### 3.2 Joint：余下 64 个 epoch
+## 5. 推荐一条龙命令
 
-Joint 同时训练候选排序、一次性数量选择、参数反馈和存活节点重定位。训练教师池包含：
-
-1. 当前一次性 deployment mask；
-2. `K=4..16` 每个整数计数的精确 ranked-prefix 检查；
-3. 更高 K 的粗到细搜索及边界附近的增、删、交换组合；
-4. 全保留组合；
-5. certified Synthetic 的几何 oracle mask 与 `Ktrue+2` 安全扩展 mask；扩展量
-   截断到 Kc，故 Ktrue=56 时就是全候选 mask。
-
-几何 oracle 先把 proposal 节点映射到真参数域，再做分数无关的一维单调一一匹配。它打破早期错误 Selector 排名的自监督闭环，仅在合成训练数据中启用。
-
-教师在可行组合中先选 K 最小者，再用 MSE 打破平局。`--synthetic-count-role upper_bound` 允许重定位后找到比 source K 更小的可行组合。
-
-当前主配置关闭强制覆盖分区：`--one-shot-coverage-bins 0`。这避免简单曲线关键节点集中在局部时，低 K 预算被四个区间锚点占用；复杂曲线仍由候选召回、教师可行性和拟合损失保护。
-
-## 4. 为什么能兼顾简单与复杂曲线
-
-- 复杂曲线：56 个候选覆盖 source K=4..56；逐曲线 MSE 约束和 subset cost 对不安全样本施加误差优先的惩罚。
-- 简单曲线：初始质量约 30、低 K 逐计数扫描、oracle 教师和 source-K 上界语义共同提供更细的简化信号。
-- 容量边界：source K=56 与 Kc=56 数值相同但语义不同；该层没有冗余候选余量，必须单独报告 dense/deployment pass。
-- 所有曲线：曲线级 `beta` 决定概率质量，`mass_topk` 一次决定活动 K；不是按数据集名称手工选择节点数。
-
-Joint 的 complexity scale 按 Joint epoch 从 0 确定性线性增加到 6，safety scale 从 1
-线性退火到 0；两者分别由 `--complexity-ramp-epochs` 和
-`--safety-anneal-epochs` 控制，完全不读取验证 pass，也不冻结或回滚。最终安全配置为
-`sigma=0.03、额外节点=0`。checkpoint 在课程成熟后按平均逐曲线 subset cost 选优：
-未满足单曲线阈值时用无界的对数 MSE 惩罚优先修复拟合，满足后才以 K 为主、MSE 为
-有限的平局项。pass、最终 K 和节点匹配指标仅用于透明报告。
-
-## 5. RTX 3090 训练
-
-Linux 推荐直接运行完整流水线：
+Linux/RTX 3090（缺少真实数据 manifest 时由脚本准备）：
 
 ```bash
 bash scripts/run_v16_mse1e-4_3090.sh \
   --prepare-real-data \
   --device cuda \
-  --run-name candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux
+  --run-name candidate_selection_v16_mse1e-4_k56_supervised_linux
 ```
 
-它会串行完成 fresh 训练、结构完整性审计、六方法 benchmark、四指标图和真实数据案例图。
-Linux 新工作区中的 `data/raw`、`data/processed`、`data/splits` 不随 Git 分发，首次运行
-必须保留 `--prepare-real-data`；它只准备缺失的数据集。
-运行 `bash scripts/run_v16_mse1e-4_3090.sh --help` 可查看参数；脚本使用当前已经激活的
-Python 环境，也可通过 `--python /path/to/python` 指定。
+Windows/RTX 3090：
 
-下面是训练阶段的展开命令：
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
+  -RunName candidate_selection_v16_mse1e-4_k56_supervised `
+  -Device cuda `
+  -Epochs 104 -ProposalEpochs 40 `
+  -TrainSize 3000 -ValSize 600 -RealValSize 100 `
+  -BatchSize 64 -NumWorkers 4
+```
+
+三个真实 manifest 必须预先存在。一条龙入口 fresh-only，检测到同名 checkpoint、log、comparison 或 figure 时会拒绝覆盖；中断训练应使用 `scripts/train_v16.py --resume <run>.last.pt`，且除允许项外必须保持原实验参数和 output 一致。
+
+训练入口的关键显式参数为：
 
 ```powershell
 python scripts/train_v16.py `
   --epochs 104 --proposal-epochs 40 `
-  --train-size 3000 --val-size 600 `
-  --synthetic-boundary-val-size 32 --real-val-size 100 `
-  --proposal-high-k-fraction 0.50 --proposal-high-k-min-knots 40 `
-  --batch-size 64 --num-points 192 `
+  --train-size 3000 --val-size 600 --synthetic-boundary-val-size 32 `
+  --real-val-size 100 --real-fraction 0 `
   --min-control-points 8 --max-control-points 60 `
-  --knot-min-span 0.01 `
-  --candidate-knots 56 --mse-tolerance 1e-4 `
-  --knot-match-tolerance 0.01 `
-  --certified-minimal-source `
-  --minimality-margin 0.2 --minimality-max-attempts 16 `
-  --minimality-audit-points 512 --oscillation-amplitude 0.3 `
-  --proposal-knot-assignment-weight 1.0 `
+  --candidate-knots 56 --num-points 192 --batch-size 64 `
+  --knot-min-span 0.01 --mse-tolerance 1e-4 `
+  --certified-minimal-source --minimality-margin 0.2 `
+  --minimality-audit-points 512 `
+  --proposal-high-k-fraction 0.5 --proposal-high-k-min-knots 40 `
+  --proposal-knot-assignment-weight 1 `
+  --joint-supervision synthetic_ground_truth `
+  --synthetic-count-role exact `
+  --no-synthetic-geometry-oracle-teacher `
   --one-shot-selection-policy mass_topk `
-  --initial-keep-fraction 0.5357142857142857 `
-  --one-shot-safety-sigma 0.20 --one-shot-safety-knots 2 `
-  --final-safety-sigma 0.03 --final-safety-knots 0 `
-  --safety-anneal-epochs 12 `
   --one-shot-coverage-bins 0 --min-selected-knots 4 `
-  --relocation-blend 0 `
-  --teacher-prefix-search-steps 7 --teacher-low-count-sweep 16 `
-  --synthetic-count-role upper_bound `
-  --synthetic-geometry-oracle-teacher --oracle-teacher-extra-knots 2 `
-  --policy-samples 2 --counterfactual-edits 4 `
-  --count-weight 2.0 --supervised-count-weight 1.0 `
-  --supervised-over-count-weight 1.0 `
-  --true-parameter-weight 0.1 `
-  --proposal-knot-coverage-weight 1.0 `
-  --selected-knot-position-weight 1.0 --knot-position-beta 0.01 `
-  --complexity-weight 0.05 `
-  --complexity-ramp-epochs 12 --complexity-max-scale 6.0 `
-  --real-fraction 0.35 `
+  --one-shot-safety-sigma 0 --one-shot-safety-knots 0 `
+  --final-safety-sigma 0 --final-safety-knots 0 `
+  --complexity-weight 0 `
   --real-manifest data/splits/uji_pen_v2.jsonl `
   --real-manifest data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
   --real-manifest data/processed/usgs_contours/large_scale/manifest.jsonl `
-  --resample-train-each-epoch `
-  --num-workers 4 --torch-num-threads 4 --device cuda `
-  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt
+  --device cuda `
+  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_supervised.pt
 ```
 
-Windows 若在 worker 启动处异常，改用 `--num-workers 0`。旧 K64/K96 权重与本实验合同不同，不可直接 `--resume`；中断恢复只能使用本次生成的 `.last.pt`，并保持结构与数据参数一致。
+## 6. 训练后的串行产物
 
-若旧 `outputs/checkpoints/candidate_selection_v16_mse5e-5_k64.proposal.pt` 存在，可在新训练中追加：
+一条龙脚本随后执行：
 
-```powershell
-  --init-checkpoint outputs/checkpoints/candidate_selection_v16_mse5e-5_k64.proposal.pt
-```
+1. `inspect_v16_checkpoint.py`；
+2. `benchmark_v16_datasets.py --method-set published`；
+3. `plot_v16_method_comparison.py --reference`；
+4. `visualize_v16_real_deployments.py`。
 
-这是 proposal warm start：先校验 objective 与关键 proposal 结构合同，再迁移 Encoder、ParameterHead 及 CandidateHead 张量；65 个旧 interval query 沿参数域插值为 57 个，K56 固定锚点重新生成，Selector、联合解码器和优化器新训。它不继承旧实验的阈值、教师状态或资格；合同不兼容或关键张量缺失时会直接终止。
-
-刚才停在旧 Proposal 安全门的
-`candidate_selection_v16_mse1e-4_k56_linux.proposal.pt` 也可以作为更直接的
-warm start；只能通过 `--init-checkpoint` 迁移 Proposal 模块，不能用旧
-`.last.pt` 执行 `--resume`，因为有序匹配、高 K 课程及 soft-subset-cost 选择已经升级了训练合同。
-
-恢复时原样重跑上面的完整命令（`--epochs` 表示新的总轮数），并在末尾增加：
-
-```powershell
-  --resume outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.last.pt
-```
-
-除 `epochs/device/num-workers/torch-num-threads/log-every-batches` 等恢复白名单外，不要改数据、阈值、容量、教师或输出参数。
-
-3090 主要加速网络部分。Joint 在线教师会为低 K 前缀、oracle 与反事实集合执行多轮逐样本 float64 refit；Kang/Luo 评测也主要使用 CPU，因此增大 batch 或更换显卡不会把整条流水线等比例加速。当前 104-epoch 正式配置不承诺固定 12 小时内结束。建议先用唯一的测试 `RunName` 做短诊断，正式 `RunName` 不要执行 `-DryRun`。一键脚本是 fresh-only；若训练已经成功而后续 benchmark/绘图失败，直接执行第 7 节的分步命令。
-
-## 6. 训练后结构完整性审计
-
-```powershell
-python scripts/inspect_v16_checkpoint.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt `
-  --mse-tolerance 1e-4
-```
-
-返回码 0 的硬条件是协议完整，而不是某个结果指标达到预设数值。审计至少核对：
-
-- stage 为 Joint，确定性简化课程已经成熟；
-- 简化合同、逐曲线 subset-cost 选择、数据/容量及 MSE 阈值合同一致；
-- 最终 safety knots 为 0、safety sigma 为 0.03；
-- Proposal 高 K 分层与有序一一匹配监督处于启用状态；
-- source K=56 边界验证样本数和独立统计字段存在。
-
-worst-source/K=56 dense 与 deployment pass、平均 K、count MAE、knot-match F1 与
-matched MAE 必须原样报告，但不参与审计返回码、checkpoint 保存或 benchmark
-eligibility。`--required-pass-rate` 如为历史自动化显式传入，也只改变输出中的参考线，
-不会改变 eligible。返回码 2 表示结构合同不完整，此时只能使用显式 diagnostic 模式。
-
-## 7. 六方法四指标评测
-
-```powershell
-python scripts/benchmark_v16_datasets.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt `
-  --method-set published `
-  --samples-per-knot-count 5 `
-  --min-knot-count 4 --max-knot-count 56 `
-  --real-samples-per-dataset 20 `
-  --manifest UJI=data/splits/uji_pen_v2.jsonl `
-  --manifest NaturalEarth=data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
-  --manifest USGS=data/processed/usgs_contours/large_scale/manifest.jsonl `
-  --mse-tolerance 1e-4 `
-  --max-internal-knots 56 `
-  --paper-initial-knots 56 --paper-admm-iterations 1000 `
-  --paper-lambda-bisections 10 --paper-relocation-iterations 12 `
-  --liang-dense-knots 56 --liang-feature-samples 1025 `
-  --dung-scan-intervals 10 --dung-optimization-iterations 10 `
-  --luo-eta 0.5 --luo-de-population 20 --luo-de-iterations 100 `
-  --network-warmups 10 --network-repeats 100 `
-  --end-to-end-repeats 3 `
-  --torch-num-threads 4 --device cuda `
-  --output-dir outputs/comparisons/v16_mse1e-4_k56_ordered_highk_softcost_six_methods
-```
-
-六方法为 Ours、Park、Liang、Dung、Kang 和 Luo；Kang/Luo 是公开方法的适配复现。每个数据源分别报告 MSE、通过率、最终 K 和完整方法时间，Ours 另报 network-only 时间。
-
-绘制同一报告的 2×2 四指标图：
-
-```powershell
-python scripts/plot_v16_method_comparison.py `
-  --input outputs/comparisons/v16_mse1e-4_k56_ordered_highk_softcost_six_methods/comparison.json `
-  --method-set published --reference --dpi 300 `
-  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_softcost_six_methods/metrics
-```
-
-绘制三个真实数据集上的六方法曲线、采样点、控制多边形、控制顶点与内部节点：
-
-```powershell
-python scripts/visualize_v16_real_deployments.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt `
-  --real-samples-per-dataset 2 --selection-seed 20260910 `
-  --manifest UJI=data/splits/uji_pen_v2.jsonl `
-  --manifest NaturalEarth=data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
-  --manifest USGS=data/processed/usgs_contours/large_scale/manifest.jsonl `
-  --mse-tolerance 1e-4 `
-  --max-internal-knots 56 `
-  --paper-initial-knots 56 --paper-admm-iterations 1000 `
-  --paper-lambda-bisections 10 --paper-relocation-iterations 12 `
-  --liang-dense-knots 56 --liang-feature-samples 1025 `
-  --dung-scan-intervals 10 --dung-optimization-iterations 10 `
-  --luo-eta 0.5 --luo-de-population 20 --luo-de-iterations 100 `
-  --network-warmups 10 --network-repeats 100 `
-  --end-to-end-repeats 3 `
-  --torch-num-threads 4 --device cuda `
-  --dpi 300 `
-  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_softcost_six_methods/real_cases
-```
-
-一键串行执行同一套训练、检查、比较和绘图：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass `
-  -File scripts/run_v16_mse1e-4_3090.ps1
-```
-
-脚本拒绝覆盖同名实验；checkpoint 结构完整性审计失败时默认停在 benchmark 前。低 pass
-本身不会触发停止，仍会进入六方法评测并如实输出。仅排错结构不完整产物时使用
-`-Diagnostic`，仅在 Windows worker 异常时使用 `-NumWorkers 0`。
-
-## 8. 历史配置说明
-
-旧 source K=4..24、旧 K64、`Kc=96、MSE=2.5e-5` 与旧的 `MSE=5e-5` 无人值守脚本仍可作为范围、容量或严格容差消融记录，但不是当前主协议。它们的 checkpoint、通过率和节点数不能与本轮 K56/1e-4 结果混写，也不能被描述为新结构已经达到的结果。当前“完整节点向量 64 项”由 `56+8` 得到，不表示内部候选仍为 64。底层通用 synthetic 生成器的 `knot_min_span=0.02` 默认只为历史兼容；当前 K=4..56 必须显式使用 0.01，因为 K=56 会产生 57 个 span。
+得到 checkpoint、六方法×四数据集表、逐样本记录、input/reference 两张 2×2 图和真实六方法案例图。所有数值必须来自生成的 `comparison.json`/CSV；未运行时不得在报告中填写推测结果。

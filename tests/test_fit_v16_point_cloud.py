@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import fit_v16_point_cloud as entry
-from spline_fitting.checkpointing import V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+from spline_fitting.checkpointing import V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION
 from spline_fitting.models.v16_network import V16CandidateSelectionNetwork
 
 
@@ -73,7 +73,7 @@ def test_tiny_v16_checkpoint_exports_one_refit_with_correct_units(
     )
     checkpoint_path = tmp_path / "untrained_test_v16.pt"
     torch.save({
-        "objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         "model_config": model.get_config(), "model_state_dict": model.state_dict(),
         "dataset_config": {"num_points": 24},
     }, checkpoint_path)
@@ -151,7 +151,7 @@ def test_dimension_mismatch_fails_before_inference(tmp_path, capsys):
     model = V16CandidateSelectionNetwork(hidden_dim=16, encoder_layers=1,
                                          selector_layers=1, max_internal_knots=3)
     checkpoint_path = tmp_path / "v16.pt"
-    torch.save({"objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+    torch.save({"objective_version": V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
                 "model_config": model.get_config(), "model_state_dict": model.state_dict()},
                checkpoint_path)
     point_path = tmp_path / "3d.npy"

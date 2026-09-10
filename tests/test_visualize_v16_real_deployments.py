@@ -16,18 +16,19 @@ import visualize_v16_ours_cases as ours_entry  # noqa: E402
 from spline_fitting.checkpointing import (  # noqa: E402
     V16_ADAPTIVE_SELECTION_REVISION,
     V16_CERTIFIED_SYNTHETIC_CONTRACT,
-    V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+    V16_JOINT_CHECKPOINT_QUALITY,
     V16_SIMPLIFICATION_CONTRACT,
+    V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
 )
 from spline_fitting.evaluation.bspline_inference import (  # noqa: E402
     refit_bspline_control_points,
 )
 
 
-def checkpoint(*, stage="joint", quality="soft_fit_complexity_selected", met=True,
+def checkpoint(*, stage="joint", quality=V16_JOINT_CHECKPOINT_QUALITY, met=True,
                target=0.97, observed=0.98):
     return {
-        "objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
         "simplification_contract": V16_SIMPLIFICATION_CONTRACT,
         "simplification_ready": True,
@@ -51,6 +52,7 @@ def checkpoint(*, stage="joint", quality="soft_fit_complexity_selected", met=Tru
         },
         "stage": stage,
         "training_config": {
+            "real_fraction": 0.0,
             "proposal_pass_target": target,
             "deployment_pass_target": target,
             "mse_tolerance": 2.5e-5,
@@ -84,12 +86,17 @@ def checkpoint(*, stage="joint", quality="soft_fit_complexity_selected", met=Tru
             "one_shot_safety_knots": 0,
         },
         "loss_config": {
-            "ranked_prefix_teacher": True,
+            "joint_supervision": "synthetic_ground_truth",
+            "online_teacher": False,
+            "ranked_prefix_teacher": False,
+            "synthetic_count_role": "exact",
             "weights": {
+                "fit_weight": 1.0,
+                "distillation_weight": 2.0,
                 "count_weight": 2.0,
                 "supervised_count_weight": 1.0,
                 "supervised_over_count_weight": 1.0,
-                "complexity_weight": 0.05,
+                "complexity_weight": 0.0,
                 "true_parameter_weight": 0.1,
                 "proposal_knot_coverage_weight": 1.0,
                 "proposal_knot_assignment_weight": 1.0,
@@ -287,5 +294,5 @@ def test_ours_entry_point_supplies_current_checkpoint_and_output_defaults():
     assert str(ours_entry.DEFAULT_CHECKPOINT) in arguments
     assert str(ours_entry.DEFAULT_OUTPUT_DIR) in arguments
     assert ours_entry.DEFAULT_CHECKPOINT.name == (
-        "candidate_selection_v16_mse1e-4_k56_ordered_highk.pt"
+        "candidate_selection_v16_mse1e-4_k56_supervised_linux.pt"
     )

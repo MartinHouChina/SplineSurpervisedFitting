@@ -28,6 +28,8 @@ from spline_fitting.checkpointing import (
     build_model_from_checkpoint,
     V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+    V16_OBJECTIVE_VERSIONS,
+    V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
 )
 from spline_fitting.data.point_cloud_io import interpolate_parameters_by_chord
 from spline_fitting.data.real_world import RealWorldCurveDataset, read_curve_manifest
@@ -63,7 +65,8 @@ LABELS = {
 }
 OBJECTIVE_LABELS = {
     V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION: "v15",
-    V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION: "v16",
+    V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION: "v16-legacy",
+    V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION: "v16",
 }
 DEFAULT_MANIFESTS = {
     "UJI": ROOT / "data/splits/uji_pen_v2.jsonl",
@@ -201,7 +204,7 @@ def resolve_comparison_capacities(args, checkpoint: dict) -> dict:
     capacity = int(checkpoint["model_config"]["max_internal_knots"])
     degree = int(checkpoint["model_config"].get("degree", 3))
     endpoint_entries = 2 * (degree + 1)
-    v16 = checkpoint.get("objective_version") == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+    v16 = checkpoint.get("objective_version") in V16_OBJECTIVE_VERSIONS
     requested_full = getattr(args, "full_knot_vector_size", None)
     if requested_full is not None:
         if args.max_internal_knots is not None:
@@ -283,7 +286,7 @@ def known_synthetic_seed_ranges(checkpoint: dict) -> list[dict]:
     """
     config = checkpoint.get("training_config", {})
     ranges = []
-    v16 = checkpoint.get("objective_version") == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+    v16 = checkpoint.get("objective_version") in V16_OBJECTIVE_VERSIONS
     for split in ("train", "val"):
         base, size = config.get(f"{split}_seed"), config.get(f"{split}_size")
         if base is None or size is None:
@@ -431,7 +434,7 @@ def validate_checkpoint_for_benchmark(
     allow_unqualified_diagnostic: bool,
 ) -> tuple[dict | None, bool]:
     """Return the v16 qualification audit and diagnostic-watermark state."""
-    if checkpoint.get("objective_version") != V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
+    if checkpoint.get("objective_version") != V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION:
         return None, False
     qualification = assess_v16_checkpoint(
         checkpoint,
@@ -450,7 +453,7 @@ def validate_checkpoint_for_benchmark(
 
 def deployment_forward(model, points, *, objective_version: str,
                        mse_tolerance: float):
-    if objective_version == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
+    if objective_version in V16_OBJECTIVE_VERSIONS:
         # v16 conditions the actual subset decision on this MSE budget. Use the
         # reported threshold, not the potentially different checkpoint default.
         return model.forward_deployment(points, mse_tolerance=mse_tolerance)
@@ -501,11 +504,11 @@ def measure_ours(model, points, device, args, *,
         "network_latency": network.latency.as_dict(),
         "end_to_end_latency": full.latency.as_dict(), "postprocessing": "none",
         "tolerance_conditioned_network": (
-            objective_version == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+            objective_version in V16_OBJECTIVE_VERSIONS
         ),
         "network_mse_tolerance": (
             args.mse_tolerance
-            if objective_version == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+            if objective_version in V16_OBJECTIVE_VERSIONS
             else None
         ),
     }
@@ -775,7 +778,7 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
     except ValueError as error:
         p.error(str(error))
     if (
-        objective_version == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+        objective_version in V16_OBJECTIVE_VERSIONS
         and not capacities["equal_initial_capacity"]
         and not args.allow_unequal_capacity
     ):
@@ -798,7 +801,7 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                   ROOT / "src/spline_fitting/evaluation/sparse_knot_paper.py",
                   ROOT / "src/spline_fitting/evaluation/feature_cdf_knot_placement.py",
                   ROOT / "scripts/compare_knot_methods.py", ROOT / "scripts/visualize_batch_comparison.py"]
-    if objective_version == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
+    if objective_version in V16_OBJECTIVE_VERSIONS:
         code_paths.append(ROOT / "scripts/benchmark_v16_datasets.py")
     code_paths = sorted(set(code_paths) | set((ROOT / "src").rglob("*.py")))
     metadata = {"checkpoint": str(args.checkpoint.resolve()), "checkpoint_sha256": sha256_file(args.checkpoint),
@@ -809,7 +812,7 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                 "diagnostic_not_final": diagnostic,
                 "model_version": version,
                 "method_labels": {**LABELS, "ours": f"Ours {version} learned"},
-                "network_tolerance_conditioned": objective_version == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+                "network_tolerance_conditioned": objective_version in V16_OBJECTIVE_VERSIONS,
                 "knot_capacities": capacities,
                 "num_points": int(cases[0]["points"].shape[0]),
                 "timing_protocol": "global numerical-backend warmup; every method uses the configured repeated complete-run median per curve; Ours additionally reports a separately warmed network-only median; dataset summary averages per-curve medians",

@@ -51,7 +51,7 @@ def report() -> dict:
                 }
             )
     metadata = {
-        "objective_version": "candidate_selection_counterfactual_bspline_v16",
+        "objective_version": "candidate_selection_supervised_bspline_v16",
         "checkpoint": "outputs/checkpoints/formal-v16.pt",
         "checkpoint_sha256": "0" * 64,
         "diagnostic_not_final": False,

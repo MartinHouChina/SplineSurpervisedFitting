@@ -15,7 +15,10 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import train_v16
-from spline_fitting.checkpointing import V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+from spline_fitting.checkpointing import (
+    V16_JOINT_CHECKPOINT_QUALITY,
+    V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
+)
 from spline_fitting.data.v16_mixed import (
     MixedTrainingCurves,
     ValidationCurves,
@@ -48,12 +51,16 @@ def test_default_profile_keeps_ninety_percent_as_reporting_reference():
     assert args.safety_anneal_epochs == 10
     assert args.teacher_prefix_search_steps == 7
     assert args.teacher_low_count_sweep == 16
-    assert args.synthetic_count_role == "upper_bound"
+    assert args.joint_supervision == "synthetic_ground_truth"
+    assert args.real_fraction == 0
+    assert args.synthetic_count_role == "exact"
+    assert args.tolerance_factor_min == args.tolerance_factor_max == 1
     assert args.initial_keep_fraction == pytest.approx(30 / 56)
     assert args.synthetic_geometry_oracle_teacher is False
     assert args.oracle_teacher_extra_knots == 2
     assert args.supervised_count_weight == pytest.approx(1.0)
     assert args.supervised_over_count_weight == pytest.approx(1.0)
+    assert args.complexity_weight == 0
     assert args.complexity_max_scale == pytest.approx(4.0)
     assert args.true_parameter_weight == pytest.approx(0.1)
     assert args.proposal_knot_coverage_weight == pytest.approx(1.0)
@@ -74,11 +81,33 @@ def test_default_profile_keeps_ninety_percent_as_reporting_reference():
 
 
 def test_uncertified_synthetic_ablation_disables_canonical_certificate():
-    args = train_v16.parser().parse_args(["--no-certified-minimal-source"])
+    args = train_v16.parser().parse_args([
+        "--joint-supervision", "online_teacher",
+        "--no-certified-minimal-source",
+    ])
     train_v16.validate_args(args)
     config = train_v16.synthetic_dataset_config(args)
     assert config["certified_minimal_source"] is False
     assert config["canonical_knot_tolerance"] == 0.0
+
+
+def test_formal_supervised_profile_rejects_unlabelled_real_training():
+    args = train_v16.parser().parse_args(["--real-fraction", "0.01"])
+    with pytest.raises(ValueError, match="real manifests are validation/test"):
+        train_v16.validate_args(args)
+
+    legacy = train_v16.parser().parse_args([
+        "--joint-supervision", "online_teacher",
+        "--real-fraction", "0.25",
+        "--synthetic-count-role", "upper_bound",
+    ])
+    train_v16.validate_args(legacy)
+
+
+def test_formal_supervised_profile_rejects_conflicting_complexity_reward():
+    args = train_v16.parser().parse_args(["--complexity-weight", "0.01"])
+    with pytest.raises(ValueError, match="exact labelled knot count"):
+        train_v16.validate_args(args)
 
 
 def test_certified_count_labels_require_enough_candidate_capacity():
@@ -246,7 +275,7 @@ def test_proposal_transfer_rejects_wrong_objective_or_partial_contract():
     with pytest.raises(ValueError, match="objective is not compatible"):
         train_v16.transfer_proposal_weights(target, checkpoint)
 
-    checkpoint["objective_version"] = V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+    checkpoint["objective_version"] = V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION
     checkpoint["model_config"] = {
         **source.get_config(),
         "point_dim": 3,
@@ -762,7 +791,7 @@ def training_command(output, *, tolerance="0.001", proposal_target="0"):
             "--candidate-knots", "8", "--hidden-dim", "16", "--encoder-layers", "1",
             "--selector-layers", "1", "--attention-heads", "4", "--min-control-points", "8",
              "--max-control-points", "12", "--policy-samples", "2", "--counterfactual-edits", "1",
-            "--no-certified-minimal-source",
+            "--minimality-audit-points", "32",
             "--mse-tolerance", tolerance, "--proposal-pass-target", proposal_target,
             "--torch-num-threads", "1", "--device", "cpu", "--log-every-batches", "100",
             "--output", str(output)]
@@ -774,9 +803,9 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
     assert train_v16.main(command) == 0
     last_path = tmp_path / "tiny_v16.last.pt"
     original = torch.load(last_path, map_location="cpu", weights_only=True)
-    assert original["objective_version"] == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+    assert original["objective_version"] == V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION
     assert original["epoch"] == 2 and original["stage"] == "joint"
-    assert original["qualification"]["schema_version"] == 5
+    assert original["qualification"]["schema_version"] == 6
     assert original["qualification"]["required_reporting_pass_rate"] == 0.90
     assert original["qualification"]["configured_proposal_pass_target"] == 0.0
     assert not original["qualification"]["formal_reporting_eligible"]
@@ -789,6 +818,10 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
     assert original["loss_config"]["weights"][
         "proposal_knot_assignment_weight"
     ] == pytest.approx(1.0)
+    assert original["loss_config"]["joint_supervision"] == "synthetic_ground_truth"
+    assert original["loss_config"]["online_teacher"] is False
+    assert original["loss_config"]["ranked_prefix_teacher"] is False
+    assert original["training_config"]["real_fraction"] == 0
     assert original["proposal_ready"]
     assert output.is_file() and (tmp_path / "tiny_v16.proposal.pt").is_file()
     step_before = max(float(state["step"]) for state in original["optimizer_state_dict"]["state"].values())
@@ -828,7 +861,7 @@ def test_low_proposal_pass_does_not_block_scheduled_joint_stage(tmp_path, capsys
     assert (tmp_path / "infeasible.proposal.pt").is_file()
     last = torch.load(tmp_path / "infeasible.last.pt", map_location="cpu", weights_only=True)
     assert last["epoch"] == 2 and last["stage"] == "joint"
-    assert last["checkpoint_quality"] == "soft_fit_complexity_selected"
+    assert last["checkpoint_quality"] == V16_JOINT_CHECKPOINT_QUALITY
     assert last["reporting_checkpoint_quality"] == "target_not_met"
     assert not last["best_deployment_pass_constraint_satisfied"]
     assert last["validation_metrics"]["worst_dense_pass_rate"] < 1

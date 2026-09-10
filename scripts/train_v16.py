@@ -1,5 +1,14 @@
-"""Train v16 dense feasibility, then online counterfactual subset selection."""
+"""Train v16 Proposal and Joint stages from certified synthetic labels.
+
+Real curves are loaded only for held-out validation.  The formal Joint stage
+uses ordered ground-truth knot assignment and never runs an online subset-search
+teacher; the legacy online objective remains an explicit ablation only.
+"""
 from __future__ import annotations
+
+# Standalone entry point intentionally imports the local package after adding
+# ``src`` to ``sys.path``.
+# ruff: noqa: E402
 
 import argparse
 from dataclasses import dataclass
@@ -25,7 +34,9 @@ from spline_fitting.checkpointing import (
     V16_CERTIFIED_SYNTHETIC_CONTRACT,
     V16_CHECKPOINT_SELECTION_CONTRACT,
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+    V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
     V16_FORMAL_PASS_RATE,
+    V16_JOINT_CHECKPOINT_QUALITY,
     V16_MINIMALITY_AUDIT_POINTS,
     V16_MINIMALITY_MARGIN,
     V16_SIMPLIFICATION_CONTRACT,
@@ -63,7 +74,11 @@ def parser():
     )
     p.add_argument("--real-val-size", type=int, default=100, help="Maximum val curves per real source")
     p.add_argument("--real-manifest", action="append", type=Path, default=[])
-    p.add_argument("--real-fraction", type=float, default=0.5)
+    p.add_argument(
+        "--real-fraction", type=float, default=0.0,
+        help=("Training fraction of unlabelled real curves. The formal supervised "
+              "v16 protocol requires zero; real curves remain in validation."),
+    )
     p.add_argument(
         "--proposal-high-k-fraction",
         type=float,
@@ -124,7 +139,7 @@ def parser():
     p.add_argument("--oscillation-amplitude", type=float, default=0.3)
     p.add_argument("--mse-tolerance", type=float, default=2.5e-5)
     p.add_argument("--knot-match-tolerance", type=float, default=0.01)
-    p.add_argument("--tolerance-factor-min", type=float, default=0.75)
+    p.add_argument("--tolerance-factor-min", type=float, default=1.0)
     p.add_argument("--tolerance-factor-max", type=float, default=1.0)
     p.add_argument(
         "--proposal-pass-target", type=float, default=V16_FORMAL_PASS_RATE,
@@ -153,9 +168,17 @@ def parser():
     )
     p.add_argument(
         "--synthetic-count-role", choices=("exact", "upper_bound"),
-        default="upper_bound",
+        default="exact",
         help=("Treat certified source K as an upper bound when survivor knots "
               "may relocate; 'exact' preserves the historical v16 ablation"),
+    )
+    p.add_argument(
+        "--joint-supervision",
+        choices=("synthetic_ground_truth", "online_teacher"),
+        default="synthetic_ground_truth",
+        help=("Formal mode directly supervises KeepMask, count and relocation "
+              "from certified synthetic labels. online_teacher is a legacy "
+              "ablation and permits mixed real-data training."),
     )
     p.add_argument(
         "--synthetic-geometry-oracle-teacher",
@@ -171,7 +194,12 @@ def parser():
     p.add_argument("--count-weight", type=float, default=2.0)
     p.add_argument("--supervised-count-weight", type=float, default=1.0)
     p.add_argument("--supervised-over-count-weight", type=float, default=1.0)
-    p.add_argument("--complexity-weight", type=float, default=0.05)
+    p.add_argument(
+        "--complexity-weight", type=float, default=0.0,
+        help=("Legacy online-teacher ablation only. Direct exact-K supervision "
+              "uses zero because an extra free complexity penalty conflicts "
+              "with the labelled knot count."),
+    )
     p.add_argument("--true-parameter-weight", type=float, default=0.1)
     p.add_argument("--proposal-knot-coverage-weight", type=float, default=1.0)
     p.add_argument(
@@ -376,6 +404,35 @@ def validate_args(args):
     ):
         if not math.isfinite(getattr(args, key)) or not 0 <= getattr(args, key) <= 1:
             raise ValueError(f"{key} must lie in [0,1]")
+    if args.joint_supervision == "synthetic_ground_truth":
+        if args.real_fraction != 0.0:
+            raise ValueError(
+                "synthetic_ground_truth Joint requires --real-fraction 0; "
+                "real manifests are validation/test data only"
+            )
+        if not args.certified_minimal_source:
+            raise ValueError(
+                "synthetic_ground_truth Joint requires --certified-minimal-source"
+            )
+        if args.synthetic_count_role != "exact":
+            raise ValueError(
+                "synthetic_ground_truth Joint requires --synthetic-count-role exact"
+            )
+        if args.synthetic_geometry_oracle_teacher:
+            raise ValueError(
+                "synthetic_ground_truth Joint does not use an oracle teacher; "
+                "remove --synthetic-geometry-oracle-teacher"
+            )
+        if args.tolerance_factor_min != 1.0 or args.tolerance_factor_max != 1.0:
+            raise ValueError(
+                "synthetic_ground_truth labels require fixed training tolerance; "
+                "set --tolerance-factor-min 1 --tolerance-factor-max 1"
+            )
+        if args.complexity_weight != 0.0:
+            raise ValueError(
+                "synthetic_ground_truth uses the exact labelled knot count; "
+                "set --complexity-weight 0 to avoid a conflicting objective"
+            )
     if args.tolerance_factor_min > args.tolerance_factor_max:
         raise ValueError("tolerance-factor-min must be <= tolerance-factor-max")
     if not math.isfinite(args.relocation_blend) or not 0 <= args.relocation_blend <= 1:
@@ -840,7 +897,18 @@ def synthetic_dataset_config(args):
 def atomic_save(payload, path):
     temporary = path.with_suffix(path.suffix + ".tmp")
     torch.save(payload, temporary)
-    temporary.replace(path)
+    # Windows can briefly retain a read handle after loading a resume/best
+    # checkpoint (and antivirus scanners may do the same).  The replacement is
+    # still atomic; retry only the transient sharing violation instead of
+    # turning a completed epoch into a failed run.
+    for attempt in range(5):
+        try:
+            temporary.replace(path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05 * (2**attempt))
 
 
 @dataclass(frozen=True)
@@ -894,11 +962,14 @@ def transfer_proposal_weights(model, checkpoint) -> ProposalTransferReport:
     source_objective = checkpoint.get("objective_version")
     if (
         source_objective is not None
-        and source_objective != V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+        and source_objective not in {
+            V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+            V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
+        }
     ):
         raise ValueError(
             "initial checkpoint objective is not compatible with the v16 "
-            "counterfactual proposal network"
+            "candidate proposal network"
         )
 
     source_config = checkpoint.get("model_config")
@@ -991,6 +1062,11 @@ def main(argv=None):
         validate_args(args)
     except ValueError as error:
         p.error(str(error))
+    run_objective_version = (
+        V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION
+        if args.joint_supervision == "synthetic_ground_truth"
+        else V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+    )
     output = args.output.resolve()
     last_path = output.with_name(output.stem + ".last.pt")
     proposal_path = output.with_name(output.stem + ".proposal.pt")
@@ -998,7 +1074,9 @@ def main(argv=None):
     if not args.resume and any(path.exists() for path in (output, last_path, proposal_path, history_path)):
         p.error("output artifacts already exist; choose a new output or explicitly --resume the .last.pt")
     torch.set_num_threads(args.torch_num_threads)
-    random.seed(args.seed); np.random.seed(args.seed); torch.manual_seed(args.seed)
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
     device = torch.device("cuda" if args.device == "auto" and torch.cuda.is_available() else
                           "cpu" if args.device == "auto" else args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
@@ -1042,8 +1120,11 @@ def main(argv=None):
     resume_payload = None
     if args.resume:
         resume_payload = torch.load(args.resume, map_location="cpu", weights_only=True)
-        if resume_payload.get("objective_version") != V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
-            p.error("resume requires a v16 checkpoint; use --init-checkpoint for proposal transfer")
+        if resume_payload.get("objective_version") != run_objective_version:
+            p.error(
+                "resume objective does not match --joint-supervision; use "
+                "--init-checkpoint for proposal-only transfer"
+            )
         if resume_payload.get("architecture_revision") != V16_ADAPTIVE_SELECTION_REVISION:
             p.error(
                 "resume checkpoint uses an older v16 selection revision; "
@@ -1133,6 +1214,18 @@ def main(argv=None):
             p.error("resume requires the saved best proposal and, for joint training, the best model artifact")
     elif args.init_checkpoint:
         source_checkpoint = torch.load(args.init_checkpoint, map_location="cpu", weights_only=True)
+        if args.joint_supervision == "synthetic_ground_truth":
+            source_training = source_checkpoint.get("training_config", {})
+            source_real_fraction = source_training.get("real_fraction")
+            if (
+                isinstance(source_real_fraction, bool)
+                or not isinstance(source_real_fraction, (int, float))
+                or float(source_real_fraction) != 0.0
+            ):
+                p.error(
+                    "formal synthetic-only training can initialize only from a "
+                    "proposal checkpoint whose training_config.real_fraction is 0"
+                )
         try:
             transfer = transfer_proposal_weights(model, source_checkpoint)
         except (KeyError, TypeError, ValueError) as error:
@@ -1161,6 +1254,8 @@ def main(argv=None):
         mse_tolerance=args.mse_tolerance,
         policy_samples=args.policy_samples,
         counterfactual_edits=args.counterfactual_edits,
+        joint_supervision=args.joint_supervision,
+        ranked_prefix_teacher=args.joint_supervision == "online_teacher",
         teacher_prefix_search_steps=args.teacher_prefix_search_steps,
         teacher_low_count_sweep=args.teacher_low_count_sweep,
         synthetic_count_role=args.synthetic_count_role,
@@ -1201,29 +1296,31 @@ def main(argv=None):
         ),
         flush=True,
     )
-    print(
-        "Simplification curriculum: training-only ranked-prefix teacher "
-        f"steps={args.teacher_prefix_search_steps}, exact low-K sweep through "
-        f"K={args.teacher_low_count_sweep}; certified source K role="
-        f"{args.synthetic_count_role}; geometry-oracle bootstrap="
-        f"{args.synthetic_geometry_oracle_teacher} (+"
-        f"{args.oracle_teacher_extra_knots}); certified over-count "
-        f"weight={args.supervised_over_count_weight:g}, symmetric true-count "
-        f"weight={args.supervised_count_weight:g}; deterministic Joint-epoch "
-        f"complexity multiplier 0..{args.complexity_max_scale:g}; safety "
-        f"{args.one_shot_safety_knots}+{args.one_shot_safety_sigma:g}sigma -> "
-        f"{args.final_safety_knots}+{args.final_safety_sigma:g}sigma. "
-        "Deployment still uses one network forward and one final refit.",
-        flush=True,
-    )
+    if args.joint_supervision == "synthetic_ground_truth":
+        print(
+            "Joint supervision: certified synthetic ground truth only; ordered "
+            "one-to-one candidate assignment directly labels KeepMask, exact K, "
+            "parameters and survivor relocation. Online prefix/counterfactual "
+            "Teacher is disabled. Real manifests are validation/test only. "
+            "Deployment uses one network forward and one final refit.",
+            flush=True,
+        )
+    else:
+        print(
+            "LEGACY Joint supervision: online ranked-prefix/counterfactual "
+            f"teacher steps={args.teacher_prefix_search_steps}, low-K sweep="
+            f"{args.teacher_low_count_sweep}. This mode is not eligible for "
+            "the current formal supervised protocol.",
+            flush=True,
+        )
     print(
         "Checkpoint selection minimizes mean per-curve subset cost: feasible "
         "curves trade K against a bounded MSE tie-break; infeasible curves use "
         "a logarithmic MSE penalty. Aggregate pass rates and the explicit "
         f"K={args.max_control_points - 4} boundary audit "
         f"(n={min(args.synthetic_boundary_val_size, args.val_size)}) are "
-        "reported but never gate training. Additional subset fits run only "
-        "during training.",
+        "reported but never gate training. Formal supervised Joint performs "
+        "only dense, deployed-mask and labelled-mask fits per batch.",
         flush=True,
     )
     if args.proposal_high_k_fraction > 0.0:
@@ -1278,12 +1375,20 @@ def main(argv=None):
                 flush=True,
             )
             optimizer = torch.optim.AdamW(model.parameters(), lr=args.joint_lr, weight_decay=args.weight_decay)
+        training_sources = (
+            () if args.joint_supervision == "synthetic_ground_truth" else sources
+        )
+        training_real_fraction = (
+            0.0
+            if args.joint_supervision == "synthetic_ground_truth"
+            else args.real_fraction
+        )
         train_data = MixedTrainingCurves(
             dataset_config,
-            sources,
+            training_sources,
             size=args.train_size,
             seed=args.seed,
-            real_fraction=args.real_fraction,
+            real_fraction=training_real_fraction,
             epoch=epoch - 1,
             resample=args.resample_train_each_epoch,
             synthetic_high_k_fraction=(
@@ -1296,8 +1401,19 @@ def main(argv=None):
             train_data, batch_size=args.batch_size, shuffle=True,
             generator=loader_generator, **loader_runtime,
         )
-        model.train(); started = time.perf_counter(); total, samples = defaultdict(float), 0
+        model.train()
+        started = time.perf_counter()
+        total, samples = defaultdict(float), 0
         for step, batch in enumerate(train_loader, 1):
+            if args.joint_supervision == "synthetic_ground_truth":
+                if not bool(batch["target_internal_knot_count_valid"].all()):
+                    raise RuntimeError(
+                        "unlabelled row entered supervised-only training"
+                    )
+                if not bool(batch["target_geometry_valid"].all()):
+                    raise RuntimeError(
+                        "row without parameter/knot labels entered supervised-only training"
+                    )
             points = batch["points"].to(device, non_blocking=device.type == "cuda")
             lower, upper = math.log(args.tolerance_factor_min), math.log(args.tolerance_factor_max)
             tolerance = args.mse_tolerance * (lower + (upper-lower)*torch.rand(points.shape[0], device=device)).exp()
@@ -1329,12 +1445,18 @@ def main(argv=None):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip, error_if_nonfinite=True)
             optimizer.step()
-            size = len(points); samples += size
+            size = len(points)
+            samples += size
             for key, value in metrics.items():
                 total[key] += float(value)*size
+            subset_label = (
+                "denseK" if stage == "proposal" else
+                "targetK" if args.joint_supervision == "synthetic_ground_truth"
+                else "teacherK"
+            )
             progress(step, len(train_loader), f"Epoch {epoch:03}/{args.epochs} {stage}",
                      f"MSE={metrics['deployment_mse']:.3e} pass={metrics['deployment_pass_rate']:.1%} "
-                     f"K={metrics['keep_count']:.1f} teacherK={metrics['subset_best_count']:.1f} "
+                     f"K={metrics['keep_count']:.1f} {subset_label}={metrics['subset_best_count']:.1f} "
                      f"countMAE={metrics['supervised_count_mae']:.2f}",
                      args.log_every_batches)
         measured = validate(
@@ -1399,15 +1521,15 @@ def main(argv=None):
             candidate_capacity=args.candidate_knots,
             tolerance=args.mse_tolerance,
         )
-        payload = dict(objective_version=V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        payload = dict(objective_version=run_objective_version,
             model_config=model.get_config(), model_state_dict={k:v.detach().cpu() for k,v in model.state_dict().items()},
             optimizer_state_dict=optimizer.state_dict(), epoch=epoch, stage=stage,
             training_config=current_config, dataset_config=dataset_config, history=history,
             dataset_type=(
                 (
-                    "certified_synthetic_geometry_and_real_unlabeled"
+                    "certified_synthetic_supervised_train_real_validation_only"
                     if args.certified_minimal_source
-                    else "uncertified_synthetic_and_real_unlabeled"
+                    else "uncertified_synthetic_train_real_validation_only"
                 )
                 if sources
                 else (
@@ -1455,7 +1577,7 @@ def main(argv=None):
             current_deployment_pass_constraint_satisfied=reporting_target_met,
             deployment_pass_flags_role="reporting_reference_only",
             checkpoint_quality=(
-                "soft_fit_complexity_selected"
+                V16_JOINT_CHECKPOINT_QUALITY
                 if stage == "joint" else "dense_proposal_selected"
             ),
             reporting_checkpoint_quality=(
@@ -1482,7 +1604,14 @@ def main(argv=None):
                 smoothness_weight=0.0, control_ridge=0.0,
                 interpolate_endpoints=True, network_forwards=1, final_refits=1),
             rng_state=torch.get_rng_state(), cuda_rng_state=torch.cuda.get_rng_state_all() if device.type == "cuda" else [],
-            loss_config=dict(policy_samples=args.policy_samples, counterfactual_edits=args.counterfactual_edits,
+            loss_config=dict(joint_supervision=args.joint_supervision,
+                             online_teacher=args.joint_supervision == "online_teacher",
+                             ground_truth_keep_assignment=(
+                                 "ordered_one_to_one_minimum_l1"
+                                 if args.joint_supervision == "synthetic_ground_truth"
+                                 else None
+                             ),
+                             policy_samples=args.policy_samples, counterfactual_edits=args.counterfactual_edits,
                              teacher_prefix_search_steps=args.teacher_prefix_search_steps,
                              teacher_low_count_sweep=args.teacher_low_count_sweep,
                              synthetic_count_role=args.synthetic_count_role,

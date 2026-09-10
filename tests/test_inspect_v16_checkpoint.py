@@ -14,15 +14,16 @@ import inspect_v16_checkpoint as entry
 from spline_fitting.checkpointing import (
     V16_ADAPTIVE_SELECTION_REVISION,
     V16_CERTIFIED_SYNTHETIC_CONTRACT,
-    V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+    V16_JOINT_CHECKPOINT_QUALITY,
     V16_SIMPLIFICATION_CONTRACT,
+    V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
 )
 
 
 def _checkpoint(*, configured: float = 0.90, observed: float = 0.92) -> dict:
     accepted = observed >= configured
     return {
-        "objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
         "simplification_contract": V16_SIMPLIFICATION_CONTRACT,
         "simplification_ready": True,
@@ -48,6 +49,7 @@ def _checkpoint(*, configured: float = 0.90, observed: float = 0.92) -> dict:
         "stage": "joint",
         "epoch": 73,
         "training_config": {
+            "real_fraction": 0.0,
             "proposal_pass_target": configured,
             "deployment_pass_target": configured,
             "mse_tolerance": 2.5e-5,
@@ -67,12 +69,17 @@ def _checkpoint(*, configured: float = 0.90, observed: float = 0.92) -> dict:
             "one_shot_safety_knots": 0,
         },
         "loss_config": {
-            "ranked_prefix_teacher": True,
+            "joint_supervision": "synthetic_ground_truth",
+            "online_teacher": False,
+            "ranked_prefix_teacher": False,
+            "synthetic_count_role": "exact",
             "weights": {
+                "fit_weight": 1.0,
+                "distillation_weight": 2.0,
                 "count_weight": 2.0,
                 "supervised_count_weight": 1.0,
                 "supervised_over_count_weight": 1.0,
-                "complexity_weight": 0.05,
+                "complexity_weight": 0.0,
                 "true_parameter_weight": 0.1,
                 "proposal_knot_coverage_weight": 1.0,
                 "proposal_knot_assignment_weight": 1.0,
@@ -111,7 +118,7 @@ def _checkpoint(*, configured: float = 0.90, observed: float = 0.92) -> dict:
         },
         "proposal_ready": True,
         "best_deployment_pass_constraint_satisfied": accepted,
-        "checkpoint_quality": "soft_fit_complexity_selected",
+        "checkpoint_quality": V16_JOINT_CHECKPOINT_QUALITY,
     }
 
 
@@ -130,7 +137,7 @@ def test_inspector_reports_metrics_and_returns_qualification_status(tmp_path, ca
     assert "ordered assignment weight: 1" in output
     assert "aggregate pass feedback: False" in output
     assert "checkpoint selection: mean_per_curve_subset_cost_v1" in output
-    assert "checkpoint quality: soft_fit_complexity_selected" in output
+    assert f"checkpoint quality: {V16_JOINT_CHECKPOINT_QUALITY}" in output
     assert "overall dense: 99.000%" in output
     assert "synthetic boundary: K=56, n=32" in output
     assert "qualification dense/deployment" in output

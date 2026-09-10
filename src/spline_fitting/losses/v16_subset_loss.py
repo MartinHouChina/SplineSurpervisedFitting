@@ -1,8 +1,11 @@
-"""Online subset learning from the deployed, endpoint-constrained B-spline fit.
+"""Supervised and legacy-online objectives for v16 candidate selection.
 
-Only independent Bernoulli draws enter the score-function estimator. Discrete
-counterfactuals supply online distillation targets, never fake policy samples.
-All extra fits are training work; deployment still selects and fits one subset.
+The formal path uses certified synthetic parameters and knots as direct labels:
+an ordered one-to-one assignment supplies the KeepMask target, the labelled knot
+count supervises adaptive mass-TopK, and the labelled subset supervises survivor
+relocation.  It therefore needs no online subset-search teacher.  The historical
+online counterfactual path remains available only for explicit legacy ablations.
+Deployment always selects once and performs one final standard B-spline refit.
 """
 
 from __future__ import annotations
@@ -95,7 +98,12 @@ def bernoulli_subset_policy_loss(
 
 
 class V16SubsetLoss(nn.Module):
-    """Joint parameter, survivor-position and subset learning without cached labels."""
+    """Joint parameter, survivor-position and subset learning.
+
+    ``joint_supervision='synthetic_ground_truth'`` is the formal, fast path.
+    ``'online_teacher'`` preserves the former counterfactual objective for
+    controlled historical ablations only.
+    """
 
     def __init__(
         self, mse_tolerance: float = 2.5e-5, policy_samples: int = 4,
@@ -118,6 +126,7 @@ class V16SubsetLoss(nn.Module):
         synthetic_geometry_oracle_teacher: bool = False,
         oracle_teacher_extra_knots: int = 2,
         knot_position_beta: float = 0.01,
+        joint_supervision: str = "online_teacher",
     ) -> None:
         super().__init__()
         if not math.isfinite(mse_tolerance) or mse_tolerance <= 0:
@@ -177,6 +186,11 @@ class V16SubsetLoss(nn.Module):
             raise ValueError(
                 "synthetic_count_role must be 'exact' or 'upper_bound'"
             )
+        if joint_supervision not in {"synthetic_ground_truth", "online_teacher"}:
+            raise ValueError(
+                "joint_supervision must be 'synthetic_ground_truth' or "
+                "'online_teacher'"
+            )
         if not isinstance(synthetic_geometry_oracle_teacher, bool):
             raise ValueError("synthetic_geometry_oracle_teacher must be boolean")
         if (
@@ -194,6 +208,7 @@ class V16SubsetLoss(nn.Module):
         )
         self.oracle_teacher_extra_knots = oracle_teacher_extra_knots
         self.knot_position_beta = float(knot_position_beta)
+        self.joint_supervision = joint_supervision
 
     @staticmethod
     def _validate_points(points: torch.Tensor, degree: int) -> None:
@@ -819,15 +834,13 @@ class V16SubsetLoss(nn.Module):
             torch.cat(prediction_nearest).mean() if prediction_nearest else zero,
         )
 
-    def _synthetic_oracle_candidate_mask(
+    def _ordered_ground_truth_candidate_mask(
         self, predicted, target, target_mask, valid,
     ) -> torch.Tensor:
-        """Match candidate slots to certified knots without using keep scores.
+        """Map certified knot labels to distinct ordered candidate slots.
 
-        This training-only mask breaks the ranked-prefix teacher's self-confirming
-        loop: a poor initial ranking can no longer make a compact, geometrically
-        correct combination invisible. ``predicted`` and ``target`` must already
-        share the certified target parameterization.
+        The mapping uses no Keep scores and no fitted-error search. ``predicted``
+        and ``target`` must already share the certified target parameterization.
         """
         if predicted.ndim != 2 or target.ndim != 2:
             raise ValueError("oracle candidates and targets must be batched matrices")
@@ -852,12 +865,21 @@ class V16SubsetLoss(nn.Module):
                 raise ValueError("oracle target count exceeds candidate capacity")
             if not row_targets.numel():
                 continue
+            candidate_order = predicted_cpu[row].argsort(stable=True)
             candidate_ids, _ = self._ordered_pair_indices(
-                predicted_cpu[row].sort().values,
+                predicted_cpu[row][candidate_order],
                 row_targets,
             )
-            result_cpu[row, candidate_ids] = True
+            result_cpu[row, candidate_order[candidate_ids]] = True
         return result_cpu.to(device=predicted.device)
+
+    def _synthetic_oracle_candidate_mask(
+        self, predicted, target, target_mask, valid,
+    ) -> torch.Tensor:
+        """Historical online-teacher alias for the ordered label mapping."""
+        return self._ordered_ground_truth_candidate_mask(
+            predicted, target, target_mask, valid,
+        )
 
     @staticmethod
     def _expand_teacher_mask(
@@ -951,6 +973,318 @@ class V16SubsetLoss(nn.Module):
             torch.tensor(target_ids, dtype=torch.long, device=predicted.device),
         )
 
+    def _supervised_joint_forward(
+        self,
+        model,
+        context,
+        points,
+        degree,
+        tolerance,
+        proposals,
+        supervised_proposals,
+        supervised_counts,
+        supervised_valid,
+        geometry_params,
+        geometry_knots,
+        geometry_mask,
+        geometry_valid,
+        dense_mse,
+        dense_penalty,
+        proposal_true_parameter_loss,
+        proposal_true_parameter_mae,
+        proposal_knot_coverage_loss,
+        proposal_knot_nearest_mae,
+        proposal_knot_assignment_loss,
+        proposal_knot_assignment_mae,
+        proposal_knot_assignment_count,
+    ):
+        """Train Joint directly from certified synthetic knot labels.
+
+        The discrete label is the minimum-cost monotone one-to-one assignment
+        between the ordered proposal candidates and the certified source knots.
+        No fitted subset is searched to create this target: Joint uses exactly
+        one dense fit, one deployed-mask fit and one labelled-mask fit.
+        """
+        batch = points.shape[0]
+        if supervised_counts is None:
+            raise ValueError(
+                "synthetic_ground_truth Joint requires labelled knot counts"
+            )
+        if not bool(supervised_valid.all()) or not bool(geometry_valid.all()):
+            raise ValueError(
+                "synthetic_ground_truth Joint accepts only fully labelled "
+                "synthetic training rows"
+            )
+        labelled_counts = geometry_mask.sum(-1)
+        if not torch.equal(
+            supervised_counts.to(dtype=torch.long), labelled_counts.to(dtype=torch.long)
+        ):
+            raise ValueError("synthetic knot-count and knot-vector labels disagree")
+
+        logits = context["keep_logits"]
+        if logits.shape != proposals.shape or logits.device != points.device:
+            raise ValueError("keep_logits must share proposal [B,K] shape and device")
+        if not logits.is_floating_point() or not torch.isfinite(logits).all():
+            raise ValueError("keep_logits must be finite floating-point values")
+        probabilities = logits.sigmoid()
+        target_mask = self._ordered_ground_truth_candidate_mask(
+            supervised_proposals,
+            geometry_knots,
+            geometry_mask,
+            geometry_valid,
+        )
+        if not torch.equal(target_mask.sum(-1), labelled_counts):
+            raise RuntimeError("ordered ground-truth assignment lost labelled knots")
+
+        deployment_mask = model.select_mask(context)
+        if (
+            not isinstance(deployment_mask, torch.Tensor)
+            or deployment_mask.shape != logits.shape
+            or deployment_mask.dtype != torch.bool
+        ):
+            raise ValueError("select_mask must return a boolean [B,K] tensor")
+
+        def decode(mask):
+            output = model.decode_subset(context, mask)
+            if not isinstance(output, Mapping):
+                raise ValueError("decode_subset must return a mapping")
+            returned = output.get("learned_keep_mask")
+            if not isinstance(returned, torch.Tensor) or not torch.equal(returned, mask):
+                raise ValueError("decode_subset must preserve the requested mask")
+            parameters = output.get("params")
+            knots = output.get("internal_knots")
+            if (
+                not isinstance(parameters, torch.Tensor)
+                or parameters.shape != points.shape[:2]
+                or not torch.isfinite(parameters).all()
+            ):
+                raise ValueError("decoded params must be finite [B,M]")
+            if (
+                not isinstance(knots, torch.Tensor)
+                or knots.shape != proposals.shape
+                or not torch.isfinite(knots).all()
+            ):
+                raise ValueError("decoded internal_knots must be finite [B,K]")
+            mse = self._fit(parameters, knots, mask, points, degree)
+            return output, mse
+
+        deployment_output, deployment_mse = decode(deployment_mask)
+        labelled_output, labelled_mse = decode(target_mask)
+        deployment_count = deployment_mask.sum(-1).to(dense_mse.dtype)
+        target_count = labelled_counts.to(
+            device=points.device, dtype=context["keep_logits"].dtype
+        )
+
+        # Direct supervised existence labels replace online mask distillation.
+        element_loss = F.binary_cross_entropy_with_logits(
+            logits, target_mask.to(logits.dtype), reduction="none"
+        )
+        positive_count = target_mask.sum(-1).clamp_min(1)
+        negative_mask = ~target_mask
+        negative_count = negative_mask.sum(-1).clamp_min(1)
+        positive_loss = (
+            element_loss * target_mask.to(element_loss.dtype)
+        ).sum(-1) / positive_count
+        negative_loss = (
+            element_loss * negative_mask.to(element_loss.dtype)
+        ).sum(-1) / negative_count
+        has_negative = negative_mask.any(-1)
+        keep_supervision_loss = torch.where(
+            has_negative,
+            (
+                self.false_remove_weight * positive_loss + negative_loss
+            ) / (self.false_remove_weight + 1.0),
+            positive_loss,
+        ).mean()
+        requested_score = context.get(
+            "one_shot_requested_count_score", probabilities.sum(-1)
+        )
+        if (
+            not isinstance(requested_score, torch.Tensor)
+            or requested_score.shape != (batch,)
+            or not requested_score.is_floating_point()
+            or not torch.isfinite(requested_score).all()
+        ):
+            raise ValueError(
+                "one_shot_requested_count_score must be finite floating-point [B]"
+            )
+        score_target = (target_count - 0.25).clamp_min(0.0)
+        count_loss = F.smooth_l1_loss(
+            torch.log1p(requested_score.clamp_min(0.0)),
+            torch.log1p(score_target),
+        )
+        log_excess = F.relu(
+            torch.log1p(requested_score.clamp_min(0.0))
+            - torch.log1p(score_target)
+        )
+        over_count_loss = F.smooth_l1_loss(
+            log_excess, torch.zeros_like(log_excess)
+        )
+
+        positive = target_mask.unsqueeze(-1)
+        negative = (~target_mask).unsqueeze(-2)
+        pair_mask = positive & negative
+        pair_penalty = F.softplus(
+            self.ranking_margin - logits.unsqueeze(-1) + logits.unsqueeze(-2)
+        )
+        ranking_loss = (
+            pair_penalty[pair_mask].mean() if bool(pair_mask.any())
+            else logits.new_zeros(())
+        )
+        entropy = -(
+            probabilities * F.logsigmoid(logits)
+            + (1 - probabilities) * F.logsigmoid(-logits)
+        ).mean()
+
+        def supervised_geometry(output, mask):
+            warped = output["internal_knots"].clone()
+            warped[geometry_valid] = self._warp_knots_to_target_parameterization(
+                output["internal_knots"][geometry_valid],
+                output["params"][geometry_valid],
+                geometry_params[geometry_valid],
+            )
+            return self._selected_knot_loss(
+                warped,
+                mask,
+                geometry_knots,
+                geometry_mask,
+                geometry_valid,
+            )
+
+        deployed_position = supervised_geometry(deployment_output, deployment_mask)
+        labelled_position = supervised_geometry(labelled_output, target_mask)
+        deployed_coverage = self._directed_knot_loss(
+            self._warp_knots_to_target_parameterization(
+                deployment_output["internal_knots"],
+                deployment_output["params"],
+                geometry_params,
+            ),
+            deployment_mask,
+            geometry_knots,
+            geometry_mask,
+            geometry_valid,
+        )
+        labelled_coverage = self._directed_knot_loss(
+            self._warp_knots_to_target_parameterization(
+                labelled_output["internal_knots"],
+                labelled_output["params"],
+                geometry_params,
+            ),
+            target_mask,
+            geometry_knots,
+            geometry_mask,
+            geometry_valid,
+        )
+        # One-to-one matching locates individual survivors; directed coverage
+        # additionally penalizes any labelled knot left unmatched when the
+        # deployed count is too small.  This is direct ground-truth geometry
+        # supervision and introduces no subset-search/refit loop.
+        selected_knot_position_loss = 0.25 * (
+            deployed_position[0]
+            + labelled_position[0]
+            + deployed_coverage[0]
+            + labelled_coverage[0]
+        )
+        # Diagnostics describe the actual one-shot deployment, not teacher-forced
+        # geometry, while both paths contribute gradients above.
+        selected_knot_nearest_mae = deployed_coverage[1]
+        selected_to_true_knot_mae = deployed_position[2]
+
+        deployment_true_parameter_loss = 0.5 * (
+            F.mse_loss(deployment_output["params"], geometry_params)
+            + F.mse_loss(labelled_output["params"], geometry_params)
+        )
+        deployment_true_parameter_mae = 0.5 * (
+            (deployment_output["params"] - geometry_params).abs().mean()
+            + (labelled_output["params"] - geometry_params).abs().mean()
+        )
+        true_parameter_loss = 0.5 * (
+            proposal_true_parameter_loss + deployment_true_parameter_loss
+        )
+        true_parameter_mae = 0.5 * (
+            proposal_true_parameter_mae + deployment_true_parameter_mae
+        )
+        selected_fit = 0.5 * (
+            self._tail_aware_mean(self._fit_penalty(deployment_mse, tolerance))
+            + self._tail_aware_mean(self._fit_penalty(labelled_mse, tolerance))
+        )
+        loss = (
+            self.fit_weight * selected_fit
+            + self.dense_weight * dense_penalty
+            + self.distillation_weight * keep_supervision_loss
+            + (self.count_weight + self.supervised_count_weight) * count_loss
+            + self.supervised_over_count_weight * over_count_loss
+            + self.ranking_weight * ranking_loss
+            + self.entropy_weight * entropy
+            + self.true_parameter_weight * true_parameter_loss
+            + self.proposal_knot_coverage_weight * proposal_knot_coverage_loss
+            + self.proposal_knot_assignment_weight * proposal_knot_assignment_loss
+            + self.selected_knot_position_weight * selected_knot_position_loss
+        )
+        if not torch.isfinite(loss):
+            raise RuntimeError("non-finite v16 supervised subset objective")
+
+        zero = dense_mse.new_zeros(())
+        supervised_count_mae = (
+            deployment_count - target_count.to(deployment_count.dtype)
+        ).abs().mean()
+        metrics = {
+            "loss": loss,
+            "dense_mse": dense_mse.mean(),
+            "dense_pass_rate": (dense_mse <= tolerance).double().mean(),
+            "deployment_mse": deployment_mse.mean(),
+            "deployment_pass_rate": (deployment_mse <= tolerance).double().mean(),
+            "keep_count": deployment_count.mean(),
+            "policy_loss": zero,
+            # Compatibility name; this value is direct labelled BCE, not
+            # teacher distillation. Prefer supervised_keep_loss in new reports.
+            "mask_distillation_loss": keep_supervision_loss,
+            "supervised_keep_loss": keep_supervision_loss,
+            "structured_count_loss": count_loss,
+            "structured_count_mae": (
+                requested_score - score_target.to(requested_score.dtype)
+            ).abs().mean(),
+            "supervised_count_loss": count_loss,
+            "supervised_over_count_loss": over_count_loss,
+            "supervised_count_mae": supervised_count_mae,
+            "supervised_excess_count": F.relu(
+                deployment_count - target_count.to(deployment_count.dtype)
+            ).mean(),
+            "true_parameter_loss": true_parameter_loss,
+            "true_parameter_mae": true_parameter_mae,
+            "proposal_true_parameter_loss": proposal_true_parameter_loss,
+            "proposal_true_parameter_mae": proposal_true_parameter_mae,
+            "deployment_true_parameter_loss": deployment_true_parameter_loss,
+            "deployment_true_parameter_mae": deployment_true_parameter_mae,
+            "proposal_knot_coverage_loss": proposal_knot_coverage_loss,
+            "proposal_knot_nearest_mae": proposal_knot_nearest_mae,
+            "proposal_knot_assignment_loss": proposal_knot_assignment_loss,
+            "proposal_knot_assignment_mae": proposal_knot_assignment_mae,
+            "proposal_knot_assignment_count": proposal_knot_assignment_count,
+            "selected_knot_position_loss": selected_knot_position_loss,
+            "selected_knot_coverage_loss": 0.5 * (
+                deployed_coverage[0] + labelled_coverage[0]
+            ),
+            "selected_knot_nearest_mae": selected_knot_nearest_mae,
+            "selected_to_true_knot_mae": selected_to_true_knot_mae,
+            "teacher_ranking_loss": zero,
+            "supervised_ranking_loss": ranking_loss,
+            "proposal_feasible_fraction": (dense_mse <= tolerance).double().mean(),
+            "subset_best_mse": labelled_mse.mean(),
+            "subset_best_count": target_count.mean().to(dense_mse.dtype),
+            "subset_best_pass_rate": (labelled_mse <= tolerance).double().mean(),
+            "supervised_target_mse": labelled_mse.mean(),
+            "supervised_target_pass_rate": (labelled_mse <= tolerance).double().mean(),
+            "prefix_teacher_feasible_fraction": zero,
+            "prefix_teacher_fallback_fraction": zero,
+            "prefix_teacher_search_evaluations": zero,
+            "oracle_teacher_feasible_fraction": zero,
+            "oracle_teacher_selected_fraction": zero,
+            "mask_entropy": entropy,
+            "feasible_complexity_loss": zero,
+        }
+        return loss, {name: value.detach() for name, value in metrics.items()}
+
     def forward(
         self, model, points, *, stage="joint", mse_tolerance=None,
         complexity_scale: float = 1.0, synthetic_target_count=None,
@@ -992,6 +1326,7 @@ class V16SubsetLoss(nn.Module):
             target_geometry_valid, points=points,
         )
         zero = points.new_zeros(())
+        supervised_proposals = proposals
         if bool(geometry_valid.any()):
             proposal_true_parameter_loss = F.mse_loss(
                 context["proposal_params"][geometry_valid],
@@ -1064,6 +1399,31 @@ class V16SubsetLoss(nn.Module):
             true_parameter_loss = proposal_true_parameter_loss
             true_parameter_mae = proposal_true_parameter_mae
         else:
+            if self.joint_supervision == "synthetic_ground_truth":
+                return self._supervised_joint_forward(
+                    model=model,
+                    context=context,
+                    points=points,
+                    degree=degree,
+                    tolerance=tolerance,
+                    proposals=proposals,
+                    supervised_proposals=supervised_proposals,
+                    supervised_counts=supervised_counts,
+                    supervised_valid=supervised_valid,
+                    geometry_params=geometry_params,
+                    geometry_knots=geometry_knots,
+                    geometry_mask=geometry_mask,
+                    geometry_valid=geometry_valid,
+                    dense_mse=dense_mse,
+                    dense_penalty=dense_penalty,
+                    proposal_true_parameter_loss=proposal_true_parameter_loss,
+                    proposal_true_parameter_mae=proposal_true_parameter_mae,
+                    proposal_knot_coverage_loss=proposal_knot_coverage_loss,
+                    proposal_knot_nearest_mae=proposal_knot_nearest_mae,
+                    proposal_knot_assignment_loss=proposal_knot_assignment_loss,
+                    proposal_knot_assignment_mae=proposal_knot_assignment_mae,
+                    proposal_knot_assignment_count=proposal_knot_assignment_count,
+                )
             logits = context["keep_logits"]
             if logits.shape != proposals.shape or logits.device != points.device:
                 raise ValueError("keep_logits must share proposal [B,K] shape and device")

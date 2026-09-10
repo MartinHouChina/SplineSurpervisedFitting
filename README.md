@@ -1,168 +1,113 @@
-# Minimum-Complexity B-Spline Fitting
+# Self-Supervised Spline Fitting（当前 v16 主线）
 
-给定沿曲线方向排序的二维或三维采样点，本项目在规定误差内一次性预测尽量少的三次
-B 样条内部节点，并用标准最小二乘 refit 求控制顶点。
+本仓库当前主线是 **v16 supervised-only**：从有序点云一次性预测三次开放 B 样条的参数化、候选内部节点、KeepMask 和存活节点位置，再做一次标准 B 样条最小二乘 refit。
 
-当前 v16 主协议：
+> 这里的 supervised-only 指训练协议。正式训练只使用带真参数、真内部节点和真节点数的认证合成曲线；UJI Pen、Natural Earth 和 USGS 只用于留出验证与测试，不参与梯度更新。
 
-| 项目 | 设置 |
-|---|---:|
-| 误差 | mean squared Euclidean error，`MSE <= 1e-4`，不开方 |
-| 合成 source internal K | 4..56，即控制顶点 8..60 |
-| 合成节点最小 span | 0.01；K=56 有 57 个 span，旧 0.02 仅兼容历史 |
-| 候选容量 | 56 个内部节点（完整三次开放节点向量上限为 64） |
-| Proposal 课程 | 40/104 epoch；合成样本 50% 来自 `K>=40`，到期无条件进入 64 个 Joint epoch |
-| 简化合同 | `ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3` |
-| 数据 | Synthetic + UJI + Natural Earth + USGS |
-| 模型选择 | `mean_per_curve_subset_cost_v1`；pass 只报告，不作停止、保存或 benchmark 门槛 |
+## 当前实验合同
 
-## 算法流程
+| 项目 | 当前设置 |
+|---|---|
+| objective | `candidate_selection_supervised_bspline_v16` |
+| architecture | `v16_supervised_ordered_assignment_mass_topk` |
+| simplification | `synthetic_ground_truth_ordered_keep_and_relocation_v4` |
+| 训练数据 | certified Synthetic only |
+| 真实数据 | validation/test only |
+| 合成 source K | 4–56 个内部节点（8–60 个控制顶点） |
+| 网络容量 | `Kc=56` 个内部候选；全保留时完整三次节点向量为 64 项 |
+| 主阈值 | `MSE <= 1e-4`，其中 MSE 不开方、不除以坐标维数 |
+| 训练长度 | Proposal 40 + Joint 64 = 104 epochs |
+| 部署 | 1 次网络 forward + 1 次 mass-TopK + 1 次标准 refit |
+
+## 数据流
 
 ```text
-有序点 Q + MSE 阈值 epsilon
+有序点云 Q
   -> GeometryEncoder
-  -> ParameterHead：弦长参考 + 有界残差，得到严格递增参数 t0
-  -> CandidateKnotHead：带位置编码的局部 cross-attention，得到 Kc=56 个有序候选 U0
-  -> Contextual Selector：候选自注意力 + 点特征交叉注意力
-  -> 曲线级 beta + 候选相对重要度 -> keep probability mass
-  -> 一次 mass-TopK，得到可变长度 KeepMask
-  -> selected-only Decoder：筛选与存活节点/参数联合重定位
-  -> 一次端点约束的标准三次 B 样条 refit
-  -> 内部节点、控制顶点、拟合曲线和实际 MSE
+  -> ParameterHead：严格递增参数 t
+  -> CandidateKnotHead：Kc 个有序候选 U_prop
+  -> Selector：keep logits + 曲线自适应 beta
+  -> probability-mass Top-K：离散 KeepMask
+  -> selected-only decoder：联合更新 t 与存活节点位置
+  -> 标准三次 B 样条 refit × 1
+  -> 曲线、控制顶点、内部节点向量、MSE
 ```
 
-部署没有 CountHead、Hard-Concrete、BIC、阈值扫描或逐节点试删；只有一次网络前向、
-一次离散 Top-K 和一次最终 refit。反事实集合与多次 refit 只用于训练教师。
+Proposal 阶段用真参数、真节点和有序一一匹配监督候选位置；Joint 阶段由同一匹配直接产生 existence/KeepMask 标签，并用真 K、真参数和真节点位置监督计数、排序及重定位。正式路径没有在线 Hard-RMS、ranked-prefix、oracle 或反事实 Teacher，也不生成 Teacher cache。
 
-为减少简单曲线的过度保留，同时保住复杂曲线容量，当前训练采用：
+## 一条龙运行
 
-- Selector 的 Joint 初始 keep fraction 设为 `30/56≈0.535714`，目标初始概率质量约为 30；这只是初始化，不是部署最终 K；
-- Proposal 同时使用真节点到候选的 directed coverage 与一维单调一一匹配；前者保护召回，后者避免多个真节点共享同一个最近候选；
-- 前 40 个 Proposal epoch 将合成抽样的 50% 固定到 `K>=40`，强化复杂曲线与容量边界；到期无条件进入后 64 个 Joint epoch，并恢复 K=4..56 原分布；
-- 教师逐个检查低节点数 `K=4..16`，再做粗到细 ranked-prefix 搜索；
-- 合成 source K 作为可重定位问题的可行上界，不把更小的可行解拉回 source K；
-- 合成真节点通过单调匹配加入训练期 geometry-oracle 教师池，并额外测试 `Ktrue+2`；
-- 关闭固定分区强制锚点，由曲线级 beta 自适应决定实际节点数；
-- KeepMask 与存活节点位置通过 selected-only 解码器联合训练；
-- Joint 的复杂度系数按 epoch 从 0 线性升至配置上限，安全系数从 1 线性降至 0；课程不读取验证 pass，也不会冻结、回滚或提前停止；
-- checkpoint 按逐曲线 soft subset cost 选择：未满足单曲线 `MSE<=1e-4` 时优先降低误差，满足后再权衡节点数与 MSE。
+先准备三个真实数据 manifest；训练不会使用其样本更新权重，但验证和最终比较需要它们：
 
-## RTX 3090：训练、测试和作图一键运行
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass `
-  -File scripts/run_v16_mse1e-4_3090.ps1
+```text
+data/splits/uji_pen_v2.jsonl
+data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl
+data/processed/usgs_contours/large_scale/manifest.jsonl
 ```
 
-Linux 原生 Bash：
+在 Linux/RTX 3090 上运行（缺少真实数据时加 `--prepare-real-data`）：
 
 ```bash
 bash scripts/run_v16_mse1e-4_3090.sh \
   --prepare-real-data \
   --device cuda \
-  --run-name candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux
+  --run-name candidate_selection_v16_mse1e-4_k56_supervised_linux
 ```
 
-若当前环境已经激活，可用 `--python "$(command -v python)"` 明确指定解释器；脚本
-不负责切换 Conda/venv。首次换机使用 `--prepare-real-data` 下载并生成三个缺失的
-manifest；已存在的数据不会重复处理。`--dry-run` 只打印完整命令，`--help` 查看可调
-训练与评测参数。
-
-该入口按顺序执行：
-
-1. 新训练 `Kc=56 / source K=4..56 / MSE=1e-4`；
-2. 审计结构、数据、课程、部署安全与 `MSE=1e-4` 合同；pass 只作为诊断输出；
-3. 在 Synthetic、UJI、Natural Earth、USGS 上运行六方法对比；
-4. 绘制 MSE、通过率、最终内部节点数、完整方法时间四项指标图；
-5. 绘制真实曲线六方法 3x2 案例图。
-
-脚本不会覆盖同名实验。目标 checkpoint 尚需在 3090 上训练；若结构完整性审计失败，正式模式
-会停止且不生成可汇报图。旧的
-`outputs/checkpoints/candidate_selection_v16_mse5e-5_k64.proposal.pt` 若存在，可迁移初始化
-Encoder、ParameterHead 和 CandidateHead 中形状兼容的 proposal 张量；其中 65 个旧区间
-query 沿参数域插值为 57 个，新模型重新生成固定锚点。Selector、联合解码器和优化器均
-从头训练，这属于 warm start，不是把旧 K64 实验 resume 成 K56。
-
-旧 90% 安全门实验生成的（历史协议）
-`candidate_selection_v16_mse1e-4_k56_linux.proposal.pt` 也可以通过
-`--init-checkpoint` 迁移 Proposal 模块；由于有序匹配和高 K 课程已升级训练合同，
-不能使用旧 `.last.pt` 直接 `--resume`。
-
-3090 会明显加速网络前向/反向，但 Joint 的在线教师仍包含多轮逐样本 float64 B 样条
-求解；Kang/Luo 评测也主要在 CPU 上运行，因此整个流水线不会按显卡算力同比缩短。
-当前 104-epoch 配置不承诺固定 12 小时完成。该入口是 fresh-only：不要用正式
-`RunName` 做 `-DryRun`；中断后按
-[训练流程](docs/training_pipeline.md)中的完整参数恢复 `.last.pt`，训练已经成功而仅后处理
-失败时直接重跑 benchmark/绘图，不要重新训练。
-
-Windows worker 异常时增加 `-NumWorkers 0`；Linux 对应参数为 `--num-workers 0`。若
-batch 64 在 24 GB 显存上仍 OOM，请使用新的实验名并将 batch 调成 32，不要覆盖或混接
-原实验。
-
-## 结构完整性审计
+在 Windows/RTX 3090 上运行：
 
 ```powershell
-python scripts/inspect_v16_checkpoint.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt `
-  --mse-tolerance 1e-4
+powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
+  -RunName candidate_selection_v16_mse1e-4_k56_supervised `
+  -Device cuda
 ```
 
-返回码 0 表示 checkpoint 的结构、数据、课程、选择规则及阈值合同完整，可以进入统一
-benchmark。验证 pass、最终 K、count MAE、节点 F1/MAE 均需原样报告，但不改变返回码或
-benchmark 资格。`.proposal.pt`、结构不兼容权重以及显式
-`--allow-unqualified-diagnostic` 生成的结果仅用于排错，并带诊断标识。
+只检查命令和路径：
 
-## 六方法公平对比
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
+  -RunName v16_supervised_dryrun -DryRun
+```
 
-主表固定比较：Ours、Park & Lee、Liang、Dung & Tjahjowidodo、Kang、Luo。公开方法是
-根据论文目标编写的可审计适配，不冒充作者原始软件。所有方法处理同一曲线，使用相同
-56 内部节点容量、三次样条、最终 CPU float64 无正则 refit 和 `MSE <= 1e-4` 判据。
+脚本按顺序生成：
 
-四项指标为：
+1. best/proposal/last checkpoint、history 与逐阶段日志；Windows 入口另写 `pipeline_manifest.json`；
+2. checkpoint 结构完整性审计；
+3. Ours、Park、Liang、Dung、Kang、Luo 在 Synthetic、UJI、Natural Earth、USGS 上的四指标表；
+4. `v16_published_methods_input.png` 与 `v16_published_methods_reference.png` 两张 2×2 指标图；
+5. 三个真实数据集上的六方法案例图。
 
-- 最终 MSE；
-- 阈值通过率；
-- 最终内部节点数；
-- 完整方法时间。
+输出数据不会被作图脚本修改、缩放或替换。未实际运行完成前，文档不预设任何 MSE、通过率、节点数或速度结论。
 
-Ours 另报 network-only 时间，但不能用它替代端到端时间。Kang/Luo 的完整复查见
-[Kang/Luo 1e-4 审计](docs/kang_luo_mse1e-4_audit.md)。分步 benchmark 与作图命令见
-[训练流程](docs/training_pipeline.md)。
+## 单条点云部署
 
-## 节点数量
+```powershell
+python scripts/fit_v16_point_cloud.py `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_supervised.pt `
+  --point-cloud path/to/ordered_points.csv `
+  --output-dir outputs/fits/my_curve `
+  --mse-tolerance 1e-4 `
+  --device cuda
+```
 
-`--candidate-knots Kc` 表示内部候选数。对三次开放 B 样条：
+输入必须是真实存在的 `.csv`、`.npy` 等有序点文件；示例路径不会自动创建数据。正式结果必须使用通过结构合同检查的 Joint checkpoint。`--allow-unqualified-diagnostic` 仅用于带水印的排错图。
 
-\[
-N_{\mathrm{full\ knot\ vector}}=K_{\mathrm{internal}}+8,\qquad
-N_{\mathrm{control}}=K_{\mathrm{internal}}+4.
-\]
+## 结果解释边界
 
-因此 Kc=56 全保留时完整节点向量长度恰为 64、控制顶点数为 60；合成 source K 最大
-56 时也到达同一容量边界。source K 描述生成曲线复杂度，Kc 描述网络候选槽位；二者
-数值相同不表示网络必须全保留。由于 K=56 层没有候选冗余余量，必须单独报告该层的
-dense/deployment pass；该层失败必须原样进入结果，不能从统计中移除，但不会阻止 benchmark。
-有序一一匹配能缓解多对一候选塌缩，但不能创造第 57 个内部候选，因此也不能替代额外
-候选容量；K=56 仍是必须单独审计的硬边界。
-
-K=56 会产生 57 个 span，因此旧 `min_span=0.02` 会要求总长度至少 1.14，无法
-生成边界样本。当前 `train_v16.py` 及一键脚本显式使用
-`--knot-min-span 0.01`；底层通用 synthetic 生成器的 0.02 默认值只保留用于
-历史调用兼容。
+- 数据集通过率只是报告量，不控制 Proposal→Joint、checkpoint 保存或 benchmark 资格。
+- 单曲线 `MSE<=1e-4` 仍是该曲线是否满足工程阈值的判据。
+- 合成 source K 是认证生成表示的精确监督标签；该认证只证明固定参数化、原 source 节点子集内的阈值最简性，不等于连续自由重定位下的全局最少节点证明。
+- 五个论文对照是按公开描述实现的 adaptation，不是作者代码的逐行复刻。
+- 真实数据没有节点真值，因此只报告拟合、复杂度和时间，不报告真实节点 precision/recall。
 
 ## 文档入口
 
-- [文档总索引](docs/README.md)
-- [v16 算法与教师](docs/v16_counterfactual_subset.md)
-- [训练、完整性审计、六方法评测与作图](docs/training_pipeline.md)
-- [部署流程](docs/deployment_pipeline.md)
+- [训练流程](docs/training_pipeline.md)
+- [v16 算法](docs/v16_counterfactual_subset.md)
 - [数学定义](docs/math_formulation.md)
-- [合成曲线最简性证书](docs/synthetic_data_minimality_report.md)
-- [真实数据集](docs/real_world_datasets.md)
-- [公开方法适配协议](docs/published_knot_methods_reproduction.md)
-- [当前验证状态](docs/v16_verification.md)
+- [网络架构](docs/architecture.md)
+- [部署与评测](docs/deployment_pipeline.md)
+- [合成数据最简性](docs/synthetic_data_minimality_report.md)
+- [六方法适配复现](docs/published_knot_methods_reproduction.md)
+- [验证清单](docs/v16_verification.md)
 - [文件索引](docs/file_guide.md)
-
-旧 Kc=96/2.5e-5、5e-5 和 v8--v15 资料保留在 `docs/archive/`，仅用于历史消融与追溯。
-正式权重写入 `outputs/checkpoints/`，比较写入 `outputs/comparisons/`，图片写入
-`outputs/figures/`。

@@ -1,113 +1,78 @@
-# 节点结构方案演化
+# 节点选择方案演进与当前 v16
 
-当前主版本是 v16；历史 checkpoint 通过兼容层读取，但保持各自原有部署语义。
-v16 使用在线反事实组合学习和 selected-only 联合解码，完整说明见
-[v16 主流程](v16_counterfactual_subset.md)。本页其余内容按版本记录演化，不代表当前部署。
+本文只用来解释设计演进；当前可运行协议以 supervised-only v16 为准。
 
-## v3–v6：直接结构预测
+## 1. 历史问题
 
-- v3：独立 knot query、ActivityHead 与 Hard-Concrete；容易出现概率集中在窄区间、阈值后全保留或全删除。
-- v4/v5：直接 CountHead 与 canonical count；数量和位置条件解码更清楚，但离散数量错误会直接改变整条节点向量。
-- v6：交互结构头与动态区间解码；减少无效分支，但仍把复杂度决策压在一次 count 分类上。
+| 版本 | 主要思路 | 暴露的问题 |
+|---|---|---|
+| v3–v6 | Activity/CountHead 直接预测结构 | 概率塌缩、离散计数错误会整体改变节点向量 |
+| v7 | 冗余 proposal + 在线 Greedy Hard-RMS | 可解释但需多次串行 refit，部署慢 |
+| v8–v10 | 离线 Hard-RMS Teacher 蒸馏一次性 mask | 标签受固定 proposal/搜索策略限制 |
+| v11–v12 | Keep 与 survivor relocation 联动 | Teacher 位置目标和删除后邻接关系仍可能偏置 |
+| v13–v15 | 集合匹配、参数反馈与部署 MSE 对齐 | 仍依赖离线 Teacher/cache，数据和模型更新易失配 |
+| 早期 v16 | 在线反事实子集学习 | 避免 cache，但每 batch 组合搜索昂贵且可能自举错误排序 |
 
-## v7：冗余 proposal + 传统 Hard-RMS
+这些历史实现仍可用于消融，但其 checkpoint、Teacher cache 和结果不能改名后并入当前主表。
 
-网络只负责生成高召回冗余候选，部署时逐个尝试删除并执行标准 B 样条 refit。优点是误差判定直接、过程可解释；缺点是需要大量串行/批量 refit，不是一次性部署。
+## 2. 当前 v16 重构
 
-## v8–v10：离线教师 + 一次性 LearnedKeep
-
-- v8 把 Hard-RMS 删除放到离线阶段，在线 student 一次性预测 mask；
-- v9 固定 proposal 槽位，避免 selector 更新破坏 teacher cache 对齐；
-- v10 用候选交互、mass-TopK 和验证集约束选择强化整组节点组合。
-
-这些版本已把在线计算降为一次 forward + 一次 refit，但最终位置主要仍受固定 proposal 限制。
-
-## v11：Keep 与位置反馈
-
-v11 引入局部 Gaussian proposal attention 和固定深度交互：
+当前正式版本利用 certified Synthetic 的 `t*、U*、K*` 完成直接监督：
 
 ```text
-p0 -> provisional position -> p1 -> final mask -> deployment position
+Proposal:
+  Q -> t -> ordered U_prop
+  t*, U* -> parameter + coverage + ordered assignment losses
+
+Joint:
+  ordered_match(U_prop,U*) -> target KeepMask
+  K* -> adaptive probability-mass/count target
+  t*, U* -> deployed/labelled subset parameter + relocation targets
+
+Deployment:
+  Q -> one forward -> one mass-TopK -> one standard refit
 ```
 
-其核心问题不在于“代码完全没有位置头”，而在于教师目标：`teacher_internal_knots` 直接复制 retained proposal 位置。因此位置监督把零移动当作正确答案，节点删除后新的邻接关系也没有被显式编码。旧图又只画 proposal 横坐标和 retained 索引，使 hybrid 的真实位置变化不可见。
+核心改变不是简单“删除 Teacher”，而是把结构标签和位置标签统一到同一个有序匹配：被保留的候选与其目标真节点一一绑定，KeepMask 与 survivor relocation 因而可以共同训练。
 
-## v12：删除与存活节点重定位联动
+## 3. 为什么保留 Proposal + Selector 两个功能模块
 
-v12 同时修改离线教师和在线 student。
+Proposal 回答“候选空间是否覆盖真节点”，Selector 回答“这条曲线应保留哪些候选”。分开后可以分别诊断 candidate recall 与 deployment selection；Joint 又通过共同的 ordered target 和 selected-only decoder把两者耦合，避免完全独立优化。
 
-### 离线教师
+`Kc=56` 是并行候选容量，所有候选在矩阵运算中一次处理；最终 K 由曲线自适应 probability mass 决定。它不是 CountHead 分类，也不是逐次预测。
 
-```text
-greedy delete
-  -> relax survivor positions
-  -> retry delete
-  -> 重复有限轮
-  -> 缓存最终槽位 mask、优化后位置、gap 和风险
-```
+## 4. 删除与移动如何联动
 
-位置优化后如果还能安全删除，教师会继续减少节点；最后一轮产生新 survivor 集合时，还会再对最终集合做一次 relaxation。
+Selector 先产生离散 KeepMask；subset decoder 只用 survivors 重新构造集合上下文，包括邻距、相对 rank 和存活数量，并只对 survivor 施加位置残差。Joint 同时训练实际部署 mask 和标签 mask 的节点位置及拟合误差，因此删除改变邻接关系后，剩余节点可以重新分布，而不是照搬 proposal 横坐标。
 
-### 在线网络
+## 5. 当前数据边界
 
-```text
-final KeepMask
-  -> 按最终 survivors 重算邻居、rank、count 和覆盖特征
-  -> Key/Value 仅来自 survivors 的 multi-head attention
-  -> 只对 survivors 施加位置残差
-  -> 有界单调 U_deploy
-```
+- Proposal 和 Joint 的 optimizer step 全部来自 certified Synthetic；
+- source K=4..56 作为 exact 监督目标；
+- UJI、Natural Earth、USGS 只用于 validation/test；
+- 正式 Joint 无 online Hard-RMS、ranked-prefix、counterfactual 或 oracle Teacher；
+- 不读写 Teacher cache。
 
-straight-through gate 让位置损失可以影响 keep score，因此删除和移动不再是完全独立的两个目标。最终更新遵守端点、相邻 survivor、`min_gap` 和相对 proposal 的最大位移。
+source-subset 证书不证明自由重定位下的连续全局最小 K，因此“exact label”应理解为当前监督协议的精确生成标签，而非全局最优定理。
 
-v12 仍是固定深度一次性网络：它没有在线逐节点试删，也没有第二次网络 forward。标准 B 样条只在最终部署节点上 refit 一次。
+## 6. 当前部署与传统剪枝的差别
 
-## v13–v15：修正监督与部署损失对齐
-
-- v13 改为按实际预测 survivor 集合匹配位置，并补充槽位无关的集合覆盖监督；
-- v14 让结构输出反馈到参数头，再把候选映射到更新参数域；
-- v15 用实际离散 mask 的标准 B 样条部署 MSE 校准，并对齐 mass-TopK 的计数语义。
-
-它们仍依赖固定离线 Hard-RMS 教师，候选是否可行与 selector 是否可行没有形成严格的两阶段 gate。
-
-## v16：候选可行性 + 在线反事实组合
-
-v16 使用独立模型和训练入口：
-
-~~~text
-proposal：全候选真实 refit → worst-source 可行性 gate
-joint：随机/反事实 KeepMask → selected-only 参数与位置联合解码 → 真实 refit
-deployment：adaptive beta + probability-mass Top-K 一次选择 → 一次 refit
-~~~
-
-它取消离线 teacher 和旧 checkpoint 的隐式兼容迁移，重新引入曲线级自适应 beta 与 mass-TopK，并明确把“候选空间足够”和“组合足够小”分开验证。
-
-## hybrid：独立的离线质量搜索
-
-hybrid 不是 v12 网络层。它在一次网络预测后执行 beam 删除、coordinate 位置精修和多次标准 refit；传统 greedy 作为 fallback。它会实际移动节点，当前图显示 `proposal u -> refined u*`。
-
-hybrid 适合时间不敏感、需要逐样本继续压缩的场景。有限 beam 与局部网格仍不能证明全局最少节点。
-
-## 版本对比
-
-| 版本 | 结构选择 | 连续位置更新 | 默认部署 |
+| 方法 | 组合决策 | 位置调整 | 最终 refit |
 |---|---|---|---|
-| v7 | 在线 greedy Hard-RMS | 无 | 多次 refit |
-| v8–v10 | 离线教师蒸馏的一次性 mask | 固定/弱 | 一次 forward + 一次 refit |
-| v11 | 一次性 mask 与位置反馈 | 有头，但教师偏向零位移 | 一次 forward + 一次 refit |
-| v12 | final-mask 条件化 selector + relocation | delete-then-relax 监督、selected-only attention | 一次 forward + 一次 refit |
-| v13–v15 | 离线教师的一次性 mask | 参数、mask、位置逐步联动并对齐部署 MSE | 一次 forward + 一次 refit |
-| v16 | 在线 Bernoulli/反事实组合学习 | selected-only 参数更新、warp 与重定位 | 一次 forward + 一次 refit |
-| hybrid | beam/greedy 子集搜索 | coordinate refinement | 一次 forward + 多次 refit |
+| 当前 Ours | 一次网络 adaptive mass-TopK | 网络内 survivor-conditioned relocation | 1 次 |
+| Greedy Hard-RMS | 逐候选试删 | 可选数值梯度/局部优化 | 多次试拟合 + 最终拟合 |
+| v8–v15 | 离线搜索 Teacher，在线一次 mask | 版本相关 | 部署通常 1 次 |
 
-## 兼容边界
+Ours 的优势假设是固定深度的一次性组合预测；是否在 MSE、K 或时间上优于传统方法，必须由同一批测试曲线的实测表决定，不能由架构直接宣称。
 
-- v16 使用独立 objective 和入口，v8–v15 checkpoint 不能改名后当作 v16。
-- v16 不读取旧离线 teacher cache；只允许通过 init-checkpoint 部分迁移形状兼容的 encoder/candidate tensors。
-- v16 正式结果要求完成 joint 且 worst-source deployment pass 达到协议目标。
+## 7. checkpoint 兼容边界
 
-- v11 权重可以严格载入 v12；新增 relocation head 零初始化，初始行为保持中性。
-- 载入不等于训练完成。需要 v12 delete-then-relax teacher 和联合校准才能获得非零重定位。
-- v11 teacher cache 不应直接复用到 v12；首次训练应创建新目录。
-- `--teacher-relaxation-min-gap` 默认等于 `--min-knot-gap`，不是 match tolerance。抑制聚集时优先调大 `--min-knot-gap`，使 proposal、student 与 teacher 使用一致约束；这属于建模假设，需要单独做消融。
-- learned v12 不提供逐样本阈值或全局最优保证；hybrid 也只在访问过的状态中择优。
+当前正式合同为：
+
+```text
+candidate_selection_supervised_bspline_v16
+v16_supervised_ordered_assignment_mass_topk
+synthetic_ground_truth_ordered_keep_and_relocation_v4
+```
+
+旧 checkpoint 不能直接 resume 为当前实验。若训练入口明确允许，可只迁移形状兼容的 encoder、ParameterHead 和 CandidateKnotHead 权重；Selector、subset decoder、optimizer 和合同元数据必须重新训练并重新审计。

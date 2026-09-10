@@ -514,6 +514,93 @@ def test_certified_geometry_supervises_parameter_proposal_and_relocated_knots():
     assert joint_model.relocation_update.weight.grad.abs().sum() > 0
 
 
+def test_supervised_joint_uses_ground_truth_without_online_teacher_and_three_fits():
+    """Formal Joint is a direct-label objective, not an online search loop."""
+    torch.manual_seed(2026)
+    points = curve_batch()
+    target_params = torch.linspace(0, 1, points.shape[1]).repeat(2, 1)
+    target_knots = torch.tensor([
+        [0.22, 0.69, 0.0],
+        [0.31, 0.76, 0.0],
+    ])
+    target_mask = torch.tensor([
+        [True, True, False],
+        [True, True, False],
+    ])
+    target_valid = torch.ones(2, dtype=torch.bool)
+    target_count = target_mask.sum(-1)
+
+    model = V16CandidateSelectionNetwork(
+        hidden_dim=16,
+        encoder_layers=1,
+        max_internal_knots=6,
+        attention_heads=2,
+        selector_layers=1,
+        min_selected_knots=0,
+        one_shot_selection_policy="mass_topk",
+        one_shot_adaptive_threshold=True,
+    )
+    objective = V16SubsetLoss(
+        mse_tolerance=1e-4,
+        policy_samples=2,
+        counterfactual_edits=4,
+        joint_supervision="synthetic_ground_truth",
+        ranked_prefix_teacher=False,
+        synthetic_count_role="exact",
+        complexity_weight=0,
+    )
+
+    with (
+        patch.object(objective, "_fit", wraps=objective._fit) as fitted,
+        patch.object(
+            objective,
+            "_minimum_feasible_ranked_prefix",
+            side_effect=AssertionError("online prefix teacher was called"),
+        ),
+        patch.object(
+            objective,
+            "_counterfactual_masks",
+            side_effect=AssertionError("online counterfactual teacher was called"),
+        ),
+        patch(
+            "torch.bernoulli",
+            side_effect=AssertionError("online policy sampling was called"),
+        ),
+    ):
+        loss, metrics = objective(
+            model,
+            points,
+            stage="joint",
+            synthetic_target_count=target_count,
+            synthetic_target_valid=target_valid,
+            target_params=target_params,
+            target_internal_knots=target_knots,
+            target_internal_knot_mask=target_mask,
+            target_geometry_valid=target_valid,
+        )
+
+    # Dense proposal, deployed mask and labelled mask: no hidden fit/search loop.
+    assert fitted.call_count == 3
+    assert metrics["prefix_teacher_search_evaluations"] == 0
+    assert metrics["oracle_teacher_selected_fraction"] == 0
+    assert metrics["subset_best_count"] == pytest.approx(2.0)
+    assert metrics["supervised_keep_loss"] > 0
+    assert metrics["supervised_count_loss"] >= 0
+    assert torch.isfinite(loss)
+
+    loss.backward()
+    for parameter in (
+        model.keep_head.weight,
+        model.adaptive_threshold_head[-1].weight,
+        model.relocation_update.weight,
+        model.candidate_head.interval_score.weight,
+        model.parameter_head.mlp[-1].weight,
+    ):
+        assert parameter.grad is not None
+        assert torch.isfinite(parameter.grad).all()
+        assert parameter.grad.abs().sum() > 0
+
+
 def test_ordered_assignment_is_one_to_one_and_keeps_coordinate_gradients():
     objective = V16SubsetLoss(policy_samples=2)
     predicted = torch.tensor(

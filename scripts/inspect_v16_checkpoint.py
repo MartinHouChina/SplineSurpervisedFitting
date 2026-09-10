@@ -158,8 +158,33 @@ def inspect_checkpoint(
 
     print("v16 checkpoint inspection")
     print(f"  checkpoint: {checkpoint_path.resolve()}")
+    print(f"  objective: {checkpoint.get('objective_version', 'not recorded')}")
     print(f"  stage: {checkpoint.get('stage', 'not recorded')}")
     print(f"  epoch: {checkpoint.get('epoch', 'not recorded')}")
+    print("Training supervision")
+    print(
+        "  optimizer data: "
+        + (
+            "certified Synthetic only"
+            if qualification.get("training_real_fraction") == 0.0
+            else "mixed/unknown"
+        )
+    )
+    print("  real-data fraction: " + _format_scalar(
+        qualification.get("training_real_fraction")
+    ))
+    print(
+        "  Joint target: "
+        + str(qualification.get("joint_supervision", "not recorded"))
+    )
+    print(
+        "  exact knot-count label: "
+        + str(qualification.get("synthetic_count_role", "not recorded"))
+    )
+    print(
+        "  online Teacher: "
+        + str(qualification.get("online_teacher", "not recorded"))
+    )
     internal_capacity = model_config.get("max_internal_knots")
     degree = model_config.get("degree", 3)
     try:

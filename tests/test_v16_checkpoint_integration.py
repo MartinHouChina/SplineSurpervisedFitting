@@ -17,9 +17,10 @@ from spline_fitting.checkpointing import (
     V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
     V16_ADAPTIVE_SELECTION_REVISION,
     V16_CERTIFIED_SYNTHETIC_CONTRACT,
-    V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
     V16_FORMAL_PASS_RATE,
+    V16_JOINT_CHECKPOINT_QUALITY,
     V16_SIMPLIFICATION_CONTRACT,
+    V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
     assess_v16_checkpoint,
     build_model_from_checkpoint,
     migrate_model_config,
@@ -35,7 +36,7 @@ def make_v16_checkpoint():
         max_internal_knots=4, attention_heads=4, selector_layers=1,
     ).eval()
     return model, {
-        "objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         "model_config": model.get_config(),
         "model_state_dict": model.state_dict(),
     }
@@ -43,7 +44,7 @@ def make_v16_checkpoint():
 
 def qualified_v16_metadata(*, target=0.90, observed=0.92):
     return {
-        "objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
         "simplification_contract": V16_SIMPLIFICATION_CONTRACT,
         "simplification_ready": True,
@@ -68,6 +69,7 @@ def qualified_v16_metadata(*, target=0.90, observed=0.92):
         },
         "stage": "joint",
         "training_config": {
+            "real_fraction": 0.0,
             "proposal_pass_target": target,
             "deployment_pass_target": target,
             "mse_tolerance": 2.5e-5,
@@ -101,12 +103,17 @@ def qualified_v16_metadata(*, target=0.90, observed=0.92):
             "one_shot_safety_knots": 0,
         },
         "loss_config": {
-            "ranked_prefix_teacher": True,
+            "joint_supervision": "synthetic_ground_truth",
+            "online_teacher": False,
+            "ranked_prefix_teacher": False,
+            "synthetic_count_role": "exact",
             "weights": {
+                "fit_weight": 1.0,
+                "distillation_weight": 2.0,
                 "count_weight": 2.0,
                 "supervised_count_weight": 1.0,
                 "supervised_over_count_weight": 1.0,
-                "complexity_weight": 0.05,
+                "complexity_weight": 0.0,
                 "true_parameter_weight": 0.1,
                 "proposal_knot_coverage_weight": 1.0,
                 "proposal_knot_assignment_weight": 1.0,
@@ -115,7 +122,7 @@ def qualified_v16_metadata(*, target=0.90, observed=0.92):
         },
         "proposal_ready": True,
         "best_deployment_pass_constraint_satisfied": observed >= target,
-        "checkpoint_quality": "soft_fit_complexity_selected",
+        "checkpoint_quality": V16_JOINT_CHECKPOINT_QUALITY,
     }
 
 
@@ -154,7 +161,7 @@ def test_v16_formal_qualification_checks_metrics_and_configured_target():
         ),
         (
             lambda value: value.update(checkpoint_quality="deployment_target_met"),
-            "soft fit/complexity",
+            "joint checkpoint quality",
         ),
     ],
 )
@@ -200,6 +207,41 @@ def test_v16_formal_qualification_checks_exact_reporting_tolerance():
     ],
 )
 def test_v16_formal_qualification_requires_the_new_proposal_curriculum(
+    mutation, reason,
+):
+    checkpoint = qualified_v16_metadata()
+    mutation(checkpoint)
+    result = assess_v16_checkpoint(checkpoint)
+    assert not result["formal_reporting_eligible"]
+    assert any(reason in item for item in result["reasons"])
+
+
+@pytest.mark.parametrize(
+    "mutation,reason",
+    [
+        (
+            lambda checkpoint: checkpoint["training_config"].update(
+                real_fraction=0.35
+            ),
+            "labelled synthetic curves only",
+        ),
+        (
+            lambda checkpoint: checkpoint["loss_config"].update(
+                joint_supervision="online_teacher",
+                online_teacher=True,
+                ranked_prefix_teacher=True,
+            ),
+            "direct synthetic ground truth",
+        ),
+        (
+            lambda checkpoint: checkpoint["loss_config"].update(
+                synthetic_count_role="upper_bound"
+            ),
+            "exact label",
+        ),
+    ],
+)
+def test_v16_formal_qualification_requires_synthetic_labelled_joint(
     mutation, reason,
 ):
     checkpoint = qualified_v16_metadata()
@@ -257,7 +299,10 @@ def test_v16_formal_qualification_rejects_uncertified_synthetic_contract():
 @pytest.mark.parametrize(
     "mutation,reason",
     [
-        (lambda checkpoint: checkpoint.pop("simplification_contract"), "ranked-prefix"),
+        (
+            lambda checkpoint: checkpoint.pop("simplification_contract"),
+            "synthetic-ground-truth",
+        ),
         (
             lambda checkpoint: checkpoint.update(simplification_ready=False),
             "curriculum",
@@ -383,7 +428,7 @@ def test_v16_formal_qualification_rejects_large_final_safety_reserve():
 def test_v16_config_bypasses_legacy_head_defaults():
     raw = {"point_dim": 2, "max_internal_knots": 4}
     config, legacy = migrate_model_config({
-        "objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         "model_config": raw,
     })
     assert not legacy
@@ -395,7 +440,7 @@ def test_v16_config_bypasses_legacy_head_defaults():
 def test_v16_config_rejects_legacy_structure():
     with pytest.raises(ValueError, match="v16 requires"):
         migrate_model_config({
-            "objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+            "objective_version": V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
             "model_config": {"structure_mode": "hard_concrete"},
         })
 
@@ -454,7 +499,7 @@ def test_legacy_evaluator_explains_v16_entry_points(monkeypatch, capsys):
 
     monkeypatch.setattr(sys, "argv", ["evaluate_checkpoint.py", "--checkpoint", "v16.pt"])
     monkeypatch.setattr(evaluate_checkpoint.torch, "load", lambda *args, **kwargs: {
-        "objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "objective_version": V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
     })
     with pytest.raises(SystemExit) as error:
         evaluate_checkpoint.main()

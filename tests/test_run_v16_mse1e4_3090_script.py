@@ -49,15 +49,13 @@ def test_script_encodes_the_requested_training_and_fair_comparison_contract() ->
     text = SCRIPT.read_text(encoding="utf-8")
 
     training_fragments = (
-        '"ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3"',
-        '[string]$RunName = "candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost"',
-        '"candidate_selection_v16_mse5e-5_k64.proposal.pt"',
+        '"synthetic_ground_truth_ordered_keep_and_relocation_v4"',
+        '[string]$RunName = "candidate_selection_v16_mse1e-4_k56_supervised"',
         '[int]$Epochs = 104',
         '[int]$ProposalEpochs = 40',
         '[int]$TrainSize = 3000',
         '[int]$ValSize = 600',
         '[int]$RealValSize = 100',
-        '[double]$RealFraction = 0.35',
         '[double]$ProposalHighKFraction = 0.50',
         '[int]$ProposalHighKMinKnots = 40',
         '[int]$BatchSize = 64',
@@ -74,18 +72,17 @@ def test_script_encodes_the_requested_training_and_fair_comparison_contract() ->
         '"--mse-tolerance", "1e-4"',
         '"--proposal-knot-assignment-weight", "1.0"',
         '"--initial-keep-fraction", "0.5357142857142857"',
-        '"--teacher-low-count-sweep", "16"',
-        '"--synthetic-count-role", "upper_bound"',
-        '"--synthetic-geometry-oracle-teacher"',
-        '"--oracle-teacher-extra-knots", "2"',
+        '"--joint-supervision", "synthetic_ground_truth"',
+        '"--synthetic-count-role", "exact"',
+        '"--no-synthetic-geometry-oracle-teacher"',
         '"--one-shot-coverage-bins", "0"',
-        '"--complexity-max-scale", "6.0"',
+        '"--complexity-max-scale", "1.0"',
+        '"--complexity-weight", "0"',
         '"--complexity-ramp-epochs", "12"',
-        '"--policy-samples", "2"',
-        '"--counterfactual-edits", "4"',
-        '"--final-safety-sigma", "0.03"',
+        '"--one-shot-safety-sigma", "0"',
+        '"--final-safety-sigma", "0"',
         '"--final-safety-knots", "0"',
-        '"--real-fraction", ([string]::Format(',
+        '"--real-fraction", "0"',
     )
     for fragment in training_fragments:
         assert fragment in text
@@ -128,6 +125,10 @@ def test_script_encodes_the_requested_training_and_fair_comparison_contract() ->
     assert '"--complexity-pass-margin"' not in text
     assert '"--allow-infeasible-proposals"' not in text
     assert '"--required-pass-rate"' not in text
+    assert '"--teacher-low-count-sweep"' not in text
+    assert '"--teacher-prefix-search-steps"' not in text
+    assert '"--counterfactual-edits"' not in text
+    assert '"--policy-samples"' not in text
 
 
 def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
@@ -155,11 +156,11 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
     assert manifest["checkpoint"].endswith("pytest_v16_mse1e4.pt")
     assert manifest["requested_profile"] == {
         "simplification_contract": (
-            "ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3"
+            "synthetic_ground_truth_ordered_keep_and_relocation_v4"
         ),
         "checkpoint_selection": "mean_per_curve_subset_cost_v1",
         "qualification_contract": (
-            "v16_structural_integrity_pass_rates_report_only_v3"
+            "v16_supervised_synthetic_only_pass_rates_report_only_v4"
         ),
         "aggregate_pass_role": "reporting_reference_only",
         "simplification_curriculum": "deterministic_linear_by_joint_epoch",
@@ -177,17 +178,17 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
         "validation_size": 600,
         "synthetic_boundary_validation_size": 32,
         "real_validation_size_per_source": 100,
-        "real_fraction": 0.35,
+        "training_data": "certified_synthetic_only",
+        "real_data_role": "validation_and_test_only",
         "proposal_high_k_fraction": 0.5,
         "proposal_high_k_min_knots": 40,
         "proposal_knot_assignment_weight": 1.0,
         "batch_size": 64,
         "selection_policy": "mass_topk",
         "initial_keep_fraction": 30 / 56,
-        "teacher_low_count_sweep": 16,
-        "synthetic_count_role": "upper_bound",
-        "synthetic_geometry_oracle_teacher": True,
-        "oracle_teacher_extra_knots": 2,
+        "joint_supervision": "synthetic_ground_truth",
+        "online_teacher": False,
+        "synthetic_count_role": "exact",
         "coverage_bins": 0,
         "synthetic_samples_per_k": 5,
         "real_samples_per_dataset": 20,
@@ -256,8 +257,6 @@ def test_diagnostic_dry_run_is_isolated_and_marks_all_consumers(
         "64",
         "-RealValSize",
         "16",
-        "-RealFraction",
-        "0.25",
         "-InitCheckpoint",
         str(tmp_path / "missing.pt"),
     )
@@ -278,7 +277,9 @@ def test_diagnostic_dry_run_is_isolated_and_marks_all_consumers(
     assert "--train-size 256" in training
     assert "--val-size 64" in training
     assert "--real-val-size 16" in training
-    assert "--real-fraction 0.25" in training
+    assert "--real-fraction 0" in training
+    assert "--joint-supervision synthetic_ground_truth" in training
+    assert "--teacher-prefix-search-steps" not in training
     assert "--allow-infeasible-proposals" not in training
     assert "--proposal-pass-target" not in training
     assert "--deployment-pass-target" not in training

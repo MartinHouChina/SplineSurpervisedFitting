@@ -1,51 +1,22 @@
 # 文档索引
 
-当前主协议统一为 `Kc=56` 个内部候选、完整三次开放节点向量最多 64 项、
-控制顶点最多 60 个、合成 source `K=4..56`（控制顶点 8～60）和 `MSE<=1e-4`。
-旧 K64/K96 结果只作为历史容量消融。正式简化合同为
-`ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3`：前 40/104 个 epoch 的
-Proposal synthetic draws 有 50% 来自 `K>=40`，并行使用 directed coverage 与
-monotone one-to-one assignment；Proposal 到期无条件进入后 64 个 Joint epoch，恢复
-K=4..56 原始分布。Joint 采用确定性 epoch 课程，checkpoint 按
-`mean_per_curve_subset_cost_v1` 选择；aggregate pass 只报告，不参与训练停止、保存或
-benchmark 资格。
+当前正式主线是 supervised-only v16：`Kc=56`，certified Synthetic source `K=4..56`，`MSE<=1e-4`。训练只使用带真参数、真节点和真 K 的认证合成曲线；UJI、Natural Earth、USGS 仅用于 validation/test。Joint 通过有序一一匹配直接监督 KeepMask、计数与存活节点重定位，不运行在线 Teacher。
 
-source K 和候选 Kc 虽然都可达到 56，但语义不同；`source K=56` 是生成复杂度
-边界，`Kc=56` 是候选容量边界。该层没有冗余候选，必须单独报告 dense 与
-deployment pass；失败必须原样计入结果，但不构成 benchmark 门槛。当前合成数据显式使用
-`--knot-min-span 0.01`；底层通用 synthetic 生成器的旧 0.02 默认只兼容历史范围。
+建议阅读顺序：
 
-正式训练显式使用 `--synthetic-boundary-val-size 32`：这 32 条 K=56 边界样本
-包含在 `--val-size` 指定的合成验证总数内，不额外增加验证集大小。完整性审计
-单独以 `n>=32` 报告该层 dense/deployment pass。checkpoint 数据合同已升级为
-`source_subset_threshold_minimal_k4_56_span001_v2`；旧 K=4..24 checkpoint 与
-该合同不兼容，正式入口会拒绝，不能通过改名或 resume 复用资格。
-
-## 当前 v16 主线
-
-按以下顺序阅读即可：
-
-1. [算法与数据流](architecture.md)
+1. [算法与张量流](architecture.md)
 2. [数学定义](math_formulation.md)
 3. [训练流程](training_pipeline.md)
-4. [部署流程](deployment_pipeline.md)
+4. [部署、六方法表与作图](deployment_pipeline.md)
 5. [合成曲线最简性证书](synthetic_data_minimality_report.md)
-6. [真实数据集与拆分](real_world_datasets.md)
-7. [公开论文方法适配与公平比较](published_knot_methods_reproduction.md)
-8. [Kang/Luo 在 MSE=1e-4 下的统一复查](kang_luo_mse1e-4_audit.md)
-9. [v16 完整说明](v16_counterfactual_subset.md)
+6. [真实数据集](real_world_datasets.md)
+7. [论文方法 adaptation 与公平协议](published_knot_methods_reproduction.md)
+8. [v16 完整说明](v16_counterfactual_subset.md)
+9. [验证清单](v16_verification.md)
 10. [代码与产物索引](file_guide.md)
-11. [测试和 checkpoint 验证状态](v16_verification.md)
+11. [PPT 展示提纲](presentation_demo.md)
+12. [版本演进](pruning_redesign.md)
 
-RTX 3090 的新训练、结构完整性审计、六方法比较和真实曲线作图由
-[`run_v16_mse1e-4_3090.ps1`](../scripts/run_v16_mse1e-4_3090.ps1) 串行执行；
-目标产物使用 `k56_ordered_highk_softcost` 路径，避免与旧训练合同冲突。
+一条龙入口为 [`run_v16_mse1e-4_3090.ps1`](../scripts/run_v16_mse1e-4_3090.ps1)。成功运行后应得到 checkpoint、六方法×四数据集表、input/reference 两张 2×2 图和真实六方法案例图。文档仅说明协议与预期产物，不代表这些结果已经在当前机器上生成。
 
-PPT 展示可直接使用 [演示速查](presentation_demo.md) 和
-[v16 流程图](figures/v16_pipeline.png)。UJI、Natural Earth 与 USGS 的数据准备分别见
-[UJI 接入](uji_pen_integration.md)和[地理数据接入](geospatial_real_world_data.md)。
-
-## 历史资料
-
-v7–v15 的旧命令、实验记录和失败分析已集中到 [archive](archive/README.md)。历史文档不再
-作为当前命令入口，但保留用于结果追溯。
+`archive/` 只保存历史版本说明。旧 counterfactual/Teacher、K64/K96 或其他阈值实验不得与当前 supervised K56 主结果混写。

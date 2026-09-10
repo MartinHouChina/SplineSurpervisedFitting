@@ -45,15 +45,22 @@ V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION = (
 V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION = (
     "candidate_selection_counterfactual_bspline_v16"
 )
-V16_ADAPTIVE_SELECTION_REVISION = "v16_ranked_prefix_count_coupled_mass_topk"
+V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION = (
+    "candidate_selection_supervised_bspline_v16"
+)
+V16_OBJECTIVE_VERSIONS = (
+    V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+    V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
+)
+V16_ADAPTIVE_SELECTION_REVISION = "v16_supervised_ordered_assignment_mass_topk"
 V16_CERTIFIED_SYNTHETIC_CONTRACT = (
     "source_subset_threshold_minimal_k4_56_span001_v2"
 )
 V16_SIMPLIFICATION_CONTRACT = (
-    "ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3"
+    "synthetic_ground_truth_ordered_keep_and_relocation_v4"
 )
 V16_CHECKPOINT_SELECTION_CONTRACT = "mean_per_curve_subset_cost_v1"
-V16_JOINT_CHECKPOINT_QUALITY = "soft_fit_complexity_selected"
+V16_JOINT_CHECKPOINT_QUALITY = "supervised_fit_count_selected"
 V16_MINIMALITY_MARGIN = 0.2
 V16_MINIMALITY_AUDIT_POINTS = 512
 # Historical reporting reference only.  It is deliberately distinct from the
@@ -151,6 +158,9 @@ def assess_v16_checkpoint(
     proposal_knot_assignment_weight = _finite_checkpoint_float(
         loss_weights.get("proposal_knot_assignment_weight")
     )
+    training_real_fraction = _finite_checkpoint_float(training.get("real_fraction"))
+    joint_supervision = loss_config.get("joint_supervision")
+    synthetic_count_role = loss_config.get("synthetic_count_role")
     observed_dense = _finite_checkpoint_float(
         validation.get("worst_dense_pass_rate")
     )
@@ -235,8 +245,8 @@ def assess_v16_checkpoint(
         checkpoint.get("stage") == "joint" and configured_target_met
     )
     reasons: list[str] = []
-    if checkpoint.get("objective_version") != V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
-        reasons.append("objective_version is not v16")
+    if checkpoint.get("objective_version") != V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION:
+        reasons.append("objective_version is not supervised v16")
     architecture_revision = checkpoint.get("architecture_revision")
     selection_policy = model_config.get(
         "one_shot_selection_policy",
@@ -257,8 +267,15 @@ def assess_v16_checkpoint(
     simplification_contract = checkpoint.get("simplification_contract")
     if simplification_contract != V16_SIMPLIFICATION_CONTRACT:
         reasons.append(
-            "checkpoint is not the ranked-prefix ordered-proposal/high-K "
-            "simplification revision"
+            "checkpoint is not the synthetic-ground-truth ordered KeepMask "
+            "and relocation revision"
+        )
+    if training_real_fraction is None or not math.isclose(
+        training_real_fraction, 0.0, rel_tol=0.0, abs_tol=0.0
+    ):
+        reasons.append(
+            "formal v16 training must use labelled synthetic curves only "
+            "(real_fraction=0)"
         )
     if (
         proposal_high_k_fraction is None
@@ -424,10 +441,11 @@ def assess_v16_checkpoint(
             f"{V16_FORMAL_KNOT_MATCH_TOLERANCE:g}"
         )
     required_positive_weights = (
+        "fit_weight",
+        "distillation_weight",
         "count_weight",
         "supervised_count_weight",
         "supervised_over_count_weight",
-        "complexity_weight",
         "true_parameter_weight",
         "proposal_knot_coverage_weight",
         "proposal_knot_assignment_weight",
@@ -446,14 +464,20 @@ def assess_v16_checkpoint(
             "formal simplification supervision is inactive: "
             + ", ".join(inactive_weights)
         )
-    if loss_config.get("ranked_prefix_teacher") is not True:
-        reasons.append("ranked-prefix teacher is not enabled")
+    if joint_supervision != "synthetic_ground_truth":
+        reasons.append("Joint supervision is not direct synthetic ground truth")
+    if loss_config.get("ranked_prefix_teacher") is not False:
+        reasons.append("online ranked-prefix teacher must be disabled")
+    if loss_config.get("online_teacher") is not False:
+        reasons.append("online self-teacher must be disabled")
+    if synthetic_count_role != "exact":
+        reasons.append("certified synthetic knot count must be an exact label")
     if checkpoint.get("stage") != "joint":
         reasons.append("checkpoint is not from the joint stage")
     if checkpoint.get("checkpoint_selection") != V16_CHECKPOINT_SELECTION_CONTRACT:
         reasons.append("checkpoint was not selected by mean per-curve subset cost")
     if checkpoint.get("checkpoint_quality") != V16_JOINT_CHECKPOINT_QUALITY:
-        reasons.append("joint checkpoint quality is not soft fit/complexity selected")
+        reasons.append("joint checkpoint quality is not supervised fit/count selected")
     if required_tolerance is not None:
         if recorded_tolerance is None:
             reasons.append("checkpoint MSE tolerance is missing or invalid")
@@ -466,9 +490,9 @@ def assess_v16_checkpoint(
             )
 
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "qualification_contract": (
-            "v16_structural_integrity_pass_rates_report_only_v3"
+            "v16_supervised_synthetic_only_pass_rates_report_only_v4"
         ),
         "required_reporting_pass_rate": required,
         "pass_rate_reference_only": True,
@@ -519,6 +543,10 @@ def assess_v16_checkpoint(
         "configured_proposal_high_k_fraction": proposal_high_k_fraction,
         "configured_proposal_high_k_min_knots": proposal_high_k_min_knots,
         "proposal_knot_assignment_weight": proposal_knot_assignment_weight,
+        "training_real_fraction": training_real_fraction,
+        "joint_supervision": joint_supervision,
+        "online_teacher": loss_config.get("online_teacher"),
+        "synthetic_count_role": synthetic_count_role,
         "formal_synthetic_min_internal_knots": (
             V16_FORMAL_SYNTHETIC_MIN_INTERNAL_KNOTS
         ),
@@ -900,7 +928,7 @@ def migrate_model_config(
         raise KeyError("checkpoint is missing model_config")
     config = dict(checkpoint["model_config"])
     objective_version = checkpoint.get("objective_version")
-    if objective_version == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
+    if objective_version in V16_OBJECTIVE_VERSIONS:
         # A separate architecture, not another set of defaults for the legacy
         # SplineFittingNetwork. Never inject old head/gate configuration fields.
         config.setdefault("structure_mode", "candidate_pruning_one_shot")
@@ -1372,7 +1400,7 @@ def build_model_from_checkpoint(
     checkpoint: Mapping[str, Any],
 ) -> tuple[nn.Module, dict[str, Any], bool]:
     """Strictly restore v16 or the unchanged historical network architecture."""
-    if checkpoint.get("objective_version") == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
+    if checkpoint.get("objective_version") in V16_OBJECTIVE_VERSIONS:
         from .models.v16_network import V16CandidateSelectionNetwork
 
         config, legacy = migrate_model_config(checkpoint)

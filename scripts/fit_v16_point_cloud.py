@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from spline_fitting.checkpointing import (
-    V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+    V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
     V16_FORMAL_PASS_RATE,
     assess_v16_checkpoint,
     build_model_from_checkpoint,
@@ -45,7 +45,7 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path(
             "outputs/checkpoints/"
-            "candidate_selection_v16_mse1e-4_k56_ordered_highk.pt"
+            "candidate_selection_v16_mse1e-4_k56_supervised_linux.pt"
         ),
     )
     result.add_argument("--point-cloud", type=Path, required=True,
@@ -188,8 +188,8 @@ def run(args: argparse.Namespace) -> dict:
     device = torch.device("cuda" if args.device == "auto" and torch.cuda.is_available()
                           else "cpu" if args.device == "auto" else args.device)
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-    if checkpoint.get("objective_version") != V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
-        raise ValueError("fit_v16_point_cloud.py requires a v16 checkpoint")
+    if checkpoint.get("objective_version") != V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION:
+        raise ValueError("fit_v16_point_cloud.py requires a supervised v16 checkpoint")
     tolerance = resolve_mse_tolerance(checkpoint, args.mse_tolerance)
     qualification = assess_v16_checkpoint(
         checkpoint,

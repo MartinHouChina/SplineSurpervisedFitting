@@ -5,11 +5,11 @@
 本记录只用于核查实现和解释失效阶段。当前公平协议为 `Kc=56`；正式统计仍须
 运行完整的六方法 benchmark。
 
-Ours 使用 `ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3` 简化合同和
+Ours 使用 `synthetic_ground_truth_ordered_keep_and_relocation_v4` 简化合同和
 `mean_per_curve_subset_cost_v1` checkpoint 选择。Proposal 40 epochs 后按计划
 无条件进入 Joint 64 epochs；Joint 的 complexity `0→max` 与 safety `1→0` 仅随
 epoch 变化，不读取数据集 pass。完整性合同
-`v16_structural_integrity_pass_rates_report_only_v3` 明确规定 pass 只报告，不参与
+`v16_supervised_synthetic_only_pass_rates_report_only_v4` 明确规定 pass 只报告，不参与
 STOP、checkpoint 选择或 benchmark eligibility。
 
 - 三次开放 B 样条，192 个输入点；
