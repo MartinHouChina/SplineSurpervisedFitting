@@ -49,24 +49,30 @@ def test_script_encodes_the_requested_training_and_fair_comparison_contract() ->
     text = SCRIPT.read_text(encoding="utf-8")
 
     training_fragments = (
-        '[string]$RunName = "candidate_selection_v16_mse1e-4_k56"',
+        '"ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2"',
+        '[string]$RunName = "candidate_selection_v16_mse1e-4_k56_ordered_highk"',
         '"candidate_selection_v16_mse5e-5_k64.proposal.pt"',
-        '[int]$Epochs = 80',
-        '[int]$ProposalEpochs = 16',
+        '[int]$Epochs = 96',
+        '[int]$ProposalEpochs = 32',
         '[int]$TrainSize = 3000',
         '[int]$ValSize = 600',
         '[int]$RealValSize = 100',
         '[double]$RealFraction = 0.35',
+        '[double]$ProposalHighKFraction = 0.50',
+        '[int]$ProposalHighKMinKnots = 40',
         '[int]$BatchSize = 64',
         '"--train-size", [string]$TrainSize',
         '"--val-size", [string]$ValSize',
         '"--synthetic-boundary-val-size", "32"',
         '"--real-val-size", [string]$RealValSize',
+        '"--proposal-high-k-fraction", ([string]::Format(',
+        '"--proposal-high-k-min-knots", [string]$ProposalHighKMinKnots',
         '"--min-control-points", "8"',
         '"--max-control-points", "60"',
         '"--candidate-knots", "56"',
         '"--knot-min-span", "0.01"',
         '"--mse-tolerance", "1e-4"',
+        '"--proposal-knot-assignment-weight", "1.0"',
         '"--initial-keep-fraction", "0.5357142857142857"',
         '"--teacher-low-count-sweep", "16"',
         '"--synthetic-count-role", "upper_bound"',
@@ -143,6 +149,9 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
     assert manifest["status"] == "completed"
     assert manifest["checkpoint"].endswith("pytest_v16_mse1e4.pt")
     assert manifest["requested_profile"] == {
+        "simplification_contract": (
+            "ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2"
+        ),
         "mse_tolerance": 1e-4,
         "candidate_internal_knots": 56,
         "full_cubic_knot_vector_size_at_all_keep": 64,
@@ -150,13 +159,16 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
         "source_control_points": "8..60",
         "knot_min_span": 0.01,
         "points": 192,
-        "epochs": 80,
-        "proposal_epochs": 16,
+        "epochs": 96,
+        "proposal_epochs": 32,
         "train_size": 3000,
         "validation_size": 600,
         "synthetic_boundary_validation_size": 32,
         "real_validation_size_per_source": 100,
         "real_fraction": 0.35,
+        "proposal_high_k_fraction": 0.5,
+        "proposal_high_k_min_knots": 40,
+        "proposal_knot_assignment_weight": 1.0,
         "batch_size": 64,
         "selection_policy": "mass_topk",
         "initial_keep_fraction": 30 / 56,
@@ -188,6 +200,9 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
     assert "--paper-admm-iterations 1000" in benchmark
     assert "--luo-de-population 20" in benchmark
     assert "--luo-de-iterations 100" in benchmark
+    assert "--proposal-high-k-fraction 0.5" in train
+    assert "--proposal-high-k-min-knots 40" in train
+    assert "--proposal-knot-assignment-weight 1.0" in train
 
 
 def test_initializer_is_forwarded_as_a_warm_start_without_resume(

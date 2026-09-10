@@ -95,7 +95,7 @@ sparse-stage MSE、局部峰值候选 refit MSE 以及 DE 后 MSE。
 
 ```powershell
 python scripts/benchmark_v16_datasets.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
   --output-dir outputs/comparisons/v16_mse1e-4_k56_six_quick `
   --method-set published `
   --samples-per-knot-count 1 --min-knot-count 4 --max-knot-count 56 `
@@ -119,8 +119,8 @@ python scripts/benchmark_v16_datasets.py `
 
 ```powershell
 python scripts/benchmark_v16_datasets.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
-  --output-dir outputs/comparisons/v16_mse1e-4_k56_six_methods `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
+  --output-dir outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods `
   --method-set published `
   --samples-per-knot-count 5 `
   --min-knot-count 4 --max-knot-count 56 `
@@ -140,8 +140,8 @@ python scripts/benchmark_v16_datasets.py `
   --torch-num-threads 4 --device cuda
 
 python scripts/plot_v16_method_comparison.py `
-  --input outputs/comparisons/v16_mse1e-4_k56_six_methods/comparison.json `
-  --output-dir outputs/figures/v16_mse1e-4_k56_six_methods/metrics `
+  --input outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods/comparison.json `
+  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_six_methods/metrics `
   --method-set published --reference --dpi 300
 ```
 

@@ -57,6 +57,8 @@ def checkpoint(*, stage="joint", quality="deployment_target_met", met=True,
             "allow_infeasible_proposals": False,
             "final_safety_sigma": 0.05,
             "final_safety_knots": 0,
+            "proposal_high_k_fraction": 0.5,
+            "proposal_high_k_min_knots": 40,
         },
         "validation_metrics": {
             "worst_dense_pass_rate": 0.98,
@@ -89,6 +91,7 @@ def checkpoint(*, stage="joint", quality="deployment_target_met", met=True,
                 "complexity_weight": 0.05,
                 "true_parameter_weight": 0.1,
                 "proposal_knot_coverage_weight": 1.0,
+                "proposal_knot_assignment_weight": 1.0,
                 "selected_knot_position_weight": 1.0,
             },
         },
@@ -276,5 +279,5 @@ def test_ours_entry_point_supplies_current_checkpoint_and_output_defaults():
     assert str(ours_entry.DEFAULT_CHECKPOINT) in arguments
     assert str(ours_entry.DEFAULT_OUTPUT_DIR) in arguments
     assert ours_entry.DEFAULT_CHECKPOINT.name == (
-        "candidate_selection_v16_mse1e-4_k56.pt"
+        "candidate_selection_v16_mse1e-4_k56_ordered_highk.pt"
     )

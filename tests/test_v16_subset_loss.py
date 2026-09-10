@@ -539,6 +539,96 @@ def test_ordered_assignment_is_one_to_one_and_keeps_coordinate_gradients():
     )
 
 
+def test_proposal_assignment_matches_only_target_count_when_capacity_is_larger():
+    objective = V16SubsetLoss(policy_samples=2)
+    predicted = torch.tensor(
+        [[0.10, 0.48, 0.90]], requires_grad=True,
+    )
+    target = torch.tensor([[0.50, 0.88]])
+    loss, matched_mae, matched_count = (
+        objective._proposal_ordered_assignment_loss(
+            predicted,
+            target,
+            torch.ones_like(target, dtype=torch.bool),
+            torch.tensor([True]),
+        )
+    )
+    loss.backward()
+
+    assert predicted.grad is not None
+    assert predicted.grad[0, 0] == 0
+    assert predicted.grad[0, 1:].abs().sum() > 0
+    assert float(matched_mae.detach()) == pytest.approx(0.02)
+    assert float(matched_count.detach()) == pytest.approx(2.0)
+
+
+def test_equal_capacity_proposal_assignment_is_strictly_one_to_one():
+    objective = V16SubsetLoss(policy_samples=2)
+    predicted = torch.tensor(
+        [[0.10, 0.48, 0.90]], requires_grad=True,
+    )
+    target = torch.tensor([[0.12, 0.50, 0.88]])
+    loss, matched_mae, matched_count = (
+        objective._proposal_ordered_assignment_loss(
+            predicted,
+            target,
+            torch.ones_like(target, dtype=torch.bool),
+            torch.tensor([True]),
+        )
+    )
+    loss.backward()
+
+    assert predicted.grad is not None
+    assert torch.all(predicted.grad != 0)
+    assert float(matched_mae.detach()) == pytest.approx(0.02)
+    assert float(matched_count.detach()) == pytest.approx(3.0)
+
+
+@pytest.mark.parametrize("stage", ["proposal", "joint"])
+def test_proposal_assignment_weight_anchors_proposals_in_both_stages(stage):
+    torch.manual_seed(71)
+    points = curve_batch()
+    target_params = torch.linspace(0, 1, points.shape[1]).repeat(2, 1)
+    target_knots = torch.tensor([
+        [0.24, 0.71, 0.0],
+        [0.0, 0.0, 0.0],
+    ])
+    target_mask = torch.tensor([
+        [True, True, False],
+        [False, False, False],
+    ])
+    target_valid = torch.tensor([True, False])
+    model = V16CandidateSelectionNetwork(
+        hidden_dim=16, encoder_layers=1, max_internal_knots=6,
+        attention_heads=2, selector_layers=1, min_selected_knots=2,
+    )
+    objective = V16SubsetLoss(
+        policy_samples=2, counterfactual_edits=0,
+        fit_weight=0, dense_weight=0, policy_weight=0,
+        distillation_weight=0, count_weight=0, ranking_weight=0,
+        entropy_weight=0, complexity_weight=0,
+        supervised_count_weight=0, supervised_over_count_weight=0,
+        true_parameter_weight=0, proposal_knot_coverage_weight=0,
+        proposal_knot_assignment_weight=1,
+        selected_knot_position_weight=0,
+    )
+    loss, metrics = objective(
+        model, points, stage=stage,
+        target_params=target_params,
+        target_internal_knots=target_knots,
+        target_internal_knot_mask=target_mask,
+        target_geometry_valid=target_valid,
+    )
+    assert float(loss.detach()) == pytest.approx(
+        float(metrics["proposal_knot_assignment_loss"])
+    )
+    loss.backward()
+
+    assert metrics["proposal_knot_assignment_count"] == 2
+    assert model.candidate_head.interval_score.weight.grad is not None
+    assert model.candidate_head.interval_score.weight.grad.abs().sum() > 0
+
+
 def test_training_parameterization_warp_matches_piecewise_correspondence():
     knots = torch.tensor([[0.25, 0.75]], requires_grad=True)
     source = torch.tensor([[0.0, 0.5, 1.0]], requires_grad=True)
@@ -615,6 +705,7 @@ def test_fit_penalty_is_finite_for_extreme_ratios_and_rewards_error_reduction():
     {"supervised_over_count_weight": -1}, {"ranked_prefix_teacher": 1},
     {"teacher_prefix_search_steps": 0}, {"teacher_prefix_search_steps": True},
     {"true_parameter_weight": -1}, {"proposal_knot_coverage_weight": -1},
+    {"proposal_knot_assignment_weight": -1},
     {"selected_knot_position_weight": -1}, {"knot_position_beta": 0},
     {"solver_jitter": float("inf")}, {"entropy_weight": float("nan")},
 ])

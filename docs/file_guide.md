@@ -52,7 +52,7 @@ candidate_selection_counterfactual_bspline_v16
 | 文件 | 作用 |
 |---|---|
 | scripts/train_v16.py | 两阶段训练、worst-source gate、续训和 checkpoint qualification |
-| scripts/run_v16_mse1e-4_3090.ps1 | 当前 Kc=56（完整节点向量 64 项）、source K=4..56（控制顶点 8..60）、`knot_min_span=0.01`、MSE=1e-4 的 3090 串行入口；训练、资格检查、六方法四指标及真实案例图 |
+| scripts/run_v16_mse1e-4_3090.ps1 | 当前 Kc=56、source K=4..56、MSE=1e-4、96/32 epoch、Proposal 50% K>=40 与有序一一匹配的 3090 串行入口；训练、资格检查、六方法四指标及真实案例图 |
 | scripts/run_v16_mse1e-4_3090.sh | 与上述当前协议等价的 Linux 原生 Bash 串行入口；支持日志、防覆盖、资格失败停止、`--dry-run` 和参数覆盖 |
 | scripts/run_v16_overnight_12h.ps1 | 历史 Kc=64、MSE=5e-5 无人值守入口；只用于旧消融追溯，不是当前命令 |
 | scripts/inspect_v16_checkpoint.py | 训练后统一资格检查；合格返回 0，不合格返回 2 |
@@ -87,10 +87,10 @@ candidate_selection_counterfactual_bspline_v16
 检查命令：
 
 ~~~powershell
-python scripts/inspect_v16_checkpoint.py --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt --required-pass-rate 0.90 --mse-tolerance 1e-4
+python scripts/inspect_v16_checkpoint.py --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt --required-pass-rate 0.90 --mse-tolerance 1e-4
 ~~~
 
-`candidate_selection_v16_mse1e-4_k56.pt` 是本轮待训练的正式目标，不保证当前工作区已经存在或合格；文件名不能代替上述资格审计。旧 K64/K96 仅保留为历史容量或阈值消融。合成最简数据合同和旧 proposal 迁移规则见[训练流程](training_pipeline.md)及[合成曲线最简性报告](synthetic_data_minimality_report.md)。旧 K64 proposal 只可用新 output 配合 `--init-checkpoint` warm start：65 个 interval query 沿参数域插值为 57 个，其他形状兼容的 proposal 张量迁移，Selector、联合解码器和优化器新训；不能 `--resume` 成当前 K56 合同。未合格权重的图只允许通过 `--allow-unqualified-diagnostic` 生成，并必须保留水印。
+`candidate_selection_v16_mse1e-4_k56_ordered_highk.pt` 是本轮待训练的正式目标，不保证当前工作区已经存在或合格；文件名不能代替上述资格审计。旧 K64/K96 仅保留为历史容量或阈值消融。合成最简数据合同和旧 proposal 迁移规则见[训练流程](training_pipeline.md)及[合成曲线最简性报告](synthetic_data_minimality_report.md)。旧 K64 proposal 只可用新 output 配合 `--init-checkpoint` warm start：65 个 interval query 沿参数域插值为 57 个，其他形状兼容的 proposal 张量迁移，Selector、联合解码器和优化器新训；不能 `--resume` 成当前 K56 合同。未合格权重的图只允许通过 `--allow-unqualified-diagnostic` 生成，并必须保留水印。
 
 ## 5. 输出目录
 
@@ -118,7 +118,7 @@ outputs/
 
 当前 1e-4 串行入口按 checkpoint SHA-256 自动区分 `formal_<hash>` 与
 `diagnostic_<hash>`。运行总状态和每阶段命令、返回码、耗时及最终目录记录在
-`outputs/logs/candidate_selection_v16_mse1e-4_k56/pipeline_manifest.json`。旧
+`outputs/logs/candidate_selection_v16_mse1e-4_k56_ordered_highk/pipeline_manifest.json`。旧
 `mse5e-5_k64` overnight manifest 只属于历史消融。
 
 ## 6. 测试

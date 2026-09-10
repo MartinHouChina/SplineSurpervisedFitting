@@ -2,7 +2,7 @@
 
 > 当前推荐实验合同：`Kc=56` 个内部候选（完整三次开放节点向量 64 项）、合成源内部节点 `K=4..56`（控制顶点 8..60）、归一化
 > `MSE <= 1e-4`、最差数据源通过率目标 90%。文中的 checkpoint
-> `outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt` 是**待训练并通过资格检查的目标文件**，不是已经取得的实验结果。
+> `outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt` 是**待训练并通过资格检查的目标文件**，不是已经取得的实验结果。
 
 v16 输入有序点云，一次性选择节点并联合更新参数化和存活节点位置，最后只做一次标准三次 B 样条最小二乘 refit。部署不运行教师搜索、循环删点、BIC 或阈值扫描。
 
@@ -32,6 +32,10 @@ N_{\mathrm{ctrl}}=K_{\mathrm{internal}}+4.
 | 输入点数 | 192 | 网络输入的有序归一化点数 |
 | 拟合阈值 | `MSE <= 1e-4` | 对应 RMS 为 `1e-2` |
 | 工程目标 | 90% | 四个数据源中最差者的 deployment pass rate |
+| 总训练/Proposal epoch | `96/32` | 保留 64 个 Joint epoch |
+| Proposal 高 K 分层 | `50% @ K>=40` | 只改变 Proposal 的 synthetic draws |
+| Proposal 位置监督 | coverage + monotone assignment | 两项权重均为 1.0 |
+| 简化合同 | `ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2` | checkpoint 正式资格字段 |
 
 当前 `--candidate-knots 56` 表示 56 个内部候选；三次开放样条全部保留时，完整节点向量恰为 `56+8=64` 项、控制顶点为 `56+4=60` 个。不要把“完整节点向量 64 项”误写成 64 个内部候选。
 
@@ -52,12 +56,16 @@ N_{\mathrm{ctrl}}=K_{\mathrm{internal}}+4.
 - `--synthetic-geometry-oracle-teacher`：只在有真节点的 certified Synthetic 上加入与 Selector 分数无关的几何教师；
 - `--oracle-teacher-extra-knots 2`：同时加入 `Ktrue+2` 的安全扩展组合，超过 Kc 时截断到 56；Ktrue=56 时即全候选；
 - `--one-shot-coverage-bins 0`：当前 1e-4 主实验关闭强制分区锚点，避免简单曲线被迫占用无关区间；
+- `--proposal-high-k-fraction 0.50 --proposal-high-k-min-knots 40`：只在 Proposal 阶段把 synthetic draws 的一半分配给 K=40..56；Joint 恢复原始全范围分布；
+- `--proposal-knot-assignment-weight 1.0`：在 recall coverage 之外加入一维单调一一匹配，抑制多个真节点共享同一候选；
 - 混入 UJI、Natural Earth 和 USGS 的无标签训练曲线，使候选与 Selector 不只适应合成几何。
 
 `Kc=56` 覆盖 source K=4..56，并把完整节点向量容量统一为 64 项。source K
 描述生成复杂度，Kc 描述候选槽位；最大值相同不代表部署必须全保留。最终
 活动节点数由逐曲线自适应概率质量决定。K=56 层没有冗余候选余量，必须单独
 报告 dense/deployment pass，失败不能靠放宽 90% 资格处理。
+ordered assignment 可以阻止一个候选同时“解释”多个真节点，但 Kc=Kmax 时仍没有
+多出的候选可补救漏检或坏位置，所以它不是候选过完备性的替代品。
 
 ## 3. 一次部署的数据流
 
@@ -101,11 +109,13 @@ p_j=\sigma\left((r_j-\bar r)-\beta\right).
 
 ### 4.1 Proposal 阶段
 
-前 16 个 epoch 全保留候选，先训练 GeometryEncoder、ParameterHead 和 CandidateKnotHead，使四个数据源的 dense proposal 具备高召回与拟合可行性。`Kc=56` 仅在此处作为上限使用。
+前 32 个 epoch 全保留候选，先训练 GeometryEncoder、ParameterHead 和 CandidateKnotHead，使四个数据源的 dense proposal 具备高召回与拟合可行性。Proposal 的合成抽样中，50% 来自 `K=40..56`、其余来自 `K=4..39`；35% 真实数据占比不变。`Kc=56` 仅在此处作为上限使用。
+
+certified Synthetic 的候选位置监督由两项并行组成：directed coverage 保证每个真节点附近存在候选；minimum-L1 monotone one-to-one assignment 则在 warp 后的真参数域内为每个真节点分配不同候选，并对匹配坐标计算 SmoothL1。分配下标 detached，但梯度仍流向匹配候选。当 `Kc>Ktrue` 时多出的候选不接收 assignment 项梯度；当两者同为 56 时是严格 rank-to-rank。该项缓解 coverage 的多对一解，却不能制造额外候选槽位。
 
 ### 4.2 Joint 阶段
 
-Joint 阶段同时训练 Selector、参数反馈和存活节点重定位。在线教师池包括：
+Joint 阶段同时训练 Selector、参数反馈和存活节点重定位。synthetic draws 恢复 K=4..56 原始分布；Proposal 的高 K 分层不延续到此阶段，避免高 K 抽样先验直接推高 KeepMask。在线教师池包括：
 
 - 当前一次性 deployment mask；
 - `Kmin..16` 的逐计数 ranked-prefix 扫描；
@@ -125,8 +135,10 @@ Joint 阶段同时训练 Selector、参数反馈和存活节点重定位。在�
 
 ```powershell
 python scripts/train_v16.py `
-  --epochs 80 --proposal-epochs 16 `
+  --epochs 96 --proposal-epochs 32 `
   --train-size 3000 --val-size 600 --real-val-size 100 `
+  --synthetic-boundary-val-size 32 `
+  --proposal-high-k-fraction 0.50 --proposal-high-k-min-knots 40 `
   --batch-size 64 --num-points 192 `
   --min-control-points 8 --max-control-points 60 `
   --knot-min-span 0.01 `
@@ -136,6 +148,7 @@ python scripts/train_v16.py `
   --minimality-margin 0.2 --minimality-max-attempts 16 `
   --minimality-audit-points 512 --oscillation-amplitude 0.3 `
   --proposal-pass-target 0.90 --deployment-pass-target 0.90 `
+  --proposal-knot-assignment-weight 1.0 `
   --one-shot-selection-policy mass_topk `
   --initial-keep-fraction 0.5357142857142857 `
   --one-shot-safety-sigma 0.20 --one-shot-safety-knots 2 `
@@ -164,18 +177,24 @@ python scripts/train_v16.py `
   --resample-train-each-epoch `
   --num-workers 4 --torch-num-threads 4 `
   --device cuda `
-  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt
+  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt
 ```
 
 Windows 上若多进程 DataLoader 不稳定，把 `--num-workers 4` 改为 `--num-workers 0`；这只影响数据加载，不改变模型或实验合同。旧 K64/K96 checkpoint 不能直接 `--resume` 到该配置。
 
+该 96-epoch 配置优先保证 proposal 召回与后续简化，未承诺固定 12 小时完成；高 K certified source 生成和 Joint 在线 float64 教师的耗时取决于 CPU 与存储，不能仅按 3090 算力估算。
+
 旧 `candidate_selection_v16_mse5e-5_k64.proposal.pt` 可作为可选 warm start：形状兼容的 Encoder、ParameterHead 和 CandidateHead 张量迁移，65 个旧 interval query 沿参数域插值为 57 个；K56 固定锚点重建，Selector、联合解码器和优化器新训。因此它不是跨容量 resume，也不继承旧实验资格。
+
+旧安全门失败实验的 `candidate_selection_v16_mse1e-4_k56_linux.proposal.pt`
+同样只能作为 `--init-checkpoint`；不要把它的 `.last.pt` resume 到当前
+`ordered_proposal_high_k` 合同。
 
 ## 6. 资格检查
 
 ```powershell
 python scripts/inspect_v16_checkpoint.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
   --required-pass-rate 0.90 `
   --mse-tolerance 1e-4
 ```
@@ -208,7 +227,7 @@ Ours 另外报告纯 network-forward 时间，但不得将它与其他方法的�
 
 ```powershell
 python scripts/benchmark_v16_datasets.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
   --method-set published `
   --samples-per-knot-count 5 `
   --min-knot-count 4 --max-knot-count 56 `
@@ -229,7 +248,7 @@ python scripts/benchmark_v16_datasets.py `
   --network-warmups 10 --network-repeats 100 `
   --end-to-end-repeats 3 `
   --torch-num-threads 4 --device cuda `
-  --output-dir outputs/comparisons/v16_mse1e-4_k56_six_methods
+  --output-dir outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods
 ```
 
 若同一实验指纹中断，可在原命令末尾增加 `--resume`。未通过资格检查时，benchmark 会拒绝正式运行；`--allow-unqualified-diagnostic` 只能生成带诊断标记的排错结果。
@@ -240,18 +259,18 @@ python scripts/benchmark_v16_datasets.py `
 
 ```powershell
 python scripts/plot_v16_method_comparison.py `
-  --input outputs/comparisons/v16_mse1e-4_k56_six_methods/comparison.json `
+  --input outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods/comparison.json `
   --method-set published `
   --reference `
   --dpi 300 `
-  --output-dir outputs/figures/v16_mse1e-4_k56_six_methods/metrics
+  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_six_methods/metrics
 ```
 
 绘制 UJI、Natural Earth 和 USGS 上六种方法的真实拟合案例：
 
 ```powershell
 python scripts/visualize_v16_real_deployments.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
   --real-samples-per-dataset 2 `
   --selection-seed 20260910 `
   --manifest UJI=data/splits/uji_pen_v2.jsonl `
@@ -271,7 +290,7 @@ python scripts/visualize_v16_real_deployments.py `
   --end-to-end-repeats 3 `
   --torch-num-threads 4 --device cuda `
   --dpi 300 `
-  --output-dir outputs/figures/v16_mse1e-4_k56_six_methods/real_cases
+  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_six_methods/real_cases
 ```
 
 每个案例的六个面板使用同一条留出曲线，绘制输入采样点、原始参考折线、拟合曲线、控制多边形、控制顶点和内部节点，并标注 MSE、K 与完整方法时间；Ours 额外标注 network-only 时间。

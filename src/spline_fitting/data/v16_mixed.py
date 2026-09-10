@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import random
 from collections import defaultdict
 from pathlib import Path
@@ -74,14 +75,32 @@ def _curve_record(
                 + ", ".join(missing)
             )
         target_params = synthetic_sample["true_params"]
-        target_internal_knots = synthetic_sample["true_internal_knots"]
-        target_internal_knot_mask = synthetic_sample["true_internal_knot_mask"]
+        source_internal_knots = synthetic_sample["true_internal_knots"]
+        source_internal_knot_mask = synthetic_sample["true_internal_knot_mask"]
         if target_params.shape != (points.shape[0],):
             raise RuntimeError("synthetic parameter target has an unexpected shape")
-        if target_internal_knots.shape != (max_internal_knots,):
+        if (
+            source_internal_knots.ndim != 1
+            or source_internal_knots.shape[0] > max_internal_knots
+        ):
             raise RuntimeError("synthetic internal-knot target has an unexpected shape")
-        if target_internal_knot_mask.shape != (max_internal_knots,):
+        if source_internal_knot_mask.shape != source_internal_knots.shape:
             raise RuntimeError("synthetic internal-knot mask has an unexpected shape")
+        # A proposal-only stratified sampler may generate its low-K bucket
+        # from a narrower source range. Pad that bucket back to the global
+        # source capacity so low/high rows still collate into one batch.
+        target_internal_knots = points.new_zeros(max_internal_knots)
+        target_internal_knot_mask = torch.zeros(
+            max_internal_knots,
+            dtype=torch.bool,
+            device=source_internal_knot_mask.device,
+        )
+        source_capacity = source_internal_knots.shape[0]
+        target_internal_knots[:source_capacity] = source_internal_knots.to(
+            device=points.device,
+            dtype=points.dtype,
+        )
+        target_internal_knot_mask[:source_capacity] = source_internal_knot_mask
     else:
         target_params = points.new_zeros(points.shape[0])
         target_internal_knots = points.new_zeros(max_internal_knots)
@@ -172,12 +191,28 @@ class MixedTrainingCurves(Dataset):
     A large UJI source cannot overwhelm smaller geography sources. The index
     and epoch determine source choice, real record and synthetic curve seed.
     """
-    def __init__(self, config, real_sources=(), *, size=4000, seed=42,
-                 real_fraction=0.5, epoch=0, resample=True):
+    def __init__(
+        self,
+        config,
+        real_sources=(),
+        *,
+        size=4000,
+        seed=42,
+        real_fraction=0.5,
+        epoch=0,
+        resample=True,
+        synthetic_high_k_fraction=0.0,
+        synthetic_high_k_min_knots=None,
+    ):
         if size < 1 or size >= EPOCH_SEED_STRIDE:
             raise ValueError("training size must be positive and below the epoch seed stride")
         if not 0 <= real_fraction <= 1:
             raise ValueError("real_fraction must lie in [0,1]")
+        if (
+            not math.isfinite(synthetic_high_k_fraction)
+            or not 0 <= synthetic_high_k_fraction <= 1
+        ):
+            raise ValueError("synthetic_high_k_fraction must lie in [0,1]")
         self.size = size
         self.seed = seed + (epoch * EPOCH_SEED_STRIDE if resample else 0)
         self.real_sources = list(real_sources)
@@ -190,7 +225,84 @@ class MixedTrainingCurves(Dataset):
             return_ground_truth=False,
             cache_samples=False,
         )
-        self.synthetic = SyntheticCubicBSplineDataset(size=size, seed=self.seed, **options)
+        self.synthetic = SyntheticCubicBSplineDataset(
+            size=size,
+            seed=self.seed,
+            **options,
+        )
+        self.synthetic_low = None
+        self.synthetic_high = None
+        self.synthetic_high_k_fraction = float(synthetic_high_k_fraction)
+        self.synthetic_high_k_min_knots = synthetic_high_k_min_knots
+        self.synthetic_high_k_indices: frozenset[int] = frozenset()
+        if self.synthetic_high_k_fraction > 0.0:
+            if (
+                isinstance(synthetic_high_k_min_knots, bool)
+                or not isinstance(synthetic_high_k_min_knots, int)
+            ):
+                raise ValueError(
+                    "synthetic_high_k_min_knots must be an integer when "
+                    "high-K sampling is enabled"
+                )
+            minimum_knots = int(options["min_control_points"]) - 4
+            maximum_knots = int(options["max_control_points"]) - 4
+            if not minimum_knots <= synthetic_high_k_min_knots <= maximum_knots:
+                raise ValueError(
+                    "synthetic_high_k_min_knots must lie inside the synthetic "
+                    "internal-knot range"
+                )
+            if (
+                self.synthetic_high_k_fraction < 1.0
+                and synthetic_high_k_min_knots <= minimum_knots
+            ):
+                raise ValueError(
+                    "a partial high-K mixture requires a nonempty low-K range"
+                )
+
+            low_options = dict(options)
+            low_options["max_control_points"] = synthetic_high_k_min_knots + 3
+            high_options = dict(options)
+            high_options["min_control_points"] = synthetic_high_k_min_knots + 4
+            if self.synthetic_high_k_fraction < 1.0:
+                self.synthetic_low = SyntheticCubicBSplineDataset(
+                    size=size,
+                    seed=self.seed,
+                    **low_options,
+                )
+            self.synthetic_high = SyntheticCubicBSplineDataset(
+                size=size,
+                seed=self.seed,
+                **high_options,
+            )
+
+            synthetic_indices = []
+            for index in range(size):
+                source_rng = random.Random(self.seed + index + 2**40)
+                is_real = bool(
+                    self.real_sources
+                    and source_rng.random() < self.real_fraction
+                )
+                if not is_real:
+                    synthetic_indices.append(index)
+            allocation_rng = random.Random(self.seed + 3 * 2**40)
+            allocation_rng.shuffle(synthetic_indices)
+            high_count = int(
+                math.floor(
+                    self.synthetic_high_k_fraction * len(synthetic_indices)
+                    + 0.5
+                )
+            )
+            self.synthetic_high_k_indices = frozenset(
+                synthetic_indices[:high_count]
+            )
+        self.synthetic_draw_count = sum(
+            not (
+                self.real_sources
+                and random.Random(self.seed + index + 2**40).random()
+                < self.real_fraction
+            )
+            for index in range(size)
+        )
 
     def __len__(self):
         return self.size
@@ -203,7 +315,14 @@ class MixedTrainingCurves(Dataset):
             sample = None
         else:
             label = "Synthetic"
-            sample = self.synthetic[index]
+            if index in self.synthetic_high_k_indices:
+                if self.synthetic_high is None:
+                    raise RuntimeError("high-K allocation has no high-K dataset")
+                sample = self.synthetic_high[index]
+            elif self.synthetic_low is not None:
+                sample = self.synthetic_low[index]
+            else:
+                sample = self.synthetic[index]
             points = sample["points"]
         return _curve_record(
             points,

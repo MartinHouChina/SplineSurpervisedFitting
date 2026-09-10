@@ -34,9 +34,11 @@ def main(argv=None):
         expected_objective=V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
         default_checkpoint=Path(
             "outputs/checkpoints/"
-            "candidate_selection_v16_mse1e-4_k56.pt"
+            "candidate_selection_v16_mse1e-4_k56_ordered_highk.pt"
         ),
-        default_output_dir=Path("outputs/comparisons/v16_multidata"),
+        default_output_dir=Path(
+            "outputs/comparisons/v16_mse1e-4_k56_ordered_highk"
+        ),
     )
 
 

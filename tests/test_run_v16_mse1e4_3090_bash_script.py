@@ -16,12 +16,16 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
     required = (
         "#!/usr/bin/env bash",
         "set -Eeuo pipefail",
-        'RUN_NAME="candidate_selection_v16_mse1e-4_k56_linux"',
+        'RUN_NAME="candidate_selection_v16_mse1e-4_k56_ordered_highk_linux"',
+        'SIMPLIFICATION_CONTRACT="ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2"',
         "--min-control-points 8",
         "--max-control-points 60",
         "--candidate-knots 56",
         "--knot-min-span 0.01",
         "--synthetic-boundary-val-size 32",
+        "--proposal-high-k-fraction \"$PROPOSAL_HIGH_K_FRACTION\"",
+        "--proposal-high-k-min-knots \"$PROPOSAL_HIGH_K_MIN_KNOTS\"",
+        "--proposal-knot-assignment-weight 1.0",
         "--prepare-real-data",
         "--mse-tolerance 1e-4",
         "--initial-keep-fraction 0.5357142857142857",
@@ -61,6 +65,8 @@ def test_linux_runner_refuses_unknown_options_and_documents_help() -> None:
     assert "--diagnostic" in source
     assert "--dry-run" in source
     assert "--python PATH" in source
+    assert "--proposal-high-k-fraction X" in source
+    assert "--proposal-high-k-min-knots N" in source
 
 
 def test_linux_runner_has_valid_bash_syntax_when_bash_is_available() -> None:

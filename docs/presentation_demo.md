@@ -98,7 +98,9 @@ KeepMask
 | real val | 每个来源最多 100 |
 | real fraction | 0.35 |
 | batch | 64 |
-| epochs | 80，其中 proposal 16 |
+| epochs | 96，其中 Proposal 32、Joint 64 |
+| Proposal high-K | synthetic draws 的 50% 来自 K=40～56；Joint 恢复原分布 |
+| Proposal 节点监督 | directed coverage + monotone one-to-one assignment |
 
 合成曲线先通过固定参数、固定源节点族内的最简性证书，再加噪声。由于网络
 允许参数和节点连续重定位，source K 只作为计数上界；geometry oracle 只用于
@@ -119,6 +121,7 @@ Ours 的 network-only time。MSE 是平均平方欧氏距离，不开方。纯�
 
 Synthetic 还要把 `source K=56` 容量边界单独列出 dense/deployment pass。该层
 没有候选冗余余量，失败必须原样计入，不能为展示而放宽 90% 资格。
+有序一一匹配只缓解多对一候选塌缩，不能在 `Kc=Kmax=56` 时提供额外候选容量。
 
 ## 第 9 页：六方法公平对比
 

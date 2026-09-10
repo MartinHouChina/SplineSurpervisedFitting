@@ -11,6 +11,8 @@ B 样条内部节点，并用标准最小二乘 refit 求控制顶点。
 | 合成 source internal K | 4..56，即控制顶点 8..60 |
 | 合成节点最小 span | 0.01；K=56 有 57 个 span，旧 0.02 仅兼容历史 |
 | 候选容量 | 56 个内部节点（完整三次开放节点向量上限为 64） |
+| Proposal 课程 | 32/96 epoch；合成样本 50% 来自 `K>=40`，Joint 恢复 K=4..56 原分布 |
+| 简化合同 | `ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2` |
 | 数据 | Synthetic + UJI + Natural Earth + USGS |
 | 验收 | 每个验证来源的 dense/deployment pass 均至少 90% |
 
@@ -35,6 +37,8 @@ B 样条内部节点，并用标准最小二乘 refit 求控制顶点。
 为减少简单曲线的过度保留，同时保住复杂曲线容量，当前训练采用：
 
 - Selector 的 Joint 初始 keep fraction 设为 `30/56≈0.535714`，目标初始概率质量约为 30；这只是初始化，不是部署最终 K；
+- Proposal 同时使用真节点到候选的 directed coverage 与一维单调一一匹配；前者保护召回，后者避免多个真节点共享同一个最近候选；
+- 前 32 个 Proposal epoch 将合成抽样的 50% 固定到 `K>=40`，强化复杂曲线与容量边界；后 64 个 Joint epoch 恢复 K=4..56 原分布，避免 Selector 被高 K 先验推向过留；
 - 教师逐个检查低节点数 `K=4..16`，再做粗到细 ranked-prefix 搜索；
 - 合成 source K 作为可重定位问题的可行上界，不把更小的可行解拉回 source K；
 - 合成真节点通过单调匹配加入训练期 geometry-oracle 教师池，并额外测试 `Ktrue+2`；
@@ -54,7 +58,7 @@ Linux 原生 Bash：
 bash scripts/run_v16_mse1e-4_3090.sh \
   --prepare-real-data \
   --device cuda \
-  --run-name candidate_selection_v16_mse1e-4_k56_linux
+  --run-name candidate_selection_v16_mse1e-4_k56_ordered_highk_linux
 ```
 
 若当前环境已经激活，可用 `--python "$(command -v python)"` 明确指定解释器；脚本
@@ -77,9 +81,15 @@ Encoder、ParameterHead 和 CandidateHead 中形状兼容的 proposal 张量；�
 query 沿参数域插值为 57 个，新模型重新生成固定锚点。Selector、联合解码器和优化器均
 从头训练，这属于 warm start，不是把旧 K64 实验 resume 成 K56。
 
+旧安全门失败实验生成的
+`candidate_selection_v16_mse1e-4_k56_linux.proposal.pt` 也可以通过
+`--init-checkpoint` 迁移 Proposal 模块；由于有序匹配和高 K 课程已升级训练合同，
+不能使用旧 `.last.pt` 直接 `--resume`。
+
 3090 会明显加速网络前向/反向，但 Joint 的在线教师仍包含多轮逐样本 float64 B 样条
-求解；Kang/Luo 评测也主要在 CPU 上运行，因此整个流水线不会按显卡算力同比缩短。该
-入口是 fresh-only：不要用正式 `RunName` 做 `-DryRun`；中断后按
+求解；Kang/Luo 评测也主要在 CPU 上运行，因此整个流水线不会按显卡算力同比缩短。
+当前 96-epoch 配置不承诺固定 12 小时完成。该入口是 fresh-only：不要用正式
+`RunName` 做 `-DryRun`；中断后按
 [训练流程](docs/training_pipeline.md)中的完整参数恢复 `.last.pt`，训练已经成功而仅后处理
 失败时直接重跑 benchmark/绘图，不要重新训练。
 
@@ -91,7 +101,7 @@ batch 64 在 24 GB 显存上仍 OOM，请使用新的实验名并将 batch 调�
 
 ```powershell
 python scripts/inspect_v16_checkpoint.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
   --required-pass-rate 0.90 `
   --mse-tolerance 1e-4
 ```
@@ -129,6 +139,8 @@ N_{\mathrm{control}}=K_{\mathrm{internal}}+4.
 56 时也到达同一容量边界。source K 描述生成曲线复杂度，Kc 描述网络候选槽位；二者
 数值相同不表示网络必须全保留。由于 K=56 层没有候选冗余余量，必须单独报告该层的
 dense/deployment pass；若该层失败，不得通过放宽 90% 正式资格掩盖。
+有序一一匹配能缓解多对一候选塌缩，但不能创造第 57 个内部候选，因此也不能替代额外
+候选容量；K=56 仍是必须单独审计的硬边界。
 
 K=56 会产生 57 个 span，因此旧 `min_span=0.02` 会要求总长度至少 1.14，无法
 生成边界样本。当前 `train_v16.py` 及一键脚本显式使用

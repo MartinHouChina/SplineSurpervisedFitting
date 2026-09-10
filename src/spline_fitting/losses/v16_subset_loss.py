@@ -106,6 +106,7 @@ class V16SubsetLoss(nn.Module):
         supervised_over_count_weight: float = 0.0,
         true_parameter_weight: float = 0.1,
         proposal_knot_coverage_weight: float = 1.0,
+        proposal_knot_assignment_weight: float = 1.0,
         selected_knot_position_weight: float = 1.0,
         false_remove_weight: float = 5.0, ranking_margin: float = 1.0,
         dense_weight: float = 0.25, entropy_weight: float = 0.0,
@@ -135,6 +136,7 @@ class V16SubsetLoss(nn.Module):
             ("supervised_over_count_weight", supervised_over_count_weight),
             ("true_parameter_weight", true_parameter_weight),
             ("proposal_knot_coverage_weight", proposal_knot_coverage_weight),
+            ("proposal_knot_assignment_weight", proposal_knot_assignment_weight),
             ("selected_knot_position_weight", selected_knot_position_weight),
             ("false_remove_weight", false_remove_weight),
             ("ranking_margin", ranking_margin),
@@ -683,6 +685,83 @@ class V16SubsetLoss(nn.Module):
         )
         return loss, nearest.mean()
 
+    def _proposal_ordered_assignment_loss(
+        self, predicted, target, target_mask, valid,
+    ):
+        """Supervise one distinct ordered proposal for every certified knot.
+
+        Coverage remains a separate recall-direction objective.  This term
+        additionally prevents several targets from sharing the same nearest
+        proposal: when ``Kc > target K`` exactly ``target K`` proposals are
+        selected by a minimum-L1 monotone assignment, while equal cardinality
+        forces the unique rank-to-rank pairing.  Assignment indices are
+        discrete and detached; gradients flow through the matched proposal
+        coordinates only.
+        """
+        if predicted.ndim != 2 or target.ndim != 2:
+            raise ValueError("proposal assignment inputs must be batched matrices")
+        if predicted.shape[0] != target.shape[0] or target_mask.shape != target.shape:
+            raise ValueError("proposal assignment inputs must share the batch")
+        if target_mask.dtype != torch.bool or valid.dtype != torch.bool:
+            raise ValueError("proposal assignment mask and validity must be boolean")
+        if valid.shape != predicted.shape[:1]:
+            raise ValueError("proposal assignment validity must have shape [B]")
+
+        zero = predicted.new_zeros(())
+        # One batch transfer avoids a CUDA synchronization for every labelled
+        # curve while the small dynamic programs run on detached coordinates.
+        sorted_predictions = predicted.sort(dim=-1).values
+        predicted_cpu = sorted_predictions.detach().double().cpu()
+        target_cpu = target.detach().double().cpu()
+        target_mask_cpu = target_mask.detach().cpu()
+        valid_rows = valid.detach().cpu().nonzero(as_tuple=False).flatten().tolist()
+        matched_rows = []
+        matched_prediction_ids = []
+        matched_target_values = []
+        matched_counts = []
+        for row in valid_rows:
+            row_targets_cpu = target_cpu[row][target_mask_cpu[row]].sort().values
+            target_count = row_targets_cpu.numel()
+            if target_count > predicted.shape[1]:
+                raise ValueError("proposal assignment target count exceeds candidate capacity")
+            matched_counts.append(target_count)
+            if not target_count:
+                continue
+            prediction_ids, target_ids = self._ordered_pair_indices(
+                predicted_cpu[row], row_targets_cpu,
+            )
+            matched_rows.extend([row] * target_count)
+            matched_prediction_ids.extend(prediction_ids.tolist())
+            matched_target_values.append(row_targets_cpu[target_ids])
+
+        if not matched_rows:
+            mean_count = (
+                predicted.new_tensor(float(sum(matched_counts) / len(matched_counts)))
+                if matched_counts else zero
+            )
+            return zero, zero, mean_count
+        # Materialize all discrete indices/labels on the accelerator once,
+        # rather than issuing one small CPU-to-GPU transfer per curve.
+        paired_predictions = sorted_predictions[
+            torch.tensor(matched_rows, dtype=torch.long, device=predicted.device),
+            torch.tensor(
+                matched_prediction_ids, dtype=torch.long, device=predicted.device,
+            ),
+        ]
+        paired_targets = torch.cat(matched_target_values).to(
+            device=predicted.device, dtype=predicted.dtype,
+        )
+        absolute_error = (paired_predictions - paired_targets).abs()
+        return (
+            F.smooth_l1_loss(
+                paired_predictions,
+                paired_targets,
+                beta=self.knot_position_beta,
+            ),
+            absolute_error.mean(),
+            predicted.new_tensor(float(sum(matched_counts) / len(matched_counts))),
+        )
+
     def _selected_knot_loss(
         self, predicted, predicted_mask, target, target_mask, valid,
     ):
@@ -939,9 +1018,21 @@ class V16SubsetLoss(nn.Module):
                     geometry_valid,
                 )
             )
+            (
+                proposal_knot_assignment_loss,
+                proposal_knot_assignment_mae,
+                proposal_knot_assignment_count,
+            ) = self._proposal_ordered_assignment_loss(
+                supervised_proposals,
+                geometry_knots,
+                geometry_mask,
+                geometry_valid,
+            )
         else:
             proposal_true_parameter_loss = proposal_true_parameter_mae = zero
             proposal_knot_coverage_loss = proposal_knot_nearest_mae = zero
+            proposal_knot_assignment_loss = proposal_knot_assignment_mae = zero
+            proposal_knot_assignment_count = zero
         dense_mse = self._fit(context["proposal_params"], proposals, torch.ones_like(proposals, dtype=torch.bool), points, degree)
         dense_penalty = self._tail_aware_mean(self._fit_penalty(dense_mse, tolerance))
         zero = dense_mse.new_zeros(())
@@ -951,6 +1042,8 @@ class V16SubsetLoss(nn.Module):
                 + self.true_parameter_weight * proposal_true_parameter_loss
                 + self.proposal_knot_coverage_weight
                 * proposal_knot_coverage_loss
+                + self.proposal_knot_assignment_weight
+                * proposal_knot_assignment_loss
             )
             deployment_mse = best_mse = dense_mse
             count = dense_mse.new_full(dense_mse.shape, proposals.shape[1])
@@ -1366,6 +1459,8 @@ class V16SubsetLoss(nn.Module):
                     + self.true_parameter_weight * true_parameter_loss
                     + self.proposal_knot_coverage_weight
                     * proposal_knot_coverage_loss
+                    + self.proposal_knot_assignment_weight
+                    * proposal_knot_assignment_loss
                     + self.selected_knot_position_weight
                     * selected_knot_position_loss)
         if not torch.isfinite(loss):
@@ -1393,6 +1488,9 @@ class V16SubsetLoss(nn.Module):
             "deployment_true_parameter_mae": deployment_true_parameter_mae,
             "proposal_knot_coverage_loss": proposal_knot_coverage_loss,
             "proposal_knot_nearest_mae": proposal_knot_nearest_mae,
+            "proposal_knot_assignment_loss": proposal_knot_assignment_loss,
+            "proposal_knot_assignment_mae": proposal_knot_assignment_mae,
+            "proposal_knot_assignment_count": proposal_knot_assignment_count,
             "selected_knot_position_loss": selected_knot_position_loss,
             "selected_knot_nearest_mae": selected_knot_nearest_mae,
             "selected_to_true_knot_mae": selected_to_true_knot_mae,

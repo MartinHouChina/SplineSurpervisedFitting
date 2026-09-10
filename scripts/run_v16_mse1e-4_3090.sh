@@ -4,14 +4,17 @@
 set -Eeuo pipefail
 
 PYTHON_BIN="python"
-RUN_NAME="candidate_selection_v16_mse1e-4_k56_linux"
+SIMPLIFICATION_CONTRACT="ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2"
+RUN_NAME="candidate_selection_v16_mse1e-4_k56_ordered_highk_linux"
 DEVICE="cuda"
-EPOCHS=80
-PROPOSAL_EPOCHS=16
+EPOCHS=96
+PROPOSAL_EPOCHS=32
 TRAIN_SIZE=3000
 VAL_SIZE=600
 REAL_VAL_SIZE=100
 REAL_FRACTION=0.35
+PROPOSAL_HIGH_K_FRACTION=0.50
+PROPOSAL_HIGH_K_MIN_KNOTS=40
 BATCH_SIZE=64
 NUM_WORKERS=4
 SYNTHETIC_SAMPLES_PER_K=5
@@ -36,12 +39,14 @@ Main options:
   --python PATH                   Python executable (default: python)
   --run-name NAME                Fresh output name
   --device auto|cpu|cuda         Training/evaluation device (default: cuda)
-  --epochs N                     Total epochs (default: 80)
-  --proposal-epochs N            Proposal-stage epochs (default: 16)
+  --epochs N                     Total epochs (default: 96)
+  --proposal-epochs N            Proposal-stage epochs (default: 32)
   --train-size N                 Training draws per epoch (default: 3000)
   --val-size N                   Synthetic validation curves (default: 600)
   --real-val-size N              Validation curves per real source (default: 100)
   --real-fraction X              Real-data training fraction (default: 0.35)
+  --proposal-high-k-fraction X   Proposal synthetic high-K share (default: 0.50)
+  --proposal-high-k-min-knots N  High-K stratum begins here (default: 40)
   --batch-size N                 Batch size (default: 64)
   --num-workers N                DataLoader workers (default: 4)
   --output-root PATH             Output root (default: repository outputs/)
@@ -84,6 +89,8 @@ while (($#)); do
     --val-size) need_value "$@"; VAL_SIZE="$2"; shift 2 ;;
     --real-val-size) need_value "$@"; REAL_VAL_SIZE="$2"; shift 2 ;;
     --real-fraction) need_value "$@"; REAL_FRACTION="$2"; shift 2 ;;
+    --proposal-high-k-fraction) need_value "$@"; PROPOSAL_HIGH_K_FRACTION="$2"; shift 2 ;;
+    --proposal-high-k-min-knots) need_value "$@"; PROPOSAL_HIGH_K_MIN_KNOTS="$2"; shift 2 ;;
     --batch-size) need_value "$@"; BATCH_SIZE="$2"; shift 2 ;;
     --num-workers) need_value "$@"; NUM_WORKERS="$2"; shift 2 ;;
     --synthetic-samples-per-k) need_value "$@"; SYNTHETIC_SAMPLES_PER_K="$2"; shift 2 ;;
@@ -121,6 +128,7 @@ for item in \
   "TRAIN_SIZE:$TRAIN_SIZE" \
   "VAL_SIZE:$VAL_SIZE" \
   "REAL_VAL_SIZE:$REAL_VAL_SIZE" \
+  "PROPOSAL_HIGH_K_MIN_KNOTS:$PROPOSAL_HIGH_K_MIN_KNOTS" \
   "BATCH_SIZE:$BATCH_SIZE" \
   "SYNTHETIC_SAMPLES_PER_K:$SYNTHETIC_SAMPLES_PER_K" \
   "REAL_SAMPLES_PER_DATASET:$REAL_SAMPLES_PER_DATASET" \
@@ -140,6 +148,10 @@ nonnegative_integer "NUM_WORKERS" "$NUM_WORKERS"
   die "device must be auto, cpu or cuda"
 [[ "$REAL_FRACTION" =~ ^(0([.][0-9]+)?|1([.]0+)?)$ ]] || \
   die "real fraction must lie in [0,1]"
+[[ "$PROPOSAL_HIGH_K_FRACTION" =~ ^(0([.][0-9]+)?|1([.]0+)?)$ ]] || \
+  die "proposal high-K fraction must lie in [0,1]"
+((PROPOSAL_HIGH_K_MIN_KNOTS >= 4 && PROPOSAL_HIGH_K_MIN_KNOTS <= 56)) || \
+  die "proposal high-K minimum must lie inside source K=4..56"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
@@ -255,6 +267,9 @@ run_logged() {
 
 printf 'Fresh v16 Linux profile: MSE=1e-4, Kc=56, source K=4..56, train/val=%s/%s, batch=%s.\n' \
   "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
+printf 'Simplification contract: %s\n' "$SIMPLIFICATION_CONTRACT"
+printf 'Proposal synthetic high-K share=%s at K>=%s; Joint restores K=4..56.\n' \
+  "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS"
 
 TRAIN_ARGS=(
   "$PYTHON_BIN" scripts/train_v16.py
@@ -264,6 +279,8 @@ TRAIN_ARGS=(
   --val-size "$VAL_SIZE"
   --synthetic-boundary-val-size 32
   --real-val-size "$REAL_VAL_SIZE"
+  --proposal-high-k-fraction "$PROPOSAL_HIGH_K_FRACTION"
+  --proposal-high-k-min-knots "$PROPOSAL_HIGH_K_MIN_KNOTS"
   --batch-size "$BATCH_SIZE"
   --num-points 192
   --min-control-points 8
@@ -278,6 +295,7 @@ TRAIN_ARGS=(
   --minimality-audit-points 512
   --oscillation-amplitude 0.3
   --proposal-pass-target 0.90
+  --proposal-knot-assignment-weight 1.0
   --deployment-pass-target 0.90
   --one-shot-selection-policy mass_topk
   --initial-keep-fraction 0.5357142857142857

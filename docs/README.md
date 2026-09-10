@@ -3,6 +3,10 @@
 当前主协议统一为 `Kc=56` 个内部候选、完整三次开放节点向量最多 64 项、
 控制顶点最多 60 个、合成 source `K=4..56`（控制顶点 8～60）、`MSE<=1e-4` 和 worst-source
 deployment pass `>=90%`。旧 K64/K96 结果只作为历史容量消融。
+正式简化合同为 `ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2`：
+前 32/96 个 epoch 的 Proposal synthetic draws 有 50% 来自 `K>=40`，并行使用
+directed coverage 与 monotone one-to-one assignment；后 64 个 Joint epoch 恢复
+K=4..56 原始分布。
 
 source K 和候选 Kc 虽然都可达到 56，但语义不同；`source K=56` 是生成复杂度
 边界，`Kc=56` 是候选容量边界。该层没有冗余候选，必须单独报告 dense 与
@@ -33,7 +37,7 @@ deployment pass，且不得为其放宽 90% 资格门槛。当前合成数据显
 
 RTX 3090 的新训练、资格检查、六方法比较和真实曲线作图由
 [`run_v16_mse1e-4_3090.ps1`](../scripts/run_v16_mse1e-4_3090.ps1) 串行执行；
-目标产物使用 `k56` 路径。
+目标产物使用 `k56_ordered_highk` 路径，避免与旧失败 K56 运行冲突。
 
 PPT 展示可直接使用 [演示速查](presentation_demo.md) 和
 [v16 流程图](figures/v16_pipeline.png)。UJI、Natural Earth 与 USGS 的数据准备分别见

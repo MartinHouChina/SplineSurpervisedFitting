@@ -46,6 +46,9 @@ p_j=\sigma((s_j-\bar s)-\beta),\qquad
 30，不是部署最终 K）、低计数教师逐一扫描
 `K=4..16`、`synthetic-count-role=upper_bound`、合成 geometry-oracle 教师和
 `one-shot-coverage-bins=0`。这些都是训练设置；不会增加部署分支。
+Proposal 训练另使用 50% 的 `K>=40` synthetic 分层和 coverage + monotone
+one-to-one 节点监督；Joint 恢复 K=4..56 原分布。这些同样不改变部署计算图，
+且有序匹配不能弥补 Kc=Kmax 边界没有冗余候选的问题。
 
 部署没有 CountHead、BIC、Hard-Concrete、逐节点删除、beam search 或教师
 搜索，因此给出统计意义的通过率，不承诺每条曲线必然满足阈值。
@@ -57,6 +60,7 @@ p_j=\sigma((s_j-\bar s)-\beta),\qquad
 | 条件 | 当前要求 |
 |---|---|
 | objective | `candidate_selection_counterfactual_bspline_v16` |
+| simplification contract | `ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2` |
 | stage | joint |
 | 候选容量 | `Kc=56` |
 | 配置阈值 | `MSE=1e-4` |
@@ -69,7 +73,7 @@ p_j=\sigma((s_j-\bar s)-\beta),\qquad
 
 ```powershell
 python scripts/inspect_v16_checkpoint.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
   --required-pass-rate 0.90 `
   --mse-tolerance 1e-4
 ```
@@ -82,7 +86,7 @@ python scripts/inspect_v16_checkpoint.py `
 
 ```powershell
 python scripts/fit_v16_point_cloud.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
   --point-cloud data/my_curve.csv `
   --mse-tolerance 1e-4 `
   --output-dir outputs/fits/v16_mse1e-4/my_curve
@@ -135,8 +139,8 @@ Luo–Kang–Yang。所有方法处理同一批曲线、使用 56 个内部节�
 
 ```powershell
 python scripts/benchmark_v16_datasets.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
-  --output-dir outputs/comparisons/v16_mse1e-4_k56_six_methods `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
+  --output-dir outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods `
   --method-set published `
   --samples-per-knot-count 5 `
   --min-knot-count 4 --max-knot-count 56 `
@@ -164,8 +168,8 @@ python scripts/benchmark_v16_datasets.py `
 
 ```powershell
 python scripts/plot_v16_method_comparison.py `
-  --input outputs/comparisons/v16_mse1e-4_k56_six_methods/comparison.json `
-  --output-dir outputs/figures/v16_mse1e-4_k56_six_methods/metrics `
+  --input outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods/comparison.json `
+  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_six_methods/metrics `
   --method-set published --reference --dpi 300
 ```
 
@@ -183,8 +187,8 @@ PASS/FAIL、最终 K 和完整方法时间；Ours 额外标注 network time。
 
 ```powershell
 python scripts/visualize_v16_real_deployments.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
-  --output-dir outputs/figures/v16_mse1e-4_k56_six_methods/real_cases `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
+  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_six_methods/real_cases `
   --real-samples-per-dataset 2 --selection-seed 20260910 `
   --manifest UJI=data/splits/uji_pen_v2.jsonl `
   --manifest NaturalEarth=data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `

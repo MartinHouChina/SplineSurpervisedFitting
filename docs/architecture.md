@@ -180,16 +180,23 @@ geometry oracle 先将候选映射到真参数域，再做一维单调一对一�
 
 ## 8. 两阶段训练
 
-### Proposal：前 16 个 epoch
+### Proposal：前 32 个 epoch
 
-全保留 56 个候选，训练几何编码、参数化和候选覆盖，先确保四个验证来源的
-dense proposal 可行。Selector 在该阶段冻结。
+全保留 56 个候选，训练几何编码、参数化和候选位置，先确保四个验证来源的
+dense proposal 可行。合成抽样的 50% 来自 `K=40..56`、其余来自 `K=4..39`；
+directed coverage 保护召回，detached minimum-L1 monotone one-to-one assignment
+为每个真节点分配不同候选并回传坐标 SmoothL1。Selector 在该阶段冻结。
+
+当 `Kc>Ktrue` 时 assignment 只匹配 `Ktrue` 个候选；当 `Kc=Ktrue=56` 时严格
+rank-to-rank。它能缓解多对一候选塌缩，但不能增加候选容量，因此 K=56 层仍无
+冗余余量。
 
 ### Joint：后 64 个 epoch
 
 同时训练候选排序、一次性数量选择、参数反馈和存活节点重定位。计数、位置、
 反事实组合、拟合可行性和复杂度共同优化。复杂度权重最多放大到 6 倍，但只在
 worst-source deployment pass 保持 90% 及安全余量时增强。
+Joint 的合成抽样恢复 K=4..56 原始分布，不延续 Proposal 的高 K 过采样。
 
 训练为了比较候选组合会调用多次可微 refit；部署不存在这些教师搜索和额外
 refit。

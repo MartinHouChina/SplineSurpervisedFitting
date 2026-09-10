@@ -1,6 +1,6 @@
 # v16 数学定义
 
-本文只描述 `objective_version=candidate_selection_counterfactual_bspline_v16` 的当前实现。当前主协议使用 `Kc=56` 个内部候选、合成 source `K=4..56`（控制顶点 8..60）和 `MSE<=1e-4`。三次开放样条全保留时完整节点向量为 64 项、控制顶点为 60 个。v16 不使用 v12–v15 的离线教师，但继承并改良了其中有效的一次性 `adaptive beta + mass-TopK` 思路；存活节点重定位由 v16 的集合条件解码器重新实现。
+本文只描述 `objective_version=candidate_selection_counterfactual_bspline_v16`、`simplification_contract=ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2` 的当前实现。当前主协议使用 `Kc=56` 个内部候选、合成 source `K=4..56`（控制顶点 8..60）和 `MSE<=1e-4`。三次开放样条全保留时完整节点向量为 64 项、控制顶点为 60 个。v16 不使用 v12–v15 的离线教师，但继承并改良了其中有效的一次性 `adaptive beta + mass-TopK` 思路；存活节点重定位由 v16 的集合条件解码器重新实现。
 
 ## 1. 阈值约束目标
 
@@ -205,7 +205,7 @@ C(0)=q_0,\ C(1)=q_{M-1}
 
 求得。训练使用可微 float64 求解；部署使用生产 refit。网络不直接回归 P。
 
-## 8. proposal 阶段
+## 8. Proposal 阶段
 
 全保留掩码 z=1 时计算 dense MSE。为避免早期 MSE/ε 比值产生巨大尺度，拟合惩罚使用对数形式：
 
@@ -216,14 +216,45 @@ L_{\mathrm{fit}}(E,\varepsilon)
 +\max\left(0,\log\frac{E}{\varepsilon}\right),
 \]
 
-实现中对零值加入极小稳定项。proposal 阶段只优化：
+实现中对零值加入极小稳定项，并对 batch 的高误差尾部加权。有几何标签的 certified Synthetic 还提供真参数 \(t^\star\) 和有序真节点 \(U^\star=(u^\star_1,\ldots,u^\star_T)\)。先把候选 \(U_0\) 从预测参数域分段线性 warp 到 \(t^\star\) 参数域，记为 \(\bar U_0\)。recall-direction coverage 为：
+
+\[
+L_{\mathrm{cov}}
+=\frac1T\sum_{l=1}^{T}
+\operatorname{SmoothL1}_{\beta}
+\left(\min_j|\bar u_{0,j}-u_l^\star|,0\right).
+\]
+
+它允许多个真节点共享最近候选，因此再计算 detached 的一维最小 L1 单调一一分配：
+
+\[
+\pi^\star
+=\arg\min_{1\le \pi(1)<\cdots<\pi(T)\le K_c}
+\sum_{l=1}^{T}|\bar u_{0,\pi(l)}-u_l^\star|,
+\]
+
+并令
+
+\[
+L_{\mathrm{assign}}
+=\frac1T\sum_{l=1}^{T}
+\operatorname{SmoothL1}_{\beta}
+(\bar u_{0,\pi^\star(l)},u_l^\star).
+\]
+
+分配下标不参与求导，匹配候选坐标仍接收梯度；`proposal_knot_assignment_mae` 报告匹配坐标的平均绝对误差。当 \(K_c>T\) 时只匹配 T 个不同候选，其余候选没有 assignment 梯度；当 \(K_c=T=56\) 时为严格 rank-to-rank 配对。最终 Proposal 目标为：
 
 \[
 L_{\mathrm{proposal}}
 =
 \lambda_{\mathrm{fit}}\,
-\mathbb E[L_{\mathrm{fit}}(E_{\mathrm{dense}},\varepsilon)].
+\rho_{\mathrm{tail}}[L_{\mathrm{fit}}(E_{\mathrm{dense}},\varepsilon)]
++\lambda_t\operatorname{MSE}(t_0,t^\star)
++\lambda_{\mathrm{cov}}L_{\mathrm{cov}}
++\lambda_{\mathrm{assign}}L_{\mathrm{assign}}.
 \]
+
+当前 \(\lambda_{\mathrm{cov}}=\lambda_{\mathrm{assign}}=1\)，无几何标签的真实曲线仅贡献 dense 拟合项。前 32/96 个 epoch 属于 Proposal；该阶段的 synthetic draws 有 50% 来自 `K=40..56`，其余来自 `K=4..39`。后 64 个 Joint epoch 恢复 K=4..56 原始抽样分布。有序监督缓解多对一塌缩，但不会增加候选容量；由于当前 \(K_c=K_{\max}=56\)，边界层仍没有任何冗余候选，必须独立审计。
 
 ## 9. 节点组合代价
 

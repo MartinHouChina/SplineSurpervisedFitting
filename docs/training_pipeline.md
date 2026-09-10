@@ -17,12 +17,16 @@
 | 训练集/合成验证集 | 3000/600 |
 | 每个真实来源验证上限 | 100 |
 | Batch | 64 |
+| 总训练/Proposal epoch | 96/32（Joint 仍为 64） |
+| Proposal 合成高 K 分层 | 50% 来自 `K>=40`；Joint 不使用该过采样 |
+| Proposal 节点监督 | directed coverage + monotone one-to-one assignment，权重均为 1.0 |
+| 简化合同 | `ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2` |
 
 `Kc=56` 是高召回容量，不是部署节点数。三次开放样条全部保留时完整节点向量有 64 项、控制顶点有 60 个；最终 K 由每条曲线的自适应选择概率质量决定。
 
 ## 2. 数据怎样进入网络
 
-每个 batch 约 65% 为在线生成的 certified Synthetic，35% 从 UJI、Natural Earth 和 USGS 三个真实训练 split 中抽取。
+每个 batch 约 65% 为在线生成的 certified Synthetic，35% 从 UJI、Natural Earth 和 USGS 三个真实训练 split 中抽取。Proposal 阶段在 synthetic draws 内精确分层：约 50% 从 `K=40..56` 抽取，其余从 `K=4..39` 抽取；它不改变 35% 的真实数据比例。进入 Joint 后关闭该分层，synthetic draws 恢复原始 K=4..56 分布，避免 Selector 把 Proposal 的高 K 采样频率误学为部署节点数先验。
 
 Synthetic 返回点序列、真采样参数、真内部节点及有效 mask。认证只保证源节点在**固定源位置的所有子集**中不可继续删除；允许节点重定位后，源 K 只作为计数上界，不作为全局最少节点的精确标签。
 
@@ -54,13 +58,20 @@ Synthetic 返回点序列、真采样参数、真内部节点及有效 mask。�
 
 ## 3. 两个训练阶段
 
-### 3.1 Proposal：前 16 个 epoch
+### 3.1 Proposal：前 32 个 epoch
 
 全保留 56 个候选，优先学习：
 
 - 稳定的几何编码与参数化；
 - 覆盖全参数域的候选位置；
 - 四个验证数据源上的 dense proposal 拟合可行性。
+
+有真节点的 certified Synthetic 同时使用两种位置监督：
+
+- directed coverage：每个真节点至少靠近一个候选，直接保护召回；
+- monotone one-to-one assignment：先把候选 warp 到真参数域，再用 detached 的一维最小 L1 单调匹配为每个真节点分配不同候选，坐标 SmoothL1 梯度仍回传到匹配候选。
+
+当 `Kc>Ktrue` 时恰好匹配 `Ktrue` 个不同候选，未匹配候选不接收该项梯度；当 `Kc=Ktrue=56` 时退化为严格 rank-to-rank 配对。该监督缓解 nearest coverage 的多对一塌缩，但不会增加 Kc，因而不等价于为 K=56 提供冗余容量。
 
 Selector 在 Proposal 阶段不更新，因此新实验把 Joint 初始保留比例设为
 `30/56=0.5357142857142857`；Kc=56 时目标初始概率质量约为 30。它只是训练
@@ -100,7 +111,7 @@ Linux 推荐直接运行完整流水线：
 bash scripts/run_v16_mse1e-4_3090.sh \
   --prepare-real-data \
   --device cuda \
-  --run-name candidate_selection_v16_mse1e-4_k56_linux
+  --run-name candidate_selection_v16_mse1e-4_k56_ordered_highk_linux
 ```
 
 它会串行完成 fresh 训练、正式资格审计、六方法 benchmark、四指标图和真实数据案例图。
@@ -113,9 +124,10 @@ Python 环境，也可通过 `--python /path/to/python` 指定。
 
 ```powershell
 python scripts/train_v16.py `
-  --epochs 80 --proposal-epochs 16 `
+  --epochs 96 --proposal-epochs 32 `
   --train-size 3000 --val-size 600 `
   --synthetic-boundary-val-size 32 --real-val-size 100 `
+  --proposal-high-k-fraction 0.50 --proposal-high-k-min-knots 40 `
   --batch-size 64 --num-points 192 `
   --min-control-points 8 --max-control-points 60 `
   --knot-min-span 0.01 `
@@ -125,6 +137,7 @@ python scripts/train_v16.py `
   --minimality-margin 0.2 --minimality-max-attempts 16 `
   --minimality-audit-points 512 --oscillation-amplitude 0.3 `
   --proposal-pass-target 0.90 --deployment-pass-target 0.90 `
+  --proposal-knot-assignment-weight 1.0 `
   --one-shot-selection-policy mass_topk `
   --initial-keep-fraction 0.5357142857142857 `
   --one-shot-safety-sigma 0.20 --one-shot-safety-knots 2 `
@@ -150,7 +163,7 @@ python scripts/train_v16.py `
   --real-manifest data/processed/usgs_contours/large_scale/manifest.jsonl `
   --resample-train-each-epoch `
   --num-workers 4 --torch-num-threads 4 --device cuda `
-  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt
+  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt
 ```
 
 Windows 若在 worker 启动处异常，改用 `--num-workers 0`。旧 K64/K96 权重与本实验合同不同，不可直接 `--resume`；中断恢复只能使用本次生成的 `.last.pt`，并保持结构与数据参数一致。
@@ -163,21 +176,26 @@ Windows 若在 worker 启动处异常，改用 `--num-workers 0`。旧 K64/K96 �
 
 这是 proposal warm start：先校验 objective 与关键 proposal 结构合同，再迁移 Encoder、ParameterHead 及 CandidateHead 张量；65 个旧 interval query 沿参数域插值为 57 个，K56 固定锚点重新生成，Selector、联合解码器和优化器新训。它不继承旧实验的阈值、教师状态或资格；合同不兼容或关键张量缺失时会直接终止。
 
+刚才停在旧 Proposal 安全门的
+`candidate_selection_v16_mse1e-4_k56_linux.proposal.pt` 也可以作为更直接的
+warm start；只能通过 `--init-checkpoint` 迁移 Proposal 模块，不能用旧
+`.last.pt` 执行 `--resume`，因为新的有序匹配与高 K 课程已经升级了训练合同。
+
 恢复时原样重跑上面的完整命令（`--epochs` 表示新的总轮数），并在末尾增加：
 
 ```powershell
-  --resume outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.last.pt
+  --resume outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.last.pt
 ```
 
 除 `epochs/device/num-workers/torch-num-threads/log-every-batches` 等恢复白名单外，不要改数据、阈值、容量、教师或输出参数。
 
-3090 主要加速网络部分。Joint 在线教师会为低 K 前缀、oracle 与反事实集合执行多轮逐样本 float64 refit；Kang/Luo 评测也主要使用 CPU，因此增大 batch 或更换显卡不会把整条流水线等比例加速。建议先用唯一的测试 `RunName` 做短诊断，正式 `RunName` 不要执行 `-DryRun`。一键脚本是 fresh-only；若训练已经成功而后续 benchmark/绘图失败，直接执行第 7 节的分步命令。
+3090 主要加速网络部分。Joint 在线教师会为低 K 前缀、oracle 与反事实集合执行多轮逐样本 float64 refit；Kang/Luo 评测也主要使用 CPU，因此增大 batch 或更换显卡不会把整条流水线等比例加速。当前 96-epoch 正式配置不承诺固定 12 小时内结束。建议先用唯一的测试 `RunName` 做短诊断，正式 `RunName` 不要执行 `-DryRun`。一键脚本是 fresh-only；若训练已经成功而后续 benchmark/绘图失败，直接执行第 7 节的分步命令。
 
 ## 6. 训练后资格检查
 
 ```powershell
 python scripts/inspect_v16_checkpoint.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
   --required-pass-rate 0.90 `
   --mse-tolerance 1e-4
 ```
@@ -198,7 +216,7 @@ python scripts/inspect_v16_checkpoint.py `
 
 ```powershell
 python scripts/benchmark_v16_datasets.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
   --method-set published `
   --samples-per-knot-count 5 `
   --min-knot-count 4 --max-knot-count 56 `
@@ -216,7 +234,7 @@ python scripts/benchmark_v16_datasets.py `
   --network-warmups 10 --network-repeats 100 `
   --end-to-end-repeats 3 `
   --torch-num-threads 4 --device cuda `
-  --output-dir outputs/comparisons/v16_mse1e-4_k56_six_methods
+  --output-dir outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods
 ```
 
 六方法为 Ours、Park、Liang、Dung、Kang 和 Luo；Kang/Luo 是公开方法的适配复现。每个数据源分别报告 MSE、通过率、最终 K 和完整方法时间，Ours 另报 network-only 时间。
@@ -225,16 +243,16 @@ python scripts/benchmark_v16_datasets.py `
 
 ```powershell
 python scripts/plot_v16_method_comparison.py `
-  --input outputs/comparisons/v16_mse1e-4_k56_six_methods/comparison.json `
+  --input outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods/comparison.json `
   --method-set published --reference --dpi 300 `
-  --output-dir outputs/figures/v16_mse1e-4_k56_six_methods/metrics
+  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_six_methods/metrics
 ```
 
 绘制三个真实数据集上的六方法曲线、采样点、控制多边形、控制顶点与内部节点：
 
 ```powershell
 python scripts/visualize_v16_real_deployments.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
   --real-samples-per-dataset 2 --selection-seed 20260910 `
   --manifest UJI=data/splits/uji_pen_v2.jsonl `
   --manifest NaturalEarth=data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
@@ -250,7 +268,7 @@ python scripts/visualize_v16_real_deployments.py `
   --end-to-end-repeats 3 `
   --torch-num-threads 4 --device cuda `
   --dpi 300 `
-  --output-dir outputs/figures/v16_mse1e-4_k56_six_methods/real_cases
+  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_six_methods/real_cases
 ```
 
 一键串行执行同一套训练、检查、比较和绘图：

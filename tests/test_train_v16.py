@@ -19,6 +19,7 @@ from spline_fitting.checkpointing import V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VER
 from spline_fitting.data.v16_mixed import (
     MixedTrainingCurves,
     ValidationCurves,
+    _curve_record,
     grouped_indices,
     load_real_sources,
 )
@@ -34,6 +35,8 @@ def test_default_profile_is_engineering_90_and_reduced_cost():
     assert (args.train_size, args.val_size, args.real_val_size) == (2400, 500, 100)
     assert args.synthetic_boundary_val_size == 32
     assert args.batch_size == 16
+    assert args.proposal_high_k_fraction == pytest.approx(0.5)
+    assert args.proposal_high_k_min_knots == 40
     assert (args.min_control_points, args.max_control_points) == (8, 60)
     assert args.candidate_knots == 56
     assert args.knot_min_span == pytest.approx(0.01)
@@ -54,6 +57,7 @@ def test_default_profile_is_engineering_90_and_reduced_cost():
     assert args.complexity_max_scale == pytest.approx(4.0)
     assert args.true_parameter_weight == pytest.approx(0.1)
     assert args.proposal_knot_coverage_weight == pytest.approx(1.0)
+    assert args.proposal_knot_assignment_weight == pytest.approx(1.0)
     assert args.selected_knot_position_weight == pytest.approx(1.0)
     assert args.knot_position_beta == pytest.approx(0.01)
     assert args.certified_minimal_source is True
@@ -96,6 +100,23 @@ def test_certified_count_labels_require_reachable_minimum_count():
         "--min-control-points", "7", "--min-selected-knots", "4",
     ])
     with pytest.raises(ValueError, match="minimum synthetic internal-knot count"):
+        train_v16.validate_args(args)
+
+
+@pytest.mark.parametrize(
+    "arguments,reason",
+    [
+        (["--proposal-high-k-fraction", "1.1"], "must lie in"),
+        (["--proposal-high-k-min-knots", "57"], "inside the synthetic"),
+        (
+            ["--proposal-high-k-min-knots", "4"],
+            "requires a nonempty low-K range",
+        ),
+    ],
+)
+def test_proposal_high_k_sampling_arguments_are_strict(arguments, reason):
+    args = train_v16.parser().parse_args(arguments)
+    with pytest.raises(ValueError, match=reason):
         train_v16.validate_args(args)
 
 
@@ -356,6 +377,75 @@ def test_fixed_epoch_mixture_is_deterministic_and_respects_source_fraction(
             assert any(torch.equal(a["points"], value) for value in train_points)
         else:
             torch.testing.assert_close(a["points"], first.synthetic[index]["points"], rtol=0, atol=0)
+
+
+def test_proposal_high_k_strata_are_exact_and_reproducible(dataset_config):
+    options = dict(
+        size=20,
+        seed=42,
+        epoch=3,
+        real_fraction=0.0,
+        synthetic_high_k_fraction=0.5,
+        synthetic_high_k_min_knots=7,
+    )
+    first = MixedTrainingCurves(dataset_config, **options)
+    repeated = MixedTrainingCurves(dataset_config, **options)
+    assert first.synthetic_draw_count == 20
+    assert len(first.synthetic_high_k_indices) == 10
+    assert first.synthetic_high_k_indices == repeated.synthetic_high_k_indices
+    assert first.synthetic_low is not None
+    assert first.synthetic_low.min_control_points == 8
+    assert first.synthetic_low.max_control_points == 10
+    assert first.synthetic_high is not None
+    assert first.synthetic_high.min_control_points == 11
+    assert first.synthetic_high.max_control_points == 12
+    for index in range(len(first)):
+        torch.testing.assert_close(
+            first[index]["points"],
+            repeated[index]["points"],
+            rtol=0,
+            atol=0,
+        )
+
+    joint_distribution = MixedTrainingCurves(
+        dataset_config,
+        size=20,
+        seed=42,
+        epoch=3,
+        real_fraction=0.0,
+        synthetic_high_k_fraction=0.0,
+        synthetic_high_k_min_knots=7,
+    )
+    assert not joint_distribution.synthetic_high_k_indices
+    assert joint_distribution.synthetic_low is None
+    assert joint_distribution.synthetic_high is None
+    assert joint_distribution.synthetic.min_control_points == 8
+    assert joint_distribution.synthetic.max_control_points == 12
+
+
+def test_narrow_low_k_targets_are_padded_to_global_capacity():
+    points = torch.randn(12, 2)
+    sample = {
+        "source_minimality_certified": True,
+        "source_internal_knot_count": 2,
+        "true_params": torch.linspace(0.0, 1.0, 12),
+        "true_internal_knots": torch.tensor([0.25, 0.75]),
+        "true_internal_knot_mask": torch.tensor([True, True]),
+    }
+    record = _curve_record(
+        points,
+        "Synthetic",
+        max_internal_knots=8,
+        synthetic_sample=sample,
+        certified=True,
+    )
+    assert record["target_internal_knots"].shape == (8,)
+    assert record["target_internal_knot_mask"].shape == (8,)
+    torch.testing.assert_close(
+        record["target_internal_knots"][:2], torch.tensor([0.25, 0.75])
+    )
+    assert int(record["target_internal_knot_mask"].sum()) == 2
+    assert torch.count_nonzero(record["target_internal_knots"][2:]) == 0
 
 
 def test_certified_synthetic_minimal_count_targets_collate_with_real_curves(
@@ -685,7 +775,7 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
     original = torch.load(last_path, map_location="cpu", weights_only=True)
     assert original["objective_version"] == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
     assert original["epoch"] == 2 and original["stage"] == "joint"
-    assert original["qualification"]["schema_version"] == 3
+    assert original["qualification"]["schema_version"] == 4
     assert original["qualification"]["required_reporting_pass_rate"] == 0.90
     assert original["qualification"]["configured_proposal_pass_target"] == 0.0
     assert not original["qualification"]["formal_reporting_eligible"]
@@ -694,6 +784,10 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
         is original["best_deployment_pass_constraint_satisfied"]
     )
     assert [entry["stage"] for entry in original["history"]] == ["proposal", "joint"]
+    assert "proposal_knot_assignment_mae" in original["history"][0]["train"]
+    assert original["loss_config"]["weights"][
+        "proposal_knot_assignment_weight"
+    ] == pytest.approx(1.0)
     assert original["proposal_ready"]
     assert output.is_file() and (tmp_path / "tiny_v16.proposal.pt").is_file()
     step_before = max(float(state["step"]) for state in original["optimizer_state_dict"]["state"].values())
@@ -715,6 +809,10 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
     assert resumed["training_config"]["initial_keep_fraction"] == pytest.approx(
         original["training_config"]["initial_keep_fraction"]
     )
+    assert resumed["training_config"]["proposal_high_k_fraction"] == pytest.approx(
+        0.5
+    )
+    assert resumed["training_config"]["proposal_high_k_min_knots"] == 8
     best = torch.load(output, map_location="cpu", weights_only=True)
     assert best["epoch"] in (2, 3)
     assert best["deployment_config"]["network_forwards"] == 1
@@ -765,6 +863,25 @@ def test_resume_rejects_changed_output_directory(tmp_path):
         train_v16.main(command)
     assert error.value.code == 2
     assert not (tmp_path / "other.pt").exists()
+
+
+def test_resume_rejects_changed_proposal_high_k_sampling(tmp_path, capsys):
+    output = tmp_path / "sampling.pt"
+    command = training_command(output)
+    assert train_v16.main(command) == 0
+    command[command.index("--epochs") + 1] = "3"
+    command.extend(
+        [
+            "--proposal-high-k-fraction",
+            "0.25",
+            "--resume",
+            str(tmp_path / "sampling.last.pt"),
+        ]
+    )
+    with pytest.raises(SystemExit) as error:
+        train_v16.main(command)
+    assert error.value.code == 2
+    assert "proposal_high_k_fraction" in capsys.readouterr().err
 
 
 def test_resume_rejects_an_older_simplification_revision(tmp_path):

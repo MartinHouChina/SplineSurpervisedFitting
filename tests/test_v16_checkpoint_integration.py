@@ -73,6 +73,8 @@ def qualified_v16_metadata(*, target=0.90, observed=0.92):
             "allow_infeasible_proposals": False,
             "final_safety_sigma": 0.05,
             "final_safety_knots": 0,
+            "proposal_high_k_fraction": 0.5,
+            "proposal_high_k_min_knots": 40,
         },
         "validation_metrics": {
             "worst_dense_pass_rate": 0.98,
@@ -105,6 +107,7 @@ def qualified_v16_metadata(*, target=0.90, observed=0.92):
                 "complexity_weight": 0.05,
                 "true_parameter_weight": 0.1,
                 "proposal_knot_coverage_weight": 1.0,
+                "proposal_knot_assignment_weight": 1.0,
                 "selected_knot_position_weight": 1.0,
             },
         },
@@ -123,6 +126,9 @@ def test_v16_formal_qualification_checks_metrics_and_configured_target():
     assert result["formal_reporting_eligible"]
     assert result["required_reporting_pass_rate"] == V16_FORMAL_PASS_RATE
     assert result["configured_target_met"]
+    assert result["configured_proposal_high_k_fraction"] == pytest.approx(0.5)
+    assert result["configured_proposal_high_k_min_knots"] == 40
+    assert result["proposal_knot_assignment_weight"] == pytest.approx(1.0)
 
     relaxed = assess_v16_checkpoint(
         qualified_v16_metadata(target=0.85, observed=0.92)
@@ -162,6 +168,39 @@ def test_v16_formal_qualification_checks_exact_reporting_tolerance():
     )
     assert not result["formal_reporting_eligible"]
     assert any("MSE tolerance" in reason for reason in result["reasons"])
+
+
+@pytest.mark.parametrize(
+    "mutation,reason",
+    [
+        (
+            lambda checkpoint: checkpoint["training_config"].update(
+                proposal_high_k_fraction=0.0
+            ),
+            "50%",
+        ),
+        (
+            lambda checkpoint: checkpoint["training_config"].update(
+                proposal_high_k_min_knots=48
+            ),
+            "K=40",
+        ),
+        (
+            lambda checkpoint: checkpoint["loss_config"]["weights"].update(
+                proposal_knot_assignment_weight=0.0
+            ),
+            "proposal_knot_assignment_weight",
+        ),
+    ],
+)
+def test_v16_formal_qualification_requires_the_new_proposal_curriculum(
+    mutation, reason,
+):
+    checkpoint = qualified_v16_metadata()
+    mutation(checkpoint)
+    result = assess_v16_checkpoint(checkpoint)
+    assert not result["formal_reporting_eligible"]
+    assert any(reason in item for item in result["reasons"])
 
 
 def test_v16_configured_target_uses_boundary_aware_qualification_rate():

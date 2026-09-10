@@ -53,6 +53,8 @@ def _checkpoint(*, configured: float = 0.90, observed: float = 0.92) -> dict:
             "allow_infeasible_proposals": False,
             "final_safety_sigma": 0.05,
             "final_safety_knots": 0,
+            "proposal_high_k_fraction": 0.5,
+            "proposal_high_k_min_knots": 40,
         },
         "deployment_config": {
             "mse_tolerance": 2.5e-5,
@@ -71,6 +73,7 @@ def _checkpoint(*, configured: float = 0.90, observed: float = 0.92) -> dict:
                 "complexity_weight": 0.05,
                 "true_parameter_weight": 0.1,
                 "proposal_knot_coverage_weight": 1.0,
+                "proposal_knot_assignment_weight": 1.0,
                 "selected_knot_position_weight": 1.0,
             },
         },
@@ -120,6 +123,9 @@ def test_inspector_reports_metrics_and_returns_qualification_status(tmp_path, ca
     assert "source control-point range: 8..60" in output
     assert "source internal-knot range: K=4..56" in output
     assert "knot min span: 0.01" in output
+    assert "high-K synthetic allocation: 50.000%" in output
+    assert "high-K stratum begins at internal K: 40" in output
+    assert "ordered assignment weight: 1" in output
     assert "overall dense: 99.000%" in output
     assert "synthetic boundary: K=56, n=32" in output
     assert "qualification dense/deployment" in output

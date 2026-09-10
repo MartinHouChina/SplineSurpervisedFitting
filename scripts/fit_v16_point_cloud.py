@@ -45,7 +45,7 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path(
             "outputs/checkpoints/"
-            "candidate_selection_v16_mse1e-4_k56.pt"
+            "candidate_selection_v16_mse1e-4_k56_ordered_highk.pt"
         ),
     )
     result.add_argument("--point-cloud", type=Path, required=True,

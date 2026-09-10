@@ -13,10 +13,10 @@ from visualize_v16_real_deployments import main as shared_main
 
 
 DEFAULT_CHECKPOINT = Path(
-    "outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt"
+    "outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt"
 )
 DEFAULT_OUTPUT_DIR = Path(
-    "outputs/figures/candidate_selection_v16_mse1e-4_k56/ours_cases"
+    "outputs/figures/candidate_selection_v16_mse1e-4_k56_ordered_highk/ours_cases"
 )
 
 

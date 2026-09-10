@@ -56,6 +56,8 @@ def v16_checkpoint(*, target=0.90, observed=0.92, stage="joint"):
             "allow_infeasible_proposals": False,
             "final_safety_sigma": 0.05,
             "final_safety_knots": 0,
+            "proposal_high_k_fraction": 0.5,
+            "proposal_high_k_min_knots": 40,
         },
         "validation_metrics": {
             "worst_dense_pass_rate": 0.98,
@@ -88,6 +90,7 @@ def v16_checkpoint(*, target=0.90, observed=0.92, stage="joint"):
                 "complexity_weight": 0.05,
                 "true_parameter_weight": 0.1,
                 "proposal_knot_coverage_weight": 1.0,
+                "proposal_knot_assignment_weight": 1.0,
                 "selected_knot_position_weight": 1.0,
             },
         },
@@ -343,9 +346,9 @@ def test_v16_wrapper_uses_explicit_objective_and_dedicated_paths(monkeypatch):
     assert called["expected_objective"] == benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
     assert (
         called["default_checkpoint"].name
-        == "candidate_selection_v16_mse1e-4_k56.pt"
+        == "candidate_selection_v16_mse1e-4_k56_ordered_highk.pt"
     )
-    assert called["default_output_dir"].name == "v16_multidata"
+    assert called["default_output_dir"].name == "v16_mse1e-4_k56_ordered_highk"
 
     called.clear()
     wrapper.main(["--max-knot-count=12"])

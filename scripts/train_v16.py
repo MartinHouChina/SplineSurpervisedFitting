@@ -63,6 +63,21 @@ def parser():
     p.add_argument("--real-val-size", type=int, default=100, help="Maximum val curves per real source")
     p.add_argument("--real-manifest", action="append", type=Path, default=[])
     p.add_argument("--real-fraction", type=float, default=0.5)
+    p.add_argument(
+        "--proposal-high-k-fraction",
+        type=float,
+        default=0.5,
+        help=("Exact fraction (up to integer rounding) of proposal-stage "
+              "synthetic draws sampled from the high-K stratum; joint "
+              "training always restores the original full-range distribution"),
+    )
+    p.add_argument(
+        "--proposal-high-k-min-knots",
+        type=int,
+        default=None,
+        help=("First internal-knot count in the proposal high-K stratum "
+              "(default: min(40, maximum source K))"),
+    )
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--num-points", type=int, default=192)
     p.add_argument("--point-dim", type=int, choices=(2, 3), default=2)
@@ -158,6 +173,13 @@ def parser():
     p.add_argument("--complexity-weight", type=float, default=0.05)
     p.add_argument("--true-parameter-weight", type=float, default=0.1)
     p.add_argument("--proposal-knot-coverage-weight", type=float, default=1.0)
+    p.add_argument(
+        "--proposal-knot-assignment-weight",
+        type=float,
+        default=1.0,
+        help=("Ordered one-to-one proposal/ground-truth knot supervision; "
+              "kept separate from recall-direction proposal coverage"),
+    )
     p.add_argument("--selected-knot-position-weight", type=float, default=1.0)
     p.add_argument("--knot-position-beta", type=float, default=0.01)
     p.add_argument(
@@ -249,6 +271,29 @@ def validate_args(args):
             raise ValueError(f"{key} must be a non-negative integer")
     if not 4 <= args.min_control_points <= args.max_control_points:
         raise ValueError("control-point range must satisfy 4 <= min <= max")
+    minimum_source_knots = args.min_control_points - 4
+    maximum_source_knots = args.max_control_points - 4
+    if args.proposal_high_k_min_knots is None:
+        args.proposal_high_k_min_knots = min(40, maximum_source_knots)
+    if (
+        isinstance(args.proposal_high_k_min_knots, bool)
+        or not isinstance(args.proposal_high_k_min_knots, int)
+        or not minimum_source_knots
+        <= args.proposal_high_k_min_knots
+        <= maximum_source_knots
+    ):
+        raise ValueError(
+            "proposal-high-k-min-knots must lie inside the synthetic "
+            "internal-knot range"
+        )
+    if (
+        args.proposal_high_k_fraction < 1.0
+        and args.proposal_high_k_fraction > 0.0
+        and args.proposal_high_k_min_knots <= minimum_source_knots
+    ):
+        raise ValueError(
+            "a partial proposal high-K mixture requires a nonempty low-K range"
+        )
     if not 1 <= args.candidate_knots <= args.num_points - 4:
         raise ValueError("candidate-knots must be between 1 and num-points - 4")
     if (
@@ -292,6 +337,7 @@ def validate_args(args):
         "count_weight", "supervised_count_weight",
         "supervised_over_count_weight", "complexity_weight",
         "true_parameter_weight", "proposal_knot_coverage_weight",
+        "proposal_knot_assignment_weight",
         "selected_knot_position_weight", "knot_position_beta",
         "complexity_max_scale",
     ):
@@ -318,7 +364,12 @@ def validate_args(args):
         raise ValueError("final-safety-sigma cannot exceed one-shot-safety-sigma")
     if args.final_safety_knots > args.one_shot_safety_knots:
         raise ValueError("final-safety-knots cannot exceed one-shot-safety-knots")
-    for key in ("real_fraction", "proposal_pass_target", "deployment_pass_target"):
+    for key in (
+        "real_fraction",
+        "proposal_high_k_fraction",
+        "proposal_pass_target",
+        "deployment_pass_target",
+    ):
         if not math.isfinite(getattr(args, key)) or not 0 <= getattr(args, key) <= 1:
             raise ValueError(f"{key} must lie in [0,1]")
     if args.tolerance_factor_min > args.tolerance_factor_max:
@@ -1100,6 +1151,7 @@ def main(argv=None):
         complexity_weight=args.complexity_weight,
         true_parameter_weight=args.true_parameter_weight,
         proposal_knot_coverage_weight=args.proposal_knot_coverage_weight,
+        proposal_knot_assignment_weight=args.proposal_knot_assignment_weight,
         selected_knot_position_weight=args.selected_knot_position_weight,
         knot_position_beta=args.knot_position_beta,
     )
@@ -1148,6 +1200,26 @@ def main(argv=None):
         "Additional subset fits run only during training.",
         flush=True,
     )
+    if args.proposal_high_k_fraction > 0.0:
+        proposal_sampling = (
+            f"{args.proposal_high_k_fraction:.1%} from K>="
+            f"{args.proposal_high_k_min_knots}"
+        )
+        if args.proposal_high_k_fraction < 1.0:
+            proposal_sampling += (
+                f"; the remainder uses K={args.min_control_points - 4}.."
+                f"{args.proposal_high_k_min_knots - 1}"
+            )
+    else:
+        proposal_sampling = "disabled (original full-range distribution)"
+    print(
+        "Proposal-stage synthetic stratification: "
+        + proposal_sampling
+        + ". Joint training always uses the original "
+        f"K={args.min_control_points - 4}.."
+        f"{args.max_control_points - 4} distribution.",
+        flush=True,
+    )
     for epoch in range(start_epoch, args.epochs + 1):
         stage = "proposal" if epoch <= args.proposal_epochs else "joint"
         applied_safety_scale = selection_safety_scale
@@ -1172,8 +1244,19 @@ def main(argv=None):
                       f"Inspect {history_path}; increase proposal training/candidate budget before simplification.", flush=True)
                 return 2
             optimizer = torch.optim.AdamW(model.parameters(), lr=args.joint_lr, weight_decay=args.weight_decay)
-        train_data = MixedTrainingCurves(dataset_config, sources, size=args.train_size, seed=args.seed,
-            real_fraction=args.real_fraction, epoch=epoch-1, resample=args.resample_train_each_epoch)
+        train_data = MixedTrainingCurves(
+            dataset_config,
+            sources,
+            size=args.train_size,
+            seed=args.seed,
+            real_fraction=args.real_fraction,
+            epoch=epoch - 1,
+            resample=args.resample_train_each_epoch,
+            synthetic_high_k_fraction=(
+                args.proposal_high_k_fraction if stage == "proposal" else 0.0
+            ),
+            synthetic_high_k_min_knots=args.proposal_high_k_min_knots,
+        )
         loader_generator = torch.Generator().manual_seed(args.seed + epoch)
         train_loader = DataLoader(
             train_data, batch_size=args.batch_size, shuffle=True,
@@ -1365,6 +1448,7 @@ def main(argv=None):
                                   "supervised_count_weight",
                                   "supervised_over_count_weight", "true_parameter_weight",
                                   "proposal_knot_coverage_weight",
+                                  "proposal_knot_assignment_weight",
                                   "selected_knot_position_weight")}))
         payload["qualification"] = assess_v16_checkpoint(
             payload,
@@ -1384,6 +1468,16 @@ def main(argv=None):
               f"safety={safety_knots}+{safety_sigma:.2f}sigma "
               f"scale={applied_safety_scale:.2f}->{selection_safety_scale:.2f} "
               f"target_met={accepted}", flush=True)
+        if stage == "proposal":
+            print(
+                "  Proposal train geometry: coverage_MAE="
+                f"{train_metrics['proposal_knot_nearest_mae']:.4e}, "
+                "ordered_assignment_MAE="
+                f"{train_metrics['proposal_knot_assignment_mae']:.4e}, "
+                "matched_K="
+                f"{train_metrics['proposal_knot_assignment_count']:.2f}",
+                flush=True,
+            )
         boundary_n = measured["synthetic_boundary_sample_count"]
         if boundary_n:
             print(

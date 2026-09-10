@@ -146,10 +146,14 @@ def inspect_checkpoint(
     validation = checkpoint.get("validation_metrics")
     model_config = checkpoint.get("model_config")
     deployment = checkpoint.get("deployment_config")
+    loss_config = checkpoint.get("loss_config")
     training = training if isinstance(training, Mapping) else {}
     validation = validation if isinstance(validation, Mapping) else {}
     model_config = model_config if isinstance(model_config, Mapping) else {}
     deployment = deployment if isinstance(deployment, Mapping) else {}
+    loss_config = loss_config if isinstance(loss_config, Mapping) else {}
+    loss_weights = loss_config.get("weights")
+    loss_weights = loss_weights if isinstance(loss_weights, Mapping) else {}
 
     print("v16 checkpoint inspection")
     print(f"  checkpoint: {checkpoint_path.resolve()}")
@@ -180,6 +184,19 @@ def inspect_checkpoint(
     print(
         "  simplification curriculum mature: "
         + str(checkpoint.get("simplification_ready", False))
+    )
+    print("Proposal curriculum")
+    print(
+        "  high-K synthetic allocation: "
+        + _format_rate(training.get("proposal_high_k_fraction"))
+    )
+    print(
+        "  high-K stratum begins at internal K: "
+        + _format_scalar(training.get("proposal_high_k_min_knots"))
+    )
+    print(
+        "  ordered assignment weight: "
+        + _format_scalar(loss_weights.get("proposal_knot_assignment_weight"))
     )
     print("Synthetic data contract")
     print(f"  revision: {checkpoint.get('synthetic_data_contract', 'not recorded')}")

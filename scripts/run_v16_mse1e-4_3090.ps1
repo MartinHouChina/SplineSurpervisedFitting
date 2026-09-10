@@ -9,15 +9,17 @@
 [CmdletBinding()]
 param(
     [string]$Python = "python",
-    [string]$RunName = "candidate_selection_v16_mse1e-4_k56",
+    [string]$RunName = "candidate_selection_v16_mse1e-4_k56_ordered_highk",
     [ValidateSet("auto", "cpu", "cuda")]
     [string]$Device = "cuda",
-    [int]$Epochs = 80,
-    [int]$ProposalEpochs = 16,
+    [int]$Epochs = 96,
+    [int]$ProposalEpochs = 32,
     [int]$TrainSize = 3000,
     [int]$ValSize = 600,
     [int]$RealValSize = 100,
     [double]$RealFraction = 0.35,
+    [double]$ProposalHighKFraction = 0.50,
+    [int]$ProposalHighKMinKnots = 40,
     [int]$BatchSize = 64,
     [int]$NumWorkers = 4,
     [int]$SyntheticSamplesPerK = 5,
@@ -52,6 +54,7 @@ foreach ($Entry in @{
     TrainSize = $TrainSize
     ValSize = $ValSize
     RealValSize = $RealValSize
+    ProposalHighKMinKnots = $ProposalHighKMinKnots
     BatchSize = $BatchSize
     SyntheticSamplesPerK = $SyntheticSamplesPerK
     RealSamplesPerDataset = $RealSamplesPerDataset
@@ -82,6 +85,17 @@ if (
     $RealFraction -gt 1.0
 ) {
     throw "RealFraction must lie in [0,1]."
+}
+if (
+    [double]::IsNaN($ProposalHighKFraction) -or
+    [double]::IsInfinity($ProposalHighKFraction) -or
+    $ProposalHighKFraction -lt 0.0 -or
+    $ProposalHighKFraction -gt 1.0
+) {
+    throw "ProposalHighKFraction must lie in [0,1]."
+}
+if ($ProposalHighKMinKnots -lt 4 -or $ProposalHighKMinKnots -gt 56) {
+    throw "ProposalHighKMinKnots must lie inside source K=4..56."
 }
 
 $RepositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
@@ -148,6 +162,7 @@ $RunState = [ordered]@{
     diagnostic_requested = [bool]$Diagnostic
     checkpoint = [System.IO.Path]::GetFullPath($CheckpointPath)
     requested_profile = [ordered]@{
+        simplification_contract = "ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2"
         mse_tolerance = 1e-4
         candidate_internal_knots = 56
         full_cubic_knot_vector_size_at_all_keep = 64
@@ -162,6 +177,9 @@ $RunState = [ordered]@{
         synthetic_boundary_validation_size = [Math]::Min(32, $ValSize)
         real_validation_size_per_source = $RealValSize
         real_fraction = $RealFraction
+        proposal_high_k_fraction = $ProposalHighKFraction
+        proposal_high_k_min_knots = $ProposalHighKMinKnots
+        proposal_knot_assignment_weight = 1.0
         batch_size = $BatchSize
         selection_policy = "mass_topk"
         initial_keep_fraction = 0.5357142857142857
@@ -245,6 +263,16 @@ try {
         "The selector uses adaptive mass-TopK; simple-curve teachers exhaustively " +
         "check K<=16 and may use fewer knots than the certified source."
     )
+    Write-Host (
+        "Proposal synthetic sampling uses " +
+        ([string]::Format(
+            [Globalization.CultureInfo]::InvariantCulture,
+            "{0:P0}",
+            $ProposalHighKFraction
+        )) +
+        " from K>=$ProposalHighKMinKnots and monotone one-to-one knot " +
+        "assignment; Joint restores the original K=4..56 distribution."
+    )
 
     $TrainingArguments = @(
         "scripts/train_v16.py",
@@ -254,6 +282,10 @@ try {
         "--val-size", [string]$ValSize,
         "--synthetic-boundary-val-size", "32",
         "--real-val-size", [string]$RealValSize,
+        "--proposal-high-k-fraction", ([string]::Format(
+            [Globalization.CultureInfo]::InvariantCulture, "{0:R}", $ProposalHighKFraction
+        )),
+        "--proposal-high-k-min-knots", [string]$ProposalHighKMinKnots,
         "--batch-size", [string]$BatchSize,
         "--num-points", "192",
         "--min-control-points", "8",
@@ -268,6 +300,7 @@ try {
         "--minimality-audit-points", "512",
         "--oscillation-amplitude", "0.3",
         "--proposal-pass-target", "0.90",
+        "--proposal-knot-assignment-weight", "1.0",
         "--deployment-pass-target", "0.90",
         "--one-shot-selection-policy", "mass_topk",
         "--initial-keep-fraction", "0.5357142857142857",

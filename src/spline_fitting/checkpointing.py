@@ -50,7 +50,7 @@ V16_CERTIFIED_SYNTHETIC_CONTRACT = (
     "source_subset_threshold_minimal_k4_56_span001_v2"
 )
 V16_SIMPLIFICATION_CONTRACT = (
-    "ranked_prefix_certified_cardinality_adaptive_complexity_v1"
+    "ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2"
 )
 V16_MINIMALITY_MARGIN = 0.2
 V16_MINIMALITY_AUDIT_POINTS = 512
@@ -68,6 +68,8 @@ V16_FORMAL_SYNTHETIC_MIN_CONTROL_POINTS = 8
 V16_FORMAL_SYNTHETIC_MAX_CONTROL_POINTS = 60
 V16_FORMAL_SYNTHETIC_KNOT_MIN_SPAN = 0.01
 V16_FORMAL_SYNTHETIC_BOUNDARY_SAMPLES_MIN = 32
+V16_FORMAL_PROPOSAL_HIGH_K_MIN_KNOTS = 40
+V16_FORMAL_PROPOSAL_HIGH_K_FRACTION = 0.5
 V16_FORMAL_FINAL_SAFETY_SIGMA_MAX = 0.05
 # Historical training scripts import this alias. Keep their v15 defaults and
 # checkpoint labels unchanged; v16 has a dedicated trainer and explicit label.
@@ -133,6 +135,15 @@ def assess_v16_checkpoint(
     )
     configured_deployment = _finite_checkpoint_float(
         training.get("deployment_pass_target")
+    )
+    proposal_high_k_fraction = _finite_checkpoint_float(
+        training.get("proposal_high_k_fraction")
+    )
+    proposal_high_k_min_knots = _checkpoint_int(
+        training.get("proposal_high_k_min_knots")
+    )
+    proposal_knot_assignment_weight = _finite_checkpoint_float(
+        loss_weights.get("proposal_knot_assignment_weight")
     )
     observed_dense = _finite_checkpoint_float(
         validation.get("worst_dense_pass_rate")
@@ -240,7 +251,27 @@ def assess_v16_checkpoint(
     simplification_contract = checkpoint.get("simplification_contract")
     if simplification_contract != V16_SIMPLIFICATION_CONTRACT:
         reasons.append(
-            "checkpoint is not the ranked-prefix/count-coupled simplification revision"
+            "checkpoint is not the ranked-prefix ordered-proposal/high-K "
+            "simplification revision"
+        )
+    if (
+        proposal_high_k_fraction is None
+        or not math.isclose(
+            proposal_high_k_fraction,
+            V16_FORMAL_PROPOSAL_HIGH_K_FRACTION,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+    ):
+        reasons.append(
+            "formal proposal training must allocate exactly "
+            f"{V16_FORMAL_PROPOSAL_HIGH_K_FRACTION:.0%} of synthetic draws "
+            "to the high-K stratum"
+        )
+    if proposal_high_k_min_knots != V16_FORMAL_PROPOSAL_HIGH_K_MIN_KNOTS:
+        reasons.append(
+            "formal proposal high-K stratum must start at K="
+            f"{V16_FORMAL_PROPOSAL_HIGH_K_MIN_KNOTS}"
         )
     if checkpoint.get("simplification_ready") is not True:
         reasons.append("joint simplification curriculum was not mature when saved")
@@ -481,6 +512,7 @@ def assess_v16_checkpoint(
         "complexity_weight",
         "true_parameter_weight",
         "proposal_knot_coverage_weight",
+        "proposal_knot_assignment_weight",
         "selected_knot_position_weight",
     )
     inactive_weights = [
@@ -552,7 +584,7 @@ def assess_v16_checkpoint(
             )
 
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "required_reporting_pass_rate": required,
         "required_mse_tolerance": required_tolerance,
         "configured_proposal_pass_target": configured_proposal,
@@ -566,6 +598,15 @@ def assess_v16_checkpoint(
         "recorded_mse_tolerance": recorded_tolerance,
         "recorded_knot_match_tolerance": recorded_match_tolerance,
         "candidate_knot_capacity": candidate_capacity,
+        "formal_proposal_high_k_fraction": (
+            V16_FORMAL_PROPOSAL_HIGH_K_FRACTION
+        ),
+        "formal_proposal_high_k_min_knots": (
+            V16_FORMAL_PROPOSAL_HIGH_K_MIN_KNOTS
+        ),
+        "configured_proposal_high_k_fraction": proposal_high_k_fraction,
+        "configured_proposal_high_k_min_knots": proposal_high_k_min_knots,
+        "proposal_knot_assignment_weight": proposal_knot_assignment_weight,
         "formal_synthetic_min_internal_knots": (
             V16_FORMAL_SYNTHETIC_MIN_INTERNAL_KNOTS
         ),
