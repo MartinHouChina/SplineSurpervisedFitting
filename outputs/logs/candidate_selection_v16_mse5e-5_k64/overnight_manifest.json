@@ -1,0 +1,105 @@
+﻿{
+    "run_name":  "candidate_selection_v16_mse5e-5_k64",
+    "started_utc":  "2026-09-09T16:32:47.0644657Z",
+    "status":  "completed",
+    "requested_profile":  {
+                              "candidate_internal_knots":  64,
+                              "source_internal_knots":  "4..24",
+                              "source_control_points":  "8..28",
+                              "largest_source_full_knot_vector":  32,
+                              "train_size":  1500,
+                              "validation_size":  500,
+                              "mse_tolerance":  5E-05,
+                              "fresh_batch_size":  64,
+                              "target_epochs":  56,
+                              "fallback_epochs":  64,
+                              "budget_hours":  12,
+                              "device":  "cuda"
+                          },
+    "checkpoint":  "E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.pt",
+    "diagnostic_not_final":  true,
+    "comparison_directory":  "E:\\SelfSurpervisedSplineFitting\\outputs\\comparisons\\candidate_selection_v16_mse5e-5_k64\\diagnostic_ede67b34bc42",
+    "figure_directory":  "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\candidate_selection_v16_mse5e-5_k64\\diagnostic_ede67b34bc42",
+    "phases":  {
+                   "train_resume":  {
+                                        "status":  "completed",
+                                        "exit_code":  0,
+                                        "seconds":  9678.248528099999,
+                                        "command":  "python scripts/train_v16.py --attention-heads 4 --batch-size 32 --candidate-knots 64 --certified-minimal-source --complexity-max-scale 4.0 --complexity-pass-margin 0.02 --complexity-ramp-epochs 8 --complexity-weight 0.05 --count-weight 2.0 --counterfactual-edits 2 --deployment-pass-target 0.9 --encoder-layers 3 --final-safety-knots 0 --final-safety-sigma 0.05 --grad-clip 1.0 --hidden-dim 128 --joint-lr 5E-05 --knot-match-tolerance 0.01 --knot-position-beta 0.01 --log-every-batches 10 --lr 0.0002 --max-control-points 28 --min-control-points 8 --min-selected-knots 4 --minimality-audit-points 512 --minimality-margin 0.2 --minimality-max-attempts 16 --mse-tolerance 5E-05 --noise-std 0.001 --num-points 192 --num-workers 0 --one-shot-coverage-bins 4 --one-shot-safety-knots 2 --one-shot-safety-sigma 0.2 --one-shot-selection-policy mass_topk --oscillation-amplitude 0.3 --point-dim 2 --policy-samples 2 --proposal-epochs 4 --proposal-knot-coverage-weight 1.0 --proposal-pass-target 0.9 --real-fraction 0.0 --real-val-size 100 --relocation-blend 0.0 --no-resample-train-each-epoch --safety-anneal-epochs 8 --seed 42 --selected-knot-position-weight 1.0 --selector-layers 2 --supervised-count-weight 1.0 --supervised-over-count-weight 1.0 --teacher-prefix-search-steps 6 --tolerance-factor-max 1.0 --tolerance-factor-min 0.75 --torch-num-threads 4 --train-size 1500 --true-parameter-weight 0.1 --val-seed 1000000 --val-size 500 --weight-decay 0.0001 --epochs 56 --device cuda --output E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.pt --resume E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.last.pt",
+                                        "log":  "E:\\SelfSurpervisedSplineFitting\\outputs\\logs\\candidate_selection_v16_mse5e-5_k64\\train_resume.log"
+                                    },
+                   "inspect_candidate_selection_v16_mse5e-5_k64_0ea4fa48":  {
+                                                                                "status":  "failed",
+                                                                                "exit_code":  2,
+                                                                                "seconds":  2.99952,
+                                                                                "command":  "python scripts/inspect_v16_checkpoint.py --checkpoint E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.pt --required-pass-rate 0.90 --mse-tolerance 5e-5",
+                                                                                "log":  "E:\\SelfSurpervisedSplineFitting\\outputs\\logs\\candidate_selection_v16_mse5e-5_k64\\inspect_candidate_selection_v16_mse5e-5_k64_0ea4fa48.log"
+                                                                            },
+                   "inspect_candidate_selection_v16_mse5e-5_k64.last_7a80f2e1":  {
+                                                                                     "status":  "failed",
+                                                                                     "exit_code":  2,
+                                                                                     "seconds":  2.9523289999999998,
+                                                                                     "command":  "python scripts/inspect_v16_checkpoint.py --checkpoint E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.last.pt --required-pass-rate 0.90 --mse-tolerance 5e-5",
+                                                                                     "log":  "E:\\SelfSurpervisedSplineFitting\\outputs\\logs\\candidate_selection_v16_mse5e-5_k64\\inspect_candidate_selection_v16_mse5e-5_k64.last_7a80f2e1.log"
+                                                                                 },
+                   "inspect_candidate_selection_v16_mse5e-5_k64.proposal_731b5df0":  {
+                                                                                         "status":  "failed",
+                                                                                         "exit_code":  2,
+                                                                                         "seconds":  2.8892887999999997,
+                                                                                         "command":  "python scripts/inspect_v16_checkpoint.py --checkpoint E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.proposal.pt --required-pass-rate 0.90 --mse-tolerance 5e-5",
+                                                                                         "log":  "E:\\SelfSurpervisedSplineFitting\\outputs\\logs\\candidate_selection_v16_mse5e-5_k64\\inspect_candidate_selection_v16_mse5e-5_k64.proposal_731b5df0.log"
+                                                                                     },
+                   "train_fallback":  {
+                                          "status":  "completed",
+                                          "exit_code":  0,
+                                          "seconds":  1900.6084104,
+                                          "command":  "python scripts/train_v16.py --attention-heads 4 --batch-size 32 --candidate-knots 64 --certified-minimal-source --complexity-max-scale 4.0 --complexity-pass-margin 0.02 --complexity-ramp-epochs 8 --complexity-weight 0.05 --count-weight 2.0 --counterfactual-edits 2 --deployment-pass-target 0.9 --encoder-layers 3 --final-safety-knots 0 --final-safety-sigma 0.05 --grad-clip 1.0 --hidden-dim 128 --joint-lr 5E-05 --knot-match-tolerance 0.01 --knot-position-beta 0.01 --log-every-batches 10 --lr 0.0002 --max-control-points 28 --min-control-points 8 --min-selected-knots 4 --minimality-audit-points 512 --minimality-margin 0.2 --minimality-max-attempts 16 --mse-tolerance 5E-05 --noise-std 0.001 --num-points 192 --num-workers 0 --one-shot-coverage-bins 4 --one-shot-safety-knots 2 --one-shot-safety-sigma 0.2 --one-shot-selection-policy mass_topk --oscillation-amplitude 0.3 --point-dim 2 --policy-samples 2 --proposal-epochs 4 --proposal-knot-coverage-weight 1.0 --proposal-pass-target 0.9 --real-fraction 0.0 --real-val-size 100 --relocation-blend 0.0 --no-resample-train-each-epoch --safety-anneal-epochs 8 --seed 42 --selected-knot-position-weight 1.0 --selector-layers 2 --supervised-count-weight 1.0 --supervised-over-count-weight 1.0 --teacher-prefix-search-steps 6 --tolerance-factor-max 1.0 --tolerance-factor-min 0.75 --torch-num-threads 4 --train-size 1500 --true-parameter-weight 0.1 --val-seed 1000000 --val-size 500 --weight-decay 0.0001 --epochs 64 --device cuda --output E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.pt --resume E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.last.pt",
+                                          "log":  "E:\\SelfSurpervisedSplineFitting\\outputs\\logs\\candidate_selection_v16_mse5e-5_k64\\train_fallback.log"
+                                      },
+                   "inspect_candidate_selection_v16_mse5e-5_k64_fd5fe280":  {
+                                                                                "status":  "failed",
+                                                                                "exit_code":  2,
+                                                                                "seconds":  2.9704565,
+                                                                                "command":  "python scripts/inspect_v16_checkpoint.py --checkpoint E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.pt --required-pass-rate 0.90 --mse-tolerance 5e-5",
+                                                                                "log":  "E:\\SelfSurpervisedSplineFitting\\outputs\\logs\\candidate_selection_v16_mse5e-5_k64\\inspect_candidate_selection_v16_mse5e-5_k64_fd5fe280.log"
+                                                                            },
+                   "inspect_candidate_selection_v16_mse5e-5_k64.last_b4b8fc7e":  {
+                                                                                     "status":  "failed",
+                                                                                     "exit_code":  2,
+                                                                                     "seconds":  3.0424823,
+                                                                                     "command":  "python scripts/inspect_v16_checkpoint.py --checkpoint E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.last.pt --required-pass-rate 0.90 --mse-tolerance 5e-5",
+                                                                                     "log":  "E:\\SelfSurpervisedSplineFitting\\outputs\\logs\\candidate_selection_v16_mse5e-5_k64\\inspect_candidate_selection_v16_mse5e-5_k64.last_b4b8fc7e.log"
+                                                                                 },
+                   "inspect_candidate_selection_v16_mse5e-5_k64.proposal_3cc2f091":  {
+                                                                                         "status":  "failed",
+                                                                                         "exit_code":  2,
+                                                                                         "seconds":  2.9473688,
+                                                                                         "command":  "python scripts/inspect_v16_checkpoint.py --checkpoint E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.proposal.pt --required-pass-rate 0.90 --mse-tolerance 5e-5",
+                                                                                         "log":  "E:\\SelfSurpervisedSplineFitting\\outputs\\logs\\candidate_selection_v16_mse5e-5_k64\\inspect_candidate_selection_v16_mse5e-5_k64.proposal_3cc2f091.log"
+                                                                                     },
+                   "benchmark_all_methods":  {
+                                                 "status":  "completed",
+                                                 "exit_code":  0,
+                                                 "seconds":  8630.1250952,
+                                                 "command":  "python scripts/benchmark_v16_datasets.py --checkpoint E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.pt --output-dir E:\\SelfSurpervisedSplineFitting\\outputs\\comparisons\\candidate_selection_v16_mse5e-5_k64\\diagnostic_ede67b34bc42 --samples-per-knot-count 2 --min-knot-count 4 --max-knot-count 24 --real-samples-per-dataset 8 --mse-tolerance 5e-5 --max-internal-knots 64 --gradient-steps 12 --paper-initial-knots 64 --paper-admm-iterations 400 --paper-lambda-bisections 8 --paper-relocation-iterations 8 --liang-dense-knots 64 --liang-feature-samples 1025 --dung-scan-intervals 10 --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations 50 --network-warmups 3 --network-repeats 20 --end-to-end-repeats 1 --torch-num-threads 1 --device cuda --resume --allow-unqualified-diagnostic",
+                                                 "log":  "E:\\SelfSurpervisedSplineFitting\\outputs\\logs\\candidate_selection_v16_mse5e-5_k64\\benchmark_all_methods.log"
+                                             },
+                   "plot_method_comparison":  {
+                                                  "status":  "completed",
+                                                  "exit_code":  0,
+                                                  "seconds":  3.8474633999999996,
+                                                  "command":  "python scripts/plot_v16_method_comparison.py --input E:\\SelfSurpervisedSplineFitting\\outputs\\comparisons\\candidate_selection_v16_mse5e-5_k64\\diagnostic_ede67b34bc42\\comparison.json --output-dir E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\candidate_selection_v16_mse5e-5_k64\\diagnostic_ede67b34bc42\\method_comparison --method-set all --dpi 300 --reference --allow-unqualified-diagnostic",
+                                                  "log":  "E:\\SelfSurpervisedSplineFitting\\outputs\\logs\\candidate_selection_v16_mse5e-5_k64\\plot_method_comparison.log"
+                                              },
+                   "plot_ours_cases":  {
+                                           "status":  "completed",
+                                           "exit_code":  0,
+                                           "seconds":  16.5262782,
+                                           "command":  "python scripts/visualize_v16_ours_cases.py --checkpoint E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse5e-5_k64.pt --output-dir E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\candidate_selection_v16_mse5e-5_k64\\diagnostic_ede67b34bc42\\ours_cases --real-samples-per-dataset 2 --selection-seed 20260910 --mse-tolerance 5e-5 --max-internal-knots 64 --network-warmups 2 --network-repeats 5 --end-to-end-repeats 1 --torch-num-threads 1 --device cuda --dpi 300 --overwrite --allow-unqualified-diagnostic",
+                                           "log":  "E:\\SelfSurpervisedSplineFitting\\outputs\\logs\\candidate_selection_v16_mse5e-5_k64\\plot_ours_cases.log"
+                                       }
+               },
+    "fallback_training_succeeded":  true,
+    "training_command_succeeded":  true,
+    "finished_utc":  "2026-09-09T22:10:21.9478596Z"
+}

@@ -105,6 +105,30 @@ python scripts/train_v16.py @v16Args
 
 `proposal-pass-target=0.90` 配合默认 `complexity-pass-margin=0.02`，意味着进入 Joint 阶段前的实际最差数据源 dense gate 是 92%。若未达到，脚本只保留 `.proposal.pt`、`.last.pt` 和 `.history.json`，不会伪造主 `.pt`。
 
+### 12 小时无人值守实验：Kc=64、MSE=5e-5
+
+下面的入口会串行完成训练或断点续训、checkpoint 资格检查、八方法配对测试、方法对比图和 Ours 案例图：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/run_v16_overnight_12h.ps1
+```
+
+默认合同为：64 个**内部候选**；合成 source 内部节点 `K=4..24`，即控制顶点 `8..28`、最大 source 完整节点向量长度 32；固定合成训练/验证集为 1500/500；MSE 阈值 `5e-5`。注意 Kc=64 全保留时网络完整节点向量长度是 72，不是 32。
+
+脚本会先等待当前正在写同一 checkpoint 的训练进程退出，再严格按 `.last.pt` 中保存的配置续训；不会同时启动第二个写入者。当前已有运行若采用 batch=32、proposal=4，就会原样续用，不能被 fresh 默认的 batch=64、proposal=12 静默改写。逐 epoch 历史、恢复权重、每阶段日志及流水线状态均会保存。
+
+默认先训练到 56 epochs；若仍未通过正式资格且预算还剩至少 6.5 小时，才续训到 64 epochs。随后对 source K=4..24 每档 2 条及三个真实来源各 8 条进行 66 曲线比较，并生成 Ours/Kang/Park/Liang/Dung/Luo/Yeh/Greedy 指标图和 6 个 Ours 真实案例。12 小时是依据当前机器截至 epoch 8 的实测速度制定的预算，不是硬超时保证；GPU、CPU 和数据缓存状态会改变实际时间。
+
+若希望关闭当前终端后继续运行，可启动独立隐藏进程；进度仍写入日志：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/run_v16_overnight_12h.ps1 -Detach
+```
+
+`-Detach` 只派生一个隐藏 runner 并立即返回；隐藏 runner 内的现有进程/GPU 守卫仍会照常执行。主状态文件为 `outputs/logs/candidate_selection_v16_mse5e-5_k64/overnight_manifest.json`。资格检查通过时结果进入 `formal_<checkpoint-hash>/`；否则流程仍完成比较与画图，但进入 `diagnostic_<checkpoint-hash>/`，并强制标记 `DIAGNOSTIC NOT FINAL`，不能用于正式结论。参数、恢复规则和完整产物树见[训练流程](docs/training_pipeline.md#9-12-小时无人值守训练比较与案例图)。
+
 如需验证“完整节点向量最多64项”的容量实验，把 `--candidate-knots 96` 换成：
 
 ```powershell

@@ -51,6 +51,7 @@ candidate_selection_counterfactual_bspline_v16
 | 文件 | 作用 |
 |---|---|
 | scripts/train_v16.py | 两阶段训练、worst-source gate、续训和 checkpoint qualification |
+| scripts/run_v16_overnight_12h.ps1 | Kc=64、source K=4..24、MSE=5e-5 的无人值守串行入口；自动等待/续训、资格分流、八方法 benchmark 和 Ours 案例图 |
 | scripts/inspect_v16_checkpoint.py | 训练后统一资格检查；合格返回 0，不合格返回 2 |
 | scripts/fit_v16_point_cloud.py | 单条用户点云部署，输出 PNG/JSON |
 | scripts/benchmark_v16_datasets.py | v16 合成和三个真实数据集的八方法配对测试 |
@@ -98,6 +99,7 @@ outputs/
   comparisons/          定量比较及逐样本记录
   figures/              论文/PPT 图
   fits/v16/             用户点云部署
+  logs/                 训练与无人值守流水线日志、状态 manifest
   paper/                论文案例
   archive/              可恢复历史产物
   tmp/                  临时 smoke；验证后可删除
@@ -110,6 +112,8 @@ outputs/
 - 临时产物：outputs/tmp/_smoke_name。
 
 正式结果目录不要使用 smoke、test 或 latest。
+
+本轮夜间入口按 checkpoint SHA-256 自动区分 `formal_<hash>` 与 `diagnostic_<hash>`。运行总状态和每阶段命令、返回码、耗时、日志及最终目录记录在 `outputs/logs/candidate_selection_v16_mse5e-5_k64/overnight_manifest.json`；完整参数、续训规则和产物树见[训练流程第 9 节](training_pipeline.md#9-12-小时无人值守训练比较与案例图)。
 
 ## 6. 测试
 

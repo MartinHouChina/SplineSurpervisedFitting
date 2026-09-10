@@ -250,3 +250,129 @@ python scripts/inspect_v16_checkpoint.py `
 该 10～14 范围不强加给没有节点真值的 UJI、Natural Earth 或 USGS；真实曲线的最终 K 仍由误差约束和学习到的复杂度决定。
 
 正式对比协议、论文适配方法和命令见 [v16 在线反事实子集学习](v16_counterfactual_subset.md) 与 [公开节点方法适配说明](published_knot_methods_reproduction.md)。
+
+## 9. 12 小时无人值守训练、比较与案例图
+
+`scripts/run_v16_overnight_12h.ps1` 是本轮 `MSE=5e-5`、Kc=64 实验的单一串行入口。它不是另一套模型实现；内部依次调用当前的训练、资格检查、统一 benchmark、指标绘图和 Ours 案例绘图脚本。
+
+### 9.1 固定实验合同
+
+| 项目 | 默认值 | 准确含义 |
+|---|---:|---|
+| 网络容量 | `candidate-knots=64` | 64 个内部候选；全部保留时完整三次节点向量为 72 项、控制顶点为 68 个 |
+| 合成 source 复杂度 | `min/max-control-points=8/28` | 真内部节点 `K=4..24`；最大 source 控制顶点 28、完整节点向量 32 项 |
+| 合成训练/验证集 | 1500 / 500 | 使用固定样本，`no-resample-train-each-epoch`；不把训练样本改成每轮新抽样 |
+| 真实训练占比 | 0 | 本轮网络只在合成集训练；UJI、Natural Earth、USGS 只用于之后的独立泛化测试和案例图 |
+| 采样点 | 192 | 每条网络输入的有序归一化点数 |
+| 拟合阈值 | `MSE <= 5e-5` | 平均平方欧氏距离，不开方；对应 RMS 约 `7.071e-3` |
+| fresh batch | 64 | 仅新实验使用；恢复已有 batch=32 的 `.last.pt` 时仍严格使用 32 |
+| 初始训练预算 | 56 epochs | fresh 时 proposal=12；现有实验已进入 joint 且 proposal=4 时保留原阶段边界 |
+| 条件追加预算 | 64 epochs | 56 轮后仍不合格且总预算剩余至少 6.5 小时时才追加 |
+| 工程通过率 | 90% | checkpoint 仍须同时满足简化成熟度、最终安全储备和 Synthetic 节点真值门槛 |
+
+最容易混淆的是两种“最大值”：`24+2*4=32` 是合成真值曲线在三次开区间表示下的最大**完整节点向量**；`candidate-knots=64` 是网络提供给 Selector 的**内部候选数**，对应全保留完整向量 72。前者规定监督数据的复杂度，后者规定网络搜索容量。
+
+### 9.2 一次启动
+
+在仓库根目录执行一次：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/run_v16_overnight_12h.ps1
+```
+
+如果要关闭当前终端，使用独立隐藏进程。脚本本身会持续写日志，所以隐藏运行不会丢失训练记录：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/run_v16_overnight_12h.ps1 -Detach
+```
+
+`-Detach` 只负责派生一个隐藏 runner 并立即返回，不会绕过任何检查。隐藏 runner 仍执行相同目标训练等待、不同训练/GPU 冲突检查、自动恢复及正式/诊断分流；其兜底 stdout/stderr 也单独写入同一日志目录。
+
+查看流水线状态或连续日志：
+
+```powershell
+Get-Content outputs/logs/candidate_selection_v16_mse5e-5_k64/overnight_manifest.json
+Get-Content outputs/logs/candidate_selection_v16_mse5e-5_k64/overnight.log -Wait
+```
+
+不要同时手工启动另一个指向同一 output 的 `train_v16.py`。入口会检查 Windows 进程：若发现相同目标的现有训练，会保留它并每 45 秒报告一次等待状态；若发现不同的 v16 训练或明确的其他 Python CUDA 作业，则安全退出且不终止用户进程。WDDM 桌面和普通图形进程不会因此被误判为冲突。
+
+### 9.3 自动恢复规则
+
+默认 checkpoint stem 为 `candidate_selection_v16_mse5e-5_k64`。
+
+1. 如果匹配的训练进程正在运行，先等它自然结束。
+2. 如果 `.last.pt` 存在且尚未到 56 轮，从下一轮自动恢复。恢复命令从 checkpoint 的 `training_config` 重建，batch、proposal 边界、数据、损失和随机种子不会被 fresh 默认值覆盖。
+3. 如果已经达到目标轮数且主 `.pt` 存在，跳过训练，直接资格检查和评估。
+4. 每个完成的 epoch 都原子写入 `.last.pt`，同时更新 `.history.json`；关闭窗口最多损失当前尚未完成的一轮。
+5. 不完整产物存在但 `.last.pt` 缺失时，脚本不删除或覆盖它们，只使用可读取的最佳权重生成诊断结果。
+
+要只重跑 benchmark 和图片，可增加 `-SkipTraining`。benchmark 自身带 `--resume`，相同实验指纹下会复用已经完成的逐样本记录。
+
+### 9.4 串行阶段与时间预算
+
+执行顺序固定为：
+
+```text
+进程/GPU预检
+  -> 等待同目标旧训练
+  -> fresh训练或.last.pt续训至56轮
+  -> checkpoint资格检查
+  -> 条件追加至64轮并再次检查
+  -> 66条曲线的八方法配对benchmark
+  -> Ours与公开/数值方法2x2指标图
+  -> 6个Ours真实拟合案例及总览
+```
+
+配对 benchmark 使用 K=4..24 每档 2 条合成曲线，以及 UJI、Natural Earth、USGS 各 8 条，共 66 条。所有可设置容量的方法统一使用 64 个内部节点上限；保留 Greedy 12 次位置梯度更新、Kang 400 次 ADMM/8 次 lambda 二分/8 次重定位、Dung 10 个扫描区间/10 次优化、Luo population=10/DE=50。完整方法计时重复 1 次；Ours 纯网络计时预热 3 次并重复 20 次。纯网络时间和传统方法完整求解时间必须分别标注，不能解释成完全对称的端到端加速比。
+
+当前工作区的 GTX 1070 在已有 batch=32 实验中，joint epoch 截至第 8 轮约为 4.7 分钟。由此估算训练约 4.4～5.1 小时，完整 benchmark 约 3.5～5.5 小时，绘图和 6 个案例约 10～15 分钟，整体按约 8～11 小时规划。`-BudgetHours 12` 只决定是否还有足够余量追加到 64 轮；12 小时不是强制终止时限，脚本也不会为了赶时间静默降低基线迭代或删减样本。RTX 3090 通常会加快网络阶段，但总耗时仍受 CPU 数值基线、GPU 占用和缓存状态影响。
+
+### 9.5 正式与诊断结果分流
+
+训练后会用 `inspect_v16_checkpoint.py` 检查 MSE 阈值、90% pass、joint/simplification 成熟度、最终安全储备、Synthetic `count MAE<=2`、`knot F1>=0.60` 和 `matched MAE<=0.005`。
+
+- 合格：选择合格 checkpoint，目录标签为 `formal_<SHA256前12位>`；
+- 不合格：优先选择主 `.pt` 中按验证排序保存的最佳 joint 权重；主权重缺失时才依次使用 `.last.pt` 或 `.proposal.pt`。随后继续完成 benchmark 和案例图，目录标签为 `diagnostic_<SHA256前12位>`，所有报告和 PNG 强制显示 `DIAGNOSTIC NOT FINAL`。
+
+不合格并不等于流水线失败；它表示训练、比较和绘图链路已经完成，但结果只能用于定位问题。checkpoint 无法加载、训练后没有任何权重、benchmark 或绘图命令失败才会把 `overnight_manifest.json` 的顶层状态写为 `failed`。
+
+### 9.6 产物位置
+
+```text
+outputs/
+  checkpoints/
+    candidate_selection_v16_mse5e-5_k64.pt
+    candidate_selection_v16_mse5e-5_k64.last.pt
+    candidate_selection_v16_mse5e-5_k64.proposal.pt
+    candidate_selection_v16_mse5e-5_k64.history.json
+  logs/candidate_selection_v16_mse5e-5_k64/
+    overnight.log
+    overnight_manifest.json
+    detached_<timestamp>.stdout.log
+    detached_<timestamp>.stderr.log
+    train_resume.log 或 train_fresh.log
+    inspect_*.log
+    benchmark_all_methods.log
+    plot_method_comparison.log
+    plot_ours_cases.log
+  comparisons/candidate_selection_v16_mse5e-5_k64/
+    formal_<hash>/ 或 diagnostic_<hash>/
+      comparison.json
+      summary.csv
+      measurements.csv
+      report.md
+  figures/candidate_selection_v16_mse5e-5_k64/
+    formal_<hash>/ 或 diagnostic_<hash>/
+      method_comparison/
+        v16_published_methods_input.png
+        v16_published_methods_reference.png
+      ours_cases/
+        ours_cases_overview.png
+        deployment_visualizations.json
+        ours__<dataset>__<sample>.png
+```
+
+`overnight_manifest.json` 是第一检查入口：顶层 `status=completed` 表示所有串行阶段结束；`diagnostic_not_final=false` 才表示采用了正式合格 checkpoint。最后还应核对 `comparison.json` 中的阈值、64 节点统一容量、66 条曲线记录，以及案例图是否同时标出采样点、拟合曲线、控制多边形、控制顶点和内部节点。PNG 只从保存的实测 JSON/checkpoint 生成，不能人工调整数值。

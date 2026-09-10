@@ -1,0 +1,1362 @@
+v16 overnight profile: Kc=64 internal candidates; source K=4..24; MSE=5e-5.
+Fresh run uses train=1500, val=500, batch=64, target/fallback epochs=56/64.
+Measured GTX 1070 budget: approximately 4.4-5.1 h training + 3.5-5.5 h paired benchmark; an RTX 3090 is normally faster.
+Existing matching training job detected: PID=11084. It will not be stopped.
+[2026-09-10 00:32:47] Waiting for PID 11084; next heartbeat in at most 45 seconds.
+[2026-09-10 00:32:47] Waiting for PID 11084; next heartbeat in at most 45 seconds.
+[2026-09-10 00:32:47] Waiting for PID 11084; next heartbeat in at most 45 seconds.
+[2026-09-10 00:32:47] Waiting for PID 11084; next heartbeat in at most 45 seconds.
+[2026-09-10 00:32:47] Waiting for PID 11084; next heartbeat in at most 45 seconds.
+Existing matching training PID 11084 has exited.
+Resuming epoch 1..56 from E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.last.pt.
+
+[train_resume] python scripts/train_v16.py --attention-heads 4 --batch-size 32 --candidate-knots 64 --certified-minimal-source --complexity-max-scale 4.0 --complexity-pass-margin 0.02 --complexity-ramp-epochs 8 --complexity-weight 0.05 --count-weight 2.0 --counterfactual-edits 2 --deployment-pass-target 0.9 --encoder-layers 3 --final-safety-knots 0 --final-safety-sigma 0.05 --grad-clip 1.0 --hidden-dim 128 --joint-lr 5E-05 --knot-match-tolerance 0.01 --knot-position-beta 0.01 --log-every-batches 10 --lr 0.0002 --max-control-points 28 --min-control-points 8 --min-selected-knots 4 --minimality-audit-points 512 --minimality-margin 0.2 --minimality-max-attempts 16 --mse-tolerance 5E-05 --noise-std 0.001 --num-points 192 --num-workers 0 --one-shot-coverage-bins 4 --one-shot-safety-knots 2 --one-shot-safety-sigma 0.2 --one-shot-selection-policy mass_topk --oscillation-amplitude 0.3 --point-dim 2 --policy-samples 2 --proposal-epochs 4 --proposal-knot-coverage-weight 1.0 --proposal-pass-target 0.9 --real-fraction 0.0 --real-val-size 100 --relocation-blend 0.0 --no-resample-train-each-epoch --safety-anneal-epochs 8 --seed 42 --selected-knot-position-weight 1.0 --selector-layers 2 --supervised-count-weight 1.0 --supervised-over-count-weight 1.0 --teacher-prefix-search-steps 6 --tolerance-factor-max 1.0 --tolerance-factor-min 0.75 --torch-num-threads 4 --train-size 1500 --true-parameter-weight 0.1 --val-seed 1000000 --val-size 500 --weight-decay 0.0001 --epochs 56 --device cuda --output E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.pt --resume E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.last.pt
+Checking real manifests and train/val/test group separation...
+v16 adaptive mass_topk: cuda, Kc=64 internal (full cubic knot vector at all-keep=72), MSE tolerance=5e-05; 1500 train draws, 500 validation curves; real sources=0
+Synthetic source contract: clean source-subset threshold-minimal certificate at RMS=0.00707107, margin=20%, audit_points=512
+Simplification curriculum: training-only ranked-prefix teacher steps=6; certified over-count weight=1, symmetric true-count weight=1; complexity multiplier 0..4; safety 2+0.2sigma -> 0+0.05sigma. Deployment still uses one network forward and one final refit.
+Validation checkpoint quality uses the worst source pass rate. Additional subset fits run only during training.
+Epoch 017/56 joint [........................] 1/47 MSE=1.923e-05 pass=93.8% K=41.7 teacherK=38.2 countMAE=27.41
+Epoch 017/56 joint [=====...................] 10/47 MSE=1.771e-05 pass=93.8% K=41.3 teacherK=38.1 countMAE=26.75
+Epoch 017/56 joint [==========..............] 20/47 MSE=1.978e-05 pass=96.9% K=40.4 teacherK=37.3 countMAE=25.84
+Epoch 017/56 joint [===============.........] 30/47 MSE=1.672e-05 pass=96.9% K=38.2 teacherK=33.9 countMAE=25.75
+Epoch 017/56 joint [====================....] 40/47 MSE=2.064e-05 pass=90.6% K=38.2 teacherK=34.9 countMAE=24.75
+Epoch 017/56 joint [========================] 47/47 MSE=1.720e-05 pass=96.4% K=36.6 teacherK=32.6 countMAE=23.89
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 017 val dense=100.0% deployment=96.2% worst-source=96.2% MSE=2.142e-05 K=39.94 mass=39.36 beta=-1.37 complexity=1.44->1.56 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=96.2%, MSE=2.142e-05, K=39.94, targetK=14.22, count_MAE=25.73, bias=+25.73, knot_F1@0.01=0.347, param_RMSE=6.537e-02
+Epoch 018/56 joint [........................] 1/47 MSE=1.629e-05 pass=100.0% K=40.7 teacherK=36.6 countMAE=26.31
+Epoch 018/56 joint [=====...................] 10/47 MSE=2.635e-05 pass=93.8% K=37.8 teacherK=35.2 countMAE=24.50
+Epoch 018/56 joint [==========..............] 20/47 MSE=1.824e-05 pass=93.8% K=38.2 teacherK=34.7 countMAE=24.75
+Epoch 018/56 joint [===============.........] 30/47 MSE=1.668e-05 pass=96.9% K=40.6 teacherK=36.5 countMAE=25.53
+Epoch 018/56 joint [====================....] 40/47 MSE=3.160e-05 pass=93.8% K=39.6 teacherK=36.2 countMAE=24.94
+Epoch 018/56 joint [========================] 47/47 MSE=2.373e-05 pass=92.9% K=36.9 teacherK=32.9 countMAE=23.39
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 018 val dense=100.0% deployment=93.4% worst-source=93.4% MSE=2.260e-05 K=38.59 mass=37.98 beta=-1.17 complexity=1.56->1.69 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=93.4%, MSE=2.260e-05, K=38.59, targetK=14.22, count_MAE=24.37, bias=+24.37, knot_F1@0.01=0.343, param_RMSE=6.350e-02
+Epoch 019/56 joint [........................] 1/47 MSE=2.094e-05 pass=93.8% K=37.8 teacherK=34.6 countMAE=24.12
+Epoch 019/56 joint [=====...................] 10/47 MSE=2.347e-05 pass=90.6% K=39.8 teacherK=35.9 countMAE=25.38
+Epoch 019/56 joint [==========..............] 20/47 MSE=2.450e-05 pass=90.6% K=37.7 teacherK=34.9 countMAE=23.69
+Epoch 019/56 joint [===============.........] 30/47 MSE=2.704e-05 pass=84.4% K=36.3 teacherK=33.0 countMAE=23.00
+Epoch 019/56 joint [====================....] 40/47 MSE=2.138e-05 pass=90.6% K=38.8 teacherK=35.8 countMAE=24.00
+Epoch 019/56 joint [========================] 47/47 MSE=1.701e-05 pass=100.0% K=38.0 teacherK=34.4 countMAE=23.57
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 019 val dense=100.0% deployment=92.6% worst-source=92.6% MSE=2.401e-05 K=37.62 mass=37.06 beta=-1.04 complexity=1.69->1.81 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=92.6%, MSE=2.401e-05, K=37.62, targetK=14.22, count_MAE=23.40, bias=+23.40, knot_F1@0.01=0.346, param_RMSE=6.359e-02
+Epoch 020/56 joint [........................] 1/47 MSE=1.786e-05 pass=96.9% K=39.6 teacherK=36.1 countMAE=24.56
+Epoch 020/56 joint [=====...................] 10/47 MSE=2.268e-05 pass=93.8% K=38.6 teacherK=34.7 countMAE=24.62
+Epoch 020/56 joint [==========..............] 20/47 MSE=2.044e-05 pass=93.8% K=39.2 teacherK=35.6 countMAE=24.75
+Epoch 020/56 joint [===============.........] 30/47 MSE=2.831e-05 pass=84.4% K=37.5 teacherK=35.5 countMAE=22.91
+Epoch 020/56 joint [====================....] 40/47 MSE=4.104e-05 pass=75.0% K=37.4 teacherK=35.9 countMAE=21.94
+Epoch 020/56 joint [========================] 47/47 MSE=1.526e-05 pass=100.0% K=36.1 teacherK=32.0 countMAE=22.46
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 020 val dense=100.0% deployment=94.4% worst-source=94.4% MSE=2.139e-05 K=37.31 mass=36.73 beta=-1.04 complexity=1.81->1.94 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=94.4%, MSE=2.139e-05, K=37.31, targetK=14.22, count_MAE=23.09, bias=+23.09, knot_F1@0.01=0.353, param_RMSE=6.209e-02
+Epoch 021/56 joint [........................] 1/47 MSE=1.765e-05 pass=96.9% K=38.5 teacherK=35.1 countMAE=23.84
+Epoch 021/56 joint [=====...................] 10/47 MSE=2.624e-05 pass=93.8% K=39.8 teacherK=36.9 countMAE=23.69
+Epoch 021/56 joint [==========..............] 20/47 MSE=3.999e-05 pass=65.6% K=36.2 teacherK=34.9 countMAE=21.53
+Epoch 021/56 joint [===============.........] 30/47 MSE=2.061e-05 pass=96.9% K=35.5 teacherK=31.2 countMAE=22.31
+Epoch 021/56 joint [====================....] 40/47 MSE=2.668e-05 pass=87.5% K=38.6 teacherK=36.1 countMAE=23.06
+Epoch 021/56 joint [========================] 47/47 MSE=2.456e-05 pass=89.3% K=37.5 teacherK=34.7 countMAE=22.32
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 021 val dense=100.0% deployment=89.0% worst-source=89.0% MSE=2.953e-05 K=36.05 mass=35.46 beta=-1.02 complexity=1.94->1.69 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=89.0%, MSE=2.953e-05, K=36.05, targetK=14.22, count_MAE=21.83, bias=+21.83, knot_F1@0.01=0.352, param_RMSE=6.117e-02
+Epoch 022/56 joint [........................] 1/47 MSE=2.311e-05 pass=93.8% K=37.3 teacherK=34.2 countMAE=23.03
+Epoch 022/56 joint [=====...................] 10/47 MSE=2.143e-05 pass=93.8% K=36.0 teacherK=32.1 countMAE=22.19
+Epoch 022/56 joint [==========..............] 20/47 MSE=1.723e-05 pass=100.0% K=33.0 teacherK=29.3 countMAE=20.41
+Epoch 022/56 joint [===============.........] 30/47 MSE=5.628e-05 pass=84.4% K=32.2 teacherK=30.4 countMAE=19.34
+Epoch 022/56 joint [====================....] 40/47 MSE=1.595e-05 pass=96.9% K=36.1 teacherK=32.1 countMAE=21.88
+Epoch 022/56 joint [========================] 47/47 MSE=1.664e-05 pass=92.9% K=38.0 teacherK=33.4 countMAE=23.29
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 022 val dense=100.0% deployment=96.6% worst-source=96.6% MSE=1.818e-05 K=36.45 mass=34.80 beta=-0.63 complexity=1.69->1.81 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=96.6%, MSE=1.818e-05, K=36.45, targetK=14.22, count_MAE=22.24, bias=+22.24, knot_F1@0.01=0.358, param_RMSE=5.827e-02
+Epoch 023/56 joint [........................] 1/47 MSE=2.035e-05 pass=90.6% K=34.8 teacherK=30.8 countMAE=21.47
+Epoch 023/56 joint [=====...................] 10/47 MSE=2.141e-05 pass=90.6% K=33.8 teacherK=30.7 countMAE=19.91
+Epoch 023/56 joint [==========..............] 20/47 MSE=1.770e-05 pass=90.6% K=30.1 teacherK=25.8 countMAE=18.97
+Epoch 023/56 joint [===============.........] 30/47 MSE=2.091e-05 pass=90.6% K=35.9 teacherK=31.4 countMAE=21.31
+Epoch 023/56 joint [====================....] 40/47 MSE=1.473e-05 pass=100.0% K=38.4 teacherK=33.2 countMAE=22.81
+Epoch 023/56 joint [========================] 47/47 MSE=2.627e-05 pass=89.3% K=32.8 teacherK=29.5 countMAE=19.21
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 023 val dense=100.0% deployment=96.2% worst-source=96.2% MSE=1.964e-05 K=34.45 mass=32.85 beta=-0.41 complexity=1.81->1.94 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=96.2%, MSE=1.964e-05, K=34.45, targetK=14.22, count_MAE=20.23, bias=+20.23, knot_F1@0.01=0.360, param_RMSE=5.799e-02
+Epoch 024/56 joint [........................] 1/47 MSE=2.213e-05 pass=93.8% K=33.2 teacherK=30.5 countMAE=18.78
+Epoch 024/56 joint [=====...................] 10/47 MSE=2.565e-05 pass=90.6% K=30.3 teacherK=27.5 countMAE=17.47
+Epoch 024/56 joint [==========..............] 20/47 MSE=2.436e-05 pass=93.8% K=32.3 teacherK=29.3 countMAE=18.69
+Epoch 024/56 joint [===============.........] 30/47 MSE=2.005e-05 pass=90.6% K=34.6 teacherK=31.6 countMAE=19.38
+Epoch 024/56 joint [====================....] 40/47 MSE=1.564e-05 pass=100.0% K=31.7 teacherK=27.6 countMAE=18.44
+Epoch 024/56 joint [========================] 47/47 MSE=2.417e-05 pass=85.7% K=32.6 teacherK=29.2 countMAE=18.68
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 024 val dense=100.0% deployment=91.6% worst-source=91.6% MSE=2.243e-05 K=32.87 mass=32.29 beta=-0.40 complexity=1.94->2.00 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=91.6%, MSE=2.243e-05, K=32.87, targetK=14.22, count_MAE=18.65, bias=+18.65, knot_F1@0.01=0.352, param_RMSE=5.394e-02
+Epoch 025/56 joint [........................] 1/47 MSE=1.843e-05 pass=100.0% K=35.2 teacherK=31.3 countMAE=19.72
+Epoch 025/56 joint [=====...................] 10/47 MSE=1.773e-05 pass=96.9% K=32.0 teacherK=28.6 countMAE=18.19
+Epoch 025/56 joint [==========..............] 20/47 MSE=1.913e-05 pass=96.9% K=30.4 teacherK=26.9 countMAE=16.94
+Epoch 025/56 joint [===============.........] 30/47 MSE=2.247e-05 pass=96.9% K=32.9 teacherK=29.8 countMAE=18.19
+Epoch 025/56 joint [====================....] 40/47 MSE=3.545e-05 pass=71.9% K=32.2 teacherK=30.2 countMAE=17.91
+Epoch 025/56 joint [========================] 47/47 MSE=2.718e-05 pass=96.4% K=31.4 teacherK=28.5 countMAE=16.89
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 025 val dense=100.0% deployment=87.8% worst-source=87.8% MSE=2.864e-05 K=30.54 mass=29.98 beta=-0.11 complexity=2.00->1.75 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=87.8%, MSE=2.864e-05, K=30.54, targetK=14.22, count_MAE=16.32, bias=+16.32, knot_F1@0.01=0.343, param_RMSE=5.239e-02
+Epoch 026/56 joint [........................] 1/47 MSE=2.011e-05 pass=93.8% K=29.2 teacherK=25.6 countMAE=16.56
+Epoch 026/56 joint [=====...................] 10/47 MSE=1.890e-05 pass=93.8% K=29.1 teacherK=25.1 countMAE=16.62
+Epoch 026/56 joint [==========..............] 20/47 MSE=1.612e-05 pass=96.9% K=34.0 teacherK=29.5 countMAE=19.12
+Epoch 026/56 joint [===============.........] 30/47 MSE=2.052e-05 pass=93.8% K=34.2 teacherK=30.0 countMAE=19.03
+Epoch 026/56 joint [====================....] 40/47 MSE=1.574e-05 pass=96.9% K=28.7 teacherK=23.9 countMAE=16.31
+Epoch 026/56 joint [========================] 47/47 MSE=1.957e-05 pass=92.9% K=30.8 teacherK=26.8 countMAE=17.25
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 026 val dense=100.0% deployment=97.6% worst-source=97.6% MSE=1.696e-05 K=32.64 mass=31.01 beta=-0.05 complexity=1.75->1.88 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=97.6%, MSE=1.696e-05, K=32.64, targetK=14.22, count_MAE=18.42, bias=+18.42, knot_F1@0.01=0.352, param_RMSE=5.036e-02
+Epoch 027/56 joint [........................] 1/47 MSE=1.464e-05 pass=96.9% K=33.3 teacherK=28.4 countMAE=18.81
+Epoch 027/56 joint [=====...................] 10/47 MSE=1.505e-05 pass=100.0% K=35.1 teacherK=29.9 countMAE=19.66
+Epoch 027/56 joint [==========..............] 20/47 MSE=1.560e-05 pass=100.0% K=31.1 teacherK=26.5 countMAE=17.34
+Epoch 027/56 joint [===============.........] 30/47 MSE=1.993e-05 pass=96.9% K=33.5 teacherK=29.4 countMAE=18.16
+Epoch 027/56 joint [====================....] 40/47 MSE=2.272e-05 pass=93.8% K=27.6 teacherK=25.1 countMAE=14.81
+Epoch 027/56 joint [========================] 47/47 MSE=1.448e-05 pass=100.0% K=34.8 teacherK=29.6 countMAE=19.61
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 027 val dense=100.0% deployment=96.8% worst-source=96.8% MSE=1.916e-05 K=31.24 mass=29.64 beta=-0.09 complexity=1.88->2.00 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=96.8%, MSE=1.916e-05, K=31.24, targetK=14.22, count_MAE=17.03, bias=+17.03, knot_F1@0.01=0.357, param_RMSE=5.016e-02
+Epoch 028/56 joint [........................] 1/47 MSE=2.293e-05 pass=90.6% K=33.6 teacherK=29.9 countMAE=17.78
+Epoch 028/56 joint [=====...................] 10/47 MSE=1.716e-05 pass=100.0% K=33.1 teacherK=29.5 countMAE=17.72
+Epoch 028/56 joint [==========..............] 20/47 MSE=2.240e-05 pass=96.9% K=31.6 teacherK=27.6 countMAE=16.91
+Epoch 028/56 joint [===============.........] 30/47 MSE=2.609e-05 pass=90.6% K=30.7 teacherK=28.8 countMAE=15.78
+Epoch 028/56 joint [====================....] 40/47 MSE=2.908e-05 pass=87.5% K=26.6 teacherK=25.0 countMAE=13.47
+Epoch 028/56 joint [========================] 47/47 MSE=1.855e-05 pass=92.9% K=31.4 teacherK=27.3 countMAE=16.82
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 028 val dense=100.0% deployment=95.0% worst-source=95.0% MSE=2.171e-05 K=30.01 mass=29.42 beta=-0.01 complexity=2.00->2.12 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=95.0%, MSE=2.171e-05, K=30.01, targetK=14.22, count_MAE=15.80, bias=+15.80, knot_F1@0.01=0.365, param_RMSE=4.992e-02
+Epoch 029/56 joint [........................] 1/47 MSE=2.215e-05 pass=93.8% K=32.2 teacherK=28.8 countMAE=16.88
+Epoch 029/56 joint [=====...................] 10/47 MSE=2.622e-05 pass=90.6% K=31.4 teacherK=28.0 countMAE=16.41
+Epoch 029/56 joint [==========..............] 20/47 MSE=2.160e-05 pass=96.9% K=23.3 teacherK=20.8 countMAE=12.53
+Epoch 029/56 joint [===============.........] 30/47 MSE=1.910e-05 pass=93.8% K=31.1 teacherK=27.6 countMAE=16.16
+Epoch 029/56 joint [====================....] 40/47 MSE=2.133e-05 pass=96.9% K=30.6 teacherK=27.1 countMAE=16.19
+Epoch 029/56 joint [========================] 47/47 MSE=1.832e-05 pass=100.0% K=29.6 teacherK=26.1 countMAE=15.61
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 029 val dense=100.0% deployment=96.6% worst-source=96.6% MSE=2.018e-05 K=29.95 mass=29.38 beta=0.07 complexity=2.12->2.25 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=96.6%, MSE=2.018e-05, K=29.95, targetK=14.22, count_MAE=15.73, bias=+15.73, knot_F1@0.01=0.364, param_RMSE=4.992e-02
+Epoch 030/56 joint [........................] 1/47 MSE=1.853e-05 pass=93.8% K=28.5 teacherK=25.3 countMAE=15.06
+Epoch 030/56 joint [=====...................] 10/47 MSE=2.717e-05 pass=90.6% K=26.8 teacherK=25.0 countMAE=13.53
+Epoch 030/56 joint [==========..............] 20/47 MSE=2.922e-05 pass=84.4% K=26.8 teacherK=24.8 countMAE=13.12
+Epoch 030/56 joint [===============.........] 30/47 MSE=2.252e-05 pass=90.6% K=28.3 teacherK=25.5 countMAE=14.25
+Epoch 030/56 joint [====================....] 40/47 MSE=2.450e-05 pass=87.5% K=31.1 teacherK=27.8 countMAE=15.97
+Epoch 030/56 joint [========================] 47/47 MSE=2.034e-05 pass=92.9% K=30.2 teacherK=26.5 countMAE=15.93
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 030 val dense=100.0% deployment=95.0% worst-source=95.0% MSE=2.146e-05 K=29.51 mass=28.93 beta=0.12 complexity=2.25->2.38 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=95.0%, MSE=2.146e-05, K=29.51, targetK=14.22, count_MAE=15.29, bias=+15.29, knot_F1@0.01=0.380, param_RMSE=4.853e-02
+Epoch 031/56 joint [........................] 1/47 MSE=2.039e-05 pass=93.8% K=30.9 teacherK=27.6 countMAE=16.19
+Epoch 031/56 joint [=====...................] 10/47 MSE=1.813e-05 pass=100.0% K=28.6 teacherK=25.8 countMAE=14.72
+Epoch 031/56 joint [==========..............] 20/47 MSE=1.899e-05 pass=90.6% K=27.6 teacherK=24.2 countMAE=14.44
+Epoch 031/56 joint [===============.........] 30/47 MSE=2.175e-05 pass=96.9% K=29.2 teacherK=25.7 countMAE=15.00
+Epoch 031/56 joint [====================....] 40/47 MSE=2.928e-05 pass=87.5% K=28.5 teacherK=26.8 countMAE=13.94
+Epoch 031/56 joint [========================] 47/47 MSE=1.627e-05 pass=100.0% K=27.0 teacherK=23.6 countMAE=14.43
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 031 val dense=100.0% deployment=98.2% worst-source=98.2% MSE=1.782e-05 K=29.68 mass=29.11 beta=0.07 complexity=2.38->2.50 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=98.2%, MSE=1.782e-05, K=29.68, targetK=14.22, count_MAE=15.46, bias=+15.46, knot_F1@0.01=0.384, param_RMSE=4.965e-02
+Epoch 032/56 joint [........................] 1/47 MSE=1.672e-05 pass=100.0% K=30.5 teacherK=26.3 countMAE=16.12
+Epoch 032/56 joint [=====...................] 10/47 MSE=2.089e-05 pass=96.9% K=29.8 teacherK=26.2 countMAE=15.12
+Epoch 032/56 joint [==========..............] 20/47 MSE=2.215e-05 pass=90.6% K=21.6 teacherK=19.8 countMAE=10.88
+Epoch 032/56 joint [===============.........] 30/47 MSE=3.008e-05 pass=84.4% K=28.7 teacherK=26.6 countMAE=13.88
+Epoch 032/56 joint [====================....] 40/47 MSE=3.193e-05 pass=71.9% K=28.3 teacherK=26.9 countMAE=13.03
+Epoch 032/56 joint [========================] 47/47 MSE=2.482e-05 pass=89.3% K=26.0 teacherK=24.5 countMAE=12.86
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 032 val dense=100.0% deployment=87.6% worst-source=87.6% MSE=3.012e-05 K=27.34 mass=26.78 beta=0.44 complexity=2.50->2.25 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=87.6%, MSE=3.012e-05, K=27.34, targetK=14.22, count_MAE=13.12, bias=+13.12, knot_F1@0.01=0.389, param_RMSE=5.010e-02
+Epoch 033/56 joint [........................] 1/47 MSE=1.821e-05 pass=100.0% K=27.7 teacherK=24.7 countMAE=13.97
+Epoch 033/56 joint [=====...................] 10/47 MSE=1.739e-05 pass=93.8% K=29.1 teacherK=25.3 countMAE=15.09
+Epoch 033/56 joint [==========..............] 20/47 MSE=2.334e-05 pass=87.5% K=28.8 teacherK=25.8 countMAE=14.66
+Epoch 033/56 joint [===============.........] 30/47 MSE=1.229e-05 pass=100.0% K=27.8 teacherK=23.4 countMAE=15.22
+Epoch 033/56 joint [====================....] 40/47 MSE=1.535e-05 pass=100.0% K=29.9 teacherK=26.1 countMAE=15.25
+Epoch 033/56 joint [========================] 47/47 MSE=1.519e-05 pass=96.4% K=28.8 teacherK=24.5 countMAE=15.00
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 033 val dense=100.0% deployment=97.2% worst-source=97.2% MSE=1.711e-05 K=29.27 mass=27.66 beta=0.31 complexity=2.25->2.38 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=97.2%, MSE=1.711e-05, K=29.27, targetK=14.22, count_MAE=15.06, bias=+15.06, knot_F1@0.01=0.387, param_RMSE=4.859e-02
+Epoch 034/56 joint [........................] 1/47 MSE=1.439e-05 pass=96.9% K=28.4 teacherK=24.7 countMAE=14.75
+Epoch 034/56 joint [=====...................] 10/47 MSE=1.503e-05 pass=100.0% K=30.2 teacherK=25.4 countMAE=15.81
+Epoch 034/56 joint [==========..............] 20/47 MSE=1.941e-05 pass=96.9% K=30.0 teacherK=26.1 countMAE=14.94
+Epoch 034/56 joint [===============.........] 30/47 MSE=2.766e-05 pass=78.1% K=28.1 teacherK=25.9 countMAE=13.97
+Epoch 034/56 joint [====================....] 40/47 MSE=1.502e-05 pass=96.9% K=28.2 teacherK=23.8 countMAE=14.88
+Epoch 034/56 joint [========================] 47/47 MSE=2.008e-05 pass=92.9% K=27.3 teacherK=24.4 countMAE=13.82
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 034 val dense=100.0% deployment=97.4% worst-source=97.4% MSE=1.868e-05 K=28.31 mass=26.72 beta=0.33 complexity=2.38->2.50 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=97.4%, MSE=1.868e-05, K=28.31, targetK=14.22, count_MAE=14.10, bias=+14.10, knot_F1@0.01=0.391, param_RMSE=4.932e-02
+Epoch 035/56 joint [........................] 1/47 MSE=2.192e-05 pass=96.9% K=26.4 teacherK=24.0 countMAE=12.78
+Epoch 035/56 joint [=====...................] 10/47 MSE=1.608e-05 pass=96.9% K=23.0 teacherK=20.2 countMAE=11.78
+Epoch 035/56 joint [==========..............] 20/47 MSE=1.754e-05 pass=100.0% K=29.3 teacherK=25.6 countMAE=15.06
+Epoch 035/56 joint [===============.........] 30/47 MSE=1.774e-05 pass=93.8% K=26.3 teacherK=23.6 countMAE=13.22
+Epoch 035/56 joint [====================....] 40/47 MSE=2.741e-05 pass=84.4% K=28.4 teacherK=26.9 countMAE=13.03
+Epoch 035/56 joint [========================] 47/47 MSE=1.861e-05 pass=96.4% K=24.0 teacherK=21.5 countMAE=12.07
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 035 val dense=100.0% deployment=91.8% worst-source=91.8% MSE=2.477e-05 K=27.18 mass=26.62 beta=0.43 complexity=2.50->2.56 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=91.8%, MSE=2.477e-05, K=27.18, targetK=14.22, count_MAE=12.97, bias=+12.97, knot_F1@0.01=0.384, param_RMSE=4.877e-02
+Epoch 036/56 joint [........................] 1/47 MSE=2.156e-05 pass=90.6% K=29.0 teacherK=26.4 countMAE=14.00
+Epoch 036/56 joint [=====...................] 10/47 MSE=3.305e-05 pass=81.2% K=26.7 teacherK=24.9 countMAE=12.56
+Epoch 036/56 joint [==========..............] 20/47 MSE=2.049e-05 pass=100.0% K=25.7 teacherK=23.3 countMAE=12.38
+Epoch 036/56 joint [===============.........] 30/47 MSE=2.991e-05 pass=87.5% K=26.5 teacherK=24.7 countMAE=12.38
+Epoch 036/56 joint [====================....] 40/47 MSE=2.489e-05 pass=90.6% K=26.2 teacherK=23.8 countMAE=12.56
+Epoch 036/56 joint [========================] 47/47 MSE=1.888e-05 pass=100.0% K=25.8 teacherK=23.7 countMAE=12.29
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 036 val dense=100.0% deployment=94.6% worst-source=94.6% MSE=2.311e-05 K=27.32 mass=26.75 beta=0.34 complexity=2.56->2.69 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=94.6%, MSE=2.311e-05, K=27.32, targetK=14.22, count_MAE=13.10, bias=+13.10, knot_F1@0.01=0.393, param_RMSE=4.840e-02
+Epoch 037/56 joint [........................] 1/47 MSE=2.174e-05 pass=90.6% K=28.0 teacherK=25.2 countMAE=13.50
+Epoch 037/56 joint [=====...................] 10/47 MSE=2.097e-05 pass=90.6% K=24.8 teacherK=22.8 countMAE=11.97
+Epoch 037/56 joint [==========..............] 20/47 MSE=2.465e-05 pass=90.6% K=28.9 teacherK=26.5 countMAE=13.94
+Epoch 037/56 joint [===============.........] 30/47 MSE=2.524e-05 pass=87.5% K=27.4 teacherK=25.7 countMAE=13.06
+Epoch 037/56 joint [====================....] 40/47 MSE=2.935e-05 pass=81.2% K=26.8 teacherK=25.6 countMAE=12.47
+Epoch 037/56 joint [========================] 47/47 MSE=2.641e-05 pass=85.7% K=27.7 teacherK=26.1 countMAE=12.96
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 037 val dense=100.0% deployment=87.8% worst-source=87.8% MSE=2.797e-05 K=26.66 mass=26.10 beta=0.48 complexity=2.69->2.44 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=87.8%, MSE=2.797e-05, K=26.66, targetK=14.22, count_MAE=12.45, bias=+12.45, knot_F1@0.01=0.384, param_RMSE=4.800e-02
+Epoch 038/56 joint [........................] 1/47 MSE=1.976e-05 pass=93.8% K=28.8 teacherK=26.2 countMAE=13.84
+Epoch 038/56 joint [=====...................] 10/47 MSE=1.955e-05 pass=93.8% K=26.3 teacherK=22.5 countMAE=13.06
+Epoch 038/56 joint [==========..............] 20/47 MSE=1.770e-05 pass=93.8% K=28.6 teacherK=25.0 countMAE=14.25
+Epoch 038/56 joint [===============.........] 30/47 MSE=1.485e-05 pass=100.0% K=30.6 teacherK=26.7 countMAE=15.47
+Epoch 038/56 joint [====================....] 40/47 MSE=1.703e-05 pass=100.0% K=26.3 teacherK=23.0 countMAE=13.34
+Epoch 038/56 joint [========================] 47/47 MSE=1.785e-05 pass=100.0% K=28.1 teacherK=25.1 countMAE=13.64
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 038 val dense=100.0% deployment=90.0% worst-source=90.0% MSE=2.719e-05 K=26.50 mass=24.91 beta=0.74 complexity=2.44->2.50 safety=1+0.09sigma scale=0.25->0.19 target_met=True
+  Synthetic: dense=100.0%, deployment=90.0%, MSE=2.719e-05, K=26.50, targetK=14.22, count_MAE=12.28, bias=+12.28, knot_F1@0.01=0.385, param_RMSE=4.798e-02
+Epoch 039/56 joint [........................] 1/47 MSE=2.165e-05 pass=93.8% K=27.1 teacherK=24.7 countMAE=13.00
+Epoch 039/56 joint [=====...................] 10/47 MSE=1.345e-05 pass=100.0% K=27.6 teacherK=23.2 countMAE=13.97
+Epoch 039/56 joint [==========..............] 20/47 MSE=1.794e-05 pass=96.9% K=28.6 teacherK=25.1 countMAE=14.12
+Epoch 039/56 joint [===============.........] 30/47 MSE=1.727e-05 pass=100.0% K=30.4 teacherK=26.4 countMAE=14.97
+Epoch 039/56 joint [====================....] 40/47 MSE=1.516e-05 pass=96.9% K=26.3 teacherK=22.8 countMAE=13.56
+Epoch 039/56 joint [========================] 47/47 MSE=1.789e-05 pass=100.0% K=26.8 teacherK=23.8 countMAE=13.07
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 039 val dense=100.0% deployment=96.2% worst-source=96.2% MSE=2.097e-05 K=27.34 mass=25.74 beta=0.53 complexity=2.50->2.62 safety=1+0.08sigma scale=0.19->0.06 target_met=True
+  Synthetic: dense=100.0%, deployment=96.2%, MSE=2.097e-05, K=27.34, targetK=14.22, count_MAE=13.12, bias=+13.12, knot_F1@0.01=0.394, param_RMSE=4.827e-02
+Epoch 040/56 joint [........................] 1/47 MSE=1.817e-05 pass=96.9% K=27.5 teacherK=24.6 countMAE=13.47
+Epoch 040/56 joint [=====...................] 10/47 MSE=1.895e-05 pass=96.9% K=27.1 teacherK=23.6 countMAE=13.62
+Epoch 040/56 joint [==========..............] 20/47 MSE=1.531e-05 pass=100.0% K=29.0 teacherK=24.8 countMAE=14.62
+Epoch 040/56 joint [===============.........] 30/47 MSE=1.334e-05 pass=100.0% K=28.2 teacherK=23.4 countMAE=14.50
+Epoch 040/56 joint [====================....] 40/47 MSE=1.681e-05 pass=96.9% K=24.1 teacherK=21.2 countMAE=11.91
+Epoch 040/56 joint [========================] 47/47 MSE=2.580e-05 pass=85.7% K=30.0 teacherK=28.1 countMAE=13.64
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 040 val dense=100.0% deployment=93.0% worst-source=93.0% MSE=2.502e-05 K=26.46 mass=24.89 beta=0.61 complexity=2.62->2.75 safety=1+0.06sigma scale=0.06->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=93.0%, MSE=2.502e-05, K=26.46, targetK=14.22, count_MAE=12.24, bias=+12.24, knot_F1@0.01=0.389, param_RMSE=4.887e-02
+Epoch 041/56 joint [........................] 1/47 MSE=2.679e-05 pass=84.4% K=25.8 teacherK=24.7 countMAE=11.44
+Epoch 041/56 joint [=====...................] 10/47 MSE=1.972e-05 pass=100.0% K=26.4 teacherK=23.7 countMAE=12.47
+Epoch 041/56 joint [==========..............] 20/47 MSE=2.970e-05 pass=87.5% K=26.0 teacherK=24.5 countMAE=12.09
+Epoch 041/56 joint [===============.........] 30/47 MSE=2.386e-05 pass=96.9% K=28.3 teacherK=26.2 countMAE=13.03
+Epoch 041/56 joint [====================....] 40/47 MSE=2.435e-05 pass=90.6% K=25.5 teacherK=23.7 countMAE=11.72
+Epoch 041/56 joint [========================] 47/47 MSE=2.039e-05 pass=96.4% K=24.8 teacherK=22.0 countMAE=12.07
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 041 val dense=100.0% deployment=94.4% worst-source=94.4% MSE=2.251e-05 K=26.67 mass=26.10 beta=0.62 complexity=2.75->2.88 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=94.4%, MSE=2.251e-05, K=26.67, targetK=14.22, count_MAE=12.45, bias=+12.45, knot_F1@0.01=0.384, param_RMSE=4.757e-02
+Epoch 042/56 joint [........................] 1/47 MSE=1.577e-05 pass=100.0% K=24.8 teacherK=21.9 countMAE=12.03
+Epoch 042/56 joint [=====...................] 10/47 MSE=1.989e-05 pass=96.9% K=26.0 teacherK=23.2 countMAE=12.41
+Epoch 042/56 joint [==========..............] 20/47 MSE=2.183e-05 pass=100.0% K=26.7 teacherK=24.4 countMAE=12.44
+Epoch 042/56 joint [===============.........] 30/47 MSE=1.877e-05 pass=100.0% K=27.7 teacherK=25.2 countMAE=12.91
+Epoch 042/56 joint [====================....] 40/47 MSE=2.208e-05 pass=93.8% K=26.1 teacherK=24.1 countMAE=11.97
+Epoch 042/56 joint [========================] 47/47 MSE=2.192e-05 pass=96.4% K=25.6 teacherK=23.3 countMAE=12.18
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 042 val dense=100.0% deployment=93.8% worst-source=93.8% MSE=2.318e-05 K=26.80 mass=26.25 beta=0.43 complexity=2.88->3.00 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=93.8%, MSE=2.318e-05, K=26.80, targetK=14.22, count_MAE=12.58, bias=+12.58, knot_F1@0.01=0.395, param_RMSE=4.717e-02
+Epoch 043/56 joint [........................] 1/47 MSE=1.781e-05 pass=100.0% K=25.3 teacherK=22.4 countMAE=12.12
+Epoch 043/56 joint [=====...................] 10/47 MSE=2.274e-05 pass=93.8% K=26.5 teacherK=24.3 countMAE=12.56
+Epoch 043/56 joint [==========..............] 20/47 MSE=1.901e-05 pass=93.8% K=23.7 teacherK=21.2 countMAE=11.50
+Epoch 043/56 joint [===============.........] 30/47 MSE=1.713e-05 pass=100.0% K=28.0 teacherK=25.1 countMAE=13.31
+Epoch 043/56 joint [====================....] 40/47 MSE=2.264e-05 pass=90.6% K=27.8 teacherK=25.8 countMAE=12.59
+Epoch 043/56 joint [========================] 47/47 MSE=2.591e-05 pass=85.7% K=23.2 teacherK=21.8 countMAE=10.71
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 043 val dense=100.0% deployment=96.8% worst-source=96.8% MSE=2.237e-05 K=26.39 mass=25.84 beta=0.56 complexity=3.00->3.12 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=96.8%, MSE=2.237e-05, K=26.39, targetK=14.22, count_MAE=12.18, bias=+12.18, knot_F1@0.01=0.393, param_RMSE=4.655e-02
+Epoch 044/56 joint [........................] 1/47 MSE=1.958e-05 pass=100.0% K=27.2 teacherK=24.7 countMAE=12.53
+Epoch 044/56 joint [=====...................] 10/47 MSE=2.136e-05 pass=96.9% K=28.1 teacherK=25.8 countMAE=12.84
+Epoch 044/56 joint [==========..............] 20/47 MSE=2.477e-05 pass=90.6% K=26.1 teacherK=23.8 countMAE=11.91
+Epoch 044/56 joint [===============.........] 30/47 MSE=1.790e-05 pass=100.0% K=27.9 teacherK=25.2 countMAE=13.34
+Epoch 044/56 joint [====================....] 40/47 MSE=1.799e-05 pass=96.9% K=26.9 teacherK=24.0 countMAE=12.84
+Epoch 044/56 joint [========================] 47/47 MSE=2.277e-05 pass=92.9% K=26.2 teacherK=23.9 countMAE=12.25
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 044 val dense=100.0% deployment=93.8% worst-source=93.8% MSE=2.490e-05 K=26.02 mass=25.45 beta=0.63 complexity=3.12->3.25 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=93.8%, MSE=2.490e-05, K=26.02, targetK=14.22, count_MAE=11.80, bias=+11.80, knot_F1@0.01=0.392, param_RMSE=4.594e-02
+Epoch 045/56 joint [........................] 1/47 MSE=2.234e-05 pass=90.6% K=23.2 teacherK=21.4 countMAE=10.84
+Epoch 045/56 joint [=====...................] 10/47 MSE=2.181e-05 pass=90.6% K=24.8 teacherK=22.8 countMAE=11.38
+Epoch 045/56 joint [==========..............] 20/47 MSE=2.177e-05 pass=93.8% K=25.4 teacherK=23.7 countMAE=11.12
+Epoch 045/56 joint [===============.........] 30/47 MSE=1.934e-05 pass=100.0% K=26.6 teacherK=23.6 countMAE=12.59
+Epoch 045/56 joint [====================....] 40/47 MSE=1.891e-05 pass=100.0% K=29.9 teacherK=26.8 countMAE=13.94
+Epoch 045/56 joint [========================] 47/47 MSE=4.824e-05 pass=60.7% K=22.3 teacherK=22.3 countMAE=9.25
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 045 val dense=100.0% deployment=81.8% worst-source=81.8% MSE=3.571e-05 K=24.83 mass=24.28 beta=0.80 complexity=3.25->3.00 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=81.8%, MSE=3.571e-05, K=24.83, targetK=14.22, count_MAE=10.61, bias=+10.61, knot_F1@0.01=0.383, param_RMSE=4.733e-02
+Epoch 046/56 joint [........................] 1/47 MSE=2.276e-05 pass=96.9% K=27.3 teacherK=25.0 countMAE=12.28
+Epoch 046/56 joint [=====...................] 10/47 MSE=2.209e-05 pass=93.8% K=24.4 teacherK=22.5 countMAE=11.03
+Epoch 046/56 joint [==========..............] 20/47 MSE=2.155e-05 pass=90.6% K=27.2 teacherK=24.8 countMAE=12.62
+Epoch 046/56 joint [===============.........] 30/47 MSE=1.791e-05 pass=96.9% K=28.7 teacherK=25.2 countMAE=13.69
+Epoch 046/56 joint [====================....] 40/47 MSE=1.523e-05 pass=100.0% K=28.1 teacherK=24.2 countMAE=13.88
+Epoch 046/56 joint [========================] 47/47 MSE=1.983e-05 pass=100.0% K=25.4 teacherK=23.1 countMAE=11.61
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 046 val dense=100.0% deployment=95.0% worst-source=95.0% MSE=2.295e-05 K=26.22 mass=24.65 beta=0.78 complexity=3.00->3.12 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=95.0%, MSE=2.295e-05, K=26.22, targetK=14.22, count_MAE=12.00, bias=+12.00, knot_F1@0.01=0.385, param_RMSE=4.621e-02
+Epoch 047/56 joint [........................] 1/47 MSE=1.832e-05 pass=100.0% K=25.7 teacherK=23.0 countMAE=12.00
+Epoch 047/56 joint [=====...................] 10/47 MSE=1.651e-05 pass=100.0% K=25.5 teacherK=22.6 countMAE=12.34
+Epoch 047/56 joint [==========..............] 20/47 MSE=2.056e-05 pass=96.9% K=26.2 teacherK=24.0 countMAE=12.31
+Epoch 047/56 joint [===============.........] 30/47 MSE=1.979e-05 pass=100.0% K=28.8 teacherK=26.0 countMAE=13.41
+Epoch 047/56 joint [====================....] 40/47 MSE=2.139e-05 pass=96.9% K=24.7 teacherK=22.3 countMAE=11.44
+Epoch 047/56 joint [========================] 47/47 MSE=1.423e-05 pass=100.0% K=27.2 teacherK=23.0 countMAE=13.50
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 047 val dense=100.0% deployment=98.2% worst-source=98.2% MSE=1.759e-05 K=27.27 mass=25.69 beta=0.75 complexity=3.12->3.25 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=98.2%, MSE=1.759e-05, K=27.27, targetK=14.22, count_MAE=13.06, bias=+13.06, knot_F1@0.01=0.392, param_RMSE=4.666e-02
+Epoch 048/56 joint [........................] 1/47 MSE=1.877e-05 pass=100.0% K=29.7 teacherK=26.9 countMAE=13.56
+Epoch 048/56 joint [=====...................] 10/47 MSE=2.113e-05 pass=96.9% K=24.4 teacherK=22.3 countMAE=11.22
+Epoch 048/56 joint [==========..............] 20/47 MSE=1.579e-05 pass=100.0% K=26.4 teacherK=23.5 countMAE=12.56
+Epoch 048/56 joint [===============.........] 30/47 MSE=2.394e-05 pass=90.6% K=27.2 teacherK=25.2 countMAE=12.41
+Epoch 048/56 joint [====================....] 40/47 MSE=2.042e-05 pass=96.9% K=27.6 teacherK=25.2 countMAE=12.78
+Epoch 048/56 joint [========================] 47/47 MSE=1.991e-05 pass=100.0% K=27.6 teacherK=25.0 countMAE=12.75
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 048 val dense=100.0% deployment=97.2% worst-source=97.2% MSE=1.926e-05 K=26.65 mass=26.08 beta=0.59 complexity=3.25->3.38 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=97.2%, MSE=1.926e-05, K=26.65, targetK=14.22, count_MAE=12.43, bias=+12.43, knot_F1@0.01=0.392, param_RMSE=4.488e-02
+Epoch 049/56 joint [........................] 1/47 MSE=1.917e-05 pass=96.9% K=25.6 teacherK=22.9 countMAE=12.00
+Epoch 049/56 joint [=====...................] 10/47 MSE=1.920e-05 pass=96.9% K=24.7 teacherK=22.1 countMAE=11.50
+Epoch 049/56 joint [==========..............] 20/47 MSE=2.152e-05 pass=90.6% K=28.6 teacherK=26.2 countMAE=12.94
+Epoch 049/56 joint [===============.........] 30/47 MSE=2.250e-05 pass=96.9% K=24.5 teacherK=22.6 countMAE=11.16
+Epoch 049/56 joint [====================....] 40/47 MSE=2.361e-05 pass=87.5% K=24.4 teacherK=22.5 countMAE=11.12
+Epoch 049/56 joint [========================] 47/47 MSE=2.420e-05 pass=92.9% K=23.8 teacherK=22.5 countMAE=10.25
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 049 val dense=100.0% deployment=76.0% worst-source=76.0% MSE=4.229e-05 K=24.22 mass=23.67 beta=0.81 complexity=3.38->3.12 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=76.0%, MSE=4.229e-05, K=24.22, targetK=14.22, count_MAE=10.00, bias=+10.00, knot_F1@0.01=0.378, param_RMSE=4.601e-02
+Epoch 050/56 joint [........................] 1/47 MSE=2.443e-05 pass=90.6% K=25.1 teacherK=23.2 countMAE=11.03
+Epoch 050/56 joint [=====...................] 10/47 MSE=1.266e-05 pass=100.0% K=25.9 teacherK=21.7 countMAE=13.00
+Epoch 050/56 joint [==========..............] 20/47 MSE=1.585e-05 pass=96.9% K=25.9 teacherK=22.8 countMAE=12.47
+Epoch 050/56 joint [===============.........] 30/47 MSE=2.047e-05 pass=100.0% K=27.8 teacherK=25.1 countMAE=12.34
+Epoch 050/56 joint [====================....] 40/47 MSE=1.721e-05 pass=100.0% K=28.2 teacherK=24.8 countMAE=13.00
+Epoch 050/56 joint [========================] 47/47 MSE=1.750e-05 pass=96.4% K=24.5 teacherK=21.4 countMAE=11.68
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 050 val dense=100.0% deployment=98.8% worst-source=98.8% MSE=1.709e-05 K=26.87 mass=25.29 beta=0.71 complexity=3.12->3.25 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=98.8%, MSE=1.709e-05, K=26.87, targetK=14.22, count_MAE=12.66, bias=+12.66, knot_F1@0.01=0.400, param_RMSE=4.502e-02
+Epoch 051/56 joint [........................] 1/47 MSE=1.818e-05 pass=93.8% K=27.5 teacherK=24.4 countMAE=13.00
+Epoch 051/56 joint [=====...................] 10/47 MSE=1.665e-05 pass=100.0% K=26.0 teacherK=22.9 countMAE=12.28
+Epoch 051/56 joint [==========..............] 20/47 MSE=1.804e-05 pass=96.9% K=26.4 teacherK=23.7 countMAE=12.25
+Epoch 051/56 joint [===============.........] 30/47 MSE=1.725e-05 pass=100.0% K=28.5 teacherK=24.9 countMAE=13.47
+Epoch 051/56 joint [====================....] 40/47 MSE=2.248e-05 pass=96.9% K=28.3 teacherK=26.3 countMAE=12.69
+Epoch 051/56 joint [========================] 47/47 MSE=1.565e-05 pass=100.0% K=27.5 teacherK=24.3 countMAE=12.96
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 051 val dense=100.0% deployment=98.6% worst-source=98.6% MSE=1.884e-05 K=26.42 mass=24.86 beta=0.82 complexity=3.25->3.38 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=98.6%, MSE=1.884e-05, K=26.42, targetK=14.22, count_MAE=12.21, bias=+12.21, knot_F1@0.01=0.396, param_RMSE=4.461e-02
+Epoch 052/56 joint [........................] 1/47 MSE=2.074e-05 pass=100.0% K=26.8 teacherK=24.8 countMAE=11.84
+Epoch 052/56 joint [=====...................] 10/47 MSE=1.806e-05 pass=100.0% K=25.8 teacherK=23.6 countMAE=11.69
+Epoch 052/56 joint [==========..............] 20/47 MSE=1.829e-05 pass=100.0% K=24.3 teacherK=22.0 countMAE=11.28
+Epoch 052/56 joint [===============.........] 30/47 MSE=1.683e-05 pass=100.0% K=25.0 teacherK=22.2 countMAE=11.94
+Epoch 052/56 joint [====================....] 40/47 MSE=1.861e-05 pass=100.0% K=27.3 teacherK=24.9 countMAE=12.34
+Epoch 052/56 joint [========================] 47/47 MSE=2.222e-05 pass=92.9% K=26.8 teacherK=24.6 countMAE=12.07
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 052 val dense=100.0% deployment=97.0% worst-source=97.0% MSE=2.244e-05 K=25.87 mass=25.33 beta=0.65 complexity=3.38->3.50 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=97.0%, MSE=2.244e-05, K=25.87, targetK=14.22, count_MAE=11.66, bias=+11.66, knot_F1@0.01=0.391, param_RMSE=4.518e-02
+Epoch 053/56 joint [........................] 1/47 MSE=1.850e-05 pass=100.0% K=28.6 teacherK=26.3 countMAE=12.94
+Epoch 053/56 joint [=====...................] 10/47 MSE=1.916e-05 pass=96.9% K=24.8 teacherK=22.3 countMAE=11.31
+Epoch 053/56 joint [==========..............] 20/47 MSE=1.943e-05 pass=96.9% K=23.4 teacherK=21.4 countMAE=10.81
+Epoch 053/56 joint [===============.........] 30/47 MSE=2.269e-05 pass=93.8% K=24.8 teacherK=23.0 countMAE=11.09
+Epoch 053/56 joint [====================....] 40/47 MSE=1.918e-05 pass=100.0% K=25.1 teacherK=23.0 countMAE=11.28
+Epoch 053/56 joint [========================] 47/47 MSE=2.455e-05 pass=89.3% K=23.0 teacherK=21.2 countMAE=10.14
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 053 val dense=100.0% deployment=82.8% worst-source=82.8% MSE=3.647e-05 K=24.64 mass=24.10 beta=0.87 complexity=3.50->3.25 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=82.8%, MSE=3.647e-05, K=24.64, targetK=14.22, count_MAE=10.42, bias=+10.42, knot_F1@0.01=0.376, param_RMSE=4.588e-02
+Epoch 054/56 joint [........................] 1/47 MSE=2.143e-05 pass=93.8% K=26.4 teacherK=24.4 countMAE=11.97
+Epoch 054/56 joint [=====...................] 10/47 MSE=1.662e-05 pass=100.0% K=26.3 teacherK=23.5 countMAE=12.25
+Epoch 054/56 joint [==========..............] 20/47 MSE=1.656e-05 pass=100.0% K=28.5 teacherK=25.5 countMAE=13.44
+Epoch 054/56 joint [===============.........] 30/47 MSE=1.752e-05 pass=100.0% K=26.7 teacherK=23.2 countMAE=12.50
+Epoch 054/56 joint [====================....] 40/47 MSE=1.611e-05 pass=100.0% K=24.7 teacherK=21.8 countMAE=11.81
+Epoch 054/56 joint [========================] 47/47 MSE=1.992e-05 pass=96.4% K=29.1 teacherK=26.3 countMAE=13.21
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 054 val dense=100.0% deployment=98.0% worst-source=98.0% MSE=1.857e-05 K=26.51 mass=24.92 beta=0.83 complexity=3.25->3.38 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=98.0%, MSE=1.857e-05, K=26.51, targetK=14.22, count_MAE=12.29, bias=+12.29, knot_F1@0.01=0.397, param_RMSE=4.517e-02
+Epoch 055/56 joint [........................] 1/47 MSE=1.567e-05 pass=96.9% K=27.6 teacherK=24.1 countMAE=12.97
+Epoch 055/56 joint [=====...................] 10/47 MSE=1.773e-05 pass=100.0% K=28.5 teacherK=25.2 countMAE=13.25
+Epoch 055/56 joint [==========..............] 20/47 MSE=1.307e-05 pass=100.0% K=28.9 teacherK=24.2 countMAE=14.25
+Epoch 055/56 joint [===============.........] 30/47 MSE=1.520e-05 pass=100.0% K=25.4 teacherK=22.2 countMAE=12.16
+Epoch 055/56 joint [====================....] 40/47 MSE=1.762e-05 pass=100.0% K=28.7 teacherK=25.6 countMAE=13.34
+Epoch 055/56 joint [========================] 47/47 MSE=2.180e-05 pass=92.9% K=25.2 teacherK=22.9 countMAE=11.32
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 055 val dense=100.0% deployment=96.6% worst-source=96.6% MSE=2.120e-05 K=25.82 mass=24.25 beta=1.04 complexity=3.38->3.50 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=96.6%, MSE=2.120e-05, K=25.82, targetK=14.22, count_MAE=11.60, bias=+11.60, knot_F1@0.01=0.392, param_RMSE=4.490e-02
+Epoch 056/56 joint [........................] 1/47 MSE=2.213e-05 pass=96.9% K=25.9 teacherK=23.9 countMAE=11.16
+Epoch 056/56 joint [=====...................] 10/47 MSE=2.131e-05 pass=100.0% K=24.1 teacherK=21.6 countMAE=10.91
+Epoch 056/56 joint [==========..............] 20/47 MSE=2.494e-05 pass=93.8% K=24.2 teacherK=22.7 countMAE=10.31
+Epoch 056/56 joint [===============.........] 30/47 MSE=2.167e-05 pass=96.9% K=23.7 teacherK=21.6 countMAE=10.47
+Epoch 056/56 joint [====================....] 40/47 MSE=2.768e-05 pass=90.6% K=22.6 teacherK=21.3 countMAE=9.72
+Epoch 056/56 joint [========================] 47/47 MSE=2.017e-05 pass=100.0% K=29.0 teacherK=26.5 countMAE=12.82
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 056 val dense=100.0% deployment=94.2% worst-source=94.2% MSE=2.564e-05 K=25.34 mass=24.78 beta=0.83 complexity=3.50->3.62 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=94.2%, MSE=2.564e-05, K=25.34, targetK=14.22, count_MAE=11.13, bias=+11.13, knot_F1@0.01=0.399, param_RMSE=4.503e-02
+Saved best v16: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.pt; quality=deployment_target_met. Last/resume: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.last.pt
+
+[inspect_candidate_selection_v16_mse5e-5_k64_0ea4fa48] python scripts/inspect_v16_checkpoint.py --checkpoint E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.pt --required-pass-rate 0.90 --mse-tolerance 5e-5
+v16 checkpoint inspection
+  checkpoint: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.pt
+  stage: joint
+  epoch: 56
+Selection architecture
+  revision: v16_ranked_prefix_count_coupled_mass_topk
+  policy: mass_topk
+  internal candidate capacity: 64
+  full knot-vector size at all-keep: 72
+  adaptive beta: True
+  simplification contract: ranked_prefix_certified_cardinality_adaptive_complexity_v1
+  simplification curriculum mature: True
+Synthetic data contract
+  revision: source_subset_threshold_minimal_v1
+  certified minimal source: True
+  certificate RMS tolerance: 7.071068e-03
+Configured targets
+  proposal pass: 90.000% (0.900000)
+  deployment pass: 90.000% (0.900000)
+  recorded MSE tolerance: 5.000000e-05
+Observed validation
+  overall dense: 100.000% (1.000000)
+  overall deployment: 94.200% (0.942000)
+  worst-source dense: 100.000% (1.000000)
+  worst-source deployment: 94.200% (0.942000)
+  certified synthetic count MAE: 11.126
+  certified synthetic knot F1 / matched MAE: 0.398766 / 4.907926e-03
+  by source:
+    Synthetic: dense=100.000% (1.000000), deployment=94.200% (0.942000), dense_MSE=1.990025e-06, deployment_MSE=2.564048e-05, K=25.344, target_K=14.218, count_MAE=11.126, count_bias=11.126, knot_F1=0.398766, matched_MAE=4.907926e-03
+Formal qualification
+  required pass rate: 90.000% (0.900000)
+  required MSE tolerance: 5.000000e-05
+  Synthetic count MAE <= 2, knot F1 >= 0.6, matched MAE <= 5.000000e-03
+  eligible: NO
+  reasons:
+    - certified synthetic count MAE exceeds the formal limit 2
+    - certified synthetic knot-match F1 is below the formal minimum 0.6
+
+[inspect_candidate_selection_v16_mse5e-5_k64.last_7a80f2e1] python scripts/inspect_v16_checkpoint.py --checkpoint E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.last.pt --required-pass-rate 0.90 --mse-tolerance 5e-5
+v16 checkpoint inspection
+  checkpoint: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.last.pt
+  stage: joint
+  epoch: 56
+Selection architecture
+  revision: v16_ranked_prefix_count_coupled_mass_topk
+  policy: mass_topk
+  internal candidate capacity: 64
+  full knot-vector size at all-keep: 72
+  adaptive beta: True
+  simplification contract: ranked_prefix_certified_cardinality_adaptive_complexity_v1
+  simplification curriculum mature: True
+Synthetic data contract
+  revision: source_subset_threshold_minimal_v1
+  certified minimal source: True
+  certificate RMS tolerance: 7.071068e-03
+Configured targets
+  proposal pass: 90.000% (0.900000)
+  deployment pass: 90.000% (0.900000)
+  recorded MSE tolerance: 5.000000e-05
+Observed validation
+  overall dense: 100.000% (1.000000)
+  overall deployment: 94.200% (0.942000)
+  worst-source dense: 100.000% (1.000000)
+  worst-source deployment: 94.200% (0.942000)
+  certified synthetic count MAE: 11.126
+  certified synthetic knot F1 / matched MAE: 0.398766 / 4.907926e-03
+  by source:
+    Synthetic: dense=100.000% (1.000000), deployment=94.200% (0.942000), dense_MSE=1.990025e-06, deployment_MSE=2.564048e-05, K=25.344, target_K=14.218, count_MAE=11.126, count_bias=11.126, knot_F1=0.398766, matched_MAE=4.907926e-03
+Formal qualification
+  required pass rate: 90.000% (0.900000)
+  required MSE tolerance: 5.000000e-05
+  Synthetic count MAE <= 2, knot F1 >= 0.6, matched MAE <= 5.000000e-03
+  eligible: NO
+  reasons:
+    - certified synthetic count MAE exceeds the formal limit 2
+    - certified synthetic knot-match F1 is below the formal minimum 0.6
+
+[inspect_candidate_selection_v16_mse5e-5_k64.proposal_731b5df0] python scripts/inspect_v16_checkpoint.py --checkpoint E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.proposal.pt --required-pass-rate 0.90 --mse-tolerance 5e-5
+v16 checkpoint inspection
+  checkpoint: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.proposal.pt
+  stage: proposal
+  epoch: 4
+Selection architecture
+  revision: v16_ranked_prefix_count_coupled_mass_topk
+  policy: mass_topk
+  internal candidate capacity: 64
+  full knot-vector size at all-keep: 72
+  adaptive beta: True
+  simplification contract: ranked_prefix_certified_cardinality_adaptive_complexity_v1
+  simplification curriculum mature: False
+Synthetic data contract
+  revision: source_subset_threshold_minimal_v1
+  certified minimal source: True
+  certificate RMS tolerance: 7.071068e-03
+Configured targets
+  proposal pass: 90.000% (0.900000)
+  deployment pass: 90.000% (0.900000)
+  recorded MSE tolerance: 5.000000e-05
+Observed validation
+  overall dense: 100.000% (1.000000)
+  overall deployment: 100.000% (1.000000)
+  worst-source dense: 100.000% (1.000000)
+  worst-source deployment: 100.000% (1.000000)
+  certified synthetic count MAE: 49.782
+  certified synthetic knot F1 / matched MAE: 0.359303 / 4.493288e-03
+  by source:
+    Synthetic: dense=100.000% (1.000000), deployment=100.000% (1.000000), dense_MSE=1.032235e-06, deployment_MSE=1.032235e-06, K=64, target_K=14.218, count_MAE=49.782, count_bias=49.782, knot_F1=0.359303, matched_MAE=4.493288e-03
+Formal qualification
+  required pass rate: 90.000% (0.900000)
+  required MSE tolerance: 5.000000e-05
+  Synthetic count MAE <= 2, knot F1 >= 0.6, matched MAE <= 5.000000e-03
+  eligible: NO
+  reasons:
+    - joint simplification curriculum was not mature when saved
+    - checkpoint was not evaluated at the final safety sigma
+    - checkpoint was not evaluated at the final safety-knot reserve
+    - validation deployment retains the entire candidate set (degenerate all-keep solution)
+    - certified synthetic count MAE exceeds the formal limit 2
+    - certified synthetic knot-match F1 is below the formal minimum 0.6
+    - checkpoint is not from the joint stage
+Target-epoch checkpoint is not formally qualified. Budget has 9.31 h remaining; continuing to fallback epoch 64.
+
+[train_fallback] python scripts/train_v16.py --attention-heads 4 --batch-size 32 --candidate-knots 64 --certified-minimal-source --complexity-max-scale 4.0 --complexity-pass-margin 0.02 --complexity-ramp-epochs 8 --complexity-weight 0.05 --count-weight 2.0 --counterfactual-edits 2 --deployment-pass-target 0.9 --encoder-layers 3 --final-safety-knots 0 --final-safety-sigma 0.05 --grad-clip 1.0 --hidden-dim 128 --joint-lr 5E-05 --knot-match-tolerance 0.01 --knot-position-beta 0.01 --log-every-batches 10 --lr 0.0002 --max-control-points 28 --min-control-points 8 --min-selected-knots 4 --minimality-audit-points 512 --minimality-margin 0.2 --minimality-max-attempts 16 --mse-tolerance 5E-05 --noise-std 0.001 --num-points 192 --num-workers 0 --one-shot-coverage-bins 4 --one-shot-safety-knots 2 --one-shot-safety-sigma 0.2 --one-shot-selection-policy mass_topk --oscillation-amplitude 0.3 --point-dim 2 --policy-samples 2 --proposal-epochs 4 --proposal-knot-coverage-weight 1.0 --proposal-pass-target 0.9 --real-fraction 0.0 --real-val-size 100 --relocation-blend 0.0 --no-resample-train-each-epoch --safety-anneal-epochs 8 --seed 42 --selected-knot-position-weight 1.0 --selector-layers 2 --supervised-count-weight 1.0 --supervised-over-count-weight 1.0 --teacher-prefix-search-steps 6 --tolerance-factor-max 1.0 --tolerance-factor-min 0.75 --torch-num-threads 4 --train-size 1500 --true-parameter-weight 0.1 --val-seed 1000000 --val-size 500 --weight-decay 0.0001 --epochs 64 --device cuda --output E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.pt --resume E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.last.pt
+Checking real manifests and train/val/test group separation...
+v16 adaptive mass_topk: cuda, Kc=64 internal (full cubic knot vector at all-keep=72), MSE tolerance=5e-05; 1500 train draws, 500 validation curves; real sources=0
+Synthetic source contract: clean source-subset threshold-minimal certificate at RMS=0.00707107, margin=20%, audit_points=512
+Simplification curriculum: training-only ranked-prefix teacher steps=6; certified over-count weight=1, symmetric true-count weight=1; complexity multiplier 0..4; safety 2+0.2sigma -> 0+0.05sigma. Deployment still uses one network forward and one final refit.
+Validation checkpoint quality uses the worst source pass rate. Additional subset fits run only during training.
+Epoch 057/64 joint [........................] 1/47 MSE=1.901e-05 pass=100.0% K=27.0 teacherK=24.6 countMAE=12.06
+Epoch 057/64 joint [=====...................] 10/47 MSE=2.496e-05 pass=87.5% K=23.8 teacherK=22.8 countMAE=10.41
+Epoch 057/64 joint [==========..............] 20/47 MSE=2.566e-05 pass=87.5% K=22.9 teacherK=21.6 countMAE=9.91
+Epoch 057/64 joint [===============.........] 30/47 MSE=2.541e-05 pass=87.5% K=25.6 teacherK=24.2 countMAE=10.88
+Epoch 057/64 joint [====================....] 40/47 MSE=2.308e-05 pass=96.9% K=26.3 teacherK=24.2 countMAE=11.56
+Epoch 057/64 joint [========================] 47/47 MSE=1.780e-05 pass=100.0% K=27.3 teacherK=24.7 countMAE=12.18
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 057 val dense=100.0% deployment=95.0% worst-source=95.0% MSE=2.430e-05 K=25.27 mass=24.73 beta=0.86 complexity=3.62->3.75 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=95.0%, MSE=2.430e-05, K=25.27, targetK=14.22, count_MAE=11.05, bias=+11.05, knot_F1@0.01=0.393, param_RMSE=4.602e-02
+Epoch 058/64 joint [........................] 1/47 MSE=1.883e-05 pass=100.0% K=24.8 teacherK=22.5 countMAE=11.12
+Epoch 058/64 joint [=====...................] 10/47 MSE=1.843e-05 pass=96.9% K=27.0 teacherK=24.1 countMAE=12.47
+Epoch 058/64 joint [==========..............] 20/47 MSE=1.821e-05 pass=100.0% K=25.8 teacherK=23.2 countMAE=11.81
+Epoch 058/64 joint [===============.........] 30/47 MSE=1.874e-05 pass=100.0% K=27.9 teacherK=25.2 countMAE=12.41
+Epoch 058/64 joint [====================....] 40/47 MSE=1.885e-05 pass=96.9% K=21.7 teacherK=19.8 countMAE=9.75
+Epoch 058/64 joint [========================] 47/47 MSE=2.324e-05 pass=96.4% K=25.7 teacherK=24.1 countMAE=11.25
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 058 val dense=100.0% deployment=91.0% worst-source=91.0% MSE=2.919e-05 K=24.83 mass=24.25 beta=0.96 complexity=3.75->3.81 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=91.0%, MSE=2.919e-05, K=24.83, targetK=14.22, count_MAE=10.62, bias=+10.62, knot_F1@0.01=0.391, param_RMSE=4.538e-02
+Epoch 059/64 joint [........................] 1/47 MSE=2.220e-05 pass=100.0% K=25.2 teacherK=23.5 countMAE=10.94
+Epoch 059/64 joint [=====...................] 10/47 MSE=2.209e-05 pass=96.9% K=27.1 teacherK=25.2 countMAE=11.94
+Epoch 059/64 joint [==========..............] 20/47 MSE=2.384e-05 pass=100.0% K=23.8 teacherK=22.4 countMAE=10.22
+Epoch 059/64 joint [===============.........] 30/47 MSE=2.453e-05 pass=93.8% K=23.8 teacherK=22.2 countMAE=10.22
+Epoch 059/64 joint [====================....] 40/47 MSE=2.435e-05 pass=90.6% K=26.3 teacherK=24.4 countMAE=11.09
+Epoch 059/64 joint [========================] 47/47 MSE=1.962e-05 pass=96.4% K=24.6 teacherK=22.0 countMAE=11.07
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 059 val dense=100.0% deployment=92.6% worst-source=92.6% MSE=2.723e-05 K=24.94 mass=24.38 beta=0.88 complexity=3.81->3.94 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=92.6%, MSE=2.723e-05, K=24.94, targetK=14.22, count_MAE=10.73, bias=+10.73, knot_F1@0.01=0.390, param_RMSE=4.391e-02
+Epoch 060/64 joint [........................] 1/47 MSE=2.033e-05 pass=100.0% K=24.1 teacherK=22.4 countMAE=10.44
+Epoch 060/64 joint [=====...................] 10/47 MSE=2.604e-05 pass=93.8% K=24.5 teacherK=23.0 countMAE=10.94
+Epoch 060/64 joint [==========..............] 20/47 MSE=1.856e-05 pass=96.9% K=25.5 teacherK=23.2 countMAE=11.50
+Epoch 060/64 joint [===============.........] 30/47 MSE=1.790e-05 pass=96.9% K=21.9 teacherK=19.5 countMAE=10.25
+Epoch 060/64 joint [====================....] 40/47 MSE=1.540e-05 pass=100.0% K=25.6 teacherK=22.8 countMAE=11.84
+Epoch 060/64 joint [========================] 47/47 MSE=2.575e-05 pass=96.4% K=24.4 teacherK=23.2 countMAE=10.32
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 060 val dense=100.0% deployment=95.4% worst-source=95.4% MSE=2.446e-05 K=25.25 mass=24.68 beta=0.94 complexity=3.94->4.00 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=95.4%, MSE=2.446e-05, K=25.25, targetK=14.22, count_MAE=11.03, bias=+11.03, knot_F1@0.01=0.394, param_RMSE=4.522e-02
+Epoch 061/64 joint [........................] 1/47 MSE=1.914e-05 pass=96.9% K=27.8 teacherK=25.7 countMAE=12.44
+Epoch 061/64 joint [=====...................] 10/47 MSE=2.363e-05 pass=90.6% K=24.7 teacherK=23.2 countMAE=10.59
+Epoch 061/64 joint [==========..............] 20/47 MSE=2.301e-05 pass=93.8% K=28.9 teacherK=26.8 countMAE=12.34
+Epoch 061/64 joint [===============.........] 30/47 MSE=1.887e-05 pass=96.9% K=25.4 teacherK=22.8 countMAE=11.47
+Epoch 061/64 joint [====================....] 40/47 MSE=1.990e-05 pass=100.0% K=24.1 teacherK=21.9 countMAE=10.78
+Epoch 061/64 joint [========================] 47/47 MSE=1.994e-05 pass=100.0% K=25.6 teacherK=23.3 countMAE=11.50
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 061 val dense=100.0% deployment=96.8% worst-source=96.8% MSE=2.102e-05 K=25.86 mass=25.28 beta=0.87 complexity=4.00->4.00 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=96.8%, MSE=2.102e-05, K=25.86, targetK=14.22, count_MAE=11.64, bias=+11.64, knot_F1@0.01=0.394, param_RMSE=4.484e-02
+Epoch 062/64 joint [........................] 1/47 MSE=1.984e-05 pass=100.0% K=26.5 teacherK=24.3 countMAE=11.94
+Epoch 062/64 joint [=====...................] 10/47 MSE=1.878e-05 pass=100.0% K=27.7 teacherK=25.0 countMAE=12.28
+Epoch 062/64 joint [==========..............] 20/47 MSE=1.827e-05 pass=100.0% K=29.2 teacherK=26.8 countMAE=12.78
+Epoch 062/64 joint [===============.........] 30/47 MSE=2.392e-05 pass=96.9% K=21.5 teacherK=20.6 countMAE=9.47
+Epoch 062/64 joint [====================....] 40/47 MSE=1.985e-05 pass=96.9% K=24.6 teacherK=22.8 countMAE=10.88
+Epoch 062/64 joint [========================] 47/47 MSE=2.107e-05 pass=92.9% K=24.7 teacherK=22.6 countMAE=10.89
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 062 val dense=100.0% deployment=92.6% worst-source=92.6% MSE=2.776e-05 K=24.62 mass=24.05 beta=0.93 complexity=4.00->4.00 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=92.6%, MSE=2.776e-05, K=24.62, targetK=14.22, count_MAE=10.40, bias=+10.40, knot_F1@0.01=0.389, param_RMSE=4.554e-02
+Epoch 063/64 joint [........................] 1/47 MSE=2.576e-05 pass=84.4% K=28.8 teacherK=26.9 countMAE=12.16
+Epoch 063/64 joint [=====...................] 10/47 MSE=2.198e-05 pass=96.9% K=24.4 teacherK=22.9 countMAE=10.34
+Epoch 063/64 joint [==========..............] 20/47 MSE=2.140e-05 pass=96.9% K=21.8 teacherK=20.2 countMAE=9.66
+Epoch 063/64 joint [===============.........] 30/47 MSE=2.418e-05 pass=90.6% K=21.7 teacherK=20.6 countMAE=9.25
+Epoch 063/64 joint [====================....] 40/47 MSE=2.541e-05 pass=96.9% K=23.3 teacherK=21.5 countMAE=10.09
+Epoch 063/64 joint [========================] 47/47 MSE=2.043e-05 pass=100.0% K=23.7 teacherK=22.0 countMAE=10.29
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 063 val dense=100.0% deployment=90.6% worst-source=90.6% MSE=2.926e-05 K=24.38 mass=23.84 beta=0.97 complexity=4.00->4.00 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=90.6%, MSE=2.926e-05, K=24.38, targetK=14.22, count_MAE=10.17, bias=+10.17, knot_F1@0.01=0.380, param_RMSE=4.448e-02
+Epoch 064/64 joint [........................] 1/47 MSE=2.506e-05 pass=100.0% K=24.8 teacherK=23.7 countMAE=10.28
+Epoch 064/64 joint [=====...................] 10/47 MSE=2.256e-05 pass=93.8% K=27.4 teacherK=25.1 countMAE=12.25
+Epoch 064/64 joint [==========..............] 20/47 MSE=2.135e-05 pass=100.0% K=24.7 teacherK=23.0 countMAE=10.62
+Epoch 064/64 joint [===============.........] 30/47 MSE=2.723e-05 pass=90.6% K=23.6 teacherK=22.4 countMAE=9.69
+Epoch 064/64 joint [====================....] 40/47 MSE=1.659e-05 pass=100.0% K=24.1 teacherK=21.8 countMAE=10.88
+Epoch 064/64 joint [========================] 47/47 MSE=1.915e-05 pass=96.4% K=27.8 teacherK=25.2 countMAE=12.32
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 064 val dense=100.0% deployment=97.0% worst-source=97.0% MSE=2.120e-05 K=25.59 mass=25.05 beta=0.82 complexity=4.00->4.00 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=97.0%, MSE=2.120e-05, K=25.59, targetK=14.22, count_MAE=11.37, bias=+11.37, knot_F1@0.01=0.391, param_RMSE=4.501e-02
+Saved best v16: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.pt; quality=deployment_target_met. Last/resume: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.last.pt
+
+[inspect_candidate_selection_v16_mse5e-5_k64_fd5fe280] python scripts/inspect_v16_checkpoint.py --checkpoint E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.pt --required-pass-rate 0.90 --mse-tolerance 5e-5
+v16 checkpoint inspection
+  checkpoint: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.pt
+  stage: joint
+  epoch: 62
+Selection architecture
+  revision: v16_ranked_prefix_count_coupled_mass_topk
+  policy: mass_topk
+  internal candidate capacity: 64
+  full knot-vector size at all-keep: 72
+  adaptive beta: True
+  simplification contract: ranked_prefix_certified_cardinality_adaptive_complexity_v1
+  simplification curriculum mature: True
+Synthetic data contract
+  revision: source_subset_threshold_minimal_v1
+  certified minimal source: True
+  certificate RMS tolerance: 7.071068e-03
+Configured targets
+  proposal pass: 90.000% (0.900000)
+  deployment pass: 90.000% (0.900000)
+  recorded MSE tolerance: 5.000000e-05
+Observed validation
+  overall dense: 100.000% (1.000000)
+  overall deployment: 92.600% (0.926000)
+  worst-source dense: 100.000% (1.000000)
+  worst-source deployment: 92.600% (0.926000)
+  certified synthetic count MAE: 10.398
+  certified synthetic knot F1 / matched MAE: 0.389144 / 5.000422e-03
+  by source:
+    Synthetic: dense=100.000% (1.000000), deployment=92.600% (0.926000), dense_MSE=2.041880e-06, deployment_MSE=2.775550e-05, K=24.616, target_K=14.218, count_MAE=10.398, count_bias=10.398, knot_F1=0.389144, matched_MAE=5.000422e-03
+Formal qualification
+  required pass rate: 90.000% (0.900000)
+  required MSE tolerance: 5.000000e-05
+  Synthetic count MAE <= 2, knot F1 >= 0.6, matched MAE <= 5.000000e-03
+  eligible: NO
+  reasons:
+    - certified synthetic count MAE exceeds the formal limit 2
+    - certified synthetic knot-match F1 is below the formal minimum 0.6
+    - certified synthetic matched-knot MAE exceeds the formal limit 0.005
+
+[inspect_candidate_selection_v16_mse5e-5_k64.last_b4b8fc7e] python scripts/inspect_v16_checkpoint.py --checkpoint E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.last.pt --required-pass-rate 0.90 --mse-tolerance 5e-5
+v16 checkpoint inspection
+  checkpoint: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.last.pt
+  stage: joint
+  epoch: 64
+Selection architecture
+  revision: v16_ranked_prefix_count_coupled_mass_topk
+  policy: mass_topk
+  internal candidate capacity: 64
+  full knot-vector size at all-keep: 72
+  adaptive beta: True
+  simplification contract: ranked_prefix_certified_cardinality_adaptive_complexity_v1
+  simplification curriculum mature: True
+Synthetic data contract
+  revision: source_subset_threshold_minimal_v1
+  certified minimal source: True
+  certificate RMS tolerance: 7.071068e-03
+Configured targets
+  proposal pass: 90.000% (0.900000)
+  deployment pass: 90.000% (0.900000)
+  recorded MSE tolerance: 5.000000e-05
+Observed validation
+  overall dense: 100.000% (1.000000)
+  overall deployment: 97.000% (0.970000)
+  worst-source dense: 100.000% (1.000000)
+  worst-source deployment: 97.000% (0.970000)
+  certified synthetic count MAE: 11.368
+  certified synthetic knot F1 / matched MAE: 0.391116 / 4.905883e-03
+  by source:
+    Synthetic: dense=100.000% (1.000000), deployment=97.000% (0.970000), dense_MSE=2.044166e-06, deployment_MSE=2.120170e-05, K=25.586, target_K=14.218, count_MAE=11.368, count_bias=11.368, knot_F1=0.391116, matched_MAE=4.905883e-03
+Formal qualification
+  required pass rate: 90.000% (0.900000)
+  required MSE tolerance: 5.000000e-05
+  Synthetic count MAE <= 2, knot F1 >= 0.6, matched MAE <= 5.000000e-03
+  eligible: NO
+  reasons:
+    - certified synthetic count MAE exceeds the formal limit 2
+    - certified synthetic knot-match F1 is below the formal minimum 0.6
+
+[inspect_candidate_selection_v16_mse5e-5_k64.proposal_3cc2f091] python scripts/inspect_v16_checkpoint.py --checkpoint E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.proposal.pt --required-pass-rate 0.90 --mse-tolerance 5e-5
+v16 checkpoint inspection
+  checkpoint: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.proposal.pt
+  stage: proposal
+  epoch: 4
+Selection architecture
+  revision: v16_ranked_prefix_count_coupled_mass_topk
+  policy: mass_topk
+  internal candidate capacity: 64
+  full knot-vector size at all-keep: 72
+  adaptive beta: True
+  simplification contract: ranked_prefix_certified_cardinality_adaptive_complexity_v1
+  simplification curriculum mature: False
+Synthetic data contract
+  revision: source_subset_threshold_minimal_v1
+  certified minimal source: True
+  certificate RMS tolerance: 7.071068e-03
+Configured targets
+  proposal pass: 90.000% (0.900000)
+  deployment pass: 90.000% (0.900000)
+  recorded MSE tolerance: 5.000000e-05
+Observed validation
+  overall dense: 100.000% (1.000000)
+  overall deployment: 100.000% (1.000000)
+  worst-source dense: 100.000% (1.000000)
+  worst-source deployment: 100.000% (1.000000)
+  certified synthetic count MAE: 49.782
+  certified synthetic knot F1 / matched MAE: 0.359303 / 4.493288e-03
+  by source:
+    Synthetic: dense=100.000% (1.000000), deployment=100.000% (1.000000), dense_MSE=1.032235e-06, deployment_MSE=1.032235e-06, K=64, target_K=14.218, count_MAE=49.782, count_bias=49.782, knot_F1=0.359303, matched_MAE=4.493288e-03
+Formal qualification
+  required pass rate: 90.000% (0.900000)
+  required MSE tolerance: 5.000000e-05
+  Synthetic count MAE <= 2, knot F1 >= 0.6, matched MAE <= 5.000000e-03
+  eligible: NO
+  reasons:
+    - joint simplification curriculum was not mature when saved
+    - checkpoint was not evaluated at the final safety sigma
+    - checkpoint was not evaluated at the final safety-knot reserve
+    - validation deployment retains the entire candidate set (degenerate all-keep solution)
+    - certified synthetic count MAE exceeds the formal limit 2
+    - certified synthetic knot-match F1 is below the formal minimum 0.6
+    - checkpoint is not from the joint stage
+
+[benchmark_all_methods] python scripts/benchmark_v16_datasets.py --checkpoint E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.pt --output-dir E:\SelfSurpervisedSplineFitting\outputs\comparisons\candidate_selection_v16_mse5e-5_k64\diagnostic_ede67b34bc42 --samples-per-knot-count 2 --min-knot-count 4 --max-knot-count 24 --real-samples-per-dataset 8 --mse-tolerance 5e-5 --max-internal-knots 64 --gradient-steps 12 --paper-initial-knots 64 --paper-admm-iterations 400 --paper-lambda-bisections 8 --paper-relocation-iterations 8 --liang-dense-knots 64 --liang-feature-samples 1025 --dung-scan-intervals 10 --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations 50 --network-warmups 3 --network-repeats 20 --end-to-end-repeats 1 --torch-num-threads 1 --device cuda --resume --allow-unqualified-diagnostic
+DIAGNOSTIC NOT FINAL â€?unqualified v16 checkpoint: certified synthetic count MAE exceeds the formal limit 2; certified synthetic knot-match F1 is below the formal minimum 0.6; certified synthetic matched-knot MAE exceeds the formal limit 0.005
+Preparing fixed paired test samples...
+Warming numerical solvers (excluded from timing)...
+66 curves x 8 methods; device=cuda; MSE tolerance=5e-05
+[1/66] Synthetic seed20000_sample2679 ours: K=10 MSE=2.1152436093551644e-05 time=14.6 ms ok
+[1/66] Synthetic seed20000_sample2679 park_dominant_point_2007_adaptation: K=26 MSE=1.618382693460628e-05 time=60.3 ms ok
+[1/66] Synthetic seed20000_sample2679 liang_feature_iki_2017_adaptation: K=14 MSE=3.952065115250505e-05 time=27.0 ms ok
+[1/66] Synthetic seed20000_sample2679 dung_direct_knot_2017_adaptation: K=5 MSE=0.002194033184454713 time=199.0 ms ok
+[1/66] Synthetic seed20000_sample2679 kang_sparse_2015_adaptation: K=6 MSE=3.334617095544778e-05 time=2786.7 ms ok
+[1/66] Synthetic seed20000_sample2679 luo_linf_de_2022_adaptation: K=6 MSE=4.4838969096266965e-05 time=5473.6 ms ok
+[1/66] Synthetic seed20000_sample2679 yeh_feature_cdf_2020: K=9 MSE=3.0803887383535606e-05 time=18.1 ms ok
+[1/66] Synthetic seed20000_sample2679 uniform_gradient_pruning: K=6 MSE=3.3800084207153527e-05 time=137569.2 ms ok
+[2/66] Synthetic seed20000_sample2057 ours: K=9 MSE=8.144475293399294e-06 time=16.1 ms ok
+[2/66] Synthetic seed20000_sample2057 park_dominant_point_2007_adaptation: K=22 MSE=4.871679706720624e-05 time=55.7 ms ok
+[2/66] Synthetic seed20000_sample2057 liang_feature_iki_2017_adaptation: K=19 MSE=4.582736102663038e-05 time=36.0 ms ok
+[2/66] Synthetic seed20000_sample2057 dung_direct_knot_2017_adaptation: K=5 MSE=0.001551876876090896 time=151.4 ms ok
+[2/66] Synthetic seed20000_sample2057 kang_sparse_2015_adaptation: K=6 MSE=2.6579258379082565e-05 time=2445.5 ms ok
+[2/66] Synthetic seed20000_sample2057 luo_linf_de_2022_adaptation: K=6 MSE=3.911007446919245e-05 time=5477.0 ms ok
+[2/66] Synthetic seed20000_sample2057 yeh_feature_cdf_2020: K=8 MSE=2.9956210713041327e-05 time=16.9 ms ok
+[2/66] Synthetic seed20000_sample2057 uniform_gradient_pruning: K=6 MSE=2.935663772771328e-05 time=137885.7 ms ok
+[3/66] Synthetic seed20000_sample2344 ours: K=10 MSE=1.980940767829148e-05 time=16.1 ms ok
+[3/66] Synthetic seed20000_sample2344 park_dominant_point_2007_adaptation: K=23 MSE=4.3824752996796886e-05 time=63.2 ms ok
+[3/66] Synthetic seed20000_sample2344 liang_feature_iki_2017_adaptation: K=17 MSE=4.678775798108665e-05 time=32.8 ms ok
+[3/66] Synthetic seed20000_sample2344 dung_direct_knot_2017_adaptation: K=6 MSE=0.0020223581398780555 time=202.5 ms ok
+[3/66] Synthetic seed20000_sample2344 kang_sparse_2015_adaptation: K=8 MSE=4.008905090069393e-05 time=2691.9 ms ok
+[3/66] Synthetic seed20000_sample2344 luo_linf_de_2022_adaptation: K=11 MSE=3.2796407016766024e-05 time=5944.5 ms ok
+[3/66] Synthetic seed20000_sample2344 yeh_feature_cdf_2020: K=13 MSE=3.784610451682292e-05 time=27.6 ms ok
+[3/66] Synthetic seed20000_sample2344 uniform_gradient_pruning: K=8 MSE=3.558041630157205e-05 time=136090.9 ms ok
+[4/66] Synthetic seed20000_sample3595 ours: K=12 MSE=1.1761811905474675e-05 time=14.3 ms ok
+[4/66] Synthetic seed20000_sample3595 park_dominant_point_2007_adaptation: K=43 MSE=4.151152344858459e-05 time=114.8 ms ok
+[4/66] Synthetic seed20000_sample3595 liang_feature_iki_2017_adaptation: K=20 MSE=4.900766880483026e-05 time=38.0 ms ok
+[4/66] Synthetic seed20000_sample3595 dung_direct_knot_2017_adaptation: K=6 MSE=0.002696955173726194 time=220.9 ms ok
+[4/66] Synthetic seed20000_sample3595 kang_sparse_2015_adaptation: K=7 MSE=4.152922297758482e-05 time=2543.7 ms ok
+[4/66] Synthetic seed20000_sample3595 luo_linf_de_2022_adaptation: K=7 MSE=8.465374796534708e-05 time=5259.6 ms ok
+[4/66] Synthetic seed20000_sample3595 yeh_feature_cdf_2020: K=12 MSE=3.055039478655578e-05 time=26.6 ms ok
+[4/66] Synthetic seed20000_sample3595 uniform_gradient_pruning: K=8 MSE=2.8659113093019963e-05 time=136781.1 ms ok
+[5/66] Synthetic seed20000_sample3602 ours: K=11 MSE=1.6566892188467508e-05 time=12.8 ms ok
+[5/66] Synthetic seed20000_sample3602 park_dominant_point_2007_adaptation: K=25 MSE=4.147229870272867e-05 time=54.6 ms ok
+[5/66] Synthetic seed20000_sample3602 liang_feature_iki_2017_adaptation: K=22 MSE=3.5922196995190315e-05 time=41.6 ms ok
+[5/66] Synthetic seed20000_sample3602 dung_direct_knot_2017_adaptation: K=7 MSE=0.0022443774470411438 time=237.6 ms ok
+[5/66] Synthetic seed20000_sample3602 kang_sparse_2015_adaptation: K=8 MSE=3.573800001734192e-05 time=2627.5 ms ok
+[5/66] Synthetic seed20000_sample3602 luo_linf_de_2022_adaptation: K=15 MSE=3.1136718002788594e-05 time=6102.4 ms ok
+[5/66] Synthetic seed20000_sample3602 yeh_feature_cdf_2020: K=13 MSE=4.3185472269288733e-05 time=26.9 ms ok
+[5/66] Synthetic seed20000_sample3602 uniform_gradient_pruning: K=9 MSE=3.152520446080154e-05 time=135486.9 ms ok
+[6/66] Synthetic seed20000_sample617 ours: K=12 MSE=1.0304761488988873e-05 time=16.1 ms ok
+[6/66] Synthetic seed20000_sample617 park_dominant_point_2007_adaptation: K=16 MSE=4.84372636529964e-05 time=39.2 ms ok
+[6/66] Synthetic seed20000_sample617 liang_feature_iki_2017_adaptation: K=19 MSE=3.571493165616075e-05 time=36.0 ms ok
+[6/66] Synthetic seed20000_sample617 dung_direct_knot_2017_adaptation: K=6 MSE=0.0016148003295069595 time=265.5 ms ok
+[6/66] Synthetic seed20000_sample617 kang_sparse_2015_adaptation: K=8 MSE=4.4026716421949754e-05 time=2514.2 ms ok
+[6/66] Synthetic seed20000_sample617 luo_linf_de_2022_adaptation: K=12 MSE=3.924865761680579e-05 time=6704.9 ms ok
+[6/66] Synthetic seed20000_sample617 yeh_feature_cdf_2020: K=13 MSE=4.574339355349456e-05 time=25.4 ms ok
+[6/66] Synthetic seed20000_sample617 uniform_gradient_pruning: K=8 MSE=4.102422015303699e-05 time=136165.7 ms ok
+[7/66] Synthetic seed20000_sample3494 ours: K=13 MSE=1.5018873151627794e-05 time=14.5 ms ok
+[7/66] Synthetic seed20000_sample3494 park_dominant_point_2007_adaptation: K=22 MSE=4.56629089944308e-05 time=54.4 ms ok
+[7/66] Synthetic seed20000_sample3494 liang_feature_iki_2017_adaptation: K=25 MSE=4.613182789880107e-05 time=46.7 ms ok
+[7/66] Synthetic seed20000_sample3494 dung_direct_knot_2017_adaptation: K=7 MSE=0.002271749151480942 time=313.6 ms ok
+[7/66] Synthetic seed20000_sample3494 kang_sparse_2015_adaptation: K=11 MSE=5.21836288355041e-05 time=2332.4 ms ok
+[7/66] Synthetic seed20000_sample3494 luo_linf_de_2022_adaptation: K=15 MSE=7.497281355633302e-05 time=6017.5 ms ok
+[7/66] Synthetic seed20000_sample3494 yeh_feature_cdf_2020: K=18 MSE=4.279379553079604e-05 time=36.6 ms ok
+[7/66] Synthetic seed20000_sample3494 uniform_gradient_pruning: K=12 MSE=4.3996019309093445e-05 time=134010.4 ms ok
+[8/66] Synthetic seed20000_sample1758 ours: K=14 MSE=1.5599295133396178e-05 time=14.4 ms ok
+[8/66] Synthetic seed20000_sample1758 park_dominant_point_2007_adaptation: K=31 MSE=3.564875836615492e-05 time=70.7 ms ok
+[8/66] Synthetic seed20000_sample1758 liang_feature_iki_2017_adaptation: K=23 MSE=3.3778776207990584e-05 time=45.8 ms ok
+[8/66] Synthetic seed20000_sample1758 dung_direct_knot_2017_adaptation: K=8 MSE=0.001982398638409513 time=322.0 ms ok
+[8/66] Synthetic seed20000_sample1758 kang_sparse_2015_adaptation: K=11 MSE=3.905187704460184e-05 time=2409.3 ms ok
+[8/66] Synthetic seed20000_sample1758 luo_linf_de_2022_adaptation: K=19 MSE=2.10164471630487e-05 time=5818.5 ms ok
+[8/66] Synthetic seed20000_sample1758 yeh_feature_cdf_2020: K=16 MSE=4.378310062264982e-05 time=31.3 ms ok
+[8/66] Synthetic seed20000_sample1758 uniform_gradient_pruning: K=10 MSE=4.592135674901147e-05 time=135330.6 ms ok
+[9/66] Synthetic seed20000_sample1236 ours: K=14 MSE=1.8798897989659163e-05 time=17.8 ms ok
+[9/66] Synthetic seed20000_sample1236 park_dominant_point_2007_adaptation: K=32 MSE=3.672233198103462e-05 time=73.1 ms ok
+[9/66] Synthetic seed20000_sample1236 liang_feature_iki_2017_adaptation: K=23 MSE=4.973917260844593e-05 time=44.9 ms ok
+[9/66] Synthetic seed20000_sample1236 dung_direct_knot_2017_adaptation: K=9 MSE=0.0019182000092344304 time=362.3 ms ok
+[9/66] Synthetic seed20000_sample1236 kang_sparse_2015_adaptation: K=11 MSE=5.981130309391772e-05 time=2342.9 ms ok
+[9/66] Synthetic seed20000_sample1236 luo_linf_de_2022_adaptation: K=13 MSE=8.624770423132339e-05 time=6045.5 ms ok
+[9/66] Synthetic seed20000_sample1236 yeh_feature_cdf_2020: K=21 MSE=4.9048729538046505e-05 time=47.5 ms ok
+[9/66] Synthetic seed20000_sample1236 uniform_gradient_pruning: K=13 MSE=4.797626725098181e-05 time=133502.9 ms ok
+[10/66] Synthetic seed20000_sample194 ours: K=13 MSE=8.027680325352615e-05 time=13.3 ms ok
+[10/66] Synthetic seed20000_sample194 park_dominant_point_2007_adaptation: K=37 MSE=3.388890834778729e-05 time=90.9 ms ok
+[10/66] Synthetic seed20000_sample194 liang_feature_iki_2017_adaptation: K=21 MSE=4.596145855695447e-05 time=41.3 ms ok
+[10/66] Synthetic seed20000_sample194 dung_direct_knot_2017_adaptation: K=8 MSE=0.001581030472097189 time=250.4 ms ok
+[10/66] Synthetic seed20000_sample194 kang_sparse_2015_adaptation: K=10 MSE=4.478738633440279e-05 time=2435.7 ms ok
+[10/66] Synthetic seed20000_sample194 luo_linf_de_2022_adaptation: K=18 MSE=3.556376358821351e-05 time=6209.0 ms ok
+[10/66] Synthetic seed20000_sample194 yeh_feature_cdf_2020: K=16 MSE=4.007854613422432e-05 time=34.3 ms ok
+[10/66] Synthetic seed20000_sample194 uniform_gradient_pruning: K=10 MSE=4.580167349141733e-05 time=134943.0 ms ok
+[11/66] Synthetic seed20000_sample365 ours: K=15 MSE=6.797708250491282e-05 time=15.8 ms ok
+[11/66] Synthetic seed20000_sample365 park_dominant_point_2007_adaptation: K=28 MSE=4.1814958060236e-05 time=65.6 ms ok
+[11/66] Synthetic seed20000_sample365 liang_feature_iki_2017_adaptation: K=25 MSE=4.412383051104053e-05 time=45.0 ms ok
+[11/66] Synthetic seed20000_sample365 dung_direct_knot_2017_adaptation: K=10 MSE=0.001845260516865849 time=362.2 ms ok
+[11/66] Synthetic seed20000_sample365 kang_sparse_2015_adaptation: K=12 MSE=4.88832121031415e-05 time=2486.3 ms ok
+[11/66] Synthetic seed20000_sample365 luo_linf_de_2022_adaptation: K=8 MSE=0.0028711883298854855 time=6485.5 ms ok
+[11/66] Synthetic seed20000_sample365 yeh_feature_cdf_2020: K=18 MSE=4.9852071344959423e-05 time=36.2 ms ok
+[11/66] Synthetic seed20000_sample365 uniform_gradient_pruning: K=13 MSE=4.74071863616242e-05 time=133474.8 ms ok
+[12/66] Synthetic seed20000_sample3465 ours: K=15 MSE=6.505505588426089e-05 time=17.1 ms ok
+[12/66] Synthetic seed20000_sample3465 park_dominant_point_2007_adaptation: K=30 MSE=2.811481040821521e-05 time=73.4 ms ok
+[12/66] Synthetic seed20000_sample3465 liang_feature_iki_2017_adaptation: K=24 MSE=4.594608577455686e-05 time=42.9 ms ok
+[12/66] Synthetic seed20000_sample3465 dung_direct_knot_2017_adaptation: K=10 MSE=0.0008869740695519416 time=375.3 ms ok
+[12/66] Synthetic seed20000_sample3465 kang_sparse_2015_adaptation: K=12 MSE=7.205372657050384e-05 time=2259.6 ms ok
+[12/66] Synthetic seed20000_sample3465 luo_linf_de_2022_adaptation: K=12 MSE=0.00019519445891179936 time=5921.2 ms ok
+[12/66] Synthetic seed20000_sample3465 yeh_feature_cdf_2020: K=20 MSE=4.88216581004262e-05 time=38.7 ms ok
+[12/66] Synthetic seed20000_sample3465 uniform_gradient_pruning: K=15 MSE=4.4802543993720013e-05 time=132149.7 ms ok
+[13/66] Synthetic seed20000_sample2797 ours: K=16 MSE=4.17821138862166e-05 time=14.5 ms ok
+[13/66] Synthetic seed20000_sample2797 park_dominant_point_2007_adaptation: K=48 MSE=3.2309904122625087e-05 time=125.7 ms ok
+[13/66] Synthetic seed20000_sample2797 liang_feature_iki_2017_adaptation: K=25 MSE=4.747688260081735e-05 time=62.0 ms ok
+[13/66] Synthetic seed20000_sample2797 dung_direct_knot_2017_adaptation: K=11 MSE=0.000843299299940072 time=447.3 ms ok
+[13/66] Synthetic seed20000_sample2797 kang_sparse_2015_adaptation: K=13 MSE=5.27143514977455e-05 time=2396.3 ms ok
+[13/66] Synthetic seed20000_sample2797 luo_linf_de_2022_adaptation: K=11 MSE=0.0005238544350514941 time=5579.0 ms ok
+[13/66] Synthetic seed20000_sample2797 yeh_feature_cdf_2020: K=22 MSE=4.6112449330463606e-05 time=43.3 ms ok
+[13/66] Synthetic seed20000_sample2797 uniform_gradient_pruning: K=13 MSE=4.951703328831915e-05 time=133501.1 ms ok
+[14/66] Synthetic seed20000_sample1930 ours: K=16 MSE=5.6469608773798615e-05 time=13.7 ms ok
+[14/66] Synthetic seed20000_sample1930 park_dominant_point_2007_adaptation: K=30 MSE=4.4928639868188885e-05 time=71.9 ms ok
+[14/66] Synthetic seed20000_sample1930 liang_feature_iki_2017_adaptation: K=29 MSE=4.615869809419828e-05 time=59.4 ms ok
+[14/66] Synthetic seed20000_sample1930 dung_direct_knot_2017_adaptation: K=11 MSE=0.0010924704613769287 time=405.1 ms ok
+[14/66] Synthetic seed20000_sample1930 kang_sparse_2015_adaptation: K=14 MSE=4.522443627473881e-05 time=2313.2 ms ok
+[14/66] Synthetic seed20000_sample1930 luo_linf_de_2022_adaptation: K=14 MSE=8.001925644563e-05 time=6139.1 ms ok
+[14/66] Synthetic seed20000_sample1930 yeh_feature_cdf_2020: K=23 MSE=4.744995278225641e-05 time=50.1 ms ok
+[14/66] Synthetic seed20000_sample1930 uniform_gradient_pruning: K=15 MSE=4.0406811421676946e-05 time=132613.1 ms ok
+[15/66] Synthetic seed20000_sample2097 ours: K=21 MSE=1.8228687314888254e-05 time=13.1 ms ok
+[15/66] Synthetic seed20000_sample2097 park_dominant_point_2007_adaptation: K=35 MSE=4.712094839126834e-05 time=82.5 ms ok
+[15/66] Synthetic seed20000_sample2097 liang_feature_iki_2017_adaptation: K=29 MSE=4.960344984212121e-05 time=53.9 ms ok
+[15/66] Synthetic seed20000_sample2097 dung_direct_knot_2017_adaptation: K=11 MSE=0.00108755220057459 time=469.3 ms ok
+[15/66] Synthetic seed20000_sample2097 kang_sparse_2015_adaptation: K=15 MSE=5.578134367688782e-05 time=2275.6 ms ok
+[15/66] Synthetic seed20000_sample2097 luo_linf_de_2022_adaptation: K=5 MSE=0.0032161825724178715 time=5813.8 ms ok
+[15/66] Synthetic seed20000_sample2097 yeh_feature_cdf_2020: K=25 MSE=4.893647968389511e-05 time=51.7 ms ok
+[15/66] Synthetic seed20000_sample2097 uniform_gradient_pruning: K=16 MSE=4.951398223027344e-05 time=131800.7 ms ok
+[16/66] Synthetic seed20000_sample4016 ours: K=18 MSE=4.9421099405929214e-05 time=15.5 ms ok
+[16/66] Synthetic seed20000_sample4016 park_dominant_point_2007_adaptation: K=39 MSE=3.159982881761927e-05 time=114.8 ms ok
+[16/66] Synthetic seed20000_sample4016 liang_feature_iki_2017_adaptation: K=33 MSE=4.301095086585568e-05 time=62.5 ms ok
+[16/66] Synthetic seed20000_sample4016 dung_direct_knot_2017_adaptation: K=12 MSE=0.0007378550315930882 time=543.6 ms ok
+[16/66] Synthetic seed20000_sample4016 kang_sparse_2015_adaptation: K=8 MSE=0.0024610332427986333 time=2051.1 ms ok
+[16/66] Synthetic seed20000_sample4016 luo_linf_de_2022_adaptation: K=11 MSE=0.0018184041897879452 time=6251.2 ms ok
+[16/66] Synthetic seed20000_sample4016 yeh_feature_cdf_2020: K=28 MSE=4.974582817490756e-05 time=56.8 ms ok
+[16/66] Synthetic seed20000_sample4016 uniform_gradient_pruning: K=19 MSE=4.536764583086146e-05 time=128869.7 ms ok
+[17/66] Synthetic seed20000_sample1601 ours: K=22 MSE=1.4141479351975232e-05 time=16.7 ms ok
+[17/66] Synthetic seed20000_sample1601 park_dominant_point_2007_adaptation: K=45 MSE=3.991065411314273e-05 time=132.0 ms ok
+[17/66] Synthetic seed20000_sample1601 liang_feature_iki_2017_adaptation: K=30 MSE=4.699516873638528e-05 time=70.2 ms ok
+[17/66] Synthetic seed20000_sample1601 dung_direct_knot_2017_adaptation: K=13 MSE=0.0005924476946733525 time=575.6 ms ok
+[17/66] Synthetic seed20000_sample1601 kang_sparse_2015_adaptation: K=9 MSE=0.0028229644875532914 time=2061.0 ms ok
+[17/66] Synthetic seed20000_sample1601 luo_linf_de_2022_adaptation: K=11 MSE=0.002647807422249518 time=6884.6 ms ok
+[17/66] Synthetic seed20000_sample1601 yeh_feature_cdf_2020: K=28 MSE=4.54120454461296e-05 time=72.7 ms ok
+[17/66] Synthetic seed20000_sample1601 uniform_gradient_pruning: K=18 MSE=4.876870840586053e-05 time=130630.4 ms ok
+[18/66] Synthetic seed20000_sample764 ours: K=21 MSE=3.340274697810028e-05 time=13.3 ms ok
+[18/66] Synthetic seed20000_sample764 park_dominant_point_2007_adaptation: K=37 MSE=4.82853558824204e-05 time=90.4 ms ok
+[18/66] Synthetic seed20000_sample764 liang_feature_iki_2017_adaptation: K=34 MSE=4.860907533390938e-05 time=70.3 ms ok
+[18/66] Synthetic seed20000_sample764 dung_direct_knot_2017_adaptation: K=13 MSE=0.001616031172046093 time=585.2 ms ok
+[18/66] Synthetic seed20000_sample764 kang_sparse_2015_adaptation: K=8 MSE=0.0024767968046026695 time=2022.4 ms ok
+[18/66] Synthetic seed20000_sample764 luo_linf_de_2022_adaptation: K=12 MSE=0.0023158927157951154 time=6066.0 ms ok
+[18/66] Synthetic seed20000_sample764 yeh_feature_cdf_2020: K=28 MSE=4.79138352956492e-05 time=54.6 ms ok
+[18/66] Synthetic seed20000_sample764 uniform_gradient_pruning: K=17 MSE=4.9865003454021585e-05 time=131210.4 ms ok
+[19/66] Synthetic seed20000_sample3366 ours: K=22 MSE=1.4066062261056024e-05 time=15.9 ms ok
+[19/66] Synthetic seed20000_sample3366 park_dominant_point_2007_adaptation: K=35 MSE=4.690888805729556e-05 time=89.2 ms ok
+[19/66] Synthetic seed20000_sample3366 liang_feature_iki_2017_adaptation: K=33 MSE=4.7611175084019774e-05 time=61.7 ms ok
+[19/66] Synthetic seed20000_sample3366 dung_direct_knot_2017_adaptation: K=13 MSE=0.0014300725850564064 time=608.0 ms ok
+[19/66] Synthetic seed20000_sample3366 kang_sparse_2015_adaptation: K=1 MSE=0.005324709804575914 time=1774.4 ms ok
+[19/66] Synthetic seed20000_sample3366 luo_linf_de_2022_adaptation: K=13 MSE=0.0019006488158955278 time=5929.4 ms ok
+[19/66] Synthetic seed20000_sample3366 yeh_feature_cdf_2020: K=31 MSE=4.7278978279368494e-05 time=75.6 ms ok
+[19/66] Synthetic seed20000_sample3366 uniform_gradient_pruning: K=20 MSE=4.958393243438853e-05 time=128409.7 ms ok
+[20/66] Synthetic seed20000_sample2996 ours: K=24 MSE=1.7087915811344004e-05 time=13.5 ms ok
+[20/66] Synthetic seed20000_sample2996 park_dominant_point_2007_adaptation: K=47 MSE=4.567875238671828e-05 time=121.8 ms ok
+[20/66] Synthetic seed20000_sample2996 liang_feature_iki_2017_adaptation: K=35 MSE=4.9601106301889175e-05 time=87.0 ms ok
+[20/66] Synthetic seed20000_sample2996 dung_direct_knot_2017_adaptation: K=14 MSE=0.0006341940453324512 time=698.7 ms ok
+[20/66] Synthetic seed20000_sample2996 kang_sparse_2015_adaptation: K=1 MSE=0.005993868772581738 time=986.6 ms ok
+[20/66] Synthetic seed20000_sample2996 luo_linf_de_2022_adaptation: K=11 MSE=0.0031901607080857264 time=5852.7 ms ok
+[20/66] Synthetic seed20000_sample2996 yeh_feature_cdf_2020: K=32 MSE=4.590016207335602e-05 time=66.9 ms ok
+[20/66] Synthetic seed20000_sample2996 uniform_gradient_pruning: K=22 MSE=4.5889838226996786e-05 time=127004.2 ms ok
+[21/66] Synthetic seed20000_sample2204 ours: K=22 MSE=9.354158302104692e-05 time=12.8 ms ok
+[21/66] Synthetic seed20000_sample2204 park_dominant_point_2007_adaptation: K=33 MSE=4.691020683406702e-05 time=81.1 ms ok
+[21/66] Synthetic seed20000_sample2204 liang_feature_iki_2017_adaptation: K=31 MSE=4.897825819650049e-05 time=58.0 ms ok
+[21/66] Synthetic seed20000_sample2204 dung_direct_knot_2017_adaptation: K=14 MSE=0.0011801830698633508 time=598.7 ms ok
+[21/66] Synthetic seed20000_sample2204 kang_sparse_2015_adaptation: K=1 MSE=0.004751094546634366 time=1709.9 ms ok
+[21/66] Synthetic seed20000_sample2204 luo_linf_de_2022_adaptation: K=12 MSE=0.0023570276774572056 time=6048.3 ms ok
+[21/66] Synthetic seed20000_sample2204 yeh_feature_cdf_2020: K=31 MSE=4.952716118470044e-05 time=76.4 ms ok
+[21/66] Synthetic seed20000_sample2204 uniform_gradient_pruning: K=20 MSE=4.932896368569259e-05 time=129668.9 ms ok
+[22/66] Synthetic seed20000_sample3084 ours: K=24 MSE=1.9428145856199617e-05 time=13.0 ms ok
+[22/66] Synthetic seed20000_sample3084 park_dominant_point_2007_adaptation: K=43 MSE=3.935831570574538e-05 time=106.9 ms ok
+[22/66] Synthetic seed20000_sample3084 liang_feature_iki_2017_adaptation: K=33 MSE=4.734035411093217e-05 time=66.0 ms ok
+[22/66] Synthetic seed20000_sample3084 dung_direct_knot_2017_adaptation: K=16 MSE=0.00011384949131107025 time=757.0 ms ok
+[22/66] Synthetic seed20000_sample3084 kang_sparse_2015_adaptation: K=2 MSE=0.004342047286348582 time=963.7 ms ok
+[22/66] Synthetic seed20000_sample3084 luo_linf_de_2022_adaptation: K=13 MSE=0.002788663664540995 time=5905.7 ms ok
+[22/66] Synthetic seed20000_sample3084 yeh_feature_cdf_2020: K=31 MSE=4.894618796948149e-05 time=61.6 ms ok
+[22/66] Synthetic seed20000_sample3084 uniform_gradient_pruning: K=21 MSE=4.992098567597288e-05 time=127338.7 ms ok
+[23/66] Synthetic seed20000_sample961 ours: K=25 MSE=4.673090503389249e-05 time=14.2 ms ok
+[23/66] Synthetic seed20000_sample961 park_dominant_point_2007_adaptation: K=47 MSE=4.671473609456305e-05 time=162.7 ms ok
+[23/66] Synthetic seed20000_sample961 liang_feature_iki_2017_adaptation: K=40 MSE=4.882537870363006e-05 time=78.3 ms ok
+[23/66] Synthetic seed20000_sample961 dung_direct_knot_2017_adaptation: K=16 MSE=0.0007897771603849671 time=852.8 ms ok
+[23/66] Synthetic seed20000_sample961 kang_sparse_2015_adaptation: K=2 MSE=0.004343420525679424 time=960.9 ms ok
+[23/66] Synthetic seed20000_sample961 luo_linf_de_2022_adaptation: K=15 MSE=0.001901023886318268 time=5693.0 ms ok
+[23/66] Synthetic seed20000_sample961 yeh_feature_cdf_2020: K=37 MSE=4.85469706062892e-05 time=78.8 ms ok
+[23/66] Synthetic seed20000_sample961 uniform_gradient_pruning: K=26 MSE=4.831170210219929e-05 time=122070.9 ms ok
+[24/66] Synthetic seed20000_sample3684 ours: K=26 MSE=2.7629638365292755e-05 time=14.1 ms ok
+[24/66] Synthetic seed20000_sample3684 park_dominant_point_2007_adaptation: K=41 MSE=4.645901909975191e-05 time=105.6 ms ok
+[24/66] Synthetic seed20000_sample3684 liang_feature_iki_2017_adaptation: K=36 MSE=4.784327708878789e-05 time=71.4 ms ok
+[24/66] Synthetic seed20000_sample3684 dung_direct_knot_2017_adaptation: K=16 MSE=0.0004844898940213514 time=840.4 ms ok
+[24/66] Synthetic seed20000_sample3684 kang_sparse_2015_adaptation: K=2 MSE=0.004861012175943616 time=957.0 ms ok
+[24/66] Synthetic seed20000_sample3684 luo_linf_de_2022_adaptation: K=11 MSE=0.0022490171322877323 time=5183.7 ms ok
+[24/66] Synthetic seed20000_sample3684 yeh_feature_cdf_2020: K=37 MSE=4.147394291045312e-05 time=89.5 ms ok
+[24/66] Synthetic seed20000_sample3684 uniform_gradient_pruning: K=24 MSE=4.712922722553375e-05 time=124370.1 ms ok
+[25/66] Synthetic seed20000_sample3248 ours: K=28 MSE=2.4662989472586858e-05 time=17.8 ms ok
+[25/66] Synthetic seed20000_sample3248 park_dominant_point_2007_adaptation: K=40 MSE=4.920329111612822e-05 time=109.0 ms ok
+[25/66] Synthetic seed20000_sample3248 liang_feature_iki_2017_adaptation: K=44 MSE=4.578175589221053e-05 time=90.8 ms ok
+[25/66] Synthetic seed20000_sample3248 dung_direct_knot_2017_adaptation: K=17 MSE=0.00034974440303769434 time=940.7 ms ok
+[25/66] Synthetic seed20000_sample3248 kang_sparse_2015_adaptation: K=1 MSE=0.0063589353714893805 time=933.8 ms ok
+[25/66] Synthetic seed20000_sample3248 luo_linf_de_2022_adaptation: K=3 MSE=0.005133404874751086 time=4976.3 ms ok
+[25/66] Synthetic seed20000_sample3248 yeh_feature_cdf_2020: K=38 MSE=4.961280294907563e-05 time=81.8 ms ok
+[25/66] Synthetic seed20000_sample3248 uniform_gradient_pruning: K=25 MSE=4.962742386881107e-05 time=123263.2 ms ok
+[26/66] Synthetic seed20000_sample278 ours: K=28 MSE=1.6928429169711448e-05 time=14.1 ms ok
+[26/66] Synthetic seed20000_sample278 park_dominant_point_2007_adaptation: K=41 MSE=4.6745609682843274e-05 time=100.8 ms ok
+[26/66] Synthetic seed20000_sample278 liang_feature_iki_2017_adaptation: K=40 MSE=4.911818578291217e-05 time=78.3 ms ok
+[26/66] Synthetic seed20000_sample278 dung_direct_knot_2017_adaptation: K=17 MSE=0.0006104156227685238 time=925.0 ms ok
+[26/66] Synthetic seed20000_sample278 kang_sparse_2015_adaptation: K=1 MSE=0.0071951133165219635 time=1044.3 ms ok
+[26/66] Synthetic seed20000_sample278 luo_linf_de_2022_adaptation: K=15 MSE=0.003029962959387126 time=5879.7 ms ok
+[26/66] Synthetic seed20000_sample278 yeh_feature_cdf_2020: K=37 MSE=4.938673283836196e-05 time=77.6 ms ok
+[26/66] Synthetic seed20000_sample278 uniform_gradient_pruning: K=26 MSE=4.596155664998911e-05 time=124837.9 ms ok
+[27/66] Synthetic seed20000_sample2753 ours: K=28 MSE=1.8412527822702662e-05 time=14.7 ms ok
+[27/66] Synthetic seed20000_sample2753 park_dominant_point_2007_adaptation: K=44 MSE=4.782040712130136e-05 time=122.9 ms ok
+[27/66] Synthetic seed20000_sample2753 liang_feature_iki_2017_adaptation: K=34 MSE=4.9237103880905095e-05 time=67.9 ms ok
+[27/66] Synthetic seed20000_sample2753 dung_direct_knot_2017_adaptation: K=18 MSE=0.0007313015440889399 time=949.8 ms ok
+[27/66] Synthetic seed20000_sample2753 kang_sparse_2015_adaptation: K=2 MSE=0.004166343593197703 time=1004.0 ms ok
+[27/66] Synthetic seed20000_sample2753 luo_linf_de_2022_adaptation: K=15 MSE=0.0023545833796261204 time=5733.9 ms ok
+[27/66] Synthetic seed20000_sample2753 yeh_feature_cdf_2020: K=40 MSE=4.888781499101452e-05 time=93.1 ms ok
+[27/66] Synthetic seed20000_sample2753 uniform_gradient_pruning: K=24 MSE=4.973896549864728e-05 time=127843.3 ms ok
+[28/66] Synthetic seed20000_sample2138 ours: K=29 MSE=1.80466329476043e-05 time=14.6 ms ok
+[28/66] Synthetic seed20000_sample2138 park_dominant_point_2007_adaptation: K=39 MSE=4.708885282814118e-05 time=114.7 ms ok
+[28/66] Synthetic seed20000_sample2138 liang_feature_iki_2017_adaptation: K=44 MSE=4.653656653017885e-05 time=94.4 ms ok
+[28/66] Synthetic seed20000_sample2138 dung_direct_knot_2017_adaptation: K=18 MSE=0.0005819987515416296 time=846.6 ms ok
+[28/66] Synthetic seed20000_sample2138 kang_sparse_2015_adaptation: K=2 MSE=0.004203334948743795 time=975.2 ms ok
+[28/66] Synthetic seed20000_sample2138 luo_linf_de_2022_adaptation: K=11 MSE=0.0026236097162481344 time=5063.6 ms ok
+[28/66] Synthetic seed20000_sample2138 yeh_feature_cdf_2020: K=37 MSE=4.69732916951086e-05 time=74.1 ms ok
+[28/66] Synthetic seed20000_sample2138 uniform_gradient_pruning: K=23 MSE=4.700547750106975e-05 time=128846.3 ms ok
+[29/66] Synthetic seed20000_sample731 ours: K=30 MSE=3.4127095680974544e-05 time=17.5 ms ok
+[29/66] Synthetic seed20000_sample731 park_dominant_point_2007_adaptation: K=44 MSE=4.873537735480499e-05 time=116.9 ms ok
+[29/66] Synthetic seed20000_sample731 liang_feature_iki_2017_adaptation: K=42 MSE=4.839456195102798e-05 time=85.3 ms ok
+[29/66] Synthetic seed20000_sample731 dung_direct_knot_2017_adaptation: K=19 MSE=0.0005801141539649201 time=1045.7 ms ok
+[29/66] Synthetic seed20000_sample731 kang_sparse_2015_adaptation: K=1 MSE=0.005429784156776299 time=960.5 ms ok
+[29/66] Synthetic seed20000_sample731 luo_linf_de_2022_adaptation: K=7 MSE=0.004188734740085524 time=5156.8 ms ok
+[29/66] Synthetic seed20000_sample731 yeh_feature_cdf_2020: K=44 MSE=4.872454327443338e-05 time=96.4 ms ok
+[29/66] Synthetic seed20000_sample731 uniform_gradient_pruning: K=28 MSE=4.9466230461835674e-05 time=124766.6 ms ok
+[30/66] Synthetic seed20000_sample1405 ours: K=31 MSE=2.123299164820213e-05 time=15.6 ms ok
+[30/66] Synthetic seed20000_sample1405 park_dominant_point_2007_adaptation: K=45 MSE=4.8782128614984726e-05 time=122.6 ms ok
+[30/66] Synthetic seed20000_sample1405 liang_feature_iki_2017_adaptation: K=41 MSE=4.6340213542266755e-05 time=87.3 ms ok
+[30/66] Synthetic seed20000_sample1405 dung_direct_knot_2017_adaptation: K=19 MSE=0.00047714543486901216 time=1073.7 ms ok
+[30/66] Synthetic seed20000_sample1405 kang_sparse_2015_adaptation: K=6 MSE=0.004166032492298023 time=1042.3 ms ok
+[30/66] Synthetic seed20000_sample1405 luo_linf_de_2022_adaptation: K=7 MSE=0.004146904099662588 time=4720.7 ms ok
+[30/66] Synthetic seed20000_sample1405 yeh_feature_cdf_2020: K=44 MSE=4.8243559920400144e-05 time=93.6 ms ok
+[30/66] Synthetic seed20000_sample1405 uniform_gradient_pruning: K=31 MSE=4.890349634543789e-05 time=113996.3 ms ok
+[31/66] Synthetic seed20000_sample937 ours: K=32 MSE=1.6363497362434883e-05 time=15.4 ms ok
+[31/66] Synthetic seed20000_sample937 park_dominant_point_2007_adaptation: K=44 MSE=4.854316961456876e-05 time=108.0 ms ok
+[31/66] Synthetic seed20000_sample937 liang_feature_iki_2017_adaptation: K=42 MSE=4.379763583169211e-05 time=101.1 ms ok
+[31/66] Synthetic seed20000_sample937 dung_direct_knot_2017_adaptation: K=19 MSE=0.0008270796745902411 time=868.7 ms ok
+[31/66] Synthetic seed20000_sample937 kang_sparse_2015_adaptation: K=1 MSE=0.006141911914293548 time=983.8 ms ok
+[31/66] Synthetic seed20000_sample937 luo_linf_de_2022_adaptation: K=11 MSE=0.002821942479266903 time=5180.3 ms ok
+[31/66] Synthetic seed20000_sample937 yeh_feature_cdf_2020: K=42 MSE=4.397085906694073e-05 time=86.8 ms ok
+[31/66] Synthetic seed20000_sample937 uniform_gradient_pruning: K=27 MSE=4.7612900502313224e-05 time=119863.4 ms ok
+[32/66] Synthetic seed20000_sample3396 ours: K=32 MSE=3.8221299148819545e-05 time=14.9 ms ok
+[32/66] Synthetic seed20000_sample3396 park_dominant_point_2007_adaptation: K=44 MSE=4.949032206508059e-05 time=122.3 ms ok
+[32/66] Synthetic seed20000_sample3396 liang_feature_iki_2017_adaptation: K=48 MSE=4.718584901124671e-05 time=98.2 ms ok
+[32/66] Synthetic seed20000_sample3396 dung_direct_knot_2017_adaptation: K=20 MSE=0.000464336196344422 time=1029.6 ms ok
+[32/66] Synthetic seed20000_sample3396 kang_sparse_2015_adaptation: K=1 MSE=0.006255866832784459 time=1026.5 ms ok
+[32/66] Synthetic seed20000_sample3396 luo_linf_de_2022_adaptation: K=10 MSE=0.003976025194286927 time=3951.0 ms ok
+[32/66] Synthetic seed20000_sample3396 yeh_feature_cdf_2020: K=46 MSE=4.855344931305745e-05 time=105.8 ms ok
+[32/66] Synthetic seed20000_sample3396 uniform_gradient_pruning: K=32 MSE=4.9928109121239226e-05 time=111334.6 ms ok
+[33/66] Synthetic seed20000_sample496 ours: K=34 MSE=2.0627005090014274e-05 time=17.4 ms ok
+[33/66] Synthetic seed20000_sample496 park_dominant_point_2007_adaptation: K=40 MSE=4.9616062080241136e-05 time=106.1 ms ok
+[33/66] Synthetic seed20000_sample496 liang_feature_iki_2017_adaptation: K=49 MSE=4.5859884870077984e-05 time=111.2 ms ok
+[33/66] Synthetic seed20000_sample496 dung_direct_knot_2017_adaptation: K=21 MSE=0.0004623726620745824 time=1109.4 ms ok
+[33/66] Synthetic seed20000_sample496 kang_sparse_2015_adaptation: K=1 MSE=0.0059769577374837795 time=988.9 ms ok
+[33/66] Synthetic seed20000_sample496 luo_linf_de_2022_adaptation: K=15 MSE=0.0033482503469510756 time=5280.8 ms ok
+[33/66] Synthetic seed20000_sample496 yeh_feature_cdf_2020: K=45 MSE=4.8943968022984364e-05 time=100.6 ms ok
+[33/66] Synthetic seed20000_sample496 uniform_gradient_pruning: K=30 MSE=4.880604690007134e-05 time=115290.0 ms ok
+[34/66] Synthetic seed20000_sample981 ours: K=34 MSE=2.3379109829582153e-05 time=16.6 ms ok
+[34/66] Synthetic seed20000_sample981 park_dominant_point_2007_adaptation: K=41 MSE=4.9321720924170016e-05 time=117.2 ms ok
+[34/66] Synthetic seed20000_sample981 liang_feature_iki_2017_adaptation: K=48 MSE=4.683184474207607e-05 time=95.8 ms ok
+[34/66] Synthetic seed20000_sample981 dung_direct_knot_2017_adaptation: K=21 MSE=0.0005430460720727267 time=1170.8 ms ok
+[34/66] Synthetic seed20000_sample981 kang_sparse_2015_adaptation: K=2 MSE=0.004271994360182207 time=926.6 ms ok
+[34/66] Synthetic seed20000_sample981 luo_linf_de_2022_adaptation: K=5 MSE=0.003855658677759919 time=4168.5 ms ok
+[34/66] Synthetic seed20000_sample981 yeh_feature_cdf_2020: K=44 MSE=4.985641175272456e-05 time=90.9 ms ok
+[34/66] Synthetic seed20000_sample981 uniform_gradient_pruning: K=31 MSE=4.90342125690185e-05 time=113364.5 ms ok
+[35/66] Synthetic seed20000_sample3769 ours: K=35 MSE=3.3833877322210424e-05 time=14.5 ms ok
+[35/66] Synthetic seed20000_sample3769 park_dominant_point_2007_adaptation: K=50 MSE=4.905499537846263e-05 time=148.1 ms ok
+[35/66] Synthetic seed20000_sample3769 liang_feature_iki_2017_adaptation: K=48 MSE=4.8863646820663914e-05 time=99.6 ms ok
+[35/66] Synthetic seed20000_sample3769 dung_direct_knot_2017_adaptation: K=22 MSE=0.0006755462040242162 time=1193.6 ms ok
+[35/66] Synthetic seed20000_sample3769 kang_sparse_2015_adaptation: K=1 MSE=0.006398998399504997 time=937.2 ms ok
+[35/66] Synthetic seed20000_sample3769 luo_linf_de_2022_adaptation: K=9 MSE=0.004047818694128368 time=3976.8 ms ok
+[35/66] Synthetic seed20000_sample3769 yeh_feature_cdf_2020: K=47 MSE=4.92202136358448e-05 time=100.0 ms ok
+[35/66] Synthetic seed20000_sample3769 uniform_gradient_pruning: K=36 MSE=4.717474773710889e-05 time=102952.9 ms ok
+[36/66] Synthetic seed20000_sample1922 ours: K=34 MSE=5.213851986852251e-05 time=18.1 ms ok
+[36/66] Synthetic seed20000_sample1922 park_dominant_point_2007_adaptation: K=47 MSE=4.9775492072494876e-05 time=135.8 ms ok
+[36/66] Synthetic seed20000_sample1922 liang_feature_iki_2017_adaptation: K=47 MSE=4.9835460871133594e-05 time=93.8 ms ok
+[36/66] Synthetic seed20000_sample1922 dung_direct_knot_2017_adaptation: K=22 MSE=0.0004761662262949668 time=1063.6 ms ok
+[36/66] Synthetic seed20000_sample1922 kang_sparse_2015_adaptation: K=1 MSE=0.005594779252504514 time=972.3 ms ok
+[36/66] Synthetic seed20000_sample1922 luo_linf_de_2022_adaptation: K=15 MSE=0.003491415761101162 time=4349.9 ms ok
+[36/66] Synthetic seed20000_sample1922 yeh_feature_cdf_2020: K=49 MSE=4.790515631531637e-05 time=109.7 ms ok
+[36/66] Synthetic seed20000_sample1922 uniform_gradient_pruning: K=35 MSE=4.8567959985351375e-05 time=105147.1 ms ok
+[37/66] Synthetic seed20000_sample1306 ours: K=38 MSE=2.496742386487509e-05 time=17.6 ms ok
+[37/66] Synthetic seed20000_sample1306 park_dominant_point_2007_adaptation: K=53 MSE=4.887702524170967e-05 time=160.8 ms ok
+[37/66] Synthetic seed20000_sample1306 liang_feature_iki_2017_adaptation: K=55 MSE=4.782374985197474e-05 time=109.7 ms ok
+[37/66] Synthetic seed20000_sample1306 dung_direct_knot_2017_adaptation: K=23 MSE=0.0006471666336930406 time=1171.9 ms ok
+[37/66] Synthetic seed20000_sample1306 kang_sparse_2015_adaptation: K=2 MSE=0.00548090997085006 time=941.2 ms ok
+[37/66] Synthetic seed20000_sample1306 luo_linf_de_2022_adaptation: K=8 MSE=0.0044002480094745555 time=3441.1 ms ok
+[37/66] Synthetic seed20000_sample1306 yeh_feature_cdf_2020: K=51 MSE=4.954705715317124e-05 time=112.6 ms ok
+[37/66] Synthetic seed20000_sample1306 uniform_gradient_pruning: K=37 MSE=4.8821762594638986e-05 time=101453.5 ms ok
+[38/66] Synthetic seed20000_sample2647 ours: K=37 MSE=2.502281308922532e-05 time=16.1 ms ok
+[38/66] Synthetic seed20000_sample2647 park_dominant_point_2007_adaptation: K=48 MSE=4.8997945398505126e-05 time=139.4 ms ok
+[38/66] Synthetic seed20000_sample2647 liang_feature_iki_2017_adaptation: K=53 MSE=4.613861131953077e-05 time=113.1 ms ok
+[38/66] Synthetic seed20000_sample2647 dung_direct_knot_2017_adaptation: K=22 MSE=0.0007476700024993591 time=1231.7 ms ok
+[38/66] Synthetic seed20000_sample2647 kang_sparse_2015_adaptation: K=2 MSE=0.004529746460027617 time=951.8 ms ok
+[38/66] Synthetic seed20000_sample2647 luo_linf_de_2022_adaptation: K=14 MSE=0.003204962593039247 time=3301.3 ms ok
+[38/66] Synthetic seed20000_sample2647 yeh_feature_cdf_2020: K=47 MSE=4.7970471042147416e-05 time=104.2 ms ok
+[38/66] Synthetic seed20000_sample2647 uniform_gradient_pruning: K=35 MSE=4.974567368958147e-05 time=104813.9 ms ok
+[39/66] Synthetic seed20000_sample2880 ours: K=39 MSE=2.04664381863126e-05 time=14.7 ms ok
+[39/66] Synthetic seed20000_sample2880 park_dominant_point_2007_adaptation: K=52 MSE=4.805303243730321e-05 time=204.4 ms ok
+[39/66] Synthetic seed20000_sample2880 liang_feature_iki_2017_adaptation: K=61 MSE=4.928703798167816e-05 time=130.3 ms ok
+[39/66] Synthetic seed20000_sample2880 dung_direct_knot_2017_adaptation: K=24 MSE=0.0005714807445638622 time=1289.7 ms ok
+[39/66] Synthetic seed20000_sample2880 kang_sparse_2015_adaptation: K=5 MSE=0.004505550404072834 time=1014.2 ms ok
+[39/66] Synthetic seed20000_sample2880 luo_linf_de_2022_adaptation: K=4 MSE=0.004227714280760805 time=2538.0 ms ok
+[39/66] Synthetic seed20000_sample2880 yeh_feature_cdf_2020: K=52 MSE=4.880203827618565e-05 time=126.7 ms ok
+[39/66] Synthetic seed20000_sample2880 uniform_gradient_pruning: K=39 MSE=4.998999737622944e-05 time=96378.4 ms ok
+[40/66] Synthetic seed20000_sample1149 ours: K=38 MSE=3.130401732956436e-05 time=21.1 ms ok
+[40/66] Synthetic seed20000_sample1149 park_dominant_point_2007_adaptation: K=56 MSE=4.9259429664297485e-05 time=202.9 ms ok
+[40/66] Synthetic seed20000_sample1149 liang_feature_iki_2017_adaptation: K=59 MSE=4.896087491763694e-05 time=122.4 ms ok
+[40/66] Synthetic seed20000_sample1149 dung_direct_knot_2017_adaptation: K=23 MSE=0.0009075844400085565 time=1226.0 ms ok
+[40/66] Synthetic seed20000_sample1149 kang_sparse_2015_adaptation: K=2 MSE=0.005432355342594546 time=40.8 ms ok
+[40/66] Synthetic seed20000_sample1149 luo_linf_de_2022_adaptation: K=1 MSE=0.0070698264982503 time=929.3 ms ok
+[40/66] Synthetic seed20000_sample1149 yeh_feature_cdf_2020: K=59 MSE=4.8410780808752505e-05 time=148.1 ms ok
+[40/66] Synthetic seed20000_sample1149 uniform_gradient_pruning: K=42 MSE=4.8459035263167e-05 time=88221.4 ms ok
+[41/66] Synthetic seed20000_sample650 ours: K=40 MSE=5.0391819043277135e-05 time=14.2 ms ok
+[41/66] Synthetic seed20000_sample650 park_dominant_point_2007_adaptation: K=50 MSE=4.8916377271699345e-05 time=172.3 ms ok
+[41/66] Synthetic seed20000_sample650 liang_feature_iki_2017_adaptation: K=55 MSE=4.978494175496286e-05 time=123.8 ms ok
+[41/66] Synthetic seed20000_sample650 dung_direct_knot_2017_adaptation: K=25 MSE=0.0005702405175043979 time=1245.9 ms ok
+[41/66] Synthetic seed20000_sample650 kang_sparse_2015_adaptation: K=4 MSE=0.00440852148660778 time=1003.8 ms ok
+[41/66] Synthetic seed20000_sample650 luo_linf_de_2022_adaptation: K=2 MSE=0.004728086552937688 time=2643.9 ms ok
+[41/66] Synthetic seed20000_sample650 yeh_feature_cdf_2020: K=54 MSE=4.871443157582545e-05 time=120.1 ms ok
+[41/66] Synthetic seed20000_sample650 uniform_gradient_pruning: K=37 MSE=4.840952799939495e-05 time=101393.7 ms ok
+[42/66] Synthetic seed20000_sample2103 ours: K=44 MSE=2.729584153874333e-05 time=15.5 ms ok
+[42/66] Synthetic seed20000_sample2103 park_dominant_point_2007_adaptation: K=53 MSE=4.894810823667434e-05 time=169.9 ms ok
+[42/66] Synthetic seed20000_sample2103 liang_feature_iki_2017_adaptation: K=57 MSE=4.874378549474878e-05 time=120.1 ms ok
+[42/66] Synthetic seed20000_sample2103 dung_direct_knot_2017_adaptation: K=25 MSE=0.0003566997615293284 time=1298.4 ms ok
+[42/66] Synthetic seed20000_sample2103 kang_sparse_2015_adaptation: K=1 MSE=0.007372209268676627 time=20.5 ms ok
+[42/66] Synthetic seed20000_sample2103 luo_linf_de_2022_adaptation: K=1 MSE=0.008251329607038786 time=928.1 ms ok
+[42/66] Synthetic seed20000_sample2103 yeh_feature_cdf_2020: K=55 MSE=4.82595090098157e-05 time=122.5 ms ok
+[42/66] Synthetic seed20000_sample2103 uniform_gradient_pruning: K=41 MSE=4.872707330720263e-05 time=91577.0 ms ok
+[43/66] UJI uji2_07539_stroke_00 ours: K=22 MSE=7.0948556292603385e-06 time=21.7 ms ok
+[43/66] UJI uji2_07539_stroke_00 park_dominant_point_2007_adaptation: K=5 MSE=2.697467791630727e-05 time=12.8 ms ok
+[43/66] UJI uji2_07539_stroke_00 liang_feature_iki_2017_adaptation: K=4 MSE=4.132375033768252e-05 time=9.2 ms ok
+[43/66] UJI uji2_07539_stroke_00 dung_direct_knot_2017_adaptation: K=3 MSE=0.00016794934274973582 time=124.6 ms ok
+[43/66] UJI uji2_07539_stroke_00 kang_sparse_2015_adaptation: K=5 MSE=2.7753453275228007e-05 time=2714.9 ms ok
+[43/66] UJI uji2_07539_stroke_00 luo_linf_de_2022_adaptation: K=3 MSE=6.145205497023428e-05 time=5703.8 ms ok
+[43/66] UJI uji2_07539_stroke_00 yeh_feature_cdf_2020: K=6 MSE=2.2459824380233314e-05 time=14.5 ms ok
+[43/66] UJI uji2_07539_stroke_00 uniform_gradient_pruning: K=4 MSE=1.863856744609361e-05 time=138019.7 ms ok
+[44/66] UJI uji2_08691_stroke_00 ours: K=18 MSE=1.0488976447036285e-05 time=15.5 ms ok
+[44/66] UJI uji2_08691_stroke_00 park_dominant_point_2007_adaptation: K=13 MSE=4.08833264484745e-05 time=30.1 ms ok
+[44/66] UJI uji2_08691_stroke_00 liang_feature_iki_2017_adaptation: K=8 MSE=4.8757041349118866e-05 time=15.6 ms ok
+[44/66] UJI uji2_08691_stroke_00 dung_direct_knot_2017_adaptation: K=4 MSE=0.0006259869959038605 time=218.3 ms ok
+[44/66] UJI uji2_08691_stroke_00 kang_sparse_2015_adaptation: K=8 MSE=6.109645491291918e-05 time=2516.1 ms ok
+[44/66] UJI uji2_08691_stroke_00 luo_linf_de_2022_adaptation: K=4 MSE=0.0003557043442920995 time=5305.6 ms ok
+[44/66] UJI uji2_08691_stroke_00 yeh_feature_cdf_2020: K=8 MSE=4.936103908075425e-05 time=17.1 ms ok
+[44/66] UJI uji2_08691_stroke_00 uniform_gradient_pruning: K=6 MSE=2.5995984819181267e-05 time=136798.6 ms ok
+[45/66] UJI uji2_05687_stroke_00 ours: K=29 MSE=8.231838936135692e-05 time=14.6 ms ok
+[45/66] UJI uji2_05687_stroke_00 park_dominant_point_2007_adaptation: K=16 MSE=4.634628275301164e-05 time=37.2 ms ok
+[45/66] UJI uji2_05687_stroke_00 liang_feature_iki_2017_adaptation: K=11 MSE=3.4535762032926595e-05 time=25.7 ms ok
+[45/66] UJI uji2_05687_stroke_00 dung_direct_knot_2017_adaptation: K=7 MSE=0.000576551248072306 time=337.3 ms ok
+[45/66] UJI uji2_05687_stroke_00 kang_sparse_2015_adaptation: K=13 MSE=3.486287926879925e-05 time=2266.3 ms ok
+[45/66] UJI uji2_05687_stroke_00 luo_linf_de_2022_adaptation: K=2 MSE=0.002845294282708825 time=4922.0 ms ok
+[45/66] UJI uji2_05687_stroke_00 yeh_feature_cdf_2020: K=12 MSE=4.6202659635736315e-05 time=23.9 ms ok
+[45/66] UJI uji2_05687_stroke_00 uniform_gradient_pruning: K=9 MSE=3.496780056722884e-05 time=136108.3 ms ok
+[46/66] UJI uji2_09129_stroke_00 ours: K=23 MSE=1.8642675819935718e-05 time=13.2 ms ok
+[46/66] UJI uji2_09129_stroke_00 park_dominant_point_2007_adaptation: K=21 MSE=4.846493790856276e-05 time=53.0 ms ok
+[46/66] UJI uji2_09129_stroke_00 liang_feature_iki_2017_adaptation: K=18 MSE=4.7906690965800396e-05 time=32.9 ms ok
+[46/66] UJI uji2_09129_stroke_00 dung_direct_knot_2017_adaptation: K=4 MSE=0.0030028178269447033 time=198.0 ms ok
+[46/66] UJI uji2_09129_stroke_00 kang_sparse_2015_adaptation: K=12 MSE=3.070289739970307e-05 time=2352.2 ms ok
+[46/66] UJI uji2_09129_stroke_00 luo_linf_de_2022_adaptation: K=5 MSE=0.0005002793447295813 time=4923.2 ms ok
+[46/66] UJI uji2_09129_stroke_00 yeh_feature_cdf_2020: K=14 MSE=4.529652150691205e-05 time=28.0 ms ok
+[46/66] UJI uji2_09129_stroke_00 uniform_gradient_pruning: K=8 MSE=4.465768264542518e-05 time=136111.3 ms ok
+[47/66] UJI uji2_02841_stroke_01 ours: K=25 MSE=1.2582336779472752e-05 time=13.9 ms ok
+[47/66] UJI uji2_02841_stroke_01 park_dominant_point_2007_adaptation: K=3 MSE=3.9663839346466885e-05 time=12.4 ms ok
+[47/66] UJI uji2_02841_stroke_01 liang_feature_iki_2017_adaptation: K=4 MSE=2.1715184327143533e-05 time=13.0 ms ok
+[47/66] UJI uji2_02841_stroke_01 dung_direct_knot_2017_adaptation: K=3 MSE=2.111427236936122e-05 time=136.6 ms ok
+[47/66] UJI uji2_02841_stroke_01 kang_sparse_2015_adaptation: K=1 MSE=2.546835047873308e-05 time=2040.7 ms ok
+[47/66] UJI uji2_02841_stroke_01 luo_linf_de_2022_adaptation: K=6 MSE=1.0770799600544046e-05 time=5587.5 ms ok
+[47/66] UJI uji2_02841_stroke_01 yeh_feature_cdf_2020: K=2 MSE=3.390169709193633e-05 time=6.7 ms ok
+[47/66] UJI uji2_02841_stroke_01 uniform_gradient_pruning: K=1 MSE=2.52403033912454e-05 time=137339.0 ms ok
+[48/66] UJI uji2_05191_stroke_01 ours: K=19 MSE=5.388058696780611e-06 time=20.6 ms ok
+[48/66] UJI uji2_05191_stroke_01 park_dominant_point_2007_adaptation: K=3 MSE=2.643074638641554e-05 time=11.1 ms ok
+[48/66] UJI uji2_05191_stroke_01 liang_feature_iki_2017_adaptation: K=4 MSE=1.9079702960505955e-05 time=12.4 ms ok
+[48/66] UJI uji2_05191_stroke_01 dung_direct_knot_2017_adaptation: K=3 MSE=2.0522471189804108e-05 time=184.6 ms ok
+[48/66] UJI uji2_05191_stroke_01 kang_sparse_2015_adaptation: K=1 MSE=4.245518844468393e-05 time=2509.9 ms ok
+[48/66] UJI uji2_05191_stroke_01 luo_linf_de_2022_adaptation: K=5 MSE=9.452173851163099e-06 time=5994.7 ms ok
+[48/66] UJI uji2_05191_stroke_01 yeh_feature_cdf_2020: K=3 MSE=3.238353547717287e-05 time=7.4 ms ok
+[48/66] UJI uji2_05191_stroke_01 uniform_gradient_pruning: K=1 MSE=4.208685998920145e-05 time=137783.5 ms ok
+[49/66] UJI uji2_10314_stroke_01 ours: K=27 MSE=3.8074467149420026e-05 time=15.0 ms ok
+[49/66] UJI uji2_10314_stroke_01 park_dominant_point_2007_adaptation: K=8 MSE=4.219220647191052e-05 time=19.0 ms ok
+[49/66] UJI uji2_10314_stroke_01 liang_feature_iki_2017_adaptation: K=7 MSE=1.784839203072239e-05 time=14.8 ms ok
+[49/66] UJI uji2_10314_stroke_01 dung_direct_knot_2017_adaptation: K=3 MSE=0.0004742116966966531 time=102.8 ms ok
+[49/66] UJI uji2_10314_stroke_01 kang_sparse_2015_adaptation: K=8 MSE=4.1960263035790047e-05 time=2685.4 ms ok
+[49/66] UJI uji2_10314_stroke_01 luo_linf_de_2022_adaptation: K=2 MSE=0.0011756310851399757 time=5179.2 ms ok
+[49/66] UJI uji2_10314_stroke_01 yeh_feature_cdf_2020: K=9 MSE=3.492149996658333e-05 time=18.6 ms ok
+[49/66] UJI uji2_10314_stroke_01 uniform_gradient_pruning: K=5 MSE=3.895172383083914e-05 time=144147.8 ms ok
+[50/66] UJI uji2_02399_stroke_00 ours: K=18 MSE=2.2578800902464126e-05 time=13.6 ms ok
+[50/66] UJI uji2_02399_stroke_00 park_dominant_point_2007_adaptation: K=4 MSE=3.574889435201018e-05 time=14.0 ms ok
+[50/66] UJI uji2_02399_stroke_00 liang_feature_iki_2017_adaptation: K=4 MSE=1.7099587260158864e-05 time=9.1 ms ok
+[50/66] UJI uji2_02399_stroke_00 dung_direct_knot_2017_adaptation: K=2 MSE=0.00011754183726432278 time=104.6 ms ok
+[50/66] UJI uji2_02399_stroke_00 kang_sparse_2015_adaptation: K=1 MSE=0.00010957909545125958 time=2169.5 ms ok
+[50/66] UJI uji2_02399_stroke_00 luo_linf_de_2022_adaptation: K=3 MSE=2.217074019512347e-05 time=5866.2 ms ok
+[50/66] UJI uji2_02399_stroke_00 yeh_feature_cdf_2020: K=3 MSE=2.8272762588245277e-05 time=7.7 ms ok
+[50/66] UJI uji2_02399_stroke_00 uniform_gradient_pruning: K=2 MSE=4.637692982063666e-05 time=139169.3 ms ok
+[51/66] NaturalEarth natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04 ours: K=19 MSE=0.00014200742793347477 time=15.2 ms ok
+[51/66] NaturalEarth natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04 park_dominant_point_2007_adaptation: K=25 MSE=3.522310160465075e-05 time=81.1 ms ok
+[51/66] NaturalEarth natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04 liang_feature_iki_2017_adaptation: K=24 MSE=4.810759518093733e-05 time=42.9 ms ok
+[51/66] NaturalEarth natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04 dung_direct_knot_2017_adaptation: K=9 MSE=0.0006102558621112689 time=464.3 ms ok
+[51/66] NaturalEarth natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04 kang_sparse_2015_adaptation: K=9 MSE=0.002916694446110408 time=1902.6 ms ok
+[51/66] NaturalEarth natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04 luo_linf_de_2022_adaptation: K=10 MSE=0.00034397964389426674 time=5651.0 ms ok
+[51/66] NaturalEarth natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04 yeh_feature_cdf_2020: K=24 MSE=4.395671829542018e-05 time=46.3 ms ok
+[51/66] NaturalEarth natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04 uniform_gradient_pruning: K=17 MSE=4.3840696244917365e-05 time=130929.3 ms ok
+[52/66] NaturalEarth natural_earth_10m_coastline_fc0054f439fb_w000_fc0054f4 ours: K=24 MSE=4.540206905684084e-05 time=14.3 ms ok
+[52/66] NaturalEarth natural_earth_10m_coastline_fc0054f439fb_w000_fc0054f4 park_dominant_point_2007_adaptation: K=15 MSE=4.234131425754684e-05 time=38.7 ms ok
+[52/66] NaturalEarth natural_earth_10m_coastline_fc0054f439fb_w000_fc0054f4 liang_feature_iki_2017_adaptation: K=15 MSE=4.9836351200514303e-05 time=30.5 ms ok
+[52/66] NaturalEarth natural_earth_10m_coastline_fc0054f439fb_w000_fc0054f4 dung_direct_knot_2017_adaptation: K=8 MSE=0.0007857325996863156 time=447.7 ms ok
+[52/66] NaturalEarth natural_earth_10m_coastline_fc0054f439fb_w000_fc0054f4 kang_sparse_2015_adaptation: K=14 MSE=0.0002537963257786101 time=2394.1 ms ok
+[52/66] NaturalEarth natural_earth_10m_coastline_fc0054f439fb_w000_fc0054f4 luo_linf_de_2022_adaptation: K=3 MSE=0.005481036222614762 time=6422.2 ms ok
+[52/66] NaturalEarth natural_earth_10m_coastline_fc0054f439fb_w000_fc0054f4 yeh_feature_cdf_2020: K=16 MSE=3.441291646427494e-05 time=34.7 ms ok
+[52/66] NaturalEarth natural_earth_10m_coastline_fc0054f439fb_w000_fc0054f4 uniform_gradient_pruning: K=11 MSE=4.099791884213062e-05 time=135927.4 ms ok
+[53/66] NaturalEarth natural_earth_10m_coastline_9689932c41e1_w000_9689932c ours: K=20 MSE=4.1101040533060725e-05 time=13.5 ms ok
+[53/66] NaturalEarth natural_earth_10m_coastline_9689932c41e1_w000_9689932c park_dominant_point_2007_adaptation: K=18 MSE=4.755779990805654e-05 time=43.0 ms ok
+[53/66] NaturalEarth natural_earth_10m_coastline_9689932c41e1_w000_9689932c liang_feature_iki_2017_adaptation: K=17 MSE=4.367426902949949e-05 time=39.7 ms ok
+[53/66] NaturalEarth natural_earth_10m_coastline_9689932c41e1_w000_9689932c dung_direct_knot_2017_adaptation: K=7 MSE=0.00032250698542513534 time=299.8 ms ok
+[53/66] NaturalEarth natural_earth_10m_coastline_9689932c41e1_w000_9689932c kang_sparse_2015_adaptation: K=12 MSE=0.00012465816025892577 time=2266.2 ms ok
+[53/66] NaturalEarth natural_earth_10m_coastline_9689932c41e1_w000_9689932c luo_linf_de_2022_adaptation: K=6 MSE=0.0004467758735387079 time=5376.6 ms ok
+[53/66] NaturalEarth natural_earth_10m_coastline_9689932c41e1_w000_9689932c yeh_feature_cdf_2020: K=13 MSE=4.553073923662856e-05 time=27.9 ms ok
+[53/66] NaturalEarth natural_earth_10m_coastline_9689932c41e1_w000_9689932c uniform_gradient_pruning: K=10 MSE=4.163981284667196e-05 time=136146.7 ms ok
+[54/66] NaturalEarth natural_earth_10m_coastline_e860de78f1fa_w000_e860de78 ours: K=19 MSE=2.544736927487044e-05 time=15.4 ms ok
+[54/66] NaturalEarth natural_earth_10m_coastline_e860de78f1fa_w000_e860de78 park_dominant_point_2007_adaptation: K=12 MSE=4.385155855628471e-05 time=44.5 ms ok
+[54/66] NaturalEarth natural_earth_10m_coastline_e860de78f1fa_w000_e860de78 liang_feature_iki_2017_adaptation: K=11 MSE=4.894115626800693e-05 time=20.6 ms ok
+[54/66] NaturalEarth natural_earth_10m_coastline_e860de78f1fa_w000_e860de78 dung_direct_knot_2017_adaptation: K=6 MSE=0.0005017117103853976 time=303.5 ms ok
+[54/66] NaturalEarth natural_earth_10m_coastline_e860de78f1fa_w000_e860de78 kang_sparse_2015_adaptation: K=14 MSE=2.3469383241202728e-05 time=2519.2 ms ok
+[54/66] NaturalEarth natural_earth_10m_coastline_e860de78f1fa_w000_e860de78 luo_linf_de_2022_adaptation: K=6 MSE=8.810115622993405e-05 time=5323.4 ms ok
+[54/66] NaturalEarth natural_earth_10m_coastline_e860de78f1fa_w000_e860de78 yeh_feature_cdf_2020: K=14 MSE=2.3846924087982362e-05 time=27.3 ms ok
+[54/66] NaturalEarth natural_earth_10m_coastline_e860de78f1fa_w000_e860de78 uniform_gradient_pruning: K=9 MSE=2.477190122593361e-05 time=136169.3 ms ok
+[55/66] NaturalEarth natural_earth_10m_coastline_9d44eb568484_w000_9d44eb56 ours: K=19 MSE=5.5973274433242726e-05 time=13.3 ms ok
+[55/66] NaturalEarth natural_earth_10m_coastline_9d44eb568484_w000_9d44eb56 park_dominant_point_2007_adaptation: K=15 MSE=4.027206110174956e-05 time=56.2 ms ok
+[55/66] NaturalEarth natural_earth_10m_coastline_9d44eb568484_w000_9d44eb56 liang_feature_iki_2017_adaptation: K=21 MSE=4.233199601486363e-05 time=40.8 ms ok
+[55/66] NaturalEarth natural_earth_10m_coastline_9d44eb568484_w000_9d44eb56 dung_direct_knot_2017_adaptation: K=7 MSE=0.000926928350252113 time=301.2 ms ok
+[55/66] NaturalEarth natural_earth_10m_coastline_9d44eb568484_w000_9d44eb56 kang_sparse_2015_adaptation: K=11 MSE=0.0009709578096110998 time=2196.9 ms ok
+[55/66] NaturalEarth natural_earth_10m_coastline_9d44eb568484_w000_9d44eb56 luo_linf_de_2022_adaptation: K=5 MSE=0.0013609428463125458 time=5307.9 ms ok
+[55/66] NaturalEarth natural_earth_10m_coastline_9d44eb568484_w000_9d44eb56 yeh_feature_cdf_2020: K=15 MSE=3.353994323293022e-05 time=30.2 ms ok
+[55/66] NaturalEarth natural_earth_10m_coastline_9d44eb568484_w000_9d44eb56 uniform_gradient_pruning: K=10 MSE=4.221712691523598e-05 time=135805.4 ms ok
+[56/66] NaturalEarth natural_earth_10m_coastline_f00df2e1331e_w000_f00df2e1 ours: K=24 MSE=0.00012912168470300198 time=13.5 ms ok
+[56/66] NaturalEarth natural_earth_10m_coastline_f00df2e1331e_w000_f00df2e1 park_dominant_point_2007_adaptation: K=28 MSE=4.271925703985748e-05 time=66.5 ms ok
+[56/66] NaturalEarth natural_earth_10m_coastline_f00df2e1331e_w000_f00df2e1 liang_feature_iki_2017_adaptation: K=23 MSE=4.802187821855981e-05 time=46.1 ms ok
+[56/66] NaturalEarth natural_earth_10m_coastline_f00df2e1331e_w000_f00df2e1 dung_direct_knot_2017_adaptation: K=10 MSE=0.001724547203909742 time=461.4 ms ok
+[56/66] NaturalEarth natural_earth_10m_coastline_f00df2e1331e_w000_f00df2e1 kang_sparse_2015_adaptation: K=1 MSE=0.026010354134837682 time=951.2 ms ok
+[56/66] NaturalEarth natural_earth_10m_coastline_f00df2e1331e_w000_f00df2e1 luo_linf_de_2022_adaptation: K=5 MSE=0.005278924857491814 time=5181.6 ms ok
+[56/66] NaturalEarth natural_earth_10m_coastline_f00df2e1331e_w000_f00df2e1 yeh_feature_cdf_2020: K=29 MSE=4.235961072792712e-05 time=64.5 ms ok
+[56/66] NaturalEarth natural_earth_10m_coastline_f00df2e1331e_w000_f00df2e1 uniform_gradient_pruning: K=18 MSE=4.845862153096927e-05 time=131454.8 ms ok
+[57/66] NaturalEarth natural_earth_10m_coastline_556f5c329f0f_w000_556f5c32 ours: K=32 MSE=0.0002743484218387747 time=15.5 ms ok
+[57/66] NaturalEarth natural_earth_10m_coastline_556f5c329f0f_w000_556f5c32 park_dominant_point_2007_adaptation: K=61 MSE=4.7845080544102265e-05 time=219.3 ms ok
+[57/66] NaturalEarth natural_earth_10m_coastline_556f5c329f0f_w000_556f5c32 liang_feature_iki_2017_adaptation: K=61 MSE=4.629433440208827e-05 time=146.0 ms ok
+[57/66] NaturalEarth natural_earth_10m_coastline_556f5c329f0f_w000_556f5c32 dung_direct_knot_2017_adaptation: K=28 MSE=0.0002923507021804522 time=1338.1 ms ok
+[57/66] NaturalEarth natural_earth_10m_coastline_556f5c329f0f_w000_556f5c32 kang_sparse_2015_adaptation: K=1 MSE=0.02341549419914797 time=27.1 ms ok
+[57/66] NaturalEarth natural_earth_10m_coastline_556f5c329f0f_w000_556f5c32 luo_linf_de_2022_adaptation: K=6 MSE=0.004767258517913128 time=1226.7 ms ok
+[57/66] NaturalEarth natural_earth_10m_coastline_556f5c329f0f_w000_556f5c32 yeh_feature_cdf_2020: K=61 MSE=5.038740865724061e-05 time=146.3 ms ok
+[57/66] NaturalEarth natural_earth_10m_coastline_556f5c329f0f_w000_556f5c32 uniform_gradient_pruning: K=52 MSE=4.787429179012119e-05 time=57048.7 ms ok
+[58/66] NaturalEarth natural_earth_10m_coastline_728b0ed8c15a_w000_de37144e ours: K=23 MSE=6.742750770721628e-05 time=17.5 ms ok
+[58/66] NaturalEarth natural_earth_10m_coastline_728b0ed8c15a_w000_de37144e park_dominant_point_2007_adaptation: K=25 MSE=4.953595918434251e-05 time=56.9 ms ok
+[58/66] NaturalEarth natural_earth_10m_coastline_728b0ed8c15a_w000_de37144e liang_feature_iki_2017_adaptation: K=24 MSE=4.991397916260667e-05 time=46.5 ms ok
+[58/66] NaturalEarth natural_earth_10m_coastline_728b0ed8c15a_w000_de37144e dung_direct_knot_2017_adaptation: K=13 MSE=0.00012318928497715264 time=599.7 ms ok
+[58/66] NaturalEarth natural_earth_10m_coastline_728b0ed8c15a_w000_de37144e kang_sparse_2015_adaptation: K=10 MSE=0.0002154687712977345 time=1994.0 ms ok
+[58/66] NaturalEarth natural_earth_10m_coastline_728b0ed8c15a_w000_de37144e luo_linf_de_2022_adaptation: K=7 MSE=0.0002780839623907124 time=5069.2 ms ok
+[58/66] NaturalEarth natural_earth_10m_coastline_728b0ed8c15a_w000_de37144e yeh_feature_cdf_2020: K=24 MSE=4.8138050706595124e-05 time=46.5 ms ok
+[58/66] NaturalEarth natural_earth_10m_coastline_728b0ed8c15a_w000_de37144e uniform_gradient_pruning: K=17 MSE=4.769540144709402e-05 time=131282.3 ms ok
+[59/66] USGS usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04 ours: K=25 MSE=7.847154866569907e-05 time=13.1 ms ok
+[59/66] USGS usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04 park_dominant_point_2007_adaptation: K=9 MSE=4.0762246163773326e-05 time=21.2 ms ok
+[59/66] USGS usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04 liang_feature_iki_2017_adaptation: K=11 MSE=4.660108317310112e-05 time=22.5 ms ok
+[59/66] USGS usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04 dung_direct_knot_2017_adaptation: K=5 MSE=0.0008910612101059196 time=236.0 ms ok
+[59/66] USGS usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04 kang_sparse_2015_adaptation: K=10 MSE=1.5728704968133117e-05 time=3035.5 ms ok
+[59/66] USGS usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04 luo_linf_de_2022_adaptation: K=3 MSE=0.0030814034237823863 time=5490.0 ms ok
+[59/66] USGS usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04 yeh_feature_cdf_2020: K=10 MSE=1.692497940302079e-05 time=20.9 ms ok
+[59/66] USGS usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04 uniform_gradient_pruning: K=7 MSE=3.9030495908266034e-05 time=136856.7 ms ok
+[60/66] USGS usgs_tnm_contours_large_scale_9c3170071369_w000_9c317007 ours: K=22 MSE=0.0001097277866229162 time=14.5 ms ok
+[60/66] USGS usgs_tnm_contours_large_scale_9c3170071369_w000_9c317007 park_dominant_point_2007_adaptation: K=28 MSE=4.293929346281421e-05 time=65.6 ms ok
+[60/66] USGS usgs_tnm_contours_large_scale_9c3170071369_w000_9c317007 liang_feature_iki_2017_adaptation: K=20 MSE=4.590797702835068e-05 time=38.5 ms ok
+[60/66] USGS usgs_tnm_contours_large_scale_9c3170071369_w000_9c317007 dung_direct_knot_2017_adaptation: K=12 MSE=0.0003011061024791876 time=580.4 ms ok
+[60/66] USGS usgs_tnm_contours_large_scale_9c3170071369_w000_9c317007 kang_sparse_2015_adaptation: K=1 MSE=0.007416578778089325 time=957.3 ms ok
+[60/66] USGS usgs_tnm_contours_large_scale_9c3170071369_w000_9c317007 luo_linf_de_2022_adaptation: K=7 MSE=0.0006946039617065535 time=5225.1 ms ok
+[60/66] USGS usgs_tnm_contours_large_scale_9c3170071369_w000_9c317007 yeh_feature_cdf_2020: K=25 MSE=4.05948345151998e-05 time=52.1 ms ok
+[60/66] USGS usgs_tnm_contours_large_scale_9c3170071369_w000_9c317007 uniform_gradient_pruning: K=16 MSE=4.1954284864880537e-05 time=131732.3 ms ok
+[61/66] USGS usgs_tnm_contours_large_scale_9084fac58e32_w000_9084fac5 ours: K=31 MSE=0.00010173345134402271 time=14.9 ms ok
+[61/66] USGS usgs_tnm_contours_large_scale_9084fac58e32_w000_9084fac5 park_dominant_point_2007_adaptation: K=38 MSE=4.633839561294789e-05 time=100.2 ms ok
+[61/66] USGS usgs_tnm_contours_large_scale_9084fac58e32_w000_9084fac5 liang_feature_iki_2017_adaptation: K=29 MSE=4.562972615160146e-05 time=59.3 ms ok
+[61/66] USGS usgs_tnm_contours_large_scale_9084fac58e32_w000_9084fac5 dung_direct_knot_2017_adaptation: K=14 MSE=0.0005240083594817624 time=744.0 ms ok
+[61/66] USGS usgs_tnm_contours_large_scale_9084fac58e32_w000_9084fac5 kang_sparse_2015_adaptation: K=1 MSE=0.027000203159192687 time=975.2 ms ok
+[61/66] USGS usgs_tnm_contours_large_scale_9084fac58e32_w000_9084fac5 luo_linf_de_2022_adaptation: K=7 MSE=0.001529697924352423 time=4961.2 ms ok
+[61/66] USGS usgs_tnm_contours_large_scale_9084fac58e32_w000_9084fac5 yeh_feature_cdf_2020: K=34 MSE=3.090175471360247e-05 time=73.0 ms ok
+[61/66] USGS usgs_tnm_contours_large_scale_9084fac58e32_w000_9084fac5 uniform_gradient_pruning: K=24 MSE=4.669587634075977e-05 time=124077.6 ms ok
+[62/66] USGS usgs_tnm_contours_large_scale_3148ae3ac68c_w000_3148ae3a ours: K=45 MSE=0.00014290420253671235 time=14.8 ms ok
+[62/66] USGS usgs_tnm_contours_large_scale_3148ae3ac68c_w000_3148ae3a park_dominant_point_2007_adaptation: K=54 MSE=4.438945233845203e-05 time=165.7 ms ok
+[62/66] USGS usgs_tnm_contours_large_scale_3148ae3ac68c_w000_3148ae3a liang_feature_iki_2017_adaptation: K=55 MSE=4.943327291018337e-05 time=110.9 ms ok
+[62/66] USGS usgs_tnm_contours_large_scale_3148ae3ac68c_w000_3148ae3a dung_direct_knot_2017_adaptation: K=26 MSE=0.0004978004979714566 time=1399.9 ms ok
+[62/66] USGS usgs_tnm_contours_large_scale_3148ae3ac68c_w000_3148ae3a kang_sparse_2015_adaptation: K=1 MSE=0.03806524861290269 time=992.0 ms ok
+[62/66] USGS usgs_tnm_contours_large_scale_3148ae3ac68c_w000_3148ae3a luo_linf_de_2022_adaptation: K=8 MSE=0.0029188548664680525 time=2596.6 ms ok
+[62/66] USGS usgs_tnm_contours_large_scale_3148ae3ac68c_w000_3148ae3a yeh_feature_cdf_2020: K=61 MSE=4.4941292748848114e-05 time=144.3 ms ok
+[62/66] USGS usgs_tnm_contours_large_scale_3148ae3ac68c_w000_3148ae3a uniform_gradient_pruning: K=44 MSE=4.94290762422853e-05 time=83070.0 ms ok
+[63/66] USGS usgs_tnm_contours_large_scale_2c44653fffbc_w001_7ea9e805 ours: K=44 MSE=0.00011415874074399762 time=20.5 ms ok
+[63/66] USGS usgs_tnm_contours_large_scale_2c44653fffbc_w001_7ea9e805 park_dominant_point_2007_adaptation: K=57 MSE=4.9560427241627174e-05 time=151.6 ms ok
+[63/66] USGS usgs_tnm_contours_large_scale_2c44653fffbc_w001_7ea9e805 liang_feature_iki_2017_adaptation: K=54 MSE=4.9578126295505424e-05 time=112.1 ms ok
+[63/66] USGS usgs_tnm_contours_large_scale_2c44653fffbc_w001_7ea9e805 dung_direct_knot_2017_adaptation: K=26 MSE=0.0003410430506210942 time=1294.6 ms ok
+[63/66] USGS usgs_tnm_contours_large_scale_2c44653fffbc_w001_7ea9e805 kang_sparse_2015_adaptation: K=1 MSE=0.005724243122371617 time=941.8 ms ok
+[63/66] USGS usgs_tnm_contours_large_scale_2c44653fffbc_w001_7ea9e805 luo_linf_de_2022_adaptation: K=7 MSE=0.0023335690212638437 time=2946.4 ms ok
+[63/66] USGS usgs_tnm_contours_large_scale_2c44653fffbc_w001_7ea9e805 yeh_feature_cdf_2020: K=60 MSE=4.9355819409191864e-05 time=151.7 ms ok
+[63/66] USGS usgs_tnm_contours_large_scale_2c44653fffbc_w001_7ea9e805 uniform_gradient_pruning: K=45 MSE=4.928405657797747e-05 time=81172.6 ms ok
+[64/66] USGS usgs_tnm_contours_large_scale_fd9639a33b39_w000_fd9639a3 ours: K=37 MSE=4.1638273947756444e-05 time=13.9 ms ok
+[64/66] USGS usgs_tnm_contours_large_scale_fd9639a33b39_w000_fd9639a3 park_dominant_point_2007_adaptation: K=33 MSE=4.834049243562606e-05 time=84.9 ms ok
+[64/66] USGS usgs_tnm_contours_large_scale_fd9639a33b39_w000_fd9639a3 liang_feature_iki_2017_adaptation: K=30 MSE=4.5255304633444595e-05 time=59.2 ms ok
+[64/66] USGS usgs_tnm_contours_large_scale_fd9639a33b39_w000_fd9639a3 dung_direct_knot_2017_adaptation: K=14 MSE=0.00043553071833456886 time=846.6 ms ok
+[64/66] USGS usgs_tnm_contours_large_scale_fd9639a33b39_w000_fd9639a3 kang_sparse_2015_adaptation: K=1 MSE=0.004149384043513967 time=964.7 ms ok
+[64/66] USGS usgs_tnm_contours_large_scale_fd9639a33b39_w000_fd9639a3 luo_linf_de_2022_adaptation: K=7 MSE=0.0008409772925955951 time=5391.8 ms ok
+[64/66] USGS usgs_tnm_contours_large_scale_fd9639a33b39_w000_fd9639a3 yeh_feature_cdf_2020: K=30 MSE=4.961990989627889e-05 time=60.5 ms ok
+[64/66] USGS usgs_tnm_contours_large_scale_fd9639a33b39_w000_fd9639a3 uniform_gradient_pruning: K=24 MSE=3.936341267477057e-05 time=123750.3 ms ok
+[65/66] USGS usgs_tnm_contours_large_scale_5677f69ee45c_w000_5677f69e ours: K=37 MSE=0.000303776050563012 time=16.1 ms ok
+[65/66] USGS usgs_tnm_contours_large_scale_5677f69ee45c_w000_5677f69e park_dominant_point_2007_adaptation: K=64 MSE=8.117417860666221e-05 time=174.5 ms ok
+[65/66] USGS usgs_tnm_contours_large_scale_5677f69ee45c_w000_5677f69e liang_feature_iki_2017_adaptation: K=64 MSE=6.265722067863665e-05 time=153.4 ms ok
+[65/66] USGS usgs_tnm_contours_large_scale_5677f69ee45c_w000_5677f69e dung_direct_knot_2017_adaptation: K=34 MSE=0.00034656920169182136 time=1655.7 ms ok
+[65/66] USGS usgs_tnm_contours_large_scale_5677f69ee45c_w000_5677f69e kang_sparse_2015_adaptation: K=1 MSE=0.010658396487311768 time=30.6 ms ok
+[65/66] USGS usgs_tnm_contours_large_scale_5677f69ee45c_w000_5677f69e luo_linf_de_2022_adaptation: K=5 MSE=0.0050030307467374335 time=1165.7 ms ok
+[65/66] USGS usgs_tnm_contours_large_scale_5677f69ee45c_w000_5677f69e yeh_feature_cdf_2020: K=62 MSE=8.98812547778439e-05 time=146.8 ms ok
+[65/66] USGS usgs_tnm_contours_large_scale_5677f69ee45c_w000_5677f69e uniform_gradient_pruning: K=64 MSE=7.33069601578144e-05 time=5223.8 ms ok
+[66/66] USGS usgs_tnm_contours_large_scale_12674876dd89_w001_2a9cacbc ours: K=19 MSE=1.0504280494904035e-05 time=14.4 ms ok
+[66/66] USGS usgs_tnm_contours_large_scale_12674876dd89_w001_2a9cacbc park_dominant_point_2007_adaptation: K=6 MSE=4.847328983981423e-05 time=14.2 ms ok
+[66/66] USGS usgs_tnm_contours_large_scale_12674876dd89_w001_2a9cacbc liang_feature_iki_2017_adaptation: K=7 MSE=4.87037781088114e-05 time=15.1 ms ok
+[66/66] USGS usgs_tnm_contours_large_scale_12674876dd89_w001_2a9cacbc dung_direct_knot_2017_adaptation: K=5 MSE=0.00046929843146873963 time=183.5 ms ok
+[66/66] USGS usgs_tnm_contours_large_scale_12674876dd89_w001_2a9cacbc kang_sparse_2015_adaptation: K=7 MSE=3.0896994248693226e-05 time=2578.4 ms ok
+[66/66] USGS usgs_tnm_contours_large_scale_12674876dd89_w001_2a9cacbc luo_linf_de_2022_adaptation: K=2 MSE=0.0006180739176745749 time=5589.9 ms ok
+[66/66] USGS usgs_tnm_contours_large_scale_12674876dd89_w001_2a9cacbc yeh_feature_cdf_2020: K=8 MSE=3.3882232037878e-05 time=25.6 ms ok
+[66/66] USGS usgs_tnm_contours_large_scale_12674876dd89_w001_2a9cacbc uniform_gradient_pruning: K=5 MSE=4.7655485977435476e-05 time=137151.3 ms ok
+Saved E:\SelfSurpervisedSplineFitting\outputs\comparisons\candidate_selection_v16_mse5e-5_k64\diagnostic_ede67b34bc42\report.md
+
+[plot_method_comparison] python scripts/plot_v16_method_comparison.py --input E:\SelfSurpervisedSplineFitting\outputs\comparisons\candidate_selection_v16_mse5e-5_k64\diagnostic_ede67b34bc42\comparison.json --output-dir E:\SelfSurpervisedSplineFitting\outputs\figures\candidate_selection_v16_mse5e-5_k64\diagnostic_ede67b34bc42\method_comparison --method-set all --dpi 300 --reference --allow-unqualified-diagnostic
+E:\SelfSurpervisedSplineFitting\outputs\figures\candidate_selection_v16_mse5e-5_k64\diagnostic_ede67b34bc42\method_comparison\v16_published_methods_input.png
+E:\SelfSurpervisedSplineFitting\outputs\figures\candidate_selection_v16_mse5e-5_k64\diagnostic_ede67b34bc42\method_comparison\v16_published_methods_reference.png
+
+[plot_ours_cases] python scripts/visualize_v16_ours_cases.py --checkpoint E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.pt --output-dir E:\SelfSurpervisedSplineFitting\outputs\figures\candidate_selection_v16_mse5e-5_k64\diagnostic_ede67b34bc42\ours_cases --real-samples-per-dataset 2 --selection-seed 20260910 --mse-tolerance 5e-5 --max-internal-knots 64 --network-warmups 2 --network-repeats 5 --end-to-end-repeats 1 --torch-num-threads 1 --device cuda --dpi 300 --overwrite --allow-unqualified-diagnostic
+[1/6] UJI / uji2_04047_stroke_00
+  Ours v16: MSE=6.641e-06, K=24, time=15.11 ms
+[2/6] UJI / uji2_06300_stroke_01
+  Ours v16: MSE=1.004e-05, K=23, time=16.90 ms
+[3/6] NaturalEarth / natural_earth_10m_coastline_bbe20e40ab31_w000_bbe20e40
+  Ours v16: MSE=1.355e-04, K=22, time=14.54 ms
+[4/6] NaturalEarth / natural_earth_10m_coastline_d7aa47ef9854_w000_d7aa47ef
+  Ours v16: MSE=2.076e-04, K=27, time=14.84 ms
+[5/6] USGS / usgs_tnm_contours_large_scale_dd0873beb3df_w000_52436404
+  Ours v16: MSE=4.994e-05, K=37, time=14.63 ms
+[6/6] USGS / usgs_tnm_contours_large_scale_24b92c83d1de_w000_24b92c83
+  Ours v16: MSE=5.440e-05, K=28, time=15.70 ms
+Saved 7 PNG files and E:\SelfSurpervisedSplineFitting\outputs\figures\candidate_selection_v16_mse5e-5_k64\diagnostic_ede67b34bc42\ours_cases\deployment_visualizations.json
+
+Overnight pipeline completed.
+  checkpoint: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\candidate_selection_v16_mse5e-5_k64.pt
+  diagnostic: True
+  comparison: E:\SelfSurpervisedSplineFitting\outputs\comparisons\candidate_selection_v16_mse5e-5_k64\diagnostic_ede67b34bc42
+  figures:    E:\SelfSurpervisedSplineFitting\outputs\figures\candidate_selection_v16_mse5e-5_k64\diagnostic_ede67b34bc42
+  manifest:   E:\SelfSurpervisedSplineFitting\outputs\logs\candidate_selection_v16_mse5e-5_k64\overnight_manifest.json
