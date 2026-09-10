@@ -30,6 +30,7 @@ def v16_checkpoint(*, target=0.90, observed=0.92, stage="joint"):
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
         "simplification_contract": V16_SIMPLIFICATION_CONTRACT,
         "simplification_ready": True,
+        "simplification_curriculum": {"aggregate_pass_feedback": False},
         "synthetic_data_contract": V16_CERTIFIED_SYNTHETIC_CONTRACT,
         "dataset_config": {
             "certified_minimal_source": True,
@@ -96,7 +97,8 @@ def v16_checkpoint(*, target=0.90, observed=0.92, stage="joint"):
         },
         "proposal_ready": True,
         "best_deployment_pass_constraint_satisfied": accepted,
-        "checkpoint_quality": "deployment_target_met" if accepted else "target_not_met",
+        "checkpoint_selection": "mean_per_curve_subset_cost_v1",
+        "checkpoint_quality": "soft_fit_complexity_selected",
     }
 
 
@@ -251,11 +253,10 @@ def test_missing_checkpoint_is_reported_before_torch_load(tmp_path, capsys):
     assert not (tmp_path / "comparison").exists()
 
 
-def test_v16_benchmark_rejects_relaxed_or_proposal_checkpoint_by_default():
-    for checkpoint in (
-        v16_checkpoint(target=0.85, observed=0.92),
-        v16_checkpoint(stage="proposal"),
-    ):
+def test_v16_benchmark_rejects_structurally_ineligible_checkpoint_by_default():
+    legacy_selection = v16_checkpoint()
+    legacy_selection["checkpoint_selection"] = "legacy_pass_gate"
+    for checkpoint in (legacy_selection, v16_checkpoint(stage="proposal")):
         with pytest.raises(ValueError, match="allow-unqualified-diagnostic"):
             benchmark.validate_checkpoint_for_benchmark(
                 checkpoint, mse_tolerance=2.5e-5,
@@ -267,6 +268,17 @@ def test_v16_benchmark_rejects_relaxed_or_proposal_checkpoint_by_default():
         )
         assert diagnostic
         assert not qualification["formal_reporting_eligible"]
+
+
+def test_v16_benchmark_treats_aggregate_pass_rate_as_reporting_only():
+    qualification, diagnostic = benchmark.validate_checkpoint_for_benchmark(
+        v16_checkpoint(target=0.97, observed=0.50),
+        mse_tolerance=2.5e-5,
+        allow_unqualified_diagnostic=False,
+    )
+    assert qualification["formal_reporting_eligible"]
+    assert not qualification["pass_rate_reference_met"]
+    assert not diagnostic
 
 
 def test_v16_benchmark_accepts_consistent_formal_checkpoint():

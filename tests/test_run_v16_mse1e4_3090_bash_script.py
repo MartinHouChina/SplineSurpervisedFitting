@@ -16,8 +16,11 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
     required = (
         "#!/usr/bin/env bash",
         "set -Eeuo pipefail",
-        'RUN_NAME="candidate_selection_v16_mse1e-4_k56_ordered_highk_linux"',
-        'SIMPLIFICATION_CONTRACT="ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2"',
+        'RUN_NAME="candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux"',
+        'SIMPLIFICATION_CONTRACT="ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3"',
+        "Checkpoint selection: mean_per_curve_subset_cost_v1; aggregate pass is reporting only.",
+        "EPOCHS=104",
+        "PROPOSAL_EPOCHS=40",
         "--min-control-points 8",
         "--max-control-points 60",
         "--candidate-knots 56",
@@ -55,6 +58,11 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
     )
     assert "--resume" not in source
     assert "--overwrite" not in source
+    assert "--proposal-pass-target" not in source
+    assert "--deployment-pass-target" not in source
+    assert "--complexity-pass-margin" not in source
+    assert "--allow-infeasible-proposals" not in source
+    assert "--required-pass-rate" not in source
 
 
 def test_linux_runner_refuses_unknown_options_and_documents_help() -> None:

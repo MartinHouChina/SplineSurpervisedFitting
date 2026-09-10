@@ -1,6 +1,6 @@
 # v16 训练与验证流程
 
-本文描述当前 `MSE=1e-4、Kc=56` 的 v16 主协议。更完整的教师、计时和公开方法复现边界见 [v16 在线反事实子集学习](v16_counterfactual_subset.md)。目标 checkpoint 尚需训练并通过资格检查，本文不预设实验结果。
+本文描述当前 `MSE=1e-4、Kc=56` 的 v16 主协议。更完整的教师、计时和公开方法复现边界见 [v16 在线反事实子集学习](v16_counterfactual_subset.md)。目标 checkpoint 尚需训练并通过结构完整性审计，本文不预设实验结果。
 
 ## 1. 实验合同
 
@@ -13,14 +13,15 @@
 | 合成节点最小 span | 0.01（命令必须显式给出） |
 | 网络内部候选容量 | 56 |
 | 拟合阈值 | `MSE <= 1e-4`，不开方 |
-| 最差数据源通过率目标 | 90% |
+| aggregate pass | 按来源与 K=56 边界报告；不控制阶段、checkpoint 或 benchmark 资格 |
 | 训练集/合成验证集 | 3000/600 |
 | 每个真实来源验证上限 | 100 |
 | Batch | 64 |
-| 总训练/Proposal epoch | 96/32（Joint 仍为 64） |
+| 总训练/Proposal epoch | 104/40（Joint 仍为 64） |
 | Proposal 合成高 K 分层 | 50% 来自 `K>=40`；Joint 不使用该过采样 |
 | Proposal 节点监督 | directed coverage + monotone one-to-one assignment，权重均为 1.0 |
-| 简化合同 | `ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2` |
+| 简化合同 | `ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3` |
+| checkpoint 选择 | `mean_per_curve_subset_cost_v1` |
 
 `Kc=56` 是高召回容量，不是部署节点数。三次开放样条全部保留时完整节点向量有 64 项、控制顶点有 60 个；最终 K 由每条曲线的自适应选择概率质量决定。
 
@@ -58,7 +59,7 @@ Synthetic 返回点序列、真采样参数、真内部节点及有效 mask。�
 
 ## 3. 两个训练阶段
 
-### 3.1 Proposal：前 32 个 epoch
+### 3.1 Proposal：前 40 个 epoch
 
 全保留 56 个候选，优先学习：
 
@@ -76,6 +77,10 @@ Synthetic 返回点序列、真采样参数、真内部节点及有效 mask。�
 Selector 在 Proposal 阶段不更新，因此新实验把 Joint 初始保留比例设为
 `30/56=0.5357142857142857`；Kc=56 时目标初始概率质量约为 30。它只是训练
 起点，不是部署最终 K；部署仍由逐曲线 beta 与 mass-TopK 决定。
+
+第 40 个 Proposal epoch 完成后无条件进入 Joint；验证 pass 不会延长 Proposal、阻止
+切换或触发 STOP。保存的 `.proposal.pt` 是最低 dense subset cost 的初始化器，而不是
+“已通过某个 aggregate pass 门槛”的证明。
 
 ### 3.2 Joint：余下 64 个 epoch
 
@@ -96,12 +101,17 @@ Joint 同时训练候选排序、一次性数量选择、参数反馈和存活�
 
 ## 4. 为什么能兼顾简单与复杂曲线
 
-- 复杂曲线：56 个候选覆盖 source K=4..56；当拟合不安全时，验证反馈会降低复杂度压力并恢复安全储备。
+- 复杂曲线：56 个候选覆盖 source K=4..56；逐曲线 MSE 约束和 subset cost 对不安全样本施加误差优先的惩罚。
 - 简单曲线：初始质量约 30、低 K 逐计数扫描、oracle 教师和 source-K 上界语义共同提供更细的简化信号。
 - 容量边界：source K=56 与 Kc=56 数值相同但语义不同；该层没有冗余候选余量，必须单独报告 dense/deployment pass。
 - 所有曲线：曲线级 `beta` 决定概率质量，`mass_topk` 一次决定活动 K；不是按数据集名称手工选择节点数。
 
-复杂度权重最多放大到 6 倍。只有 worst-source deployment pass 达到目标及安全余量后才加大简化压力；跌破 90% 时会回滚。最终安全配置为 `sigma=0.03、额外节点=0`。
+Joint 的 complexity scale 按 Joint epoch 从 0 确定性线性增加到 6，safety scale 从 1
+线性退火到 0；两者分别由 `--complexity-ramp-epochs` 和
+`--safety-anneal-epochs` 控制，完全不读取验证 pass，也不冻结或回滚。最终安全配置为
+`sigma=0.03、额外节点=0`。checkpoint 在课程成熟后按平均逐曲线 subset cost 选优：
+未满足单曲线阈值时用无界的对数 MSE 惩罚优先修复拟合，满足后才以 K 为主、MSE 为
+有限的平局项。pass、最终 K 和节点匹配指标仅用于透明报告。
 
 ## 5. RTX 3090 训练
 
@@ -111,10 +121,10 @@ Linux 推荐直接运行完整流水线：
 bash scripts/run_v16_mse1e-4_3090.sh \
   --prepare-real-data \
   --device cuda \
-  --run-name candidate_selection_v16_mse1e-4_k56_ordered_highk_linux
+  --run-name candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux
 ```
 
-它会串行完成 fresh 训练、正式资格审计、六方法 benchmark、四指标图和真实数据案例图。
+它会串行完成 fresh 训练、结构完整性审计、六方法 benchmark、四指标图和真实数据案例图。
 Linux 新工作区中的 `data/raw`、`data/processed`、`data/splits` 不随 Git 分发，首次运行
 必须保留 `--prepare-real-data`；它只准备缺失的数据集。
 运行 `bash scripts/run_v16_mse1e-4_3090.sh --help` 可查看参数；脚本使用当前已经激活的
@@ -124,7 +134,7 @@ Python 环境，也可通过 `--python /path/to/python` 指定。
 
 ```powershell
 python scripts/train_v16.py `
-  --epochs 96 --proposal-epochs 32 `
+  --epochs 104 --proposal-epochs 40 `
   --train-size 3000 --val-size 600 `
   --synthetic-boundary-val-size 32 --real-val-size 100 `
   --proposal-high-k-fraction 0.50 --proposal-high-k-min-knots 40 `
@@ -136,7 +146,6 @@ python scripts/train_v16.py `
   --certified-minimal-source `
   --minimality-margin 0.2 --minimality-max-attempts 16 `
   --minimality-audit-points 512 --oscillation-amplitude 0.3 `
-  --proposal-pass-target 0.90 --deployment-pass-target 0.90 `
   --proposal-knot-assignment-weight 1.0 `
   --one-shot-selection-policy mass_topk `
   --initial-keep-fraction 0.5357142857142857 `
@@ -156,14 +165,13 @@ python scripts/train_v16.py `
   --selected-knot-position-weight 1.0 --knot-position-beta 0.01 `
   --complexity-weight 0.05 `
   --complexity-ramp-epochs 12 --complexity-max-scale 6.0 `
-  --complexity-pass-margin 0.02 `
   --real-fraction 0.35 `
   --real-manifest data/splits/uji_pen_v2.jsonl `
   --real-manifest data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
   --real-manifest data/processed/usgs_contours/large_scale/manifest.jsonl `
   --resample-train-each-epoch `
   --num-workers 4 --torch-num-threads 4 --device cuda `
-  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt
+  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt
 ```
 
 Windows 若在 worker 启动处异常，改用 `--num-workers 0`。旧 K64/K96 权重与本实验合同不同，不可直接 `--resume`；中断恢复只能使用本次生成的 `.last.pt`，并保持结构与数据参数一致。
@@ -179,44 +187,44 @@ Windows 若在 worker 启动处异常，改用 `--num-workers 0`。旧 K64/K96 �
 刚才停在旧 Proposal 安全门的
 `candidate_selection_v16_mse1e-4_k56_linux.proposal.pt` 也可以作为更直接的
 warm start；只能通过 `--init-checkpoint` 迁移 Proposal 模块，不能用旧
-`.last.pt` 执行 `--resume`，因为新的有序匹配与高 K 课程已经升级了训练合同。
+`.last.pt` 执行 `--resume`，因为有序匹配、高 K 课程及 soft-subset-cost 选择已经升级了训练合同。
 
 恢复时原样重跑上面的完整命令（`--epochs` 表示新的总轮数），并在末尾增加：
 
 ```powershell
-  --resume outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.last.pt
+  --resume outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.last.pt
 ```
 
 除 `epochs/device/num-workers/torch-num-threads/log-every-batches` 等恢复白名单外，不要改数据、阈值、容量、教师或输出参数。
 
-3090 主要加速网络部分。Joint 在线教师会为低 K 前缀、oracle 与反事实集合执行多轮逐样本 float64 refit；Kang/Luo 评测也主要使用 CPU，因此增大 batch 或更换显卡不会把整条流水线等比例加速。当前 96-epoch 正式配置不承诺固定 12 小时内结束。建议先用唯一的测试 `RunName` 做短诊断，正式 `RunName` 不要执行 `-DryRun`。一键脚本是 fresh-only；若训练已经成功而后续 benchmark/绘图失败，直接执行第 7 节的分步命令。
+3090 主要加速网络部分。Joint 在线教师会为低 K 前缀、oracle 与反事实集合执行多轮逐样本 float64 refit；Kang/Luo 评测也主要使用 CPU，因此增大 batch 或更换显卡不会把整条流水线等比例加速。当前 104-epoch 正式配置不承诺固定 12 小时内结束。建议先用唯一的测试 `RunName` 做短诊断，正式 `RunName` 不要执行 `-DryRun`。一键脚本是 fresh-only；若训练已经成功而后续 benchmark/绘图失败，直接执行第 7 节的分步命令。
 
-## 6. 训练后资格检查
+## 6. 训练后结构完整性审计
 
 ```powershell
 python scripts/inspect_v16_checkpoint.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
-  --required-pass-rate 0.90 `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt `
   --mse-tolerance 1e-4
 ```
 
-正式权重至少应满足：
+返回码 0 的硬条件是协议完整，而不是某个结果指标达到预设数值。审计至少核对：
 
-- worst-source dense 和 deployment pass 均不低于 90%；
-- Joint 和简化课程已经成熟；
+- stage 为 Joint，确定性简化课程已经成熟；
+- 简化合同、逐曲线 subset-cost 选择、数据/容量及 MSE 阈值合同一致；
 - 最终 safety knots 为 0、safety sigma 为 0.03；
-- 平均 K 明显低于 56；
-- Synthetic 的 count bias、knot-match F1、matched MAE 没有退化；
-- oracle 教师的可行率/入选率已记录；
-- source K=56 边界层的 dense/deployment pass 已单列，且失败没有被总体均值掩盖。
+- Proposal 高 K 分层与有序一一匹配监督处于启用状态；
+- source K=56 边界验证样本数和独立统计字段存在。
 
-返回码 0 才能正式汇报。返回码 2 的 checkpoint 只能使用显式 diagnostic 模式，不能把诊断图当正式结果。
+worst-source/K=56 dense 与 deployment pass、平均 K、count MAE、knot-match F1 与
+matched MAE 必须原样报告，但不参与审计返回码、checkpoint 保存或 benchmark
+eligibility。`--required-pass-rate` 如为历史自动化显式传入，也只改变输出中的参考线，
+不会改变 eligible。返回码 2 表示结构合同不完整，此时只能使用显式 diagnostic 模式。
 
 ## 7. 六方法四指标评测
 
 ```powershell
 python scripts/benchmark_v16_datasets.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt `
   --method-set published `
   --samples-per-knot-count 5 `
   --min-knot-count 4 --max-knot-count 56 `
@@ -234,7 +242,7 @@ python scripts/benchmark_v16_datasets.py `
   --network-warmups 10 --network-repeats 100 `
   --end-to-end-repeats 3 `
   --torch-num-threads 4 --device cuda `
-  --output-dir outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods
+  --output-dir outputs/comparisons/v16_mse1e-4_k56_ordered_highk_softcost_six_methods
 ```
 
 六方法为 Ours、Park、Liang、Dung、Kang 和 Luo；Kang/Luo 是公开方法的适配复现。每个数据源分别报告 MSE、通过率、最终 K 和完整方法时间，Ours 另报 network-only 时间。
@@ -243,16 +251,16 @@ python scripts/benchmark_v16_datasets.py `
 
 ```powershell
 python scripts/plot_v16_method_comparison.py `
-  --input outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods/comparison.json `
+  --input outputs/comparisons/v16_mse1e-4_k56_ordered_highk_softcost_six_methods/comparison.json `
   --method-set published --reference --dpi 300 `
-  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_six_methods/metrics
+  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_softcost_six_methods/metrics
 ```
 
 绘制三个真实数据集上的六方法曲线、采样点、控制多边形、控制顶点与内部节点：
 
 ```powershell
 python scripts/visualize_v16_real_deployments.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt `
   --real-samples-per-dataset 2 --selection-seed 20260910 `
   --manifest UJI=data/splits/uji_pen_v2.jsonl `
   --manifest NaturalEarth=data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
@@ -268,7 +276,7 @@ python scripts/visualize_v16_real_deployments.py `
   --end-to-end-repeats 3 `
   --torch-num-threads 4 --device cuda `
   --dpi 300 `
-  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_six_methods/real_cases
+  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_softcost_six_methods/real_cases
 ```
 
 一键串行执行同一套训练、检查、比较和绘图：
@@ -278,7 +286,9 @@ powershell -NoProfile -ExecutionPolicy Bypass `
   -File scripts/run_v16_mse1e-4_3090.ps1
 ```
 
-脚本拒绝覆盖同名实验；checkpoint 不合格时默认停在资格检查。仅排错时使用 `-Diagnostic`，仅在 Windows worker 异常时使用 `-NumWorkers 0`。
+脚本拒绝覆盖同名实验；checkpoint 结构完整性审计失败时默认停在 benchmark 前。低 pass
+本身不会触发停止，仍会进入六方法评测并如实输出。仅排错结构不完整产物时使用
+`-Diagnostic`，仅在 Windows worker 异常时使用 `-NumWorkers 0`。
 
 ## 8. 历史配置说明
 

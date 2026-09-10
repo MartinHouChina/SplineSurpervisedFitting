@@ -26,12 +26,12 @@ from spline_fitting.data.v16_mixed import (
 from spline_fitting.models.v16_network import V16CandidateSelectionNetwork
 
 
-def test_default_profile_is_engineering_90_and_reduced_cost():
+def test_default_profile_keeps_ninety_percent_as_reporting_reference():
     args = train_v16.parser().parse_args([])
     train_v16.validate_args(args)
     assert args.proposal_pass_target == pytest.approx(0.90)
     assert args.deployment_pass_target == pytest.approx(0.90)
-    assert (args.epochs, args.proposal_epochs) == (60, 20)
+    assert (args.epochs, args.proposal_epochs) == (104, 40)
     assert (args.train_size, args.val_size, args.real_val_size) == (2400, 500, 100)
     assert args.synthetic_boundary_val_size == 32
     assert args.batch_size == 16
@@ -587,21 +587,35 @@ def test_group_sampler_caps_without_duplicates_and_balances_prefix():
     assert {records[index]["group_id"] for index in selected[:2]} == {"large", "small"}
 
 
-def test_checkpoint_ranking_enforces_worst_source_feasibility_before_minimum_k():
-    def metrics(worst, count, mse):
-        return dict(worst_deployment_pass_rate=worst, keep_count=count, deployment_mse=mse)
+def test_checkpoint_ranking_uses_soft_cost_without_a_ninety_percent_gate():
+    def metrics(cost, pass_rate, count, mse):
+        return dict(
+            qualification_deployment_pass_rate=pass_rate,
+            worst_deployment_pass_rate=pass_rate,
+            deployment_subset_cost=cost,
+            keep_count=count,
+            deployment_mse=mse,
+            deployment_mse_p95=2 * mse,
+        )
 
-    target = 0.97
-    feasible = train_v16.checkpoint_rank(metrics(0.97, 20, 2e-5), target)
-    fewer_but_infeasible = train_v16.checkpoint_rank(metrics(0.96, 2, 1e-6), target)
-    assert feasible > fewer_but_infeasible
-    assert train_v16.checkpoint_rank(metrics(0.98, 10, 2.4e-5), target) > feasible
-    assert train_v16.checkpoint_rank(metrics(0.98, 10, 1e-5), target) > train_v16.checkpoint_rank(
-        metrics(1.0, 10, 2e-5), target
+    all_keep = metrics(0.99, 0.99, 56, 1e-6)
+    compact_below_reference = metrics(0.72, 0.85, 14, 2e-5)
+    assert train_v16.checkpoint_rank(
+        compact_below_reference,
+    ) > train_v16.checkpoint_rank(all_keep)
+
+    # Completion of the deterministic deployment curriculum is a schedule
+    # contract, not a pass gate, and therefore precedes soft-cost comparison.
+    assert train_v16.checkpoint_rank(
+        all_keep, simplification_ready=True,
+    ) > train_v16.checkpoint_rank(
+        compact_below_reference, simplification_ready=False,
     )
-    assert train_v16.checkpoint_rank(metrics(0.9, 25, 5e-5), target) > train_v16.checkpoint_rank(
-        metrics(0.8, 1, 1e-6), target
-    )
+
+    dominated = metrics(0.80, 0.80, 20, 3e-5)
+    assert train_v16.checkpoint_rank(
+        compact_below_reference,
+    ) > train_v16.checkpoint_rank(dominated)
 
 
 def test_validation_summary_reports_certified_count_and_position_accuracy():
@@ -621,7 +635,9 @@ def test_validation_summary_reports_certified_count_and_position_accuracy():
             knot_match_error_sum=0.055,
         ),
     ]
-    result = train_v16.summarize(rows, 2.5e-5)
+    result = train_v16.summarize(
+        rows, 2.5e-5, candidate_capacity=56,
+    )
     synthetic = result["by_source"]["Synthetic"]
     assert synthetic["target_count_mean"] == pytest.approx(12)
     assert synthetic["count_mae"] == pytest.approx(1.5)
@@ -648,6 +664,7 @@ def test_validation_summary_audits_capacity_boundary_separately():
     result = train_v16.summarize(
         rows,
         1e-4,
+        candidate_capacity=56,
         synthetic_boundary_knot_count=56,
     )
     assert result["synthetic_boundary_knot_count"] == 56
@@ -658,70 +675,52 @@ def test_validation_summary_audits_capacity_boundary_separately():
     assert result["qualification_deployment_pass_rate"] == pytest.approx(0.5)
 
 
-def test_mature_checkpoint_ranking_prefers_certified_count_and_knot_accuracy():
-    common = dict(
-        worst_deployment_pass_rate=0.95,
-        deployment_mse=1e-5,
-        synthetic_knot_match_f1=0.8,
-        synthetic_knot_matched_mae=0.004,
+def test_validation_subset_cost_matches_the_per_curve_teacher_semantics():
+    tolerance = 1e-4
+    capacity = 8
+    rows = [
+        dict(
+            source="Synthetic", mse=0.5e-4, dense_mse=0.25e-4, k=3,
+            target_k=3, probability_mass=3.0, adaptive_threshold=0.5,
+        ),
+        dict(
+            source="Synthetic", mse=2e-4, dense_mse=2e-4, k=1,
+            target_k=3, probability_mass=1.0, adaptive_threshold=0.5,
+        ),
+    ]
+    result = train_v16.summarize(
+        rows, tolerance, candidate_capacity=capacity,
     )
-    close = dict(common, keep_count=14, synthetic_count_mae=0.5)
-    too_small = dict(common, keep_count=10, synthetic_count_mae=2.0)
-    assert train_v16.checkpoint_rank(close, 0.9, 0.02) > train_v16.checkpoint_rank(
-        too_small, 0.9, 0.02
-    )
-
-    better_position = dict(close, synthetic_knot_match_f1=0.9)
-    assert train_v16.checkpoint_rank(
-        better_position, 0.9, 0.02
-    ) > train_v16.checkpoint_rank(close, 0.9, 0.02)
-
-    assert train_v16.checkpoint_rank(
-        close, 0.9, 0.02, simplification_ready=True
-    ) > train_v16.checkpoint_rank(
-        close, 0.9, 0.02, simplification_ready=False
+    feasible = (3 + 0.25 * 0.5) / (capacity + 1)
+    infeasible = 2 + np.log(2)
+    assert result["deployment_subset_cost"] == pytest.approx(
+        (feasible + infeasible) / 2
     )
 
-    slightly_better_count_bad_geometry = dict(
-        close, synthetic_count_mae=0.49, synthetic_knot_match_f1=0.6,
-    )
-    assert train_v16.checkpoint_rank(
-        better_position, 0.9, 0.02,
-    ) > train_v16.checkpoint_rank(
-        slightly_better_count_bad_geometry, 0.9, 0.02,
-    )
 
-    missing_labels = {
-        "worst_deployment_pass_rate": 0.95,
-        "deployment_mse": 1e-6,
-        "deployment_mse_p95": 2e-6,
-        "keep_count": 8,
+def test_checkpoint_selection_snapshot_transparently_records_fit_and_k():
+    metrics = dict(
+        qualification_deployment_pass_rate=0.83,
+        deployment_subset_cost=0.71,
+        deployment_mse=2e-5,
+        deployment_mse_p95=5e-5,
+        keep_count=14,
+    )
+    snapshot = train_v16.checkpoint_selection_snapshot(
+        metrics, stage="joint", candidate_capacity=56, tolerance=1e-4,
+    )
+    assert snapshot == {
+        "strategy": train_v16.V16_CHECKPOINT_SELECTION,
+        "stage": "joint",
+        "mean_subset_cost": pytest.approx(0.71),
+        "selection_score": pytest.approx(-0.71),
+        "pass_rate_diagnostic": pytest.approx(0.83),
+        "mean_mse": pytest.approx(2e-5),
+        "mse_p95": pytest.approx(5e-5),
+        "mean_retained_knots": pytest.approx(14),
+        "candidate_capacity": 56,
+        "per_curve_mse_tolerance": pytest.approx(1e-4),
     }
-    assert train_v16.checkpoint_rank(
-        close, 0.9, 0.02,
-    ) > train_v16.checkpoint_rank(
-        missing_labels, 0.9, 0.02,
-    )
-
-    reportable = dict(
-        close,
-        worst_deployment_pass_rate=0.91,
-        worst_dense_pass_rate=0.95,
-        synthetic_count_mae=1.0,
-        synthetic_knot_match_f1=0.70,
-        synthetic_knot_matched_mae=0.004,
-    )
-    safe_but_bad_geometry = dict(
-        reportable,
-        worst_deployment_pass_rate=0.95,
-        synthetic_count_mae=0.5,
-        synthetic_knot_match_f1=0.40,
-    )
-    assert train_v16.checkpoint_rank(
-        reportable, 0.9, 0.02,
-    ) > train_v16.checkpoint_rank(
-        safe_but_bad_geometry, 0.9, 0.02,
-    )
 
 
 def test_selection_safety_anneals_conservatively_and_requires_final_state():
@@ -731,28 +730,30 @@ def test_selection_safety_anneals_conservatively_and_requires_final_state():
     assert train_v16.selection_safety(args, 0.5) == pytest.approx((0.15, 1))
     assert train_v16.selection_safety(args, 0.0) == pytest.approx((0.05, 0))
     assert not train_v16.simplification_is_ready(
-        args, epoch=30, stage="joint",
-        applied_safety_scale=0.1, applied_complexity_scale=1.0,
+        args, epoch=49, stage="joint",
+        applied_safety_scale=1 / 9, applied_complexity_scale=32 / 9,
     )
     assert train_v16.simplification_is_ready(
-        args, epoch=30, stage="joint",
-        applied_safety_scale=0.0, applied_complexity_scale=1.0,
+        args, epoch=50, stage="joint",
+        applied_safety_scale=0.0, applied_complexity_scale=4.0,
     )
 
 
-def test_pass_feedback_controller_progresses_in_margin_band_and_rolls_back():
+def test_joint_curriculum_is_deterministic_and_independent_of_pass_rate():
     args = train_v16.parser().parse_args([])
     train_v16.validate_args(args)
-    assert train_v16.update_simplification_controller(
-        args, pass_rate=0.93, complexity_scale=0.0, safety_scale=1.0,
-    ) == pytest.approx((0.1, 0.9))
-    # The old controller froze forever in this 90--92% band.
-    assert train_v16.update_simplification_controller(
-        args, pass_rate=0.91, complexity_scale=0.0, safety_scale=1.0,
-    ) == pytest.approx((0.05, 0.95))
-    assert train_v16.update_simplification_controller(
-        args, pass_rate=0.89, complexity_scale=1.0, safety_scale=0.5,
-    ) == pytest.approx((0.8, 0.7))
+    assert train_v16.simplification_schedule(
+        args, epoch=40, stage="proposal",
+    ) == pytest.approx((0.0, 1.0))
+    assert train_v16.simplification_schedule(
+        args, epoch=41, stage="joint",
+    ) == pytest.approx((0.0, 1.0))
+    assert train_v16.simplification_schedule(
+        args, epoch=45, stage="joint",
+    ) == pytest.approx((16 / 9, 5 / 9))
+    assert train_v16.simplification_schedule(
+        args, epoch=50, stage="joint",
+    ) == pytest.approx((4.0, 0.0))
 
 
 def training_command(output, *, tolerance="0.001", proposal_target="0"):
@@ -775,7 +776,7 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
     original = torch.load(last_path, map_location="cpu", weights_only=True)
     assert original["objective_version"] == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
     assert original["epoch"] == 2 and original["stage"] == "joint"
-    assert original["qualification"]["schema_version"] == 4
+    assert original["qualification"]["schema_version"] == 5
     assert original["qualification"]["required_reporting_pass_rate"] == 0.90
     assert original["qualification"]["configured_proposal_pass_target"] == 0.0
     assert not original["qualification"]["formal_reporting_eligible"]
@@ -819,37 +820,39 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
     assert best["deployment_config"]["final_refits"] == 1
 
 
-def test_failed_proposal_gate_retains_diagnostics_but_creates_no_final_checkpoint(tmp_path, capsys):
+def test_low_proposal_pass_does_not_block_scheduled_joint_stage(tmp_path, capsys):
     output = tmp_path / "infeasible.pt"
     command = training_command(output, tolerance="1e-12", proposal_target="1")
-    assert train_v16.main(command) == 2
-    assert not output.exists()
+    assert train_v16.main(command) == 0
+    assert output.exists()
     assert (tmp_path / "infeasible.proposal.pt").is_file()
     last = torch.load(tmp_path / "infeasible.last.pt", map_location="cpu", weights_only=True)
-    assert last["epoch"] == 1 and last["stage"] == "proposal"
-    assert last["checkpoint_quality"] == "target_not_met"
+    assert last["epoch"] == 2 and last["stage"] == "joint"
+    assert last["checkpoint_quality"] == "soft_fit_complexity_selected"
+    assert last["reporting_checkpoint_quality"] == "target_not_met"
     assert not last["best_deployment_pass_constraint_satisfied"]
     assert last["validation_metrics"]["worst_dense_pass_rate"] < 1
-    assert "STOP: dense proposal did not reach" in capsys.readouterr().out
+    report = capsys.readouterr().out
+    assert "Joint training starts unconditionally" in report
+    assert "STOP: dense proposal" not in report
 
 
-def test_failed_proposal_can_resume_with_more_warmup_and_preserved_loss_weights(tmp_path):
+def test_low_pass_joint_run_can_resume_and_preserves_loss_weights(tmp_path):
     output = tmp_path / "extended.pt"
     command = training_command(output, tolerance="1e-12", proposal_target="1")
-    assert train_v16.main(command) == 2
+    assert train_v16.main(command) == 0
     last_path = tmp_path / "extended.last.pt"
     payload = torch.load(last_path, map_location="cpu", weights_only=True)
     payload["loss_config"]["weights"]["policy_weight"] = 0.123
     torch.save(payload, last_path)
     command[command.index("--epochs") + 1] = "3"
-    command[command.index("--proposal-epochs") + 1] = "2"
     command.extend(["--resume", str(last_path)])
-    assert train_v16.main(command) == 2
+    assert train_v16.main(command) == 0
     resumed = torch.load(last_path, map_location="cpu", weights_only=True)
-    assert resumed["epoch"] == 2 and resumed["stage"] == "proposal"
-    assert len(resumed["history"]) == 2
+    assert resumed["epoch"] == 3 and resumed["stage"] == "joint"
+    assert len(resumed["history"]) == 3
     assert resumed["loss_config"]["weights"]["policy_weight"] == 0.123
-    assert not output.exists()
+    assert output.exists()
 
 
 def test_resume_rejects_changed_output_directory(tmp_path):

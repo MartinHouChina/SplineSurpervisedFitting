@@ -15,7 +15,7 @@ candidate_selection_counterfactual_bspline_v16
 | [v16 主说明](v16_counterfactual_subset.md) | 完整算法、训练、状态和运行命令 |
 | [模型架构](architecture.md) | 模块职责、张量形状和数据流 |
 | [训练流程](training_pipeline.md) | 数据混合、proposal/joint 两阶段和恢复规则 |
-| [部署流程](deployment_pipeline.md) | 点云部署、资格检查、指标和时间口径 |
+| [部署流程](deployment_pipeline.md) | 点云部署、结构完整性审计、指标和时间口径 |
 | [数学定义](math_formulation.md) | 参数、候选、组合代价与训练目标 |
 | [PPT 速查](presentation_demo.md) | 十页展示顺序和禁止误述项 |
 | [验证记录](v16_verification.md) | 测试、当前 checkpoint 状态和待完成实验 |
@@ -33,7 +33,7 @@ candidate_selection_counterfactual_bspline_v16
 | src/spline_fitting/losses/v16_subset_loss.py | 可微标准 refit、Bernoulli 策略梯度、反事实集合及在线蒸馏 |
 | src/spline_fitting/losses/deployment_bspline_loss.py | 训练期可微标准 B 样条 refit |
 | src/spline_fitting/evaluation/bspline_inference.py | 部署期标准 B 样条控制顶点求解 |
-| src/spline_fitting/checkpointing.py | v16 构建及 90% 工程资格审计；MSE 阈值由检查命令显式指定 |
+| src/spline_fitting/checkpointing.py | v16 结构完整性审计；pass/count/节点指标只报告，MSE 配置由检查命令显式核对 |
 
 ### 数据
 
@@ -51,11 +51,11 @@ candidate_selection_counterfactual_bspline_v16
 
 | 文件 | 作用 |
 |---|---|
-| scripts/train_v16.py | 两阶段训练、worst-source gate、续训和 checkpoint qualification |
-| scripts/run_v16_mse1e-4_3090.ps1 | 当前 Kc=56、source K=4..56、MSE=1e-4、96/32 epoch、Proposal 50% K>=40 与有序一一匹配的 3090 串行入口；训练、资格检查、六方法四指标及真实案例图 |
-| scripts/run_v16_mse1e-4_3090.sh | 与上述当前协议等价的 Linux 原生 Bash 串行入口；支持日志、防覆盖、资格失败停止、`--dry-run` 和参数覆盖 |
+| scripts/train_v16.py | 40-epoch Proposal、64-epoch Joint、确定性复杂度/安全课程、逐曲线 subset-cost 选择及续训 |
+| scripts/run_v16_mse1e-4_3090.ps1 | 当前 Kc=56、source K=4..56、MSE=1e-4、104/40 epoch、Proposal 50% K>=40 与有序一一匹配的 3090 串行入口；训练、完整性审计、六方法四指标及真实案例图 |
+| scripts/run_v16_mse1e-4_3090.sh | 与上述当前协议等价的 Linux 原生 Bash 串行入口；支持日志、防覆盖、完整性失败停止、`--dry-run` 和参数覆盖 |
 | scripts/run_v16_overnight_12h.ps1 | 历史 Kc=64、MSE=5e-5 无人值守入口；只用于旧消融追溯，不是当前命令 |
-| scripts/inspect_v16_checkpoint.py | 训练后统一资格检查；合格返回 0，不合格返回 2 |
+| scripts/inspect_v16_checkpoint.py | 训练后结构完整性审计；pass 参考只显示，不影响返回码；完整返回 0，不完整返回 2 |
 | scripts/fit_v16_point_cloud.py | 单条用户点云部署，输出 PNG/JSON |
 | scripts/benchmark_v16_datasets.py | v16 合成和三个真实数据集的六方法主表；`--method-set all` 可运行附加控制 |
 | scripts/benchmark_v15_datasets.py | benchmark 的共享执行内核；v16 入口依赖它，不能删除 |
@@ -87,10 +87,10 @@ candidate_selection_counterfactual_bspline_v16
 检查命令：
 
 ~~~powershell
-python scripts/inspect_v16_checkpoint.py --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt --required-pass-rate 0.90 --mse-tolerance 1e-4
+python scripts/inspect_v16_checkpoint.py --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt --mse-tolerance 1e-4
 ~~~
 
-`candidate_selection_v16_mse1e-4_k56_ordered_highk.pt` 是本轮待训练的正式目标，不保证当前工作区已经存在或合格；文件名不能代替上述资格审计。旧 K64/K96 仅保留为历史容量或阈值消融。合成最简数据合同和旧 proposal 迁移规则见[训练流程](training_pipeline.md)及[合成曲线最简性报告](synthetic_data_minimality_report.md)。旧 K64 proposal 只可用新 output 配合 `--init-checkpoint` warm start：65 个 interval query 沿参数域插值为 57 个，其他形状兼容的 proposal 张量迁移，Selector、联合解码器和优化器新训；不能 `--resume` 成当前 K56 合同。未合格权重的图只允许通过 `--allow-unqualified-diagnostic` 生成，并必须保留水印。
+`candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt` 是本轮待训练的正式目标，不保证当前工作区已经存在或结构完整；文件名不能代替上述审计。当前简化合同是 `ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3`，checkpoint selection 是 `mean_per_curve_subset_cost_v1`。旧 K64/K96 仅保留为历史容量或阈值消融。合成最简数据合同和旧 proposal 迁移规则见[训练流程](training_pipeline.md)及[合成曲线最简性报告](synthetic_data_minimality_report.md)。旧 K64 proposal 只可用新 output 配合 `--init-checkpoint` warm start：65 个 interval query 沿参数域插值为 57 个，其他形状兼容的 proposal 张量迁移，Selector、联合解码器和优化器新训；不能 `--resume` 成当前 K56 合同。结构不完整权重的图只允许通过 `--allow-unqualified-diagnostic` 生成，并必须保留水印；低 pass 本身不触发水印。
 
 ## 5. 输出目录
 
@@ -118,7 +118,7 @@ outputs/
 
 当前 1e-4 串行入口按 checkpoint SHA-256 自动区分 `formal_<hash>` 与
 `diagnostic_<hash>`。运行总状态和每阶段命令、返回码、耗时及最终目录记录在
-`outputs/logs/candidate_selection_v16_mse1e-4_k56_ordered_highk/pipeline_manifest.json`。旧
+`outputs/logs/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost/pipeline_manifest.json`。旧
 `mse5e-5_k64` overnight manifest 只属于历史消融。
 
 ## 6. 测试
@@ -129,10 +129,10 @@ v16 主测试：
 |---|---|
 | tests/test_v16_network.py | mask、selected-only KV、参数和节点有序性、梯度 |
 | tests/test_v16_subset_loss.py | 集合代价、策略梯度、在线目标和可微 refit |
-| tests/test_train_v16.py | 两阶段 gate、保存、恢复、资格和配置校验 |
-| tests/test_v16_checkpoint_integration.py | checkpoint 构建、未达标拒绝及诊断放行 |
+| tests/test_train_v16.py | 两阶段定期切换、确定性课程、subset-cost 保存、恢复和配置校验 |
+| tests/test_v16_checkpoint_integration.py | checkpoint 构建、结构完整性拒绝及 pass 仅报告语义 |
 | tests/test_fit_v16_point_cloud.py | 用户点云部署、JSON/PNG 和诊断水印 |
-| tests/test_visualize_v16_real_deployments.py | 真实六方法 3×2 图与资格守卫 |
+| tests/test_visualize_v16_real_deployments.py | 真实六方法 3×2 图与结构完整性守卫 |
 | tests/test_benchmark_v15_datasets.py | v15/v16 共享 benchmark、六方法主集合、附加控制和报告 |
 | tests/test_plot_v15_dataset_benchmark.py | 指标绘图及诊断水印 |
 | tests/test_plot_v16_method_comparison.py | v16 正式方法图、方法集合、输入审计及诊断水印 |
@@ -154,7 +154,7 @@ python -B -m pytest tests -q
 
 ## 8. 发布前检查
 
-1. 运行统一 v16 qualification，拒绝 proposal 或 target_not_met 权重；
+1. 运行统一 v16 结构完整性审计，拒绝 Proposal-stage 或合同不兼容权重；低 pass 不拒绝；
 2. 保存 checkpoint、manifest、测试配置和 SHA-256；
 3. 逐来源报告 MSE、通过率、节点数和失败样本；
 4. 区分 network time 与完整方法时间；

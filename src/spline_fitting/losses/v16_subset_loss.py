@@ -1285,8 +1285,9 @@ class V16SubsetLoss(nn.Module):
             )
             entropy = -(probabilities * F.logsigmoid(logits) + (1 - probabilities) * F.logsigmoid(-logits)).mean()
             # Complexity is earned only with a strict feasibility margin.  The
-            # trainer additionally ramps ``complexity_scale`` after validation
-            # reaches its deployment gate.
+            # The trainer ramps ``complexity_scale`` on a deterministic Joint-
+            # epoch schedule; this per-sample condition still prevents the
+            # complexity reward from acting on an infeasible deployed curve.
             safe = deployment_mse.detach() <= tolerance * self.complexity_activation_ratio
             complexity = (safe * probabilities.mean(-1)).mean()
             if bool(geometry_valid.any()):

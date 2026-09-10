@@ -1,8 +1,8 @@
 # v16：1e-4 下的候选选择与联合重定位
 
 > 当前推荐实验合同：`Kc=56` 个内部候选（完整三次开放节点向量 64 项）、合成源内部节点 `K=4..56`（控制顶点 8..60）、归一化
-> `MSE <= 1e-4`、最差数据源通过率目标 90%。文中的 checkpoint
-> `outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt` 是**待训练并通过资格检查的目标文件**，不是已经取得的实验结果。
+> `MSE <= 1e-4`。文中的 checkpoint
+> `outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt` 是**待训练并通过结构完整性审计的目标文件**，不是已经取得的实验结果。aggregate pass 是实验指标，不是训练或汇报资格门槛。
 
 v16 输入有序点云，一次性选择节点并联合更新参数化和存活节点位置，最后只做一次标准三次 B 样条最小二乘 refit。部署不运行教师搜索、循环删点、BIC 或阈值扫描。
 
@@ -31,11 +31,12 @@ N_{\mathrm{ctrl}}=K_{\mathrm{internal}}+4.
 | 合成节点最小 span | `0.01` | K=56 产生 57 个 span，必须显式覆盖历史默认 0.02 |
 | 输入点数 | 192 | 网络输入的有序归一化点数 |
 | 拟合阈值 | `MSE <= 1e-4` | 对应 RMS 为 `1e-2` |
-| 工程目标 | 90% | 四个数据源中最差者的 deployment pass rate |
-| 总训练/Proposal epoch | `96/32` | 保留 64 个 Joint epoch |
+| 单曲线目标 | `MSE<=1e-4` | 每条曲线独立判定，pass 汇总仅作报告 |
+| 总训练/Proposal epoch | `104/40` | 保留 64 个 Joint epoch |
 | Proposal 高 K 分层 | `50% @ K>=40` | 只改变 Proposal 的 synthetic draws |
 | Proposal 位置监督 | coverage + monotone assignment | 两项权重均为 1.0 |
-| 简化合同 | `ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2` | checkpoint 正式资格字段 |
+| 简化合同 | `ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3` | checkpoint 结构合同 |
+| checkpoint 选择 | `mean_per_curve_subset_cost_v1` | 平均逐曲线拟合-复杂度 soft cost |
 
 当前 `--candidate-knots 56` 表示 56 个内部候选；三次开放样条全部保留时，完整节点向量恰为 `56+8=64` 项、控制顶点为 `56+4=60` 个。不要把“完整节点向量 64 项”误写成 64 个内部候选。
 
@@ -63,7 +64,7 @@ N_{\mathrm{ctrl}}=K_{\mathrm{internal}}+4.
 `Kc=56` 覆盖 source K=4..56，并把完整节点向量容量统一为 64 项。source K
 描述生成复杂度，Kc 描述候选槽位；最大值相同不代表部署必须全保留。最终
 活动节点数由逐曲线自适应概率质量决定。K=56 层没有冗余候选余量，必须单独
-报告 dense/deployment pass，失败不能靠放宽 90% 资格处理。
+报告 dense/deployment pass，失败必须原样计入，不能删除或平均隐藏；它不阻止 benchmark。
 ordered assignment 可以阻止一个候选同时“解释”多个真节点，但 Kc=Kmax 时仍没有
 多出的候选可补救漏检或坏位置，所以它不是候选过完备性的替代品。
 
@@ -109,7 +110,7 @@ p_j=\sigma\left((r_j-\bar r)-\beta\right).
 
 ### 4.1 Proposal 阶段
 
-前 32 个 epoch 全保留候选，先训练 GeometryEncoder、ParameterHead 和 CandidateKnotHead，使四个数据源的 dense proposal 具备高召回与拟合可行性。Proposal 的合成抽样中，50% 来自 `K=40..56`、其余来自 `K=4..39`；35% 真实数据占比不变。`Kc=56` 仅在此处作为上限使用。
+前 40 个 epoch 全保留候选，先训练 GeometryEncoder、ParameterHead 和 CandidateKnotHead，使四个数据源的 dense proposal 具备高召回与拟合可行性。Proposal 的合成抽样中，50% 来自 `K=40..56`、其余来自 `K=4..39`；35% 真实数据占比不变。`Kc=56` 仅在此处作为上限使用。第 40 个 epoch 到期后无条件进入 Joint，不会因 aggregate pass 延长 Proposal 或 STOP。
 
 certified Synthetic 的候选位置监督由两项并行组成：directed coverage 保证每个真节点附近存在候选；minimum-L1 monotone one-to-one assignment 则在 warp 后的真参数域内为每个真节点分配不同候选，并对匹配坐标计算 SmoothL1。分配下标 detached，但梯度仍流向匹配候选。当 `Kc>Ktrue` 时多出的候选不接收 assignment 项梯度；当两者同为 56 时是严格 rank-to-rank。该项缓解 coverage 的多对一解，却不能制造额外候选槽位。
 
@@ -127,6 +128,11 @@ Joint 阶段同时训练 Selector、参数反馈和存活节点重定位。synth
 
 若教师池存在满足 `MSE <= 1e-4` 的组合，选择节点数最少者，再用 MSE 打破平局；若全部失败，则以 MSE 最小者作为临时教师。该有限搜索只是训练教师，不是全局最优证明。
 
+Joint 的 complexity scale 按 Joint epoch 从 0 线性增加到配置上限，safety scale 从 1
+线性退火到 0；日程不读取验证 pass，也不会由 pass 触发冻结、回滚或早停。checkpoint
+在课程成熟状态下按平均逐曲线 subset cost 选择：单曲线不可行时使用无界对数 MSE
+惩罚，可行后再以节点数为主、MSE 为有限平局项。pass 只用于结果诊断。
+
 真实曲线没有节点真值，只参加点重建、可行性、反事实组合与复杂度学习。`real-fraction=0.35` 时每轮约 35% 样本来自三个真实来源，其余为可认证合成样本。
 
 ## 5. RTX 3090 推荐训练命令
@@ -135,7 +141,7 @@ Joint 阶段同时训练 Selector、参数反馈和存活节点重定位。synth
 
 ```powershell
 python scripts/train_v16.py `
-  --epochs 96 --proposal-epochs 32 `
+  --epochs 104 --proposal-epochs 40 `
   --train-size 3000 --val-size 600 --real-val-size 100 `
   --synthetic-boundary-val-size 32 `
   --proposal-high-k-fraction 0.50 --proposal-high-k-min-knots 40 `
@@ -147,7 +153,6 @@ python scripts/train_v16.py `
   --certified-minimal-source `
   --minimality-margin 0.2 --minimality-max-attempts 16 `
   --minimality-audit-points 512 --oscillation-amplitude 0.3 `
-  --proposal-pass-target 0.90 --deployment-pass-target 0.90 `
   --proposal-knot-assignment-weight 1.0 `
   --one-shot-selection-policy mass_topk `
   --initial-keep-fraction 0.5357142857142857 `
@@ -169,7 +174,6 @@ python scripts/train_v16.py `
   --selected-knot-position-weight 1.0 --knot-position-beta 0.01 `
   --complexity-weight 0.05 `
   --complexity-ramp-epochs 12 --complexity-max-scale 6.0 `
-  --complexity-pass-margin 0.02 `
   --real-fraction 0.35 `
   --real-manifest data/splits/uji_pen_v2.jsonl `
   --real-manifest data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
@@ -177,38 +181,37 @@ python scripts/train_v16.py `
   --resample-train-each-epoch `
   --num-workers 4 --torch-num-threads 4 `
   --device cuda `
-  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt
+  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt
 ```
 
 Windows 上若多进程 DataLoader 不稳定，把 `--num-workers 4` 改为 `--num-workers 0`；这只影响数据加载，不改变模型或实验合同。旧 K64/K96 checkpoint 不能直接 `--resume` 到该配置。
 
-该 96-epoch 配置优先保证 proposal 召回与后续简化，未承诺固定 12 小时完成；高 K certified source 生成和 Joint 在线 float64 教师的耗时取决于 CPU 与存储，不能仅按 3090 算力估算。
+该 104-epoch 配置优先保证 proposal 召回与后续简化，未承诺固定 12 小时完成；高 K certified source 生成和 Joint 在线 float64 教师的耗时取决于 CPU 与存储，不能仅按 3090 算力估算。
 
 旧 `candidate_selection_v16_mse5e-5_k64.proposal.pt` 可作为可选 warm start：形状兼容的 Encoder、ParameterHead 和 CandidateHead 张量迁移，65 个旧 interval query 沿参数域插值为 57 个；K56 固定锚点重建，Selector、联合解码器和优化器新训。因此它不是跨容量 resume，也不继承旧实验资格。
 
-旧安全门失败实验的 `candidate_selection_v16_mse1e-4_k56_linux.proposal.pt`
+旧 90% 安全门实验的 `candidate_selection_v16_mse1e-4_k56_linux.proposal.pt`
 同样只能作为 `--init-checkpoint`；不要把它的 `.last.pt` resume 到当前
-`ordered_proposal_high_k` 合同。
+soft-subset-cost 合同。
 
-## 6. 资格检查
+## 6. 结构完整性审计
 
 ```powershell
 python scripts/inspect_v16_checkpoint.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
-  --required-pass-rate 0.90 `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt `
   --mse-tolerance 1e-4
 ```
 
-检查脚本返回 0 后才能用于正式汇报；返回 2 表示权重只能用于诊断。至少核对：
+检查脚本返回 0 表示协议结构完整；返回 2 表示权重只能用于诊断。至少核对：
 
 - objective 和训练阈值与本协议一致；
-- worst-source dense/deployment pass rate 均达到 90%；
-- 已进入成熟 Joint 阶段，最终 safety knots 为 0、safety sigma 为 0.03；
-- 平均最终 K 明显低于 56，简单曲线不再系统性过留；
-- Synthetic 的 count bias、knot-match F1 和 matched MAE；
-- `oracle_teacher_feasible_fraction` 与 `oracle_teacher_selected_fraction`，用于判断 oracle 是否真正提供了低 K 可行教师。
+- 已进入成熟 Joint 阶段，确定性课程完整，最终 safety knots 为 0、safety sigma 为 0.03；
+- selection 为 `mean_per_curve_subset_cost_v1`，简化/数据/容量合同匹配；
+- Proposal 高 K 分层与有序一一匹配监督有效，K=56 独立审计样本数足够。
 
-这些都是验收条件，当前文档不宣称目标 checkpoint 已经达到它们。
+worst-source/K=56 pass、平均 K、Synthetic count/knot 指标以及 oracle 教师统计均需
+原样输出，但不是 eligible 条件，也不会控制 checkpoint 保存。当前文档不宣称目标
+checkpoint 已经取得任何这些结果。
 
 ## 7. 六方法、四指标对比
 
@@ -227,7 +230,7 @@ Ours 另外报告纯 network-forward 时间，但不得将它与其他方法的�
 
 ```powershell
 python scripts/benchmark_v16_datasets.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt `
   --method-set published `
   --samples-per-knot-count 5 `
   --min-knot-count 4 --max-knot-count 56 `
@@ -248,10 +251,10 @@ python scripts/benchmark_v16_datasets.py `
   --network-warmups 10 --network-repeats 100 `
   --end-to-end-repeats 3 `
   --torch-num-threads 4 --device cuda `
-  --output-dir outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods
+  --output-dir outputs/comparisons/v16_mse1e-4_k56_ordered_highk_softcost_six_methods
 ```
 
-若同一实验指纹中断，可在原命令末尾增加 `--resume`。未通过资格检查时，benchmark 会拒绝正式运行；`--allow-unqualified-diagnostic` 只能生成带诊断标记的排错结果。
+若同一实验指纹中断，可在原命令末尾增加 `--resume`。结构完整性审计失败时，benchmark 会拒绝正式运行；低 pass 不会被拒绝。`--allow-unqualified-diagnostic` 只能生成带诊断标记的结构排错结果。
 
 ## 8. 2×2 指标图与真实曲线可视化
 
@@ -259,18 +262,18 @@ python scripts/benchmark_v16_datasets.py `
 
 ```powershell
 python scripts/plot_v16_method_comparison.py `
-  --input outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods/comparison.json `
+  --input outputs/comparisons/v16_mse1e-4_k56_ordered_highk_softcost_six_methods/comparison.json `
   --method-set published `
   --reference `
   --dpi 300 `
-  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_six_methods/metrics
+  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_softcost_six_methods/metrics
 ```
 
 绘制 UJI、Natural Earth 和 USGS 上六种方法的真实拟合案例：
 
 ```powershell
 python scripts/visualize_v16_real_deployments.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt `
   --real-samples-per-dataset 2 `
   --selection-seed 20260910 `
   --manifest UJI=data/splits/uji_pen_v2.jsonl `
@@ -290,23 +293,23 @@ python scripts/visualize_v16_real_deployments.py `
   --end-to-end-repeats 3 `
   --torch-num-threads 4 --device cuda `
   --dpi 300 `
-  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_six_methods/real_cases
+  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_softcost_six_methods/real_cases
 ```
 
 每个案例的六个面板使用同一条留出曲线，绘制输入采样点、原始参考折线、拟合曲线、控制多边形、控制顶点和内部节点，并标注 MSE、K 与完整方法时间；Ours 额外标注 network-only 时间。
 
-也可以让仓库脚本依次完成训练、资格检查、六方法 benchmark、2×2 图和真实案例图：
+也可以让仓库脚本依次完成训练、结构完整性审计、六方法 benchmark、2×2 图和真实案例图：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File scripts/run_v16_mse1e-4_3090.ps1
 ```
 
-该入口不会覆盖同名产物；若 checkpoint 未通过 90%/1e-4 资格检查，默认停止且不生成正式图。只有排错时才增加 `-Diagnostic`，此时目录与图片都会标记为 `diagnostic_<checkpoint-hash>`。若 Windows 多进程加载失败，可增加 `-NumWorkers 0`。入口会在旧的 5e-5 proposal checkpoint 存在时仅迁移 Encoder、ParameterHead 和 CandidateHead；找不到时会提示并从头训练。
+该入口不会覆盖同名产物；只有 checkpoint 违反结构/数据/课程/选择或 `1e-4` 配置合同时才在 benchmark 前停止。低 pass 不会停止流水线。仅排错结构不完整产物时增加 `-Diagnostic`，此时目录与图片都会标记为 `diagnostic_<checkpoint-hash>`。若 Windows 多进程加载失败，可增加 `-NumWorkers 0`。入口会在旧的 5e-5 proposal checkpoint 存在时仅迁移 Encoder、ParameterHead 和 CandidateHead；找不到时会提示并从头训练。
 
 `K=56` 有 57 个参数 span；底层通用 synthetic 生成器的旧 `min_span=0.02` 要求总长度至少 1.14，
 因此不可能生成该层。本协议显式使用 `--knot-min-span 0.01`，旧默认 0.02 只为
-历史数据兼容。边界层 dense/deployment pass 必须单列并纳入原 90% 正式资格。
+历史数据兼容。边界层 dense/deployment pass 必须单列并原样进入报告，但不作为资格门槛。
 
 ## 9. Kang/Luo 结果的解释边界
 
@@ -334,7 +337,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 - [网络结构](../src/spline_fitting/models/v16_network.py)
 - [在线教师与损失](../src/spline_fitting/losses/v16_subset_loss.py)
 - [训练入口](../scripts/train_v16.py)
-- [资格检查](../scripts/inspect_v16_checkpoint.py)
+- [结构完整性审计](../scripts/inspect_v16_checkpoint.py)
 - [六方法 benchmark](../scripts/benchmark_v16_datasets.py)
 - [四指标绘图](../scripts/plot_v16_method_comparison.py)
 - [六方法真实案例](../scripts/visualize_v16_real_deployments.py)

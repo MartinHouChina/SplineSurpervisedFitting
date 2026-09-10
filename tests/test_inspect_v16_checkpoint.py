@@ -26,6 +26,8 @@ def _checkpoint(*, configured: float = 0.90, observed: float = 0.92) -> dict:
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
         "simplification_contract": V16_SIMPLIFICATION_CONTRACT,
         "simplification_ready": True,
+        "simplification_curriculum": {"aggregate_pass_feedback": False},
+        "checkpoint_selection": "mean_per_curve_subset_cost_v1",
         "synthetic_data_contract": V16_CERTIFIED_SYNTHETIC_CONTRACT,
         "dataset_config": {
             "certified_minimal_source": True,
@@ -109,7 +111,7 @@ def _checkpoint(*, configured: float = 0.90, observed: float = 0.92) -> dict:
         },
         "proposal_ready": True,
         "best_deployment_pass_constraint_satisfied": accepted,
-        "checkpoint_quality": "deployment_target_met" if accepted else "target_not_met",
+        "checkpoint_quality": "soft_fit_complexity_selected",
     }
 
 
@@ -126,6 +128,9 @@ def test_inspector_reports_metrics_and_returns_qualification_status(tmp_path, ca
     assert "high-K synthetic allocation: 50.000%" in output
     assert "high-K stratum begins at internal K: 40" in output
     assert "ordered assignment weight: 1" in output
+    assert "aggregate pass feedback: False" in output
+    assert "checkpoint selection: mean_per_curve_subset_cost_v1" in output
+    assert "checkpoint quality: soft_fit_complexity_selected" in output
     assert "overall dense: 99.000%" in output
     assert "synthetic boundary: K=56, n=32" in output
     assert "qualification dense/deployment" in output
@@ -134,11 +139,11 @@ def test_inspector_reports_metrics_and_returns_qualification_status(tmp_path, ca
     assert "eligible: YES" in output and "reasons: none" in output
 
     relaxed = tmp_path / "relaxed.pt"
-    torch.save(_checkpoint(configured=0.85), relaxed)
-    assert entry.main(["--checkpoint", str(relaxed)]) == 2
+    torch.save(_checkpoint(configured=0.85, observed=0.50), relaxed)
+    assert entry.main(["--checkpoint", str(relaxed)]) == 0
     output = capsys.readouterr().out
-    assert "eligible: NO" in output
-    assert "configured deployment pass target 85.000% is below" in output
+    assert "eligible: YES" in output
+    assert "pass-rate reference met: False (does not affect eligibility)" in output
 
 
 def test_inspector_routes_bad_input_through_argparse(tmp_path, capsys):

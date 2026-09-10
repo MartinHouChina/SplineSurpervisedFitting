@@ -1,9 +1,10 @@
 # v16 PPT 展示速查
 
 本提纲只描述当前主协议：`Kc=56`，合成源内部节点 `K=4..56`（控制顶点
-8～60），单曲线 `MSE<=1e-4`，正式资格为 worst-source deployment pass
-`>=90%`。所有性能数字必须来自通过资格检查的 joint checkpoint 和独立 test；
-本文不预设尚未跑出的结果。
+8～60），单曲线 `MSE<=1e-4`。逐来源、worst-source 与总体 pass 都是报告指标，
+不参与训练 STOP、checkpoint 选择或 benchmark eligibility。所有性能数字必须
+来自通过结构完整性审计的 joint checkpoint 和独立 test；本文不预设尚未跑出的
+结果。
 
 ## 第 1 页：任务
 
@@ -98,9 +99,12 @@ KeepMask
 | real val | 每个来源最多 100 |
 | real fraction | 0.35 |
 | batch | 64 |
-| epochs | 96，其中 Proposal 32、Joint 64 |
+| epochs | 104，其中 Proposal 40、Joint 64 |
 | Proposal high-K | synthetic draws 的 50% 来自 K=40～56；Joint 恢复原分布 |
 | Proposal 节点监督 | directed coverage + monotone one-to-one assignment |
+| Proposal→Joint | 第 40 epoch 后按计划无条件切换；不读取 pass |
+| Joint curriculum | complexity `0→max`、safety `1→0`，只随 epoch 变化 |
+| checkpoint selection | `mean_per_curve_subset_cost_v1` |
 
 合成曲线先通过固定参数、固定源节点族内的最简性证书，再加噪声。由于网络
 允许参数和节点连续重定位，source K 只作为计数上界；geometry oracle 只用于
@@ -120,7 +124,8 @@ Ours 的 network-only time。MSE 是平均平方欧氏距离，不开方。纯�
 表示网络延迟，不能代替端到端时间。
 
 Synthetic 还要把 `source K=56` 容量边界单独列出 dense/deployment pass。该层
-没有候选冗余余量，失败必须原样计入，不能为展示而放宽 90% 资格。
+没有候选冗余余量，失败必须原样计入，不能为展示而删除；该指标不控制训练或
+benchmark 准入。
 有序一一匹配只缓解多对一候选塌缩，不能在 `Kc=Kmax=56` 时提供额外候选容量。
 
 ## 第 9 页：六方法公平对比
@@ -150,9 +155,12 @@ powershell -NoProfile -ExecutionPolicy Bypass `
   -File scripts/run_v16_mse1e-4_3090.ps1
 ```
 
-脚本串行完成新训练、90% / `1e-4` 资格检查、六方法合成与真实数据比较、
-2×2 四指标图和真实曲线 3×2 六方法图。checkpoint 不合格时默认停止，避免
-把诊断结果误用于汇报。
+脚本串行完成新训练、v16 结构完整性审计、六方法合成与真实数据比较、2×2
+四指标图和真实曲线 3×2 六方法图。当前简化合同为
+`ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3`，完整性合同为
+`v16_structural_integrity_pass_rates_report_only_v3`。只有 objective、Joint 阶段、
+容量/数据合同或课程成熟度等结构问题会阻止正式产物；pass 仍原样输出，不会
+使流程停止。
 
 结果页只从新生成的 JSON 填入：
 
@@ -166,9 +174,10 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 ## 展示时不要说
 
 - 不要把完整节点向量 64 项说成 64 个内部候选；当前是 56 个内部候选；
-- 不要把 90% 数据集通过率说成误差阈值，单曲线阈值是 `MSE=1e-4`；
+- 不要把数据集通过率说成误差阈值或资格门；单曲线阈值是 `MSE=1e-4`，pass
+  只是统计报告；
 - 不要把 source K 说成允许连续重定位后的全局最少节点证明；
-- 不要把 proposal 或 `target_met=False` checkpoint 当正式模型；
+- 不要把 proposal-stage 或未通过结构完整性合同的 checkpoint 当正式模型；
 - 不要删除失败样本、人工调整图中误差或只展示容易样本；
 - 不要把公开方法 adaptation 称为作者官方复现；
 - 不要用 network-only time 与传统方法完整时间直接计算端到端加速比。
@@ -177,4 +186,4 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 
 旧 `Kc=96 / MSE=2.5e-5 / 97%`、旧 K64、旧 `K=4..20` 及 `K=4..24`、固定 0.5 KeepMask 和八
 方法图片只可作为历史消融。它们不是当前主协议，不得与本轮
-`Kc=56 / source K=4..56 / MSE=1e-4 / 90%` 结果混写。
+`Kc=56 / source K=4..56 / MSE=1e-4 / soft subset cost v3` 结果混写。

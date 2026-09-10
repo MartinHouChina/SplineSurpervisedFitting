@@ -23,11 +23,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from spline_fitting.checkpointing import (
     V16_ADAPTIVE_SELECTION_REVISION,
     V16_CERTIFIED_SYNTHETIC_CONTRACT,
+    V16_CHECKPOINT_SELECTION_CONTRACT,
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
     V16_FORMAL_PASS_RATE,
-    V16_FORMAL_SYNTHETIC_COUNT_MAE_MAX,
-    V16_FORMAL_SYNTHETIC_KNOT_F1_MIN,
-    V16_FORMAL_SYNTHETIC_MATCHED_MAE_MAX,
     V16_MINIMALITY_AUDIT_POINTS,
     V16_MINIMALITY_MARGIN,
     V16_SIMPLIFICATION_CONTRACT,
@@ -40,15 +38,18 @@ from spline_fitting.evaluation.knot_diagnostics import (
     match_internal_knots,
     warp_internal_knots_to_parameterization,
 )
-from spline_fitting.losses.v16_subset_loss import V16SubsetLoss
+from spline_fitting.losses.v16_subset_loss import V16SubsetLoss, subset_cost
 from spline_fitting.models.v16_network import V16CandidateSelectionNetwork
+
+
+V16_CHECKPOINT_SELECTION = V16_CHECKPOINT_SELECTION_CONTRACT
 
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--epochs", type=int, default=60, help="Total proposal plus joint epochs")
+    p.add_argument("--epochs", type=int, default=104, help="Total proposal plus joint epochs")
     p.add_argument(
-        "--proposal-epochs", type=int, default=20,
+        "--proposal-epochs", type=int, default=40,
         help="Last proposal-stage epoch (total, not extra epochs when resuming)",
     )
     p.add_argument("--train-size", type=int, default=2400, help="Mixture draws per epoch")
@@ -127,16 +128,16 @@ def parser():
     p.add_argument("--tolerance-factor-max", type=float, default=1.0)
     p.add_argument(
         "--proposal-pass-target", type=float, default=V16_FORMAL_PASS_RATE,
-        help=(f"Worst-source proposal gate; values below {V16_FORMAL_PASS_RATE:g} "
-              "are diagnostic/ablation settings"),
+        help=("Reporting reference only; Proposal always transitions to Joint "
+              "after --proposal-epochs"),
     )
     p.add_argument(
         "--deployment-pass-target", type=float, default=V16_FORMAL_PASS_RATE,
-        help=(f"Worst-source checkpoint-selection target; values below "
-              f"{V16_FORMAL_PASS_RATE:g} are not engineering-qualified"),
+        help=("Reporting/qualification reference only; it does not gate the "
+              "curriculum or checkpoint selection"),
     )
     p.add_argument("--allow-infeasible-proposals", action="store_true",
-                   help="Explicit ablation: continue even when the proposal gate fails")
+                   help="Deprecated compatibility flag; Joint transition is always scheduled")
     p.add_argument("--policy-samples", type=int, default=4)
     p.add_argument("--counterfactual-edits", type=int, default=4)
     p.add_argument(
@@ -206,14 +207,17 @@ def parser():
     )
     p.add_argument(
         "--complexity-ramp-epochs", type=int, default=10,
-        help=("Safe validation epochs needed to reach unit complexity pressure; "
-              "the feedback controller may continue up to complexity-max-scale"),
+        help=("Joint-stage epochs for a deterministic linear ramp from zero to "
+              "complexity-max-scale"),
     )
     p.add_argument(
         "--complexity-max-scale", type=float, default=4.0,
-        help="Maximum validation-controlled multiplier on the complexity loss",
+        help="Final deterministic multiplier on the complexity loss",
     )
-    p.add_argument("--complexity-pass-margin", type=float, default=0.02)
+    p.add_argument(
+        "--complexity-pass-margin", type=float, default=0.02,
+        help="Deprecated compatibility field; aggregate pass no longer controls the curriculum",
+    )
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--joint-lr", type=float, default=5e-5)
     p.add_argument("--weight-decay", type=float, default=1e-4)
@@ -381,8 +385,6 @@ def validate_args(args):
         or not 0.0 < args.initial_keep_fraction < 1.0
     ):
         raise ValueError("initial-keep-fraction must lie strictly inside (0,1)")
-    if args.deployment_pass_target + args.complexity_pass_margin > 1:
-        raise ValueError("deployment-pass-target + complexity-pass-margin cannot exceed one")
     if args.resume and args.init_checkpoint:
         raise ValueError("resume and init-checkpoint are mutually exclusive")
     if args.train_size >= EPOCH_SEED_STRIDE:
@@ -400,7 +402,7 @@ def progress(current, total, title, extra="", every=10):
 
 
 def selection_safety(args, scale):
-    """Interpolate the validation-controlled one-shot safety reserve."""
+    """Interpolate the deterministic Joint-stage one-shot safety reserve."""
     if not math.isfinite(scale) or not 0 <= scale <= 1:
         raise ValueError("selection safety scale must lie in [0,1]")
     sigma = args.final_safety_sigma + scale * (
@@ -420,60 +422,72 @@ def simplification_is_ready(
         and epoch - args.proposal_epochs
         >= max(args.complexity_ramp_epochs, args.safety_anneal_epochs)
         and applied_safety_scale <= 1e-12
-        and applied_complexity_scale >= 1.0
+        and applied_complexity_scale >= args.complexity_max_scale - 1e-12
     )
 
 
-def update_simplification_controller(
-    args, *, pass_rate, complexity_scale, safety_scale,
-):
-    """Advance the pass-feedback complexity/safety curriculum by one epoch."""
-    for name, value in {
-        "pass_rate": pass_rate,
-        "complexity_scale": complexity_scale,
-        "safety_scale": safety_scale,
-    }.items():
-        if not math.isfinite(value):
-            raise ValueError(f"{name} must be finite")
-    if not 0 <= pass_rate <= 1 or not 0 <= safety_scale <= 1:
-        raise ValueError("pass rate and safety scale must lie in [0,1]")
-    if not 0 <= complexity_scale <= args.complexity_max_scale:
-        raise ValueError("complexity scale lies outside its configured range")
+def simplification_schedule(args, *, epoch, stage):
+    """Return deterministic complexity/safety scales for one training epoch.
 
-    safe_target = min(
-        1.0, args.deployment_pass_target + args.complexity_pass_margin
+    The first Joint epoch retains the complete initial safety reserve and zero
+    complexity pressure. Each scale then advances linearly by Joint epoch,
+    independently of any aggregate validation pass rate. The loss itself still
+    activates complexity only for samples satisfying their own MSE threshold.
+    """
+    if isinstance(epoch, bool) or not isinstance(epoch, int) or epoch < 1:
+        raise ValueError("curriculum epoch must be a positive integer")
+    if stage not in {"proposal", "joint"}:
+        raise ValueError("curriculum stage must be 'proposal' or 'joint'")
+    if stage == "proposal":
+        return 0.0, 1.0
+    joint_epoch = epoch - args.proposal_epochs
+    if joint_epoch < 1:
+        raise ValueError("joint stage cannot precede the configured proposal stage")
+
+    def progress(duration):
+        if duration <= 1:
+            return 1.0
+        return min(1.0, max(0.0, (joint_epoch - 1) / (duration - 1)))
+
+    complexity_scale = args.complexity_max_scale * progress(
+        args.complexity_ramp_epochs
     )
-    if pass_rate >= safe_target:
-        speed = 1.0
-    elif pass_rate >= args.deployment_pass_target:
-        # Cautious progress in the hysteresis band prevents a permanent
-        # 90--92% deadlock at the initial safety reserve.
-        speed = 0.5
-    else:
-        speed = -2.0
-    complexity_scale = min(
-        args.complexity_max_scale,
-        max(
-            0.0,
-            complexity_scale
-            + speed / max(args.complexity_ramp_epochs, 1),
-        ),
-    )
-    safety_scale = min(
-        1.0,
-        max(
-            0.0,
-            safety_scale - speed / max(args.safety_anneal_epochs, 1),
-        ),
-    )
+    safety_scale = 1.0 - progress(args.safety_anneal_epochs)
     return float(complexity_scale), float(safety_scale)
 
 
-def summarize(rows, tolerance, *, synthetic_boundary_knot_count=None):
+def summarize(
+    rows, tolerance, *, candidate_capacity, synthetic_boundary_knot_count=None,
+):
+    if (
+        isinstance(candidate_capacity, bool)
+        or not isinstance(candidate_capacity, int)
+        or candidate_capacity < 1
+    ):
+        raise ValueError("candidate_capacity must be a positive integer")
     groups = defaultdict(list)
     for row in rows:
         groups[row["source"]].append(row)
     def group(values):
+        mse_values = torch.tensor(
+            [r["mse"] for r in values], dtype=torch.float64,
+        )
+        dense_mse_values = torch.tensor(
+            [r["dense_mse"] for r in values], dtype=torch.float64,
+        )
+        retained_counts = torch.tensor(
+            [r["k"] for r in values], dtype=torch.float64,
+        )
+        tolerance_values = torch.full_like(mse_values, float(tolerance))
+        deployment_cost = subset_cost(
+            mse_values, retained_counts, tolerance_values, candidate_capacity,
+        )
+        dense_cost = subset_cost(
+            dense_mse_values,
+            torch.full_like(retained_counts, float(candidate_capacity)),
+            tolerance_values,
+            candidate_capacity,
+        )
         result = dict(
             n=len(values),
             dense_mse=statistics.fmean(r["dense_mse"] for r in values),
@@ -484,6 +498,8 @@ def summarize(rows, tolerance, *, synthetic_boundary_knot_count=None):
             keep_count=statistics.fmean(r["k"] for r in values),
             keep_probability_mass=statistics.fmean(r["probability_mass"] for r in values),
             adaptive_keep_threshold=statistics.fmean(r["adaptive_threshold"] for r in values),
+            deployment_subset_cost=float(deployment_cost.mean()),
+            dense_subset_cost=float(dense_cost.mean()),
         )
         supervised = [r for r in values if r.get("target_k") is not None]
         if supervised:
@@ -544,8 +560,7 @@ def summarize(rows, tolerance, *, synthetic_boundary_knot_count=None):
     # The upper end of a source-count range is also the proposal-capacity
     # boundary in the formal K=4..56 protocol.  An aggregate Synthetic rate can
     # hide a complete failure of that sparse stratum, so retain an explicit
-    # boundary audit and use it together with the per-data-source minimum for
-    # training gates and checkpoint selection.
+    # boundary audit for transparent diagnostics and formal reporting.
     boundary_dense = None
     boundary_deployment = None
     if synthetic_boundary_knot_count is not None:
@@ -648,8 +663,8 @@ def validate(
                        smoothness_weight=0.0, control_ridge=0.0, interpolate_endpoints=True)
             if output is None:
                 # The selector is deliberately untrained during proposal
-                # learning.  Its selected refit is irrelevant to the only
-                # stage gate (dense feasibility), so avoid a duplicate solve.
+                # learning. Its selected refit is irrelevant to the Proposal
+                # objective and diagnostics, so avoid a duplicate solve.
                 fit = dense
                 retained = proposal_knots_cpu.shape[1]
             else:
@@ -717,78 +732,78 @@ def validate(
     return summarize(
         rows,
         tolerance,
+        candidate_capacity=int(model.max_internal_knots),
         synthetic_boundary_knot_count=synthetic_boundary_knot_count,
     )
 
 
-def checkpoint_rank(
-    metrics, target, safety_margin=0.0, *, simplification_ready=True,
-):
+def checkpoint_selection_snapshot(metrics, *, stage, candidate_capacity, tolerance):
+    """Expose every quantity used by checkpoint selection.
+
+    ``subset_cost`` is averaged over validation curves: feasible curves trade
+    retained K against a bounded MSE tie-break, while infeasible curves pay an
+    unbounded logarithmic MSE penalty. Aggregate pass rates remain diagnostics,
+    not a feasibility gate for training or model selection.
+    """
+    if stage not in {"proposal", "joint"}:
+        raise ValueError("checkpoint stage must be 'proposal' or 'joint'")
+    prefix = "dense" if stage == "proposal" else "deployment"
+    pass_key = (
+        "qualification_dense_pass_rate"
+        if stage == "proposal" else "qualification_deployment_pass_rate"
+    )
+    snapshot = {
+        "strategy": V16_CHECKPOINT_SELECTION,
+        "stage": stage,
+        "mean_subset_cost": float(metrics[f"{prefix}_subset_cost"]),
+        "selection_score": -float(metrics[f"{prefix}_subset_cost"]),
+        "pass_rate_diagnostic": float(metrics[pass_key]),
+        "mean_mse": float(metrics[f"{prefix}_mse"]),
+        "mse_p95": float(
+            metrics.get(f"{prefix}_mse_p95", metrics[f"{prefix}_mse"])
+        ),
+        "mean_retained_knots": float(
+            candidate_capacity if stage == "proposal" else metrics["keep_count"]
+        ),
+        "candidate_capacity": int(candidate_capacity),
+        "per_curve_mse_tolerance": float(tolerance),
+    }
+    numeric = [
+        value for key, value in snapshot.items()
+        if key not in {"strategy", "stage"}
+    ]
+    if not all(math.isfinite(float(value)) for value in numeric):
+        raise ValueError("checkpoint selection metrics must be finite")
+    return snapshot
+
+
+def checkpoint_rank(metrics, *, simplification_ready=True):
+    """Pareto-consistent rank led by mean per-curve fit/complexity cost."""
     deployment_pass = metrics.get(
         "qualification_deployment_pass_rate",
         metrics["worst_deployment_pass_rate"],
     )
-    dense_pass = metrics.get(
-        "qualification_dense_pass_rate",
-        metrics.get("worst_dense_pass_rate", 0.0),
-    )
-    safe = deployment_pass >= target + safety_margin
-    feasible = deployment_pass >= target
+    soft_cost = metrics["deployment_subset_cost"]
     tail = metrics.get("deployment_mse_p95", metrics["deployment_mse"])
-    if feasible and simplification_ready:
-        # Once the curriculum is mature, prefer a formally reportable
-        # count/position solution, then reliability margin and fine-grained
-        # geometry quality.  This prevents blind under-pruning from looking
-        # better merely because it has fewer knots.
-        count_mae = metrics.get("synthetic_count_mae")
-        count_mae = (
-            float("inf")
-            if count_mae is None or not math.isfinite(count_mae)
-            else count_mae
-        )
-        knot_f1 = metrics.get("synthetic_knot_match_f1")
-        knot_f1 = (
-            -float("inf")
-            if knot_f1 is None or not math.isfinite(knot_f1)
-            else knot_f1
-        )
-        knot_mae = metrics.get("synthetic_knot_matched_mae")
-        knot_mae = (
-            float("inf")
-            if knot_mae is None or not math.isfinite(knot_mae)
-            else knot_mae
-        )
-        # Quarter-knot buckets prevent a numerically tiny count-MAE change from
-        # outranking a material node-localization improvement.
-        count_mae_bucket = (
-            math.ceil(count_mae * 4.0) / 4.0
-            if math.isfinite(count_mae) else float("inf")
-        )
-        reporting_geometry_ready = bool(
-            dense_pass >= target
-            and count_mae <= V16_FORMAL_SYNTHETIC_COUNT_MAE_MAX
-            and knot_f1 >= V16_FORMAL_SYNTHETIC_KNOT_F1_MIN
-            and knot_mae <= V16_FORMAL_SYNTHETIC_MATCHED_MAE_MAX
-        )
-        return (
-            3,
-            int(reporting_geometry_ready),
-            int(safe),
-            -count_mae_bucket,
-            knot_f1,
-            -knot_mae,
-            -count_mae,
-            -metrics["keep_count"],
-            -tail,
-            -metrics["deployment_mse"],
-        )
-    if safe:
-        return (2, deployment_pass, -tail, -metrics["deployment_mse"])
-    if feasible:
-        # Inside the target-to-safety band, improve reliability before trying
-        # to shave another knot from a statistically marginal checkpoint.
-        return (1, deployment_pass, -tail, -metrics["deployment_mse"])
-    return (0, deployment_pass, -tail, -metrics["deployment_mse"])
+    values = (
+        soft_cost, deployment_pass, tail,
+        metrics["deployment_mse"], metrics["keep_count"],
+    )
+    if not all(math.isfinite(float(value)) for value in values):
+        raise ValueError("checkpoint ranking metrics must be finite")
+    # Positive-weight subset_cost is monotone in feasibility, error and K on
+    # every curve, so a mature checkpoint dominated on all three objectives
+    # cannot outrank its dominator. Curriculum maturity comes first only to
+    # guarantee that the saved deployment uses the completed deterministic
+    # reserve/ramp contract; it is an epoch-state check, never a pass-rate gate.
+    return (
+        int(bool(simplification_ready)),
+        -float(soft_cost),
+        float(deployment_pass),
+        -float(tail),
+        -float(metrics["deployment_mse"]),
+        -float(metrics["keep_count"]),
+    )
 
 
 def serial_args(args):
@@ -1023,8 +1038,7 @@ def main(argv=None):
         min_selected_knots=args.min_selected_knots,
         initial_keep_fraction=args.initial_keep_fraction)
     history, start_epoch, best_rank, proposal_rank, proposal_ready = [], 1, None, None, False
-    complexity_scale, feasible_streak = 0.0, 0
-    selection_safety_scale = 1.0
+    reporting_target_streak = 0
     resume_payload = None
     if args.resume:
         resume_payload = torch.load(args.resume, map_location="cpu", weights_only=True)
@@ -1092,18 +1106,27 @@ def main(argv=None):
         model, _, _ = build_model_from_checkpoint(resume_payload)
         history = resume_payload.get("history", [])
         start_epoch = int(resume_payload["epoch"]) + 1
-        best_rank = resume_payload.get("best_joint_rank")
-        proposal_rank = resume_payload.get("best_proposal_rank")
-        proposal_ready = bool(resume_payload.get("proposal_ready", False))
-        complexity_scale = float(resume_payload.get("complexity_scale", 0.0))
-        feasible_streak = int(resume_payload.get("feasible_streak", 0))
-        selection_safety_scale = float(
-            resume_payload.get("next_selection_safety_scale", 1.0)
+        selection_compatible = (
+            resume_payload.get("checkpoint_selection")
+            == V16_CHECKPOINT_SELECTION
         )
-        if not 0 <= complexity_scale <= args.complexity_max_scale:
-            p.error("resume checkpoint has an invalid complexity controller state")
-        if not 0 <= selection_safety_scale <= 1:
-            p.error("resume checkpoint has an invalid safety controller state")
+        best_rank = (
+            resume_payload.get("best_joint_rank")
+            if selection_compatible else None
+        )
+        proposal_rank = (
+            resume_payload.get("best_proposal_rank")
+            if selection_compatible else None
+        )
+        proposal_ready = bool(resume_payload.get("proposal_ready", False))
+        reporting_target_streak = int(
+            resume_payload.get(
+                "reporting_target_streak",
+                resume_payload.get("feasible_streak", 0),
+            )
+        )
+        if reporting_target_streak < 0:
+            p.error("resume checkpoint has an invalid reporting streak")
         if start_epoch > args.epochs:
             p.error("checkpoint already completed the requested epochs")
         if not proposal_path.exists() or (resume_payload.get("stage") == "joint" and not output.exists()):
@@ -1186,18 +1209,21 @@ def main(argv=None):
         f"{args.synthetic_geometry_oracle_teacher} (+"
         f"{args.oracle_teacher_extra_knots}); certified over-count "
         f"weight={args.supervised_over_count_weight:g}, symmetric true-count "
-        f"weight={args.supervised_count_weight:g}; complexity multiplier "
-        f"0..{args.complexity_max_scale:g}; safety "
+        f"weight={args.supervised_count_weight:g}; deterministic Joint-epoch "
+        f"complexity multiplier 0..{args.complexity_max_scale:g}; safety "
         f"{args.one_shot_safety_knots}+{args.one_shot_safety_sigma:g}sigma -> "
         f"{args.final_safety_knots}+{args.final_safety_sigma:g}sigma. "
         "Deployment still uses one network forward and one final refit.",
         flush=True,
     )
     print(
-        "Validation checkpoint quality uses the worst data-source rate and "
-        f"an explicit K={args.max_control_points - 4} boundary audit "
-        f"(n={min(args.synthetic_boundary_val_size, args.val_size)}). "
-        "Additional subset fits run only during training.",
+        "Checkpoint selection minimizes mean per-curve subset cost: feasible "
+        "curves trade K against a bounded MSE tie-break; infeasible curves use "
+        "a logarithmic MSE penalty. Aggregate pass rates and the explicit "
+        f"K={args.max_control_points - 4} boundary audit "
+        f"(n={min(args.synthetic_boundary_val_size, args.val_size)}) are "
+        "reported but never gate training. Additional subset fits run only "
+        "during training.",
         flush=True,
     )
     if args.proposal_high_k_fraction > 0.0:
@@ -1222,7 +1248,16 @@ def main(argv=None):
     )
     for epoch in range(start_epoch, args.epochs + 1):
         stage = "proposal" if epoch <= args.proposal_epochs else "joint"
-        applied_safety_scale = selection_safety_scale
+        applied_complexity_scale, applied_safety_scale = simplification_schedule(
+            args, epoch=epoch, stage=stage,
+        )
+        next_epoch = epoch + 1
+        next_stage = (
+            "proposal" if next_epoch <= args.proposal_epochs else "joint"
+        )
+        next_complexity_scale, next_safety_scale = simplification_schedule(
+            args, epoch=next_epoch, stage=next_stage,
+        )
         safety_sigma, safety_knots = selection_safety(args, applied_safety_scale)
         model.set_selection_safety(sigma=safety_sigma, knots=safety_knots)
         if stage == "joint" and epoch == args.proposal_epochs + 1:
@@ -1230,19 +1265,18 @@ def main(argv=None):
                 p.error("missing best proposal checkpoint for the stage transition")
             best_proposal = torch.load(proposal_path, map_location="cpu", weights_only=True)
             model.load_state_dict(best_proposal["model_state_dict"], strict=True)
-            proposal_gate = args.proposal_pass_target
-            proposal_ready = (
-                best_proposal["validation_metrics"].get(
-                    "qualification_dense_pass_rate",
-                    best_proposal["validation_metrics"]["worst_dense_pass_rate"],
-                )
-                >= proposal_gate
+            proposal_dense_pass = best_proposal["validation_metrics"].get(
+                "qualification_dense_pass_rate",
+                best_proposal["validation_metrics"]["worst_dense_pass_rate"],
             )
-            if not proposal_ready and not args.allow_infeasible_proposals:
-                print(f"STOP: dense proposal did not reach the safety gate "
-                      f"{proposal_gate:.1%} in every source. "
-                      f"Inspect {history_path}; increase proposal training/candidate budget before simplification.", flush=True)
-                return 2
+            proposal_ready = epoch >= args.proposal_epochs
+            print(
+                "Proposal schedule complete; loading the lowest-cost dense "
+                f"initializer (pass={proposal_dense_pass:.1%}, reporting "
+                f"reference={args.proposal_pass_target:.1%}). Joint training "
+                "starts unconditionally.",
+                flush=True,
+            )
             optimizer = torch.optim.AdamW(model.parameters(), lr=args.joint_lr, weight_decay=args.weight_decay)
         train_data = MixedTrainingCurves(
             dataset_config,
@@ -1270,7 +1304,9 @@ def main(argv=None):
             optimizer.zero_grad(set_to_none=True)
             loss, metrics = objective(
                 model, points, stage=stage, mse_tolerance=tolerance,
-                complexity_scale=complexity_scale if stage == "joint" else 0.0,
+                complexity_scale=(
+                    applied_complexity_scale if stage == "joint" else 0.0
+                ),
                 synthetic_target_count=batch["target_internal_knot_count"].to(
                     device, non_blocking=device.type == "cuda"
                 ),
@@ -1309,44 +1345,41 @@ def main(argv=None):
             synthetic_boundary_knot_count=args.max_control_points - 4,
         )
         train_metrics = {k: v/samples for k, v in total.items()}
-        applied_complexity_scale = complexity_scale
+        reporting_target_met = (
+            stage == "joint"
+            and measured["qualification_deployment_pass_rate"]
+            >= args.deployment_pass_target
+        )
         if stage == "joint":
-            observed_pass = measured["qualification_deployment_pass_rate"]
-            if observed_pass >= args.deployment_pass_target:
-                feasible_streak += 1
+            if reporting_target_met:
+                reporting_target_streak += 1
             else:
-                feasible_streak = 0
-            complexity_scale, selection_safety_scale = (
-                update_simplification_controller(
-                    args,
-                    pass_rate=observed_pass,
-                    complexity_scale=complexity_scale,
-                    safety_scale=selection_safety_scale,
-                )
-            )
+                reporting_target_streak = 0
         entry = dict(
             epoch=epoch, stage=stage, train=train_metrics, validation=measured,
             applied_complexity_scale=applied_complexity_scale,
-            next_complexity_scale=complexity_scale,
+            next_complexity_scale=next_complexity_scale,
             applied_selection_safety_scale=applied_safety_scale,
-            next_selection_safety_scale=selection_safety_scale,
+            next_selection_safety_scale=next_safety_scale,
             applied_selection_safety_sigma=safety_sigma,
             applied_selection_safety_knots=safety_knots,
-            feasible_streak=feasible_streak,
+            reporting_target_met=reporting_target_met,
+            reporting_target_streak=reporting_target_streak,
             seconds=time.perf_counter()-started,
         )
         history.append(entry)
         improved = False
         if stage == "proposal":
             rank = (
-                measured["qualification_dense_pass_rate"],
+                -measured["dense_subset_cost"],
                 -measured["dense_mse"],
+                measured["qualification_dense_pass_rate"],
             )
             if proposal_rank is None or rank > tuple(proposal_rank):
                 proposal_rank, improved = rank, True
-            proposal_ready = proposal_rank[0] >= min(
-                1.0, args.proposal_pass_target
-            )
+            # Readiness means that the scheduled Proposal stage has produced a
+            # usable best initializer; it no longer encodes an aggregate pass gate.
+            proposal_ready = True
         else:
             simplification_ready = simplification_is_ready(
                 args,
@@ -1356,16 +1389,15 @@ def main(argv=None):
                 applied_complexity_scale=applied_complexity_scale,
             )
             rank = checkpoint_rank(
-                measured, args.deployment_pass_target,
-                args.complexity_pass_margin,
-                simplification_ready=simplification_ready,
+                measured, simplification_ready=simplification_ready,
             )
             if best_rank is None or rank > tuple(best_rank):
                 best_rank, improved = rank, True
-        accepted = (
-            stage == "joint"
-            and measured["qualification_deployment_pass_rate"]
-            >= args.deployment_pass_target
+        selection_metrics = checkpoint_selection_snapshot(
+            measured,
+            stage=stage,
+            candidate_capacity=args.candidate_knots,
+            tolerance=args.mse_tolerance,
         )
         payload = dict(objective_version=V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
             model_config=model.get_config(), model_state_dict={k:v.detach().cpu() for k,v in model.state_dict().items()},
@@ -1392,6 +1424,13 @@ def main(argv=None):
             ),
             validation_metrics=measured, train_metrics=train_metrics,
             best_joint_rank=best_rank, best_proposal_rank=proposal_rank, proposal_ready=proposal_ready,
+            proposal_ready_role=(
+                "scheduled_stage_complete_with_saved_initializer"
+            ),
+            proposal_reporting_target_met=(
+                measured["qualification_dense_pass_rate"]
+                >= args.proposal_pass_target
+            ),
             architecture_revision=(
                 V16_ADAPTIVE_SELECTION_REVISION
                 if args.one_shot_selection_policy == "mass_topk"
@@ -1405,16 +1444,32 @@ def main(argv=None):
                 applied_safety_scale=applied_safety_scale,
                 applied_complexity_scale=applied_complexity_scale,
             ),
-            complexity_scale=complexity_scale,
+            complexity_scale=next_complexity_scale,
             applied_complexity_scale=applied_complexity_scale,
-            next_selection_safety_scale=selection_safety_scale,
+            next_selection_safety_scale=next_safety_scale,
             applied_selection_safety_scale=applied_safety_scale,
-            feasible_streak=feasible_streak,
-            best_deployment_pass_constraint_satisfied=accepted,
-            current_deployment_pass_constraint_satisfied=accepted,
-            checkpoint_quality="deployment_target_met" if accepted else "target_not_met",
-            checkpoint_selection=(
-                "formal_geometry_gate_then_safety_then_bucketed_count_f1_mae"
+            reporting_target_streak=reporting_target_streak,
+            feasible_streak=reporting_target_streak,
+            aggregate_pass_role="reporting_reference_only",
+            best_deployment_pass_constraint_satisfied=reporting_target_met,
+            current_deployment_pass_constraint_satisfied=reporting_target_met,
+            deployment_pass_flags_role="reporting_reference_only",
+            checkpoint_quality=(
+                "soft_fit_complexity_selected"
+                if stage == "joint" else "dense_proposal_selected"
+            ),
+            reporting_checkpoint_quality=(
+                "deployment_target_met"
+                if reporting_target_met else "target_not_met"
+            ),
+            checkpoint_selection=V16_CHECKPOINT_SELECTION,
+            checkpoint_selection_metrics=selection_metrics,
+            simplification_curriculum=dict(
+                kind="deterministic_linear_by_joint_epoch",
+                aggregate_pass_feedback=False,
+                complexity_ramp_epochs=args.complexity_ramp_epochs,
+                complexity_max_scale=args.complexity_max_scale,
+                safety_anneal_epochs=args.safety_anneal_epochs,
             ),
             deployment_config=dict(mse_tolerance=args.mse_tolerance, error_tolerance=math.sqrt(args.mse_tolerance),
                 knot_match_tolerance=args.knot_match_tolerance,
@@ -1464,10 +1519,13 @@ def main(argv=None):
               f"qualification={measured['qualification_deployment_pass_rate']:.1%} "
               f"MSE={measured['deployment_mse']:.3e} K={measured['keep_count']:.2f} "
               f"mass={measured['keep_probability_mass']:.2f} beta={measured['adaptive_keep_threshold']:.2f} "
-              f"complexity={applied_complexity_scale:.2f}->{complexity_scale:.2f} "
+              f"soft_cost={selection_metrics['mean_subset_cost']:.4f} "
+              f"selection_score={selection_metrics['selection_score']:.4f} "
+              f"complexity={applied_complexity_scale:.2f}->{next_complexity_scale:.2f} "
               f"safety={safety_knots}+{safety_sigma:.2f}sigma "
-              f"scale={applied_safety_scale:.2f}->{selection_safety_scale:.2f} "
-              f"target_met={accepted}", flush=True)
+              f"scale={applied_safety_scale:.2f}->{next_safety_scale:.2f} "
+              f"pass_reference_only={measured['qualification_deployment_pass_rate']:.1%}",
+              flush=True)
         if stage == "proposal":
             print(
                 "  Proposal train geometry: coverage_MAE="

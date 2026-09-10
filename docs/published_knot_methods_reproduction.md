@@ -82,8 +82,14 @@ sparse-stage MSE、局部峰值候选 refit MSE 以及 DE 后 MSE。
 7. **时间**：公共 `total_ms` 从归一化点开始，包含方法本身和最终 refit，
    不含文件 I/O 与绘图。Ours 的 `network_ms` 另列，不替代端到端时间。
 8. **失败样本**：异常、非有限解和超阈值解均保留在通过率分母中。
-9. **资格**：Ours checkpoint 必须通过 worst-source 90% / `1e-4` 审计；
-   proposal 或 diagnostic checkpoint 不得进入正式表格。
+9. **checkpoint 完整性**：Ours 必须满足
+   `ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3` 简化合同、
+   `mean_per_curve_subset_cost_v1` 选择合同和
+   `v16_structural_integrity_pass_rates_report_only_v3` 完整性合同。Proposal 共
+   40 epochs，并按计划无条件进入 64-epoch Joint；Joint 的 complexity `0→max`
+   与 safety `1→0` 只由 epoch 决定。pass 不参与 STOP、checkpoint 选择或
+   benchmark eligibility；仅 proposal-stage 或结构不完整的 diagnostic checkpoint
+   不得进入正式表格。
 
 四项主指标固定为平均/P95 MSE、阈值通过率、最终内部节点数和完整方法时间。
 报告还应按数据来源分组，防止简单合成样本掩盖真实或复杂曲线失败。
@@ -95,7 +101,7 @@ sparse-stage MSE、局部峰值候选 refit MSE 以及 DE 后 MSE。
 
 ```powershell
 python scripts/benchmark_v16_datasets.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt `
   --output-dir outputs/comparisons/v16_mse1e-4_k56_six_quick `
   --method-set published `
   --samples-per-knot-count 1 --min-knot-count 4 --max-knot-count 56 `
@@ -110,8 +116,9 @@ python scripts/benchmark_v16_datasets.py `
   --end-to-end-repeats 1 --torch-num-threads 4 --device cuda
 ```
 
-若 checkpoint 尚未通过资格审计，只能额外使用
-`--allow-unqualified-diagnostic`，并保留工具生成的诊断水印。
+若 checkpoint 尚未通过结构完整性审计，只能额外使用
+`--allow-unqualified-diagnostic`，并保留工具生成的诊断水印。低 pass 本身不是
+结构失败，也不需要该开关。
 
 ## 5. 正式六方法比较
 
@@ -119,8 +126,8 @@ python scripts/benchmark_v16_datasets.py `
 
 ```powershell
 python scripts/benchmark_v16_datasets.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk.pt `
-  --output-dir outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost.pt `
+  --output-dir outputs/comparisons/v16_mse1e-4_k56_ordered_highk_softcost_six_methods `
   --method-set published `
   --samples-per-knot-count 5 `
   --min-knot-count 4 --max-knot-count 56 `
@@ -140,8 +147,8 @@ python scripts/benchmark_v16_datasets.py `
   --torch-num-threads 4 --device cuda
 
 python scripts/plot_v16_method_comparison.py `
-  --input outputs/comparisons/v16_mse1e-4_k56_ordered_highk_six_methods/comparison.json `
-  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_six_methods/metrics `
+  --input outputs/comparisons/v16_mse1e-4_k56_ordered_highk_softcost_six_methods/comparison.json `
+  --output-dir outputs/figures/v16_mse1e-4_k56_ordered_highk_softcost_six_methods/metrics `
   --method-set published --reference --dpi 300
 ```
 
@@ -162,4 +169,5 @@ python scripts/plot_v16_method_comparison.py `
   K56 主表合并。这里的“完整节点向量 64 项”是当前 K56 的容量换算，不是旧
   K64 内部候选实验。
 - 旧 source `K=4..24` 结果也只能标作历史范围消融；当前主表必须覆盖到 56，
-  并且不得因边界层失败而放宽 90% 正式资格。
+  `K=56` 边界层的 dense/deployment pass 必须单独且原样报告。它不构成训练或
+  benchmark 的资格门槛。

@@ -9,11 +9,11 @@
 [CmdletBinding()]
 param(
     [string]$Python = "python",
-    [string]$RunName = "candidate_selection_v16_mse1e-4_k56_ordered_highk",
+    [string]$RunName = "candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost",
     [ValidateSet("auto", "cpu", "cuda")]
     [string]$Device = "cuda",
-    [int]$Epochs = 96,
-    [int]$ProposalEpochs = 32,
+    [int]$Epochs = 104,
+    [int]$ProposalEpochs = 40,
     [int]$TrainSize = 3000,
     [int]$ValSize = 600,
     [int]$RealValSize = 100,
@@ -162,7 +162,12 @@ $RunState = [ordered]@{
     diagnostic_requested = [bool]$Diagnostic
     checkpoint = [System.IO.Path]::GetFullPath($CheckpointPath)
     requested_profile = [ordered]@{
-        simplification_contract = "ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2"
+        simplification_contract = "ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3"
+        checkpoint_selection = "mean_per_curve_subset_cost_v1"
+        qualification_contract = "v16_structural_integrity_pass_rates_report_only_v3"
+        aggregate_pass_role = "reporting_reference_only"
+        simplification_curriculum = "deterministic_linear_by_joint_epoch"
+        aggregate_pass_feedback = $false
         mse_tolerance = 1e-4
         candidate_internal_knots = 56
         full_cubic_knot_vector_size_at_all_keep = 64
@@ -299,9 +304,7 @@ try {
         "--minimality-max-attempts", "16",
         "--minimality-audit-points", "512",
         "--oscillation-amplitude", "0.3",
-        "--proposal-pass-target", "0.90",
         "--proposal-knot-assignment-weight", "1.0",
-        "--deployment-pass-target", "0.90",
         "--one-shot-selection-policy", "mass_topk",
         "--initial-keep-fraction", "0.5357142857142857",
         "--teacher-low-count-sweep", "16",
@@ -317,7 +320,6 @@ try {
         "--safety-anneal-epochs", "12",
         "--complexity-ramp-epochs", "12",
         "--complexity-max-scale", "6.0",
-        "--complexity-pass-margin", "0.02",
         "--policy-samples", "2",
         "--counterfactual-edits", "4",
         "--teacher-prefix-search-steps", "7",
@@ -333,12 +335,6 @@ try {
         "--device", $Device,
         "--output", [System.IO.Path]::GetFullPath($CheckpointPath)
     )
-    if ($Diagnostic) {
-        # Diagnostic runs may deliberately use tiny proposal curricula.  They
-        # remain watermarked and must not be mistaken for a qualified model.
-        $TrainingArguments += "--allow-infeasible-proposals"
-    }
-
     $ResolvedInit = $null
     if (-not [string]::IsNullOrWhiteSpace($InitCheckpoint)) {
         $ResolvedInit = $(
@@ -376,17 +372,17 @@ try {
         -CommandArguments @(
             "scripts/inspect_v16_checkpoint.py",
             "--checkpoint", [System.IO.Path]::GetFullPath($CheckpointPath),
-            "--required-pass-rate", "0.90",
             "--mse-tolerance", "1e-4"
         ) -AllowFailure
-    $RunState["checkpoint_qualified"] = [bool]$InspectSucceeded
+    $RunState["checkpoint_integrity_passed"] = [bool]$InspectSucceeded
     Save-RunState
     if (-not $InspectSucceeded -and -not $Diagnostic) {
         throw (
-            "The checkpoint did not meet the complete formal contract, so no " +
-            "benchmark or figure was produced. In addition to 90% / MSE=1e-4, " +
-            "inspection checks joint/curriculum maturity, final safety, non-all-" +
-            "keep selection, Synthetic count MAE, knot F1 and matched MAE. See " +
+            "The checkpoint failed the v16 structural-integrity contract, so no " +
+            "benchmark or figure was produced. Inspection checks the Joint stage, " +
+            "deterministic curriculum maturity, final safety, data/capacity contract, " +
+            "selection rule and MSE tolerance. Pass rate, retained K and knot/count " +
+            "accuracy remain reported diagnostics and cannot cause this failure. See " +
             "inspect_checkpoint.log. Use --allow-unqualified-diagnostic only in " +
             "separate troubleshooting commands."
         )

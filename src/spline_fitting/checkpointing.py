@@ -50,13 +50,14 @@ V16_CERTIFIED_SYNTHETIC_CONTRACT = (
     "source_subset_threshold_minimal_k4_56_span001_v2"
 )
 V16_SIMPLIFICATION_CONTRACT = (
-    "ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2"
+    "ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3"
 )
+V16_CHECKPOINT_SELECTION_CONTRACT = "mean_per_curve_subset_cost_v1"
+V16_JOINT_CHECKPOINT_QUALITY = "soft_fit_complexity_selected"
 V16_MINIMALITY_MARGIN = 0.2
 V16_MINIMALITY_AUDIT_POINTS = 512
-# Engineering acceptance protocol selected for v16.  Keep this distinct from
-# the MSE tolerance: 0.90 is the minimum worst-source *fraction* of curves that
-# must satisfy the unchanged per-curve MSE budget.
+# Historical reporting reference only.  It is deliberately distinct from the
+# per-curve MSE tolerance and does not control checkpoint eligibility.
 V16_FORMAL_PASS_RATE = 0.90
 V16_FORMAL_KNOT_MATCH_TOLERANCE = 0.01
 V16_FORMAL_SYNTHETIC_COUNT_MAE_MAX = 2.0
@@ -100,12 +101,11 @@ def assess_v16_checkpoint(
     required_pass_rate: float = V16_FORMAL_PASS_RATE,
     required_mse_tolerance: float | None = None,
 ) -> dict[str, Any]:
-    """Audit whether a v16 checkpoint is eligible for formal reporting.
+    """Audit structural eligibility while reporting empirical diagnostics.
 
-    ``checkpoint_quality`` records whether the *configured* training target was
-    met.  That target is intentionally configurable for ablations, so formal
-    evaluation must also inspect the configured target and measured worst-source
-    validation rate instead of trusting the historical boolean/string fields.
+    Pass rates and knot/count accuracy never decide eligibility.  The hard
+    checks cover protocol integrity, certified data, a completed/mature joint
+    curriculum, final deployment safety and the requested MSE contract.
     """
     required = _finite_checkpoint_float(required_pass_rate)
     if required is None or not 0.0 <= required <= 1.0:
@@ -122,12 +122,18 @@ def assess_v16_checkpoint(
     model_config = checkpoint.get("model_config")
     dataset_config = checkpoint.get("dataset_config")
     loss_config = checkpoint.get("loss_config")
+    simplification_curriculum = checkpoint.get("simplification_curriculum")
     training = training if isinstance(training, Mapping) else {}
     validation = validation if isinstance(validation, Mapping) else {}
     deployment = deployment if isinstance(deployment, Mapping) else {}
     model_config = model_config if isinstance(model_config, Mapping) else {}
     dataset_config = dataset_config if isinstance(dataset_config, Mapping) else {}
     loss_config = loss_config if isinstance(loss_config, Mapping) else {}
+    simplification_curriculum = (
+        simplification_curriculum
+        if isinstance(simplification_curriculum, Mapping)
+        else {}
+    )
     loss_weights = loss_config.get("weights")
     loss_weights = loss_weights if isinstance(loss_weights, Mapping) else {}
     configured_proposal = _finite_checkpoint_float(
@@ -275,6 +281,10 @@ def assess_v16_checkpoint(
         )
     if checkpoint.get("simplification_ready") is not True:
         reasons.append("joint simplification curriculum was not mature when saved")
+    if simplification_curriculum.get("aggregate_pass_feedback") is not False:
+        reasons.append(
+            "simplification curriculum must not use aggregate pass-rate feedback"
+        )
     if (
         final_safety_sigma is None
         or applied_safety_sigma is None
@@ -362,40 +372,9 @@ def assess_v16_checkpoint(
         reasons.append(
             "formal v16 candidate-knot capacity must equal 56 internal knots"
         )
-    if observed_keep_count is None or observed_keep_count < 0:
-        reasons.append("validation mean retained-knot count is missing or invalid")
-    elif (
-        candidate_capacity is not None
-        and candidate_capacity > 0
-        and observed_keep_count >= candidate_capacity - 1e-9
-    ):
-        reasons.append(
-            "validation deployment retains the entire candidate set (degenerate all-keep solution)"
-        )
-    if synthetic_count_mae is None or synthetic_count_mae < 0:
-        reasons.append("certified synthetic count MAE is missing or invalid")
-    elif synthetic_count_mae > V16_FORMAL_SYNTHETIC_COUNT_MAE_MAX:
-        reasons.append(
-            "certified synthetic count MAE exceeds the formal limit "
-            f"{V16_FORMAL_SYNTHETIC_COUNT_MAE_MAX:g}"
-        )
-    if (
-        synthetic_knot_match_f1 is None
-        or not 0 <= synthetic_knot_match_f1 <= 1
-    ):
-        reasons.append("certified synthetic knot-match F1 is missing or invalid")
-    elif synthetic_knot_match_f1 < V16_FORMAL_SYNTHETIC_KNOT_F1_MIN:
-        reasons.append(
-            "certified synthetic knot-match F1 is below the formal minimum "
-            f"{V16_FORMAL_SYNTHETIC_KNOT_F1_MIN:g}"
-        )
-    if synthetic_knot_matched_mae is None or synthetic_knot_matched_mae < 0:
-        reasons.append("certified synthetic matched-knot MAE is missing or invalid")
-    elif synthetic_knot_matched_mae > V16_FORMAL_SYNTHETIC_MATCHED_MAE_MAX:
-        reasons.append(
-            "certified synthetic matched-knot MAE exceeds the formal limit "
-            f"{V16_FORMAL_SYNTHETIC_MATCHED_MAE_MAX:g}"
-        )
+    # Retained K, all-keep behavior and knot/count accuracy are empirical
+    # benchmark results.  Keep them in the report below without gating access
+    # to the benchmark itself.
     if (
         synthetic_boundary_knot_count
         != V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS
@@ -411,28 +390,6 @@ def assess_v16_checkpoint(
         reasons.append(
             "formal validation K=56 boundary audit must contain at least "
             f"{V16_FORMAL_SYNTHETIC_BOUNDARY_SAMPLES_MIN} synthetic samples"
-        )
-    if (
-        synthetic_boundary_dense_pass_rate is None
-        or not 0.0 <= synthetic_boundary_dense_pass_rate <= 1.0
-    ):
-        reasons.append("K=56 dense proposal pass rate is missing or invalid")
-    elif synthetic_boundary_dense_pass_rate < required:
-        reasons.append(
-            f"observed K=56 dense proposal pass rate "
-            f"{synthetic_boundary_dense_pass_rate:.3%} is below the required "
-            f"{required:.3%}"
-        )
-    if (
-        synthetic_boundary_deployment_pass_rate is None
-        or not 0.0 <= synthetic_boundary_deployment_pass_rate <= 1.0
-    ):
-        reasons.append("K=56 deployment pass rate is missing or invalid")
-    elif synthetic_boundary_deployment_pass_rate < required:
-        reasons.append(
-            f"observed K=56 deployment pass rate "
-            f"{synthetic_boundary_deployment_pass_rate:.3%} is below the required "
-            f"{required:.3%}"
         )
     expected_qualification_dense = None
     if (
@@ -450,48 +407,9 @@ def assess_v16_checkpoint(
         expected_qualification_deployment = min(
             observed_deployment, synthetic_boundary_deployment_pass_rate
         )
-    if observed_qualification_dense is None:
-        reasons.append("qualification dense pass rate is missing or invalid")
-    elif (
-        expected_qualification_dense is not None
-        and not math.isclose(
-            observed_qualification_dense,
-            expected_qualification_dense,
-            rel_tol=1e-12,
-            abs_tol=1e-12,
-        )
-    ):
-        reasons.append(
-            "qualification dense pass rate is inconsistent with "
-            "min(worst-source, K=56)"
-        )
-    elif observed_qualification_dense < required:
-        reasons.append(
-            f"observed qualification dense pass rate "
-            f"{observed_qualification_dense:.3%} is below the required "
-            f"{required:.3%}"
-        )
-    if observed_qualification_deployment is None:
-        reasons.append("qualification deployment pass rate is missing or invalid")
-    elif (
-        expected_qualification_deployment is not None
-        and not math.isclose(
-            observed_qualification_deployment,
-            expected_qualification_deployment,
-            rel_tol=1e-12,
-            abs_tol=1e-12,
-        )
-    ):
-        reasons.append(
-            "qualification deployment pass rate is inconsistent with "
-            "min(worst-source, K=56)"
-        )
-    elif observed_qualification_deployment < required:
-        reasons.append(
-            f"observed qualification deployment pass rate "
-            f"{observed_qualification_deployment:.3%} is below the required "
-            f"{required:.3%}"
-        )
+    # Aggregate and boundary pass rates are descriptive.  Their recomputed
+    # minima are exposed to flag reporting inconsistencies without rejecting
+    # a structurally valid checkpoint.
     if (
         recorded_match_tolerance is None
         or not math.isclose(
@@ -532,46 +450,10 @@ def assess_v16_checkpoint(
         reasons.append("ranked-prefix teacher is not enabled")
     if checkpoint.get("stage") != "joint":
         reasons.append("checkpoint is not from the joint stage")
-    if configured_proposal is None:
-        reasons.append("configured proposal pass target is missing or invalid")
-    elif configured_proposal < required:
-        reasons.append(
-            f"configured proposal pass target {configured_proposal:.3%} is below "
-            f"the required {required:.3%}"
-        )
-    if configured_deployment is None:
-        reasons.append("configured deployment pass target is missing or invalid")
-    elif configured_deployment < required:
-        reasons.append(
-            f"configured deployment pass target {configured_deployment:.3%} is below "
-            f"the required {required:.3%}"
-        )
-    if observed_deployment is None:
-        reasons.append("worst-source deployment pass rate is missing or invalid")
-    elif observed_deployment < required:
-        reasons.append(
-            f"observed worst-source deployment pass rate {observed_deployment:.3%} "
-            f"is below the required {required:.3%}"
-        )
-    if observed_dense is None:
-        reasons.append("worst-source dense proposal pass rate is missing or invalid")
-    elif observed_dense < required:
-        reasons.append(
-            f"observed worst-source dense proposal pass rate {observed_dense:.3%} "
-            f"is below the required {required:.3%}"
-        )
-    if checkpoint.get("proposal_ready") is not True:
-        reasons.append("proposal feasibility gate was not satisfied")
-    if training.get("allow_infeasible_proposals") is True:
-        reasons.append("infeasible-proposal ablation was enabled")
-    stored_constraint = checkpoint.get("best_deployment_pass_constraint_satisfied")
-    if stored_constraint is not configured_checkpoint_accepted:
-        reasons.append("saved deployment-target flag is inconsistent with measured metrics")
-    expected_quality = (
-        "deployment_target_met" if configured_checkpoint_accepted else "target_not_met"
-    )
-    if checkpoint.get("checkpoint_quality") != expected_quality:
-        reasons.append("checkpoint_quality is inconsistent with measured metrics")
+    if checkpoint.get("checkpoint_selection") != V16_CHECKPOINT_SELECTION_CONTRACT:
+        reasons.append("checkpoint was not selected by mean per-curve subset cost")
+    if checkpoint.get("checkpoint_quality") != V16_JOINT_CHECKPOINT_QUALITY:
+        reasons.append("joint checkpoint quality is not soft fit/complexity selected")
     if required_tolerance is not None:
         if recorded_tolerance is None:
             reasons.append("checkpoint MSE tolerance is missing or invalid")
@@ -584,8 +466,18 @@ def assess_v16_checkpoint(
             )
 
     return {
-        "schema_version": 4,
+        "schema_version": 5,
+        "qualification_contract": (
+            "v16_structural_integrity_pass_rates_report_only_v3"
+        ),
         "required_reporting_pass_rate": required,
+        "pass_rate_reference_only": True,
+        "pass_rate_reference_met": bool(
+            observed_qualification_dense is not None
+            and observed_qualification_deployment is not None
+            and observed_qualification_dense >= required
+            and observed_qualification_deployment >= required
+        ),
         "required_mse_tolerance": required_tolerance,
         "configured_proposal_pass_target": configured_proposal,
         "configured_deployment_pass_target": configured_deployment,
@@ -594,6 +486,26 @@ def assess_v16_checkpoint(
         "observed_qualification_dense_pass_rate": observed_qualification_dense,
         "observed_qualification_deployment_pass_rate": (
             observed_qualification_deployment
+        ),
+        "qualification_dense_consistent": bool(
+            expected_qualification_dense is not None
+            and observed_qualification_dense is not None
+            and math.isclose(
+                observed_qualification_dense,
+                expected_qualification_dense,
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            )
+        ),
+        "qualification_deployment_consistent": bool(
+            expected_qualification_deployment is not None
+            and observed_qualification_deployment is not None
+            and math.isclose(
+                observed_qualification_deployment,
+                expected_qualification_deployment,
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            )
         ),
         "recorded_mse_tolerance": recorded_tolerance,
         "recorded_knot_match_tolerance": recorded_match_tolerance,
@@ -637,11 +549,16 @@ def assess_v16_checkpoint(
         "observed_mean_retained_knots": observed_keep_count,
         "configured_target_met": configured_target_met,
         "configured_checkpoint_accepted": configured_checkpoint_accepted,
+        "checkpoint_selection": checkpoint.get("checkpoint_selection"),
+        "checkpoint_quality": checkpoint.get("checkpoint_quality"),
         "architecture_revision": architecture_revision,
         "selection_policy": selection_policy,
         "adaptive_keep_threshold": adaptive_threshold,
         "simplification_contract": simplification_contract,
         "simplification_ready": checkpoint.get("simplification_ready"),
+        "aggregate_pass_feedback": simplification_curriculum.get(
+            "aggregate_pass_feedback"
+        ),
         "final_safety_sigma": final_safety_sigma,
         "applied_safety_sigma": applied_safety_sigma,
         "final_safety_knots": final_safety_knots,

@@ -24,13 +24,14 @@ from spline_fitting.evaluation.bspline_inference import (  # noqa: E402
 )
 
 
-def checkpoint(*, stage="joint", quality="deployment_target_met", met=True,
+def checkpoint(*, stage="joint", quality="soft_fit_complexity_selected", met=True,
                target=0.97, observed=0.98):
     return {
         "objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
         "simplification_contract": V16_SIMPLIFICATION_CONTRACT,
         "simplification_ready": True,
+        "simplification_curriculum": {"aggregate_pass_feedback": False},
         "synthetic_data_contract": V16_CERTIFIED_SYNTHETIC_CONTRACT,
         "dataset_config": {
             "certified_minimal_source": True,
@@ -96,6 +97,7 @@ def checkpoint(*, stage="joint", quality="deployment_target_met", met=True,
             },
         },
         "proposal_ready": True,
+        "checkpoint_selection": "mean_per_curve_subset_cost_v1",
         "checkpoint_quality": quality,
         "best_deployment_pass_constraint_satisfied": met,
     }
@@ -111,8 +113,7 @@ def test_qualified_joint_checkpoint_has_no_watermark():
     "payload",
     [
         checkpoint(stage="proposal", quality="target_not_met", met=False),
-        checkpoint(stage="joint", quality="target_not_met", met=False, observed=0.50),
-        checkpoint(target=0.85, observed=0.91),
+        checkpoint(stage="joint", quality="deployment_target_met", met=False),
     ],
 )
 def test_unqualified_checkpoint_is_rejected_by_default(payload):
@@ -123,6 +124,13 @@ def test_unqualified_checkpoint_is_rejected_by_default(payload):
     assert entry.validate_checkpoint_for_visualization(
         payload, allow_unqualified_diagnostic=True,
     ) is True
+
+
+def test_low_aggregate_pass_rate_does_not_add_diagnostic_watermark():
+    assert entry.validate_checkpoint_for_visualization(
+        checkpoint(target=0.97, observed=0.50, met=False),
+        allow_unqualified_diagnostic=False,
+    ) is False
 
 
 def test_non_v16_checkpoint_is_never_accepted_as_diagnostic():

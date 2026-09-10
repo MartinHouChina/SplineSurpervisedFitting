@@ -1,6 +1,6 @@
 # v16 数学定义
 
-本文只描述 `objective_version=candidate_selection_counterfactual_bspline_v16`、`simplification_contract=ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2` 的当前实现。当前主协议使用 `Kc=56` 个内部候选、合成 source `K=4..56`（控制顶点 8..60）和 `MSE<=1e-4`。三次开放样条全保留时完整节点向量为 64 项、控制顶点为 60 个。v16 不使用 v12–v15 的离线教师，但继承并改良了其中有效的一次性 `adaptive beta + mass-TopK` 思路；存活节点重定位由 v16 的集合条件解码器重新实现。
+本文只描述 `objective_version=candidate_selection_counterfactual_bspline_v16`、`simplification_contract=ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3` 的当前实现。当前主协议使用 `Kc=56` 个内部候选、合成 source `K=4..56`（控制顶点 8..60）和 `MSE<=1e-4`。三次开放样条全保留时完整节点向量为 64 项、控制顶点为 60 个。v16 不使用 v12–v15 的离线教师，但继承并改良了其中有效的一次性 `adaptive beta + mass-TopK` 思路；存活节点重定位由 v16 的集合条件解码器重新实现。
 
 ## 1. 阈值约束目标
 
@@ -254,7 +254,7 @@ L_{\mathrm{proposal}}
 +\lambda_{\mathrm{assign}}L_{\mathrm{assign}}.
 \]
 
-当前 \(\lambda_{\mathrm{cov}}=\lambda_{\mathrm{assign}}=1\)，无几何标签的真实曲线仅贡献 dense 拟合项。前 32/96 个 epoch 属于 Proposal；该阶段的 synthetic draws 有 50% 来自 `K=40..56`，其余来自 `K=4..39`。后 64 个 Joint epoch 恢复 K=4..56 原始抽样分布。有序监督缓解多对一塌缩，但不会增加候选容量；由于当前 \(K_c=K_{\max}=56\)，边界层仍没有任何冗余候选，必须独立审计。
+当前 \(\lambda_{\mathrm{cov}}=\lambda_{\mathrm{assign}}=1\)，无几何标签的真实曲线仅贡献 dense 拟合项。前 40/104 个 epoch 属于 Proposal；该阶段的 synthetic draws 有 50% 来自 `K=40..56`，其余来自 `K=4..39`。Proposal 到期无条件进入后 64 个 Joint epoch，并恢复 K=4..56 原始抽样分布。有序监督缓解多对一塌缩，但不会增加候选容量；由于当前 \(K_c=K_{\max}=56\)，边界层仍没有任何冗余候选，必须独立报告。
 
 ## 9. 节点组合代价
 
@@ -309,16 +309,32 @@ L_{\mathrm{policy}}
 - 概率质量的数量监督与教师保留/删除候选的成对排序监督；
 - dense proposal 保持项；
 - 默认关闭的熵项；
-- 仅对具有严格误差余量的曲线启用、并由验证通过率渐进控制的复杂度项；
+- 仅对具有严格误差余量的曲线启用、并由 Joint epoch 确定性课程缩放的复杂度项；
 - 均值之外的高误差尾部惩罚。
 
 策略标量可以为负，总 loss 不能解释为 MSE。
 
-## 11. 验证与资格
+## 11. 确定性课程、模型选择与报告
 
-proposal 排序最大化 worst-source dense pass，再最小化 dense MSE。joint 未达 90% 目标时先提高 worst-source deployment pass 并降低 P95/平均 MSE；处于 90% 到 92% 安全线之间时仍优先可靠性；达到 `target + safety margin` 后才先最小化平均 K，再比较 P95 和平均 MSE。
+Proposal 固定训练 40 个 epoch，到期后不检查 aggregate pass，直接进入 Joint。令
+\(e=1,\ldots,64\) 为 Joint epoch；complexity scale 从首个 Joint epoch 的 0 按
+`complexity_ramp_epochs` 线性增加至 `complexity_max_scale`，safety scale 同理从 1 按
+`safety_anneal_epochs` 线性降至 0。该日程只依赖 epoch，不读取验证 pass，因此不会因
+pass 触发冻结、回滚或提前停止。
 
-当前 `V16_FORMAL_PASS_RATE=0.90`：工程协议要求 stage=joint、配置目标和实测 worst-source deployment pass 均不低于 0.90，并且 proposal gate 未被消融绕过。这里 0.90 是跨曲线通过比例；每条曲线仍以 E≤1×10^-4 判定，MSE 约束没有放宽。`source K=56` 与 `Kc=56` 同时位于容量边界、没有冗余候选余量，该层的 dense/deployment pass 必须单列，失败不得通过总体平均或放宽 90% 门槛隐藏。
+验证对每条曲线使用第 9 节同语义的 \(C(z)\)，分别汇总
+`dense_subset_cost` 和 `deployment_subset_cost`。Joint checkpoint 的主选择量为平均逐曲线
+deployment subset cost，即 `mean_per_curve_subset_cost_v1`；未满足
+\(E\le\varepsilon\) 的曲线通过无界 \(2+\max(0,\log(E/\varepsilon))\) 持续推动误差下降，
+满足后才以 K 为主并用有界 MSE 项破同分。Proposal initializer 则按 dense subset cost
+选择。
+
+当前完整性合同为
+`v16_structural_integrity_pass_rates_report_only_v3`：审计 stage、数据/容量、确定性课程、
+最终安全配置、损失启用状态、简化合同与 checkpoint 选择规则。aggregate pass、K=56
+边界 pass、平均 K、count MAE 及节点匹配指标都必须原样报告，但不控制阶段切换、
+checkpoint 保存、STOP 或 benchmark eligibility。每条曲线仍以
+\(E\le1\times10^{-4}\) 判定通过；删除低 pass 曲线或放宽单曲线阈值都不允许。
 
 代码对应：
 

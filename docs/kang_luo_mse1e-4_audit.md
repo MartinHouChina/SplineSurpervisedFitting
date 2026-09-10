@@ -5,6 +5,13 @@
 本记录只用于核查实现和解释失效阶段。当前公平协议为 `Kc=56`；正式统计仍须
 运行完整的六方法 benchmark。
 
+Ours 使用 `ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3` 简化合同和
+`mean_per_curve_subset_cost_v1` checkpoint 选择。Proposal 40 epochs 后按计划
+无条件进入 Joint 64 epochs；Joint 的 complexity `0→max` 与 safety `1→0` 仅随
+epoch 变化，不读取数据集 pass。完整性合同
+`v16_structural_integrity_pass_rates_report_only_v3` 明确规定 pass 只报告，不参与
+STOP、checkpoint 选择或 benchmark eligibility。
+
 - 三次开放 B 样条，192 个输入点；
 - 合成 source internal K 为 4..56（控制顶点 8..60），并启用 source-subset 最简性证书；
 - 合成节点显式使用 `knot_min_span=0.01`；底层通用 synthetic 生成器的旧 0.02
@@ -69,7 +76,8 @@ seed 为 20260908。下表是旧 source K=4..24、旧 K64 内部候选配置留�
 - 每种方法使用相同曲线、参数维数、阈值和最终 refit；
 - 同时报告 MSE、通过率、最终内部节点数和完整方法时间。
 - 当前 `source K=56` 与方法容量 56 同时到达边界，没有冗余候选余量；必须
-  单独报告该层通过率，失败仍计入 90% worst-source 资格，不能放宽门槛。
+  单独报告该层 dense/deployment 通过率，失败仍留在分母中；该统计不构成
+  checkpoint 或 benchmark 的资格门槛。
 
 完整运行入口见 [训练与评测流程](training_pipeline.md)；实现位于
 [Kang 适配](../src/spline_fitting/evaluation/sparse_knot_paper.py) 和

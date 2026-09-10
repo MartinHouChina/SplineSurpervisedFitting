@@ -49,11 +49,11 @@ def test_script_encodes_the_requested_training_and_fair_comparison_contract() ->
     text = SCRIPT.read_text(encoding="utf-8")
 
     training_fragments = (
-        '"ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2"',
-        '[string]$RunName = "candidate_selection_v16_mse1e-4_k56_ordered_highk"',
+        '"ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3"',
+        '[string]$RunName = "candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost"',
         '"candidate_selection_v16_mse5e-5_k64.proposal.pt"',
-        '[int]$Epochs = 96',
-        '[int]$ProposalEpochs = 32',
+        '[int]$Epochs = 104',
+        '[int]$ProposalEpochs = 40',
         '[int]$TrainSize = 3000',
         '[int]$ValSize = 600',
         '[int]$RealValSize = 100',
@@ -123,6 +123,11 @@ def test_script_encodes_the_requested_training_and_fair_comparison_contract() ->
     )
     assert '"--resume"' not in text
     assert '"--overwrite"' not in text
+    assert '"--proposal-pass-target"' not in text
+    assert '"--deployment-pass-target"' not in text
+    assert '"--complexity-pass-margin"' not in text
+    assert '"--allow-infeasible-proposals"' not in text
+    assert '"--required-pass-rate"' not in text
 
 
 def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
@@ -150,8 +155,15 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
     assert manifest["checkpoint"].endswith("pytest_v16_mse1e4.pt")
     assert manifest["requested_profile"] == {
         "simplification_contract": (
-            "ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2"
+            "ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3"
         ),
+        "checkpoint_selection": "mean_per_curve_subset_cost_v1",
+        "qualification_contract": (
+            "v16_structural_integrity_pass_rates_report_only_v3"
+        ),
+        "aggregate_pass_role": "reporting_reference_only",
+        "simplification_curriculum": "deterministic_linear_by_joint_epoch",
+        "aggregate_pass_feedback": False,
         "mse_tolerance": 1e-4,
         "candidate_internal_knots": 56,
         "full_cubic_knot_vector_size_at_all_keep": 64,
@@ -159,8 +171,8 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
         "source_control_points": "8..60",
         "knot_min_span": 0.01,
         "points": 192,
-        "epochs": 96,
-        "proposal_epochs": 32,
+        "epochs": 104,
+        "proposal_epochs": 40,
         "train_size": 3000,
         "validation_size": 600,
         "synthetic_boundary_validation_size": 32,
@@ -267,7 +279,12 @@ def test_diagnostic_dry_run_is_isolated_and_marks_all_consumers(
     assert "--val-size 64" in training
     assert "--real-val-size 16" in training
     assert "--real-fraction 0.25" in training
-    assert "--allow-infeasible-proposals" in training
+    assert "--allow-infeasible-proposals" not in training
+    assert "--proposal-pass-target" not in training
+    assert "--deployment-pass-target" not in training
+    assert "--complexity-pass-margin" not in training
+    inspection = manifest["phases"]["inspect_checkpoint"]["command"]
+    assert "--required-pass-rate" not in inspection
     for phase in (
         "benchmark_six_methods",
         "plot_four_metrics",

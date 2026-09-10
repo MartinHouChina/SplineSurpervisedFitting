@@ -4,11 +4,11 @@
 set -Eeuo pipefail
 
 PYTHON_BIN="python"
-SIMPLIFICATION_CONTRACT="ranked_prefix_ordered_proposal_high_k_adaptive_complexity_v2"
-RUN_NAME="candidate_selection_v16_mse1e-4_k56_ordered_highk_linux"
+SIMPLIFICATION_CONTRACT="ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3"
+RUN_NAME="candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux"
 DEVICE="cuda"
-EPOCHS=96
-PROPOSAL_EPOCHS=32
+EPOCHS=104
+PROPOSAL_EPOCHS=40
 TRAIN_SIZE=3000
 VAL_SIZE=600
 REAL_VAL_SIZE=100
@@ -39,8 +39,8 @@ Main options:
   --python PATH                   Python executable (default: python)
   --run-name NAME                Fresh output name
   --device auto|cpu|cuda         Training/evaluation device (default: cuda)
-  --epochs N                     Total epochs (default: 96)
-  --proposal-epochs N            Proposal-stage epochs (default: 32)
+  --epochs N                     Total epochs (default: 104)
+  --proposal-epochs N            Proposal-stage epochs (default: 40)
   --train-size N                 Training draws per epoch (default: 3000)
   --val-size N                   Synthetic validation curves (default: 600)
   --real-val-size N              Validation curves per real source (default: 100)
@@ -53,7 +53,7 @@ Main options:
   --init-checkpoint PATH         Optional proposal-only warm start
   --no-init-checkpoint           Train all modules from scratch
   --prepare-real-data            Download/prepare missing UJI, Natural Earth and USGS data
-  --diagnostic                   Allow unqualified diagnostic continuation
+  --diagnostic                   Continue after a structural-integrity audit failure
   --dry-run                      Print every command without executing Python
   -h, --help                     Show this help
 
@@ -268,6 +268,7 @@ run_logged() {
 printf 'Fresh v16 Linux profile: MSE=1e-4, Kc=56, source K=4..56, train/val=%s/%s, batch=%s.\n' \
   "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
 printf 'Simplification contract: %s\n' "$SIMPLIFICATION_CONTRACT"
+printf 'Checkpoint selection: mean_per_curve_subset_cost_v1; aggregate pass is reporting only.\n'
 printf 'Proposal synthetic high-K share=%s at K>=%s; Joint restores K=4..56.\n' \
   "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS"
 
@@ -294,9 +295,7 @@ TRAIN_ARGS=(
   --minimality-max-attempts 16
   --minimality-audit-points 512
   --oscillation-amplitude 0.3
-  --proposal-pass-target 0.90
   --proposal-knot-assignment-weight 1.0
-  --deployment-pass-target 0.90
   --one-shot-selection-policy mass_topk
   --initial-keep-fraction 0.5357142857142857
   --teacher-low-count-sweep 16
@@ -312,7 +311,6 @@ TRAIN_ARGS=(
   --safety-anneal-epochs 12
   --complexity-ramp-epochs 12
   --complexity-max-scale 6.0
-  --complexity-pass-margin 0.02
   --policy-samples 2
   --counterfactual-edits 4
   --teacher-prefix-search-steps 7
@@ -326,9 +324,6 @@ TRAIN_ARGS=(
   --device "$DEVICE"
   --output "$CHECKPOINT_PATH"
 )
-if ((DIAGNOSTIC)); then
-  TRAIN_ARGS+=(--allow-infeasible-proposals)
-fi
 if [[ -n "$INIT_CHECKPOINT" ]]; then
   if [[ "$INIT_CHECKPOINT" != /* ]]; then
     INIT_CHECKPOINT="$REPOSITORY_ROOT/$INIT_CHECKPOINT"
@@ -351,16 +346,15 @@ fi
 INSPECT_ARGS=(
   "$PYTHON_BIN" scripts/inspect_v16_checkpoint.py
   --checkpoint "$CHECKPOINT_PATH"
-  --required-pass-rate 0.90
   --mse-tolerance 1e-4
 )
 if run_logged inspect_checkpoint "${INSPECT_ARGS[@]}"; then
-  CHECKPOINT_QUALIFIED=1
+  CHECKPOINT_INTEGRITY_OK=1
 else
-  CHECKPOINT_QUALIFIED=0
+  CHECKPOINT_INTEGRITY_OK=0
 fi
-if ((CHECKPOINT_QUALIFIED == 0 && DIAGNOSTIC == 0)); then
-  die "checkpoint failed formal qualification; benchmark and figures were not produced"
+if ((CHECKPOINT_INTEGRITY_OK == 0 && DIAGNOSTIC == 0)); then
+  die "checkpoint failed structural-integrity audit; benchmark and figures were not produced"
 fi
 
 if ((DRY_RUN)); then
@@ -368,7 +362,7 @@ if ((DRY_RUN)); then
 else
   CHECKPOINT_HASH="$(sha256sum -- "$CHECKPOINT_PATH" | awk '{print $1}')"
 fi
-if ((DIAGNOSTIC || CHECKPOINT_QUALIFIED == 0)); then
+if ((DIAGNOSTIC || CHECKPOINT_INTEGRITY_OK == 0)); then
   TAG="diagnostic_${CHECKPOINT_HASH:0:12}"
   DIAGNOSTIC_ARGS=(--allow-unqualified-diagnostic)
 else

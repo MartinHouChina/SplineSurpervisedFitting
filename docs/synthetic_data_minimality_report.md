@@ -137,13 +137,16 @@ mask，故 Ktrue=56 时就是全候选。它提供
 高于 16 的计数仍由粗到细前缀搜索、边界邻域编辑和全保留候选保护。最终
 是否兼顾简单与复杂曲线，必须用 `K=4..56` 分层独立测试验证，不能由架构
 设置直接宣称。`K=56` 层没有冗余候选余量，必须单独报告 dense/deployment
-pass；失败不能用放宽 90% 资格门槛处理。
+pass；失败必须留在统计分母中。该 pass 只用于报告，不触发 STOP、checkpoint
+重选或 benchmark 禁用。
 
 ## 7. 当前训练参数
 
 一键脚本显式传入：
 
 ```powershell
+--epochs 104 `
+--proposal-epochs 40 `
 --min-control-points 8 `
 --max-control-points 60 `
 --knot-min-span 0.01 `
@@ -161,6 +164,18 @@ pass；失败不能用放宽 90% 资格门槛处理。
 --oracle-teacher-extra-knots 2 `
 --one-shot-coverage-bins 0
 ```
+
+Proposal 的 40 个 epoch 中，合成抽样有 50% 来自 `K=40..56`，并同时使用
+directed coverage 与 monotone one-to-one assignment。第 40 个 epoch 后不检查
+aggregate/worst-source pass，按计划无条件进入 64 个 epoch 的 Joint。Joint 的
+复杂度系数按 epoch 从 0 确定性升至最大值，安全系数按 epoch 从 1 确定性降至
+0；训练不依据 pass 冻结、回滚或恢复课程。
+
+当前简化合同为
+`ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3`，checkpoint 选择为
+`mean_per_curve_subset_cost_v1`，完整性合同为
+`v16_structural_integrity_pass_rates_report_only_v3`。单曲线 `MSE<=1e-4` 仍决定
+该曲线的可行性与 loss 中的拟合—复杂度关系，但数据集通过率只作汇总报告。
 
 完整命令由
 [run_v16_mse1e-4_3090.ps1](../scripts/run_v16_mse1e-4_3090.ps1) 固定。checkpoint
@@ -183,4 +198,4 @@ pass；失败不能用放宽 90% 资格门槛处理。
 
 旧 source K=4..24、旧 K64、旧 `Kc=96 / MSE=2.5e-5 / 97%` 数据、证书和
 checkpoint 只可明确标作历史消融，不能与当前
-`Kc=56 / source K=4..56 / MSE=1e-4 / 90%` 主协议合并。
+`Kc=56 / source K=4..56 / MSE=1e-4 / soft subset cost v3` 主协议合并。

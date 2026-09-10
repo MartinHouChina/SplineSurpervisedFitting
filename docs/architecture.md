@@ -14,7 +14,10 @@ KeepMask 和重定位后的存活节点。最终控制顶点不由网络回归�
 | 合成节点最小 span | 0.01（显式设置；底层生成器旧 0.02 默认仅兼容历史） |
 | 网络内部候选容量 `Kc` | 56 |
 | 单曲线阈值 | `MSE <= 1e-4` |
-| 正式资格 | worst-source deployment pass `>= 90%` |
+| 简化合同 | `ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3` |
+| checkpoint 选择 | `mean_per_curve_subset_cost_v1` |
+| 完整性合同 | `v16_structural_integrity_pass_rates_report_only_v3` |
+| 数据集通过率 | 只报告；不参与 STOP、checkpoint 选择或 benchmark 准入 |
 | Joint 初始保留比例 | `30/56≈0.535714`（目标初始 keep mass 约 30） |
 | 低计数教师穷举 | `K=4..16` |
 | 合成计数语义 | `upper_bound` |
@@ -128,8 +131,9 @@ K_{\min},56\right),
 
 然后只执行一次全局 Top-K。当前训练从 `(sigma_s,K_s)=(0.20,2)` 退火到
 `(0.03,0)`；Joint 初始保留概率质量设为 `(30/56)*Kc≈30`。它只定义训练
-起点，不是部署最终 K；部署数量仍由每条曲线的 beta 与概率质量决定。当 worst-source pass 低于
-90% 时，训练反馈会减弱复杂度压力并恢复安全储备。
+起点，不是部署最终 K；部署数量仍由每条曲线的 beta 与概率质量决定。验证
+pass 只作统计报告，训练调度不会读取 aggregate/worst-source pass，也不会据此
+冻结复杂度、恢复安全储备或回滚权重。
 
 当前设置 `--one-shot-coverage-bins 0`，即不强制在固定参数区间预留节点。
 固定分区会让简单曲线即使关键几何集中在局部，也被迫消耗低 K 预算。复杂
@@ -176,14 +180,15 @@ geometry oracle 先将候选映射到真参数域，再做一维单调一对一�
 
 这解决两类相反问题：复杂曲线可使用至多 56 个候选维持召回；简单曲线则由
 逐计数低 K 扫描、oracle 教师、约 30 的初始质量和取消固定分区得到更细的简化信号。
-容量边界 `source K=56` 没有冗余余量，其失败不能靠降低 90% 正式资格解决。
+容量边界 `source K=56` 没有冗余余量，因此该层的 dense/deployment pass 必须
+单独、原样报告；它不是训练切换或 benchmark 准入条件。
 
 ## 8. 两阶段训练
 
-### Proposal：前 32 个 epoch
+### Proposal：前 40 个 epoch
 
-全保留 56 个候选，训练几何编码、参数化和候选位置，先确保四个验证来源的
-dense proposal 可行。合成抽样的 50% 来自 `K=40..56`、其余来自 `K=4..39`；
+全保留 56 个候选，训练几何编码、参数化和候选位置，重点提升四个验证来源的
+dense proposal 可行性。合成抽样的 50% 来自 `K=40..56`、其余来自 `K=4..39`；
 directed coverage 保护召回，detached minimum-L1 monotone one-to-one assignment
 为每个真节点分配不同候选并回传坐标 SmoothL1。Selector 在该阶段冻结。
 
@@ -191,12 +196,22 @@ directed coverage 保护召回，detached minimum-L1 monotone one-to-one assignm
 rank-to-rank。它能缓解多对一候选塌缩，但不能增加候选容量，因此 K=56 层仍无
 冗余余量。
 
+第 40 个 epoch 结束后，Proposal 按计划无条件进入 Joint，并载入已保存的最低
+dense subset cost 初始化；dense/deployment pass 无论高低都不会触发 STOP 或延长
+Proposal。
+
 ### Joint：后 64 个 epoch
 
 同时训练候选排序、一次性数量选择、参数反馈和存活节点重定位。计数、位置、
-反事实组合、拟合可行性和复杂度共同优化。复杂度权重最多放大到 6 倍，但只在
-worst-source deployment pass 保持 90% 及安全余量时增强。
+反事实组合、拟合可行性和复杂度共同优化。Joint 的复杂度系数只按 joint epoch
+从 0 确定性线性升至设定最大值，安全系数只按 epoch 从 1 确定性线性降至 0；
+该课程不读取验证 pass，不做 pass 驱动的冻结、回滚或恢复。复杂度只对单条曲线
+已经达到 `MSE<=1e-4` 的组合生效，未达阈值的曲线优先降低拟合误差。
 Joint 的合成抽样恢复 K=4..56 原始分布，不延续 Proposal 的高 K 过采样。
+
+Joint checkpoint 以 `mean_per_curve_subset_cost_v1` 选择：逐曲线 soft subset cost
+统一比较拟合可行性与节点复杂度。数据集 pass、节点数和匹配指标均保留在报告中，
+但不参与 STOP、checkpoint 选择或 benchmark eligibility。
 
 训练为了比较候选组合会调用多次可微 refit；部署不存在这些教师搜索和额外
 refit。
@@ -216,6 +231,10 @@ refit。
 当前结构入口是
 [v16_network.py](../src/spline_fitting/models/v16_network.py)，训练与完整评估由
 [run_v16_mse1e-4_3090.ps1](../scripts/run_v16_mse1e-4_3090.ps1) 串行执行。
+
+当前简化合同为 `ranked_prefix_ordered_proposal_high_k_soft_subset_cost_v3`，结构
+完整性合同为 `v16_structural_integrity_pass_rates_report_only_v3`。完整性审计检查
+objective、Joint 阶段、容量/数据合同和确定性课程是否成熟；通过率只随结果报告。
 
 若使用旧 K64 proposal warm start，Encoder、ParameterHead 和 CandidateHead 中形状
 兼容的张量直接迁移；65 个旧 interval query 沿参数域插值成 57 个新 query，固定

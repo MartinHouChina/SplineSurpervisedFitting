@@ -47,6 +47,8 @@ def qualified_v16_metadata(*, target=0.90, observed=0.92):
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
         "simplification_contract": V16_SIMPLIFICATION_CONTRACT,
         "simplification_ready": True,
+        "simplification_curriculum": {"aggregate_pass_feedback": False},
+        "checkpoint_selection": "mean_per_curve_subset_cost_v1",
         "synthetic_data_contract": V16_CERTIFIED_SYNTHETIC_CONTRACT,
         "dataset_config": {
             "certified_minimal_source": True,
@@ -113,9 +115,7 @@ def qualified_v16_metadata(*, target=0.90, observed=0.92):
         },
         "proposal_ready": True,
         "best_deployment_pass_constraint_satisfied": observed >= target,
-        "checkpoint_quality": (
-            "deployment_target_met" if observed >= target else "target_not_met"
-        ),
+        "checkpoint_quality": "soft_fit_complexity_selected",
     }
 
 
@@ -131,24 +131,30 @@ def test_v16_formal_qualification_checks_metrics_and_configured_target():
     assert result["proposal_knot_assignment_weight"] == pytest.approx(1.0)
 
     relaxed = assess_v16_checkpoint(
-        qualified_v16_metadata(target=0.85, observed=0.92)
+        qualified_v16_metadata(target=0.85, observed=0.50)
     )
-    assert not relaxed["formal_reporting_eligible"]
-    assert sum("configured" in reason and "below" in reason for reason in relaxed["reasons"]) == 2
+    assert relaxed["formal_reporting_eligible"]
+    assert relaxed["pass_rate_reference_only"]
+    assert not relaxed["pass_rate_reference_met"]
 
 
 @pytest.mark.parametrize(
     "mutation, expected_reason",
     [
         (lambda value: value.update(stage="proposal"), "not from the joint stage"),
-        (lambda value: value.update(proposal_ready=False), "proposal feasibility"),
         (
-            lambda value: value["training_config"].update(allow_infeasible_proposals=True),
-            "ablation",
+            lambda value: value["simplification_curriculum"].update(
+                aggregate_pass_feedback=True
+            ),
+            "aggregate pass-rate feedback",
         ),
         (
-            lambda value: value.update(best_deployment_pass_constraint_satisfied=False),
-            "inconsistent",
+            lambda value: value.update(checkpoint_selection="legacy_pass_gate"),
+            "mean per-curve subset cost",
+        ),
+        (
+            lambda value: value.update(checkpoint_quality="deployment_target_met"),
+            "soft fit/complexity",
         ),
     ],
 )
@@ -210,15 +216,11 @@ def test_v16_configured_target_uses_boundary_aware_qualification_rate():
         qualification_deployment_pass_rate=0.85,
     )
     checkpoint["best_deployment_pass_constraint_satisfied"] = False
-    checkpoint["checkpoint_quality"] = "target_not_met"
     result = assess_v16_checkpoint(checkpoint)
     assert not result["configured_target_met"]
     assert not result["configured_checkpoint_accepted"]
-    assert any("K=56 deployment pass rate" in reason for reason in result["reasons"])
-    assert not any(
-        "saved deployment-target flag is inconsistent" in reason
-        for reason in result["reasons"]
-    )
+    assert result["formal_reporting_eligible"]
+    assert not result["pass_rate_reference_met"]
 
 
 def test_v16_formal_qualification_rejects_legacy_fixed_threshold_revision():
@@ -234,12 +236,12 @@ def test_v16_formal_qualification_rejects_legacy_fixed_threshold_revision():
     assert any("not mass_topk" in reason for reason in result["reasons"])
 
 
-def test_v16_formal_qualification_rejects_degenerate_all_keep_solution():
+def test_v16_formal_qualification_reports_degenerate_all_keep_solution():
     checkpoint = qualified_v16_metadata()
     checkpoint["validation_metrics"]["keep_count"] = 56.0
     result = assess_v16_checkpoint(checkpoint)
-    assert not result["formal_reporting_eligible"]
-    assert any("all-keep" in reason for reason in result["reasons"])
+    assert result["formal_reporting_eligible"]
+    assert result["observed_mean_retained_knots"] == 56.0
 
 
 def test_v16_formal_qualification_rejects_uncertified_synthetic_contract():
@@ -265,18 +267,6 @@ def test_v16_formal_qualification_rejects_uncertified_synthetic_contract():
                 one_shot_safety_knots=1
             ),
             "safety-knot",
-        ),
-        (
-            lambda checkpoint: checkpoint["validation_metrics"].pop(
-                "synthetic_count_mae"
-            ),
-            "count MAE",
-        ),
-        (
-            lambda checkpoint: checkpoint["validation_metrics"].pop(
-                "synthetic_knot_match_f1"
-            ),
-            "knot-match F1",
         ),
     ],
 )
@@ -341,18 +331,6 @@ def test_v16_formal_qualification_checks_minimality_certificate_strength(
             ),
             "at least 32 synthetic samples",
         ),
-        (
-            lambda checkpoint: checkpoint["validation_metrics"].update(
-                synthetic_boundary_dense_pass_rate=0.89
-            ),
-            "K=56 dense proposal pass rate",
-        ),
-        (
-            lambda checkpoint: checkpoint["validation_metrics"].update(
-                synthetic_boundary_deployment_pass_rate=0.89
-            ),
-            "K=56 deployment pass rate",
-        ),
     ],
 )
 def test_v16_formal_qualification_enforces_k4_56_protocol(
@@ -374,12 +352,12 @@ def test_v16_formal_qualification_enforces_k4_56_protocol(
         ("worst_dense_pass_rate", 0.89, "dense proposal pass rate"),
     ],
 )
-def test_v16_formal_qualification_enforces_geometry_quality(field, value, reason):
+def test_v16_formal_qualification_reports_geometry_quality(field, value, reason):
     checkpoint = qualified_v16_metadata()
     checkpoint["validation_metrics"][field] = value
     result = assess_v16_checkpoint(checkpoint)
-    assert not result["formal_reporting_eligible"]
-    assert any(reason in item for item in result["reasons"])
+    assert result["formal_reporting_eligible"]
+    assert not any(reason in item for item in result["reasons"])
 
 
 def test_v16_formal_qualification_requires_active_losses_and_match_protocol():

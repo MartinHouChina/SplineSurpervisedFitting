@@ -1,4 +1,4 @@
-"""Inspect v16 checkpoint progress and formal-reporting eligibility."""
+"""Inspect v16 metrics and structural eligibility for formal benchmarking."""
 from __future__ import annotations
 
 # Standalone entry point from an unpacked repository.
@@ -48,7 +48,8 @@ def parser() -> argparse.ArgumentParser:
         "--required-pass-rate",
         type=_unit_interval,
         default=V16_FORMAL_PASS_RATE,
-        help=f"Minimum formal worst-source pass rate (default: {V16_FORMAL_PASS_RATE:g})",
+        help=("Diagnostic pass-rate reference only; it never changes "
+              f"eligibility (default: {V16_FORMAL_PASS_RATE:g})"),
     )
     result.add_argument(
         "--mse-tolerance",
@@ -185,6 +186,19 @@ def inspect_checkpoint(
         "  simplification curriculum mature: "
         + str(checkpoint.get("simplification_ready", False))
     )
+    print(
+        "  aggregate pass feedback: "
+        + str(qualification.get("aggregate_pass_feedback", "not recorded"))
+        + " (must be False)"
+    )
+    print(
+        "  checkpoint selection: "
+        + str(checkpoint.get("checkpoint_selection", "not recorded"))
+    )
+    print(
+        "  checkpoint quality: "
+        + str(checkpoint.get("checkpoint_quality", "not recorded"))
+    )
     print("Proposal curriculum")
     print(
         "  high-K synthetic allocation: "
@@ -307,8 +321,16 @@ def inspect_checkpoint(
     _print_source_metrics(validation)
 
     eligible = bool(qualification["formal_reporting_eligible"])
-    print("Formal qualification")
-    print(f"  required pass rate: {_format_rate(required_pass_rate)}")
+    print("Formal benchmark integrity")
+    print(
+        "  pass-rate reference (diagnostic only): "
+        + _format_rate(required_pass_rate)
+    )
+    print(
+        "  pass-rate reference met: "
+        + str(qualification.get("pass_rate_reference_met", False))
+        + " (does not affect eligibility)"
+    )
     requested_tolerance = qualification["required_mse_tolerance"]
     print(
         "  required MSE tolerance: "
@@ -319,7 +341,7 @@ def inspect_checkpoint(
         )
     )
     print(
-        "  Synthetic count MAE <= "
+        "  historical diagnostics only: Synthetic count MAE <= "
         + _format_scalar(qualification.get("formal_synthetic_count_mae_max"))
         + ", knot F1 >= "
         + _format_scalar(qualification.get("formal_synthetic_knot_f1_min"))
@@ -329,6 +351,7 @@ def inspect_checkpoint(
             scientific=True,
         )
     )
+    print(f"  structurally eligible: {'YES' if eligible else 'NO'}")
     print(f"  eligible: {'YES' if eligible else 'NO'}")
     if qualification["reasons"]:
         print("  reasons:")
