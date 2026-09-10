@@ -318,8 +318,37 @@ def run_published_baseline(
                 "dense_initial_threshold_satisfied": result.dense_initial_threshold_satisfied,
                 "active_internal_knot_count": result.active_count,
                 "cluster_sizes": result.cluster_sizes,
+                "active_cluster_count": len(result.cluster_sizes),
+                "relocated_internal_knot_count": int(
+                    result.relocated_internal_knots.numel()
+                ),
+                "relocated_unique_knot_count": int(
+                    torch.unique_consecutive(
+                        result.relocated_internal_knots
+                    ).numel()
+                ),
+                "relocated_knot_multiplicities": tuple(
+                    int(value)
+                    for value in torch.unique_consecutive(
+                        result.relocated_internal_knots,
+                        return_counts=True,
+                    )[1].tolist()
+                ),
+                "active_to_relocated_compression_ratio": (
+                    float(result.relocated_internal_knots.numel())
+                    / max(1, result.active_count)
+                ),
                 "sparse_stage_mse": float(result.sparse_fit_mse),
                 "sparse_stage_threshold_satisfied": result.threshold_satisfied,
+                # The sparse-stage value belongs to Kang's native ADMM fit,
+                # whereas ``fit`` is the shared endpoint-constrained standard
+                # refit. Record the transition without attributing the whole
+                # difference to relocation alone.
+                "native_sparse_feasible_final_common_refit_failed": (
+                    result.threshold_satisfied
+                    and float(fit.fit_mse) > mse_tolerance + 1e-12
+                ),
+                "sparse_and_final_mse_are_directly_comparable": False,
                 "sparse_iterations": result.sparse_iterations,
                 "sparse_solver_seconds": result.sparse_solver_seconds,
                 "relocation_seconds": result.relocation_seconds,
@@ -356,17 +385,41 @@ def run_published_baseline(
                 "initial_internal_knot_count": int(
                     result.initial_internal_knots.numel()
                 ),
+                "dense_initial_fit_mse": result.dense_initial_fit_mse,
+                "dense_initial_threshold_satisfied": (
+                    result.dense_initial_threshold_satisfied
+                ),
                 "selected_regularization": result.selected_regularization,
                 "sparse_stage_mse": result.sparse_fit_mse,
+                "sparse_stage_threshold_satisfied": (
+                    result.sparse_fit_mse <= mse_tolerance + 1e-12
+                ),
                 "jump_local_maximum_eta": luo_eta,
                 "candidate_internal_knot_count": int(
                     result.candidate_knots.numel()
+                ),
+                "initial_to_candidate_compression_ratio": (
+                    float(result.candidate_knots.numel())
+                    / max(1, result.initial_internal_knots.numel())
+                ),
+                "candidate_refit_mse_before_de": result.candidate_refit_mse,
+                "candidate_refit_threshold_satisfied_before_de": (
+                    result.candidate_refit_mse <= mse_tolerance + 1e-12
+                ),
+                "candidate_selection_lost_sparse_feasibility": (
+                    result.sparse_fit_mse <= mse_tolerance + 1e-12
+                    and result.candidate_refit_mse > mse_tolerance + 1e-12
                 ),
                 "de_population": result.de_population,
                 "de_iterations": result.de_iterations,
                 "de_evaluations": result.de_evaluations,
                 "de_initial_max_error": result.de_initial_max_error,
                 "de_final_max_error": result.de_final_max_error,
+                "de_restored_common_mse_feasibility": (
+                    result.candidate_refit_mse > mse_tolerance + 1e-12
+                    and float(result.final_fit.fit_mse)
+                    <= mse_tolerance + 1e-12
+                ),
                 "paper_native_objective": (
                     "nonsquared Frobenius data term plus l-infinity,1 derivative-jump "
                     "penalty; DE minimizes maximum Euclidean error"

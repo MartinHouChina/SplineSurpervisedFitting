@@ -216,9 +216,17 @@ class MixedTrainingCurves(Dataset):
 
 class ValidationCurves(Dataset):
     def __init__(self, config, real_sources=(), *, size=1000, seed=1_000_000,
-                 real_per_source=100):
+                 real_per_source=100, synthetic_boundary_samples=0):
         if size < 1 or real_per_source < 1:
             raise ValueError("validation counts must be positive")
+        if (
+            isinstance(synthetic_boundary_samples, bool)
+            or not isinstance(synthetic_boundary_samples, int)
+            or synthetic_boundary_samples < 0
+        ):
+            raise ValueError(
+                "synthetic_boundary_samples must be a non-negative integer"
+            )
         options = dict(config)
         self.certified_synthetic_targets = bool(
             options.get("certified_minimal_source", False)
@@ -227,8 +235,31 @@ class ValidationCurves(Dataset):
             return_ground_truth=False,
             cache_samples=True,
         )
-        self.synthetic = SyntheticCubicBSplineDataset(size=size, seed=seed, **options)
-        self.entries = [("Synthetic", self.synthetic, i) for i in range(size)]
+        boundary_size = min(synthetic_boundary_samples, size)
+        random_size = max(size - boundary_size, 1)
+        self.synthetic = SyntheticCubicBSplineDataset(
+            size=random_size,
+            seed=seed,
+            **options,
+        )
+        self.synthetic_boundary = None
+        self.entries = []
+        if boundary_size:
+            boundary_options = dict(options)
+            boundary_options["min_control_points"] = options["max_control_points"]
+            self.synthetic_boundary = SyntheticCubicBSplineDataset(
+                size=boundary_size,
+                seed=seed + 20_000_003,
+                **boundary_options,
+            )
+            self.entries.extend(
+                ("Synthetic", self.synthetic_boundary, i)
+                for i in range(boundary_size)
+            )
+        self.entries.extend(
+            ("Synthetic", self.synthetic, i)
+            for i in range(size - boundary_size)
+        )
         self.selected_real_ids = {}
         for source_index, (label, _, val) in enumerate(real_sources):
             chosen = grouped_indices(val.records, real_per_source, seed + source_index)

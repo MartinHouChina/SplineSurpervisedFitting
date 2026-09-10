@@ -46,7 +46,7 @@ class V16CandidateSelectionNetwork(nn.Module):
         degree: int = 3,
         hidden_dim: int = 128,
         encoder_layers: int = 3,
-        max_internal_knots: int = 64,
+        max_internal_knots: int = 56,
         min_parameter_gap: float = 1e-5,
         min_knot_gap: float = 1e-4,
         attention_heads: int = 4,
@@ -61,6 +61,7 @@ class V16CandidateSelectionNetwork(nn.Module):
         one_shot_safety_knots: int = 0,
         one_shot_coverage_bins: int = 0,
         min_selected_knots: int = 0,
+        initial_keep_fraction: float = 0.95,
         structure_mode: str = "candidate_pruning_one_shot",
     ) -> None:
         super().__init__()
@@ -91,6 +92,11 @@ class V16CandidateSelectionNetwork(nn.Module):
             raise ValueError("one_shot_adaptive_threshold must be Boolean")
         if not math.isfinite(one_shot_safety_sigma) or one_shot_safety_sigma < 0:
             raise ValueError("one_shot_safety_sigma must be finite and non-negative")
+        if (
+            not math.isfinite(initial_keep_fraction)
+            or not 0.0 < initial_keep_fraction < 1.0
+        ):
+            raise ValueError("initial_keep_fraction must lie strictly inside (0,1)")
         for name, value in {
             "one_shot_safety_knots": one_shot_safety_knots,
             "one_shot_coverage_bins": one_shot_coverage_bins,
@@ -119,6 +125,7 @@ class V16CandidateSelectionNetwork(nn.Module):
             one_shot_safety_knots=one_shot_safety_knots,
             one_shot_coverage_bins=one_shot_coverage_bins,
             min_selected_knots=min_selected_knots,
+            initial_keep_fraction=initial_keep_fraction,
             structure_mode=structure_mode,
         )
         self.point_dim, self.degree, self.hidden_dim = point_dim, degree, hidden_dim
@@ -132,6 +139,7 @@ class V16CandidateSelectionNetwork(nn.Module):
         self.one_shot_safety_knots = int(one_shot_safety_knots)
         self.one_shot_coverage_bins = int(one_shot_coverage_bins)
         self.min_selected_knots = int(min_selected_knots)
+        self.initial_keep_fraction = float(initial_keep_fraction)
         self.encoder = GeometryEncoder(point_dim, hidden_dim, encoder_layers)
         self.parameter_head = ParameterHead(
             hidden_dim, min_parameter_gap, "strict", "chord_residual",
@@ -159,10 +167,14 @@ class V16CandidateSelectionNetwork(nn.Module):
             )
             nn.init.normal_(self.adaptive_threshold_head[-1].weight, std=0.01)
             # Raw scores are centred across candidates below, so beta alone
-            # controls the initial cardinality.  Starting at p=0.95 makes the
-            # first mass-TopK mask safely all/near-all keep instead of dropping
-            # half the proposal before the selector has learned deletion risk.
-            nn.init.constant_(self.adaptive_threshold_head[-1].bias, -math.log(19.0))
+            # controls the initial cardinality.  The legacy p=0.95 prior is
+            # retained by the constructor default for checkpoint compatibility;
+            # new trainers can start near the expected source complexity instead
+            # of spending many joint epochs backing away from all-keep.
+            initial_beta = math.log(
+                (1.0 - self.initial_keep_fraction) / self.initial_keep_fraction
+            )
+            nn.init.constant_(self.adaptive_threshold_head[-1].bias, initial_beta)
         self.subset_geometry = nn.Linear(4, hidden_dim)
         self.survivor_attention = nn.MultiheadAttention(
             hidden_dim, attention_heads, batch_first=True

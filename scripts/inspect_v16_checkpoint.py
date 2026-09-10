@@ -187,6 +187,40 @@ def inspect_checkpoint(
     dataset_config = dataset_config if isinstance(dataset_config, Mapping) else {}
     print(f"  certified minimal source: {dataset_config.get('certified_minimal_source', False)}")
     print(
+        "  source control-point range: "
+        + _format_scalar(qualification.get("synthetic_min_control_points"))
+        + ".."
+        + _format_scalar(qualification.get("synthetic_max_control_points"))
+        + " (formal: "
+        + _format_scalar(
+            qualification.get("formal_synthetic_min_control_points")
+        )
+        + ".."
+        + _format_scalar(
+            qualification.get("formal_synthetic_max_control_points")
+        )
+        + ")"
+    )
+    print(
+        "  source internal-knot range: K="
+        + _format_scalar(
+            qualification.get("formal_synthetic_min_internal_knots")
+        )
+        + ".."
+        + _format_scalar(
+            qualification.get("formal_synthetic_max_internal_knots")
+        )
+    )
+    print(
+        "  knot min span: "
+        + _format_scalar(qualification.get("synthetic_knot_min_span"))
+        + " (formal: "
+        + _format_scalar(
+            qualification.get("formal_synthetic_knot_min_span")
+        )
+        + ")"
+    )
+    print(
         "  certificate RMS tolerance: "
         + _format_scalar(dataset_config.get("canonical_knot_tolerance"), scientific=True)
     )
@@ -218,6 +252,16 @@ def inspect_checkpoint(
         + _format_rate(qualification["observed_worst_deployment_pass_rate"])
     )
     print(
+        "  qualification dense/deployment (min of worst-source and K=56): "
+        + _format_rate(
+            qualification.get("observed_qualification_dense_pass_rate")
+        )
+        + " / "
+        + _format_rate(
+            qualification.get("observed_qualification_deployment_pass_rate")
+        )
+    )
+    print(
         "  certified synthetic count MAE: "
         + _format_scalar(qualification.get("synthetic_count_mae"))
     )
@@ -227,6 +271,20 @@ def inspect_checkpoint(
         + " / "
         + _format_scalar(
             qualification.get("synthetic_knot_matched_mae"), scientific=True
+        )
+    )
+    print(
+        "  synthetic boundary: K="
+        + _format_scalar(qualification.get("synthetic_boundary_knot_count"))
+        + ", n="
+        + _format_scalar(qualification.get("synthetic_boundary_sample_count"))
+        + ", dense="
+        + _format_rate(
+            qualification.get("synthetic_boundary_dense_pass_rate")
+        )
+        + ", deployment="
+        + _format_rate(
+            qualification.get("synthetic_boundary_deployment_pass_rate")
         )
     )
     _print_source_metrics(validation)

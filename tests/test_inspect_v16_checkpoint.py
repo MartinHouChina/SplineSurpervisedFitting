@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import inspect_v16_checkpoint as entry
 from spline_fitting.checkpointing import (
     V16_ADAPTIVE_SELECTION_REVISION,
+    V16_CERTIFIED_SYNTHETIC_CONTRACT,
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
     V16_SIMPLIFICATION_CONTRACT,
 )
@@ -25,17 +26,20 @@ def _checkpoint(*, configured: float = 0.90, observed: float = 0.92) -> dict:
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
         "simplification_contract": V16_SIMPLIFICATION_CONTRACT,
         "simplification_ready": True,
-        "synthetic_data_contract": "source_subset_threshold_minimal_v1",
+        "synthetic_data_contract": V16_CERTIFIED_SYNTHETIC_CONTRACT,
         "dataset_config": {
             "certified_minimal_source": True,
             "canonical_knot_tolerance": 0.005,
             "minimality_margin": 0.2,
             "minimality_audit_points": 512,
+            "min_control_points": 8,
+            "max_control_points": 60,
+            "knot_min_span": 0.01,
         },
         "model_config": {
             "one_shot_selection_policy": "mass_topk",
             "one_shot_adaptive_threshold": True,
-            "max_internal_knots": 16,
+            "max_internal_knots": 56,
             "one_shot_safety_sigma": 0.05,
             "one_shot_safety_knots": 0,
         },
@@ -75,10 +79,16 @@ def _checkpoint(*, configured: float = 0.90, observed: float = 0.92) -> dict:
             "deployment_pass_rate": 0.985,
             "worst_dense_pass_rate": 0.98,
             "worst_deployment_pass_rate": observed,
+            "qualification_dense_pass_rate": 0.96,
+            "qualification_deployment_pass_rate": observed,
             "keep_count": 8.0,
             "synthetic_count_mae": 0.75,
             "synthetic_knot_match_f1": 0.82,
             "synthetic_knot_matched_mae": 0.003,
+            "synthetic_boundary_knot_count": 56,
+            "synthetic_boundary_sample_count": 32,
+            "synthetic_boundary_dense_pass_rate": 0.96,
+            "synthetic_boundary_deployment_pass_rate": observed,
             "by_source": {
                 "Synthetic": {
                     "dense_pass_rate": 1.0,
@@ -107,7 +117,12 @@ def test_inspector_reports_metrics_and_returns_qualification_status(tmp_path, ca
     output = capsys.readouterr().out
     assert "stage: joint" in output and "epoch: 73" in output
     assert "certified minimal source: True" in output
+    assert "source control-point range: 8..60" in output
+    assert "source internal-knot range: K=4..56" in output
+    assert "knot min span: 0.01" in output
     assert "overall dense: 99.000%" in output
+    assert "synthetic boundary: K=56, n=32" in output
+    assert "qualification dense/deployment" in output
     assert "Synthetic: dense=100.000%" in output
     assert "target_K=9" in output and "knot_F1=0.82" in output
     assert "eligible: YES" in output and "reasons: none" in output

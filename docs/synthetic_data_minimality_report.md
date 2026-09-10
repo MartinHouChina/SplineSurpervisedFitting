@@ -1,34 +1,36 @@
-# 合成曲线最简性：问题、证书与 v16 处理
+# 合成曲线最简性：证书、边界与当前 v16 处理
 
-## 1. 为什么随机生成的节点数不等于最简节点数
+当前主协议生成三次开放 B 样条：控制顶点 8～60，对应源内部节点
+`K_source=4..56`；每条曲线采样 192 点，阈值为 `MSE<=1e-4`。网络使用
+56 个内部候选（全保留时完整节点向量 64 项、控制顶点 60 个），但候选容量
+与源节点数、最终部署节点数是三个不同概念。
 
-随机控制顶点和随机内部节点只定义了一个“生成表示”，不能自动成为最简表示：
+## 1. 为什么随机源节点数不等于最简节点数
+
+随机控制顶点和随机内部节点只定义一个生成表示，不能自动成为最简表示：
 
 - 同一条 B 样条可通过 Böhm 插结得到任意多的等价冗余节点；
-- 即使没有显式插结，平滑随机曲线在允许误差下也可能被更少节点近似；
-- 有限采样、噪声和参数化都会改变“多少节点足够”的判断。
+- 即使没有显式插结，平滑随机曲线在给定误差下也可能被更少节点近似；
+- 有限采样、观测噪声、参数化和是否允许节点重定位都会改变最小所需节点数。
 
-对旧 v16 规格做过一次固定 seed 审计：二维、192 点、源内部节点 `K=4..20`、
-`RMS=0.005`。100 条干净曲线中，源节点平均为 11.66，贪心阈值简化后平均为
-7.24；96% 的源表示还能继续删点，平均可删 4.42 个、最多 11 个。因此旧式
-`source K` 只能称为生成节点数，不能当作最简复杂度真值。
+因此训练不能把随机生成时的 `K_source` 无条件当成“连续全局最少 K”的精确
+分类标签。
 
-## 2. 本仓库采用的可证明范围
+历史 `K=4..20 / MSE=2.5e-5` 消融曾显示大量随机源表示仍可继续删点；该结果
+只用于说明问题，不是当前 `K=4..56 / MSE=1e-4` 主实验的统计结果。旧
+`K=4..24` 数据也只作为历史范围消融。
 
-v16 正式合成数据默认启用：
+## 2. 当前可证明的最简范围
+
+当前 3090 主训练显式启用：
 
 ```text
 source-subset threshold-minimal certificate
 ```
 
-设干净曲线采样为 `Q*`，固定参数为 `t*`，源内部节点集合为 `U`，工程 MSE
-阈值为 `epsilon`。证书使用
-
-```text
-RMS tolerance = sqrt(epsilon)
-```
-
-并要求：
+设干净采样为 `Q*`，固定参数为 `t*`，源内部节点集合为 `U`，工程阈值为
+`epsilon=1e-4`。证书使用同一 CPU `float64`、端点约束、无平滑、无 ridge
+的标准三次 B 样条最小二乘，并要求
 
 \[
 E(U)\le \sqrt{\epsilon},\qquad
@@ -36,53 +38,138 @@ E(U)\le \sqrt{\epsilon},\qquad
 \sqrt{\epsilon}(1+m),
 \]
 
-其中 `E` 是 CPU `float64`、端点约束、无平滑正则、无 ridge 的标准三次 B 样条
-最小二乘 RMS，`m` 是安全 margin，默认 0.2。
+其中 `E` 是 RMS，`m=0.2`。本协议中：
 
-为什么只检查全部单节点删除就足够？任意真子集 `V⊂U` 至少包含在某个
-`U\{u_j}` 对应的样条空间中。无正则最小二乘进入更小的函数空间后误差不可能下降。
-所以，只要每一个单删空间都不满足阈值，源节点的任何真子集也不可能满足阈值。
+- 完整源表示要求 `RMS<=0.01`，即 `MSE<=1e-4`；
+- 每个单删表示要求 `RMS>0.012`，对应 MSE 大于 `1.44e-4`。
 
-这给出了固定 `t*`、固定源节点候选族内的最少基数证书，不只是一次贪心路径的结果。
+为什么检查全部单节点删除足以覆盖源节点的所有真子集？任意真子集
+`V subset U` 都落在至少一个 `U\{u_j}` 的样条子空间中；固定参数、固定节点
+候选族且无正则时，更小函数空间的最小二乘误差不可能优于包含它的单删空间。
+
+所以该证书准确表明：在固定干净参数化和原始源节点所有子集构成的离散族中，
+没有更小子集满足当前阈值。它比一次贪心删除路径更强，但不是连续全局最优
+证明。
 
 ## 3. 数据生成顺序
 
 ```text
-先固定目标 K
-  → 生成带高频几何细节的干净三次 B 样条
-  → 在均匀 512 点审计网格上检查完整拟合和全部单节点删除
-  → 不通过则重采控制多边形和节点，但不重抽 K
-  → 通过后冻结 source knots、clean points 和证书
-  → 最后才加入观测噪声，作为网络输入
+固定目标 K in 4..56
+  -> 以 knot_min_span=0.01 生成 8..60 个控制顶点和 K 个内部节点
+  -> 生成带相应几何细节的干净三次 B 样条
+  -> 在 512 点干净网格检查完整拟合和全部单节点删除
+  -> 证书失败则重采几何，但不重抽 K
+  -> 证书通过后冻结 clean points、true params、source knots 和证书
+  -> 最后加入观测噪声，得到网络输入
 ```
 
-固定 K 后再拒绝采样，避免较大 K 因更难通过而被悄悄过滤。标签由干净曲线生成，
-噪声只进入网络输入，因此不会改变最简节点数和节点位置标签。
+先固定 K 再拒绝采样，避免高 K 样本因更难通过证书而被静默过滤。真参数、
+真节点和计数来自无噪声源曲线；噪声只进入网络观测。
 
-## 4. v16 当前接线
+`K=56` 个内部节点会把 `[0,1]` 划成 57 个 span。若每个 span 都要求至少
+0.02，总长度下界为 `57*0.02=1.14>1`，因此旧 synthetic 默认
+`knot_min_span=0.02` 在该层数学上不可行。当前主协议必须显式传入
+`--knot-min-span 0.01`；此时下界为 0.57，仍有空间生成非均匀节点。底层
+通用 synthetic 生成器中的 0.02 默认值仅为历史调用兼容，不是当前 K=4..56 数据合同。checkpoint 和实验
+manifest 必须记录实际的 0.01。
 
-`scripts/train_v16.py` 的正式默认值为：
+## 4. 为什么当前把 source K 当上界
 
-| 参数 | 默认值 | 含义 |
-|---|---:|---|
-| `--certified-minimal-source` | 开启 | 使用最简性证书 |
-| `--minimality-margin` | 0.2 | 单删 RMS 至少越过阈值 20% |
-| `--minimality-max-attempts` | 16 | 固定 K 后最多重采次数 |
-| `--minimality-audit-points` | 512 | 干净均匀审计点数 |
-| `--oscillation-amplitude` | 0.3 | 提高 K 与几何复杂度的一致性 |
+证书没有覆盖以下变化：
 
-当 `--mse-tolerance 2.5e-5` 时，保存到数据配置里的证书阈值严格为
-`sqrt(2.5e-5)=0.005`，不会把 MSE 数值误当 RMS。checkpoint 同时保存：
+- 删除后把剩余节点移动到原节点集合之外；
+- 重新预测参数化；
+- 在连续参数域内寻找任意全新节点；
+- 对连续曲线上全部未采样位置作全局验证。
+
+v16 的 `decode_subset` 正好允许参数更新和存活节点重定位。因此某个网络组合
+可能用少于 `K_source` 的节点达到 `1e-4`，而不与源子集证书矛盾。
+
+当前训练使用
 
 ```text
-synthetic_data_contract = source_subset_threshold_minimal_v1
-dataset_config.certified_minimal_source = true
+--synthetic-count-role upper_bound
 ```
 
-正式资格检查会拒绝没有这两个字段的旧权重。`--no-certified-minimal-source` 仅用于
-消融和诊断，其结果不能作为正式最简数据实验。
+含义是：源 K 提供有证书的复杂度上界和几何监督，但当在线教师找到更小且
+实际可行的重定位组合时，不用精确计数损失把预测重新拉回 source K。这比把
+源 K 当 exact 标签更符合网络允许移动节点的建模范围，也能减少简单曲线
+系统性 over-count。
 
-样本可审计字段包括：
+论文中可准确写为：
+
+> Each synthetic source is certified tolerance-minimal over all subsets of its
+> original knot set under the fixed clean parameterization. The source count is
+> used as an upper bound when continuous relocation is enabled.
+
+不能写成“源节点数是连续全局最少节点证明”。
+
+## 5. geometry-oracle 教师如何避免错误自举
+
+仅按当前 Selector 分数搜索 ranked prefix，训练初期可能发生闭环：错误排序
+生成错误教师，错误教师又强化原排序。当前合成训练额外启用：
+
+```text
+--synthetic-geometry-oracle-teacher
+--oracle-teacher-extra-knots 2
+```
+
+oracle 先将 56 个 proposal 节点映射到真参数域，再与源真节点做一维单调
+一对一匹配，构造 `Ktrue` mask；同时加入截断到 Kc 的 `Ktrue+2` 安全扩展
+mask，故 Ktrue=56 时就是全候选。它提供
+与当前 Keep 分数无关的几何锚点，并参与实际 refit 可行性比较。
+
+该 oracle 只用于有真节点的合成训练样本；真实数据训练和任何部署都不读取
+真节点。部署仍然只有一次网络前向、一次 Top-K 和一次最终 refit。
+
+## 6. 简单曲线与复杂曲线的共同处理
+
+当前采用 `Kc=56`，使完整三次开放节点向量上限恰为 64 项。source K 描述
+生成复杂度，Kc 描述候选槽位；两者最大值相同不代表部署必须全保留。简单
+曲线的细粒度选择由以下训练机制完成：
+
+1. `--initial-keep-fraction 0.5357142857142857`，令 Kc=56 的 Joint 初始质量目标约为 30；它不是部署最终 K；
+2. `--teacher-low-count-sweep 16`，逐一检查 `K=4..16`，给简单曲线细粒度教师；
+3. `--synthetic-count-role upper_bound`，允许可行的低于 source-K 组合；
+4. geometry-oracle `Ktrue` 与 `Ktrue+2`，补足早期候选排序；
+5. `--one-shot-coverage-bins 0`，取消会强占简单曲线预算的固定区间锚点。
+
+高于 16 的计数仍由粗到细前缀搜索、边界邻域编辑和全保留候选保护。最终
+是否兼顾简单与复杂曲线，必须用 `K=4..56` 分层独立测试验证，不能由架构
+设置直接宣称。`K=56` 层没有冗余候选余量，必须单独报告 dense/deployment
+pass；失败不能用放宽 90% 资格门槛处理。
+
+## 7. 当前训练参数
+
+一键脚本显式传入：
+
+```powershell
+--min-control-points 8 `
+--max-control-points 60 `
+--knot-min-span 0.01 `
+--candidate-knots 56 `
+--mse-tolerance 1e-4 `
+--certified-minimal-source `
+--minimality-margin 0.2 `
+--minimality-max-attempts 16 `
+--minimality-audit-points 512 `
+--oscillation-amplitude 0.3 `
+--initial-keep-fraction 0.5357142857142857 `
+--teacher-low-count-sweep 16 `
+--synthetic-count-role upper_bound `
+--synthetic-geometry-oracle-teacher `
+--oracle-teacher-extra-knots 2 `
+--one-shot-coverage-bins 0
+```
+
+完整命令由
+[run_v16_mse1e-4_3090.ps1](../scripts/run_v16_mse1e-4_3090.ps1) 固定。checkpoint
+应保存数据合同、证书配置和教师配置；旧 checkpoint 不会被静默升级，只能
+作为允许字段匹配的网络初始化，不能提供当前数据合同下的实验结论。
+
+## 8. 可审计字段与更强实证
+
+单样本至少保存：
 
 - `source_minimality_certified`；
 - `source_full_fit_rms` / `source_full_fit_mse`；
@@ -90,46 +177,10 @@ dataset_config.certified_minimal_source = true
 - `source_minimality_required_rms` / `source_minimality_required_mse`；
 - `source_generation_attempts` 和 `clean_points`。
 
-独立 benchmark 会重新读取 checkpoint 的数据合同，并逐条断言证书为真且
-`source K == canonical K`。
+若需要比源子集证书更强的实证，可对 `K_source-1` 个可移动节点执行多启动
+`delete + relocation` 对抗审计。若所有启动都失败，可称
+`relocation-resistant empirical audit`，仍不能声称数学上的连续全局最优。
 
-## 5. 可以声称什么，不能声称什么
-
-论文中可以准确表述为：
-
-> Each synthetic source is certified tolerance-minimal over all subsets of its
-> original knot set under the fixed clean parameterization.
-
-不能把它写成“连续全局最少节点证明”，因为证书不覆盖：
-
-- 删除后允许所有剩余节点任意连续重定位；
-- 任意重新参数化；
-- 连续曲线上所有未采样位置；
-- 非凸节点优化的数学全局最优。
-
-若需要更强的实证，可以额外对 `K-1` 个节点做多启动 `delete + relocation` 对抗审计；
-若始终失败，可称为 relocation-resistant empirical audit，仍不能称全局证明。
-
-对于“零误差精确表示”的理论讨论，还可用截断幂形式
-
-\[
-C(t)=P_3(t)+\sum_j b_j(t-u_j)_+^3
-\]
-
-并约束每个 `b_j` 非零且有下界，使每个 `u_j` 对应不可消失的三阶导数跳变。但工程
-任务允许非零误差，所以正式实验仍应以这里的阈值证书为准。
-
-## 6. 复现实验命令片段
-
-以下参数已是 v16 默认值，正式命令中仍建议显式写出，便于审稿复现：
-
-```powershell
---certified-minimal-source `
---minimality-margin 0.2 `
---minimality-max-attempts 16 `
---minimality-audit-points 512 `
---oscillation-amplitude 0.3
-```
-
-旧 checkpoint 不会被静默升级；需要用新输出路径重新训练。旧模型可以作为网络参数的
-warm-start，但不能提供新数据合同的实验结论。
+旧 source K=4..24、旧 K64、旧 `Kc=96 / MSE=2.5e-5 / 97%` 数据、证书和
+checkpoint 只可明确标作历史消融，不能与当前
+`Kc=56 / source K=4..56 / MSE=1e-4 / 90%` 主协议合并。

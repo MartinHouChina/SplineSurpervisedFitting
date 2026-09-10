@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 import torch
 from torch.utils.data import Dataset
@@ -78,6 +79,8 @@ def build_open_clamped_knot_vector(
         )
     if not 0.0 <= nonuniformity <= 1.0:
         raise ValueError("nonuniformity must lie in [0, 1]")
+    if not math.isfinite(min_span) or min_span <= 0.0:
+        raise ValueError("min_span must be finite and positive")
 
     num_internal = num_control_points - degree - 1
     num_spans = num_internal + 1
@@ -557,6 +560,7 @@ def generate_cubic_bspline_sample(
     oscillation_amplitude: float = 0.3,
     generator: torch.Generator | None = None,
     dtype: torch.dtype = torch.float32,
+    knot_min_span: float = 0.02,
 ) -> CubicBSplineSample:
     """Generate sampled points from a random open cubic B-spline curve."""
     degree = 3
@@ -597,6 +601,7 @@ def generate_cubic_bspline_sample(
         num_control_points,
         degree,
         nonuniformity=knot_nonuniformity,
+        min_span=knot_min_span,
         generator=generator,
         dtype=dtype,
     )
@@ -668,6 +673,7 @@ class SyntheticCubicBSplineDataset(Dataset):
         resample_each_epoch: bool = False,
         epoch_seed_stride: int = 1_000_003,
         dtype: torch.dtype = torch.float32,
+        knot_min_span: float = 0.02,
     ) -> None:
         if size <= 0:
             raise ValueError("size must be positive")
@@ -680,6 +686,13 @@ class SyntheticCubicBSplineDataset(Dataset):
         self.max_control_points = max_control_points
         self.noise_std = noise_std
         self.knot_nonuniformity = knot_nonuniformity
+        if not math.isfinite(knot_min_span) or knot_min_span <= 0.0:
+            raise ValueError("knot_min_span must be finite and positive")
+        if knot_min_span * (max_control_points - 3) >= 1.0:
+            raise ValueError(
+                "knot_min_span is too large for max_control_points"
+            )
+        self.knot_min_span = float(knot_min_span)
         self.sampling_nonuniformity = sampling_nonuniformity
         self.turn_strength = turn_strength
         self.certified_minimal_source = bool(certified_minimal_source)
@@ -768,6 +781,7 @@ class SyntheticCubicBSplineDataset(Dataset):
                     max_control_points=source_control_count,
                     noise_std=0.0,
                     knot_nonuniformity=self.knot_nonuniformity,
+                    knot_min_span=self.knot_min_span,
                     sampling_nonuniformity=self.sampling_nonuniformity,
                     turn_strength=self.turn_strength,
                     control_polygon_mode="complexity_aligned",
@@ -845,6 +859,7 @@ class SyntheticCubicBSplineDataset(Dataset):
                 max_control_points=self.max_control_points,
                 noise_std=self.noise_std,
                 knot_nonuniformity=self.knot_nonuniformity,
+                knot_min_span=self.knot_min_span,
                 sampling_nonuniformity=self.sampling_nonuniformity,
                 turn_strength=self.turn_strength,
                 generator=generator,

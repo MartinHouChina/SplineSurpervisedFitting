@@ -1,212 +1,230 @@
 # v16 部署、评估与可视化
 
-v16 的部署路径固定为一次网络前向和一次标准 B 样条 refit。训练时的随机集合、反事实编辑、策略梯度和多次 refit 都不会进入部署。
+当前主协议为 `Kc=56`、合成源内部节点 `K=4..56`（控制顶点 8～60）、
+`MSE<=1e-4`、worst-source deployment pass `>=90%`。部署固定为一次网络
+前向和一次标准 B 样条 refit；训练教师的组合搜索不进入部署。
+合成训练/测试显式使用 `knot_min_span=0.01`，以支持 K=56 的 57 个 span。
 
 ## 1. 用户输入
 
 输入是沿曲线方向排序的 CSV 或 TXT 点云，每行包含二维或三维坐标。脚本会：
 
 1. 检查文件存在、维度一致且数值有限；
-2. 按累计弦长重采样到模型要求的 M 个点；
+2. 按累计弦长重采样到模型要求的 192 个点；
 3. 中心化并按尺度归一化；
 4. 把归一化点云和 MSE 阈值送入网络。
 
-无序点集不能直接使用；本项目没有在部署中求解点的拓扑顺序。
+无序点集不能直接使用；本项目不会在部署时求解点的拓扑顺序。
 
 ## 2. 固定深度部署
 
-~~~text
-normalized points + ε
-  → forward_deployment() × 1
-       encode geometry
-       predict t0
-       generate Kc candidates
-       adaptive β + probability-mass Top-K → KeepMask
-       update t1 and relocate selected knots
-  → materialize U = internal_knots[KeepMask]
-  → endpoint-constrained standard cubic B-spline refit × 1
-  → denormalize curve and control points
-~~~
+```text
+normalized ordered points + epsilon
+  -> forward_deployment() x 1
+       GeometryEncoder
+       ParameterHead: t0
+       CandidateKnotHead: 56 ordered candidates
+       adaptive beta + probability-mass Top-K: KeepMask
+       selected-only parameter feedback and survivor relocation: t1, Udeploy
+  -> endpoint-constrained cubic B-spline refit x 1
+  -> fitted curve + control vertices + internal knots
+```
 
-KeepMask 使用一次性结构化规则：
+KeepMask 使用曲线级动态阈值与概率质量：
 
 \[
 p_j=\sigma((s_j-\bar s)-\beta),\qquad
-\hat K=\left\lceil\sum p_j+0.25\sqrt{\sum p_j(1-p_j)}+2\right\rceil,
+\hat K=\left\lceil\sum_jp_j+
+\sigma_s\sqrt{\sum_jp_j(1-p_j)}+K_s\right\rceil.
 \]
 
-再按分数执行一次 Top-K。β由每条曲线的候选池、全局几何和误差阈值共同预测；这不是部署后的阈值扫描。部署不执行：
+当前训练把安全储备从 `(sigma_s,K_s)=(0.20,2)` 退火到 `(0.03,0)`，部署
+使用 checkpoint 记录的最终状态。筛选只执行一次 Top-K，不扫描阈值，也不按
+最终拟合误差逐曲线回补。节点数是 `KeepMask.sum()`。
 
-- CountHead；
-- BIC；
-- Hard-Concrete 采样；
-- 逐节点删除；
-- beam search；
-- 根据最终 MSE 回补节点。
+当前主模型还使用：Joint 初始保留比例 `30/56≈0.535714`（初始概率质量约
+30，不是部署最终 K）、低计数教师逐一扫描
+`K=4..16`、`synthetic-count-role=upper_bound`、合成 geometry-oracle 教师和
+`one-shot-coverage-bins=0`。这些都是训练设置；不会增加部署分支。
 
-所以它给出统计意义的可行率，而不是逐曲线误差保证。未通过阈值的样本必须如实计入失败。
-
-容量统一按内部节点计数。三次样条的完整节点向量还包含4个零和4个一，所以完整长度64等价于内部上限56；benchmark 可用 `--full-knot-vector-size 64` 显式采用这种记法。
+部署没有 CountHead、BIC、Hard-Concrete、逐节点删除、beam search 或教师
+搜索，因此给出统计意义的通过率，不承诺每条曲线必然满足阈值。
 
 ## 3. checkpoint 正式资格
 
-部署和论文对比入口默认执行统一资格审计；当前 `V16_FORMAL_PASS_RATE=0.90`。正式 checkpoint 需要：
+正式入口会审计：
 
-| 条件 | 要求 |
+| 条件 | 当前要求 |
 |---|---|
-| objective | candidate_selection_counterfactual_bspline_v16 |
+| objective | `candidate_selection_counterfactual_bspline_v16` |
 | stage | joint |
-| 配置的 proposal / deployment target | 均不低于 0.90 |
+| 候选容量 | `Kc=56` |
+| 配置阈值 | `MSE=1e-4` |
+| proposal/deployment target | 均不低于 0.90 |
 | 实测 worst-source deployment pass | 不低于 0.90 |
 | proposal_ready | true |
 | allow-infeasible-proposals | false |
-| 元数据一致性 | 旧质量字段与实测指标不冲突 |
 
-旧 `fast90` 联合训练 checkpoint 使用固定0.5离散化，不能被静默解释成新的动态策略。新的动态β模型必须输出到新文件。若只需要排查旧模型，可添加：
+训练后先执行：
 
-~~~text
---allow-unqualified-diagnostic
-~~~
+```powershell
+python scripts/inspect_v16_checkpoint.py `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --required-pass-rate 0.90 `
+  --mse-tolerance 1e-4
+```
 
-诊断模式必须在 JSON、Markdown 和 PNG 上显示 DIAGNOSTIC NOT FINAL，不能用于论文结论。新建 90% 实验可按工程协议取得正式资格；旧 97% checkpoint 不能通过 `--resume` 修改 target 后重新解释。
+返回码 0 才能用于正式表格和图片。排错时可以显式添加
+`--allow-unqualified-diagnostic`；此时 JSON、Markdown 和 PNG 会标记
+`DIAGNOSTIC NOT FINAL`，不得作为论文结果。
 
-## 4. 点云部署命令
+## 4. 点云部署
 
-正式 checkpoint：
-
-~~~powershell
-python scripts/fit_v16_point_cloud.py --checkpoint outputs/checkpoints/candidate_selection_v16_simplified_certified_k96.pt --point-cloud data/my_curve.csv --mse-tolerance 2.5e-5 --output-dir outputs/fits/v16/my_curve
-~~~
-
-当前 proposal 仅作诊断：
-
-~~~powershell
-python scripts/fit_v16_point_cloud.py --checkpoint outputs/checkpoints/candidate_selection_v16.proposal.pt --point-cloud data/my_curve.csv --mse-tolerance 2.5e-5 --allow-unqualified-diagnostic --output-dir outputs/fits/v16/diagnostic_my_curve
-~~~
+```powershell
+python scripts/fit_v16_point_cloud.py `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --point-cloud data/my_curve.csv `
+  --mse-tolerance 1e-4 `
+  --output-dir outputs/fits/v16_mse1e-4/my_curve
+```
 
 输出：
 
 | 文件 | 内容 |
 |---|---|
-| fit.png | 输入点、拟合曲线、控制多边形和节点在曲线上的位置 |
-| report.json | 参数、内部节点、控制顶点、MSE、计时、checkpoint 资格和输入信息 |
+| `fit.png` | 输入点、拟合曲线、控制多边形和曲线上的节点位置 |
+| `report.json` | 参数、内部节点、控制顶点、MSE、计时、资格和输入信息 |
 
-## 5. MSE 与通过率
+## 5. MSE、通过率和节点数
 
-默认指标为归一化点上的平均平方欧氏误差：
+主误差是归一化点上的平均平方欧氏误差：
 
 \[
-\operatorname{MSE}
-=\frac{1}{M}\sum_{i=0}^{M-1}
-\lVert C(t_i)-q_i\rVert_2^2.
+\operatorname{MSE}=
+\frac{1}{M}\sum_{i=0}^{M-1}\lVert C(t_i)-q_i\rVert_2^2.
 \]
 
-它不取平方根。MSE≤2.5e-5 等价于 RMS≤0.005。
+它不取平方根；`MSE<=1e-4` 等价于 `RMS<=0.01`。正式资格要求每个验证来源
+分别统计通过率，且最差来源不低于 90%。总体通过率不能替代 worst-source。
 
-90% 验收条件是 `worst-source pass rate≥0.90`，其中每条曲线仍只有在 MSE≤2.5e-5 时才计为通过。降低数据集通过率要求不会改变 MSE 阈值，也不会修改失败曲线的误差。
+真实数据还应报告 original-reference MSE，用原始密度参考折线检查 192 点
+重采样之外的形状保真度。真实曲线没有节点真值，不报告节点 precision/recall。
 
-真实数据还应报告 original-reference MSE：在原始密度参考折线上衡量重采样之外的形状保真度。训练和 checkpoint 选择当前只使用 M 个输入点的 MSE，original-reference MSE 是独立部署诊断。
-
-通过率必须同时给出：
-
-- 每个数据源单独的 pass rate；
-- worst-source pass rate；
-- 总体 pass rate。
-
-正式验收以前两项中的 worst-source 为准，防止大量简单合成样本掩盖地理曲线失败。
+`Kc=56` 只表示最多 56 个内部候选。三次开放样条的完整节点向量还包含 4 个
+零和 4 个一，因此全保留时完整节点向量长度为 64，控制顶点数为 60。
 
 ## 6. 时间口径
 
-报告保存两种 Ours 时间：
-
 | 指标 | 范围 |
 |---|---|
-| network time | 一次 forward_deployment；排除数据搬运、refit、绘图和 I/O |
-| full deployment time | 预处理后的网络前向、节点物化和一次最终 refit |
+| network time | 一次 `forward_deployment`；不含数据搬运、refit、绘图和 I/O |
+| full deployment time | 网络前向、节点物化和一次最终 refit |
+| baseline total time | 数值方法从参数化/初始化到最终统一 refit 的完整时间 |
 
-CUDA 测量在计时前后同步并先预热。论文速度比较应使用同一设备、dtype、batch size 和计时边界。若数值基线报告完整搜索时间，就应与 Ours 的 full deployment time 比较；纯 network time 只能标成网络延迟，不能解释成端到端加速比。
+CUDA 计时前后同步并先预热。RTX 3090 会加速 Ours 的训练和网络前向，但
+Park、Liang、Dung、Kang、Luo 及 CPU `float64` refit 主要仍由 CPU 决定。
+论文速度比较使用 full deployment time 对 baseline total time；network time
+只作为网络延迟单列。
 
-3090 通常会显著降低网络前向时间，但对 CPU 小矩阵 refit、数据读取和绘图帮助有限；最终数字仍应在目标硬件重新测量。
+## 7. 六方法四指标正式比较
 
-## 7. 八方法配对测试
+当前主表固定六种方法：Ours、Park–Lee、Liang、Dung–Tjahjowidodo、Kang、
+Luo–Kang–Yang。所有方法处理同一批曲线、使用 56 个内部节点容量上限并交给
+同一标准 refit。四项主指标为 MSE、阈值通过率、最终内部节点数和完整方法
+时间。
 
-~~~powershell
-python scripts/benchmark_v16_datasets.py --checkpoint outputs/checkpoints/candidate_selection_v16_simplified_certified_k96.pt --samples-per-knot-count 2 --real-samples-per-dataset 20 --mse-tolerance 2.5e-5 --max-internal-knots 96 --paper-initial-knots 96 --liang-dense-knots 96 --torch-num-threads 1 --output-dir outputs/comparisons/v16_K4_20_n2_real20
-~~~
+```powershell
+python scripts/benchmark_v16_datasets.py `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --output-dir outputs/comparisons/v16_mse1e-4_k56_six_methods `
+  --method-set published `
+  --samples-per-knot-count 5 `
+  --min-knot-count 4 --max-knot-count 56 `
+  --real-samples-per-dataset 20 `
+  --manifest UJI=data/splits/uji_pen_v2.jsonl `
+  --manifest NaturalEarth=data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
+  --manifest USGS=data/processed/usgs_contours/large_scale/manifest.jsonl `
+  --mse-tolerance 1e-4 `
+  --max-internal-knots 56 --gradient-steps 12 `
+  --paper-initial-knots 56 --paper-admm-iterations 1000 `
+  --paper-lambda-bisections 10 --paper-relocation-iterations 12 `
+  --liang-dense-knots 56 --liang-feature-samples 1025 `
+  --dung-scan-intervals 10 --dung-optimization-iterations 10 `
+  --luo-eta 0.5 --luo-de-population 20 --luo-de-iterations 100 `
+  --network-warmups 10 --network-repeats 100 `
+  --end-to-end-repeats 3 `
+  --torch-num-threads 4 --device cuda
+```
 
-同一批曲线比较：
+中断后只能在实验指纹完全相同时追加 `--resume`。公开方法是按论文目标实现的
+可审计 adaptation，不是作者官方代码；复现边界见
+[公开方法复现](published_knot_methods_reproduction.md)。
 
-1. Ours v16；
-2. Park–Lee 适配；
-3. Liang 适配；
-4. Dung–Tjahjowidodo 适配；
-5. Kang 稀疏适配；
-6. Luo–Kang–Yang 适配；
-7. Yeh 特征 CDF 适配；
-8. 从统一均匀最大节点初始化的贪心删除＋位置更新。
+绘制同一报告的 2×2 四指标图：
 
-这些论文方法是根据公开目标重新实现的可审计 adaptation，不应称为作者官方代码。各方法容量、停止条件、MSE 和时间边界写入 comparison.json。完整协议见 [公开方法复现](published_knot_methods_reproduction.md)。
-
-中断后可在完全相同实验指纹下增加 `--resume`。正式方法对比图只读取实测 JSON，不重新运行任何方法，也不得人工缩放、裁剪或替换 Ours 的误差：
-
-~~~powershell
+```powershell
 python scripts/plot_v16_method_comparison.py `
-  --input outputs/comparisons/v16_K4_20_n2_real20/comparison.json `
-  --output-dir outputs/figures/v16_simplified_certified_k96/method_comparison `
-  --dpi 300
-~~~
+  --input outputs/comparisons/v16_mse1e-4_k56_six_methods/comparison.json `
+  --output-dir outputs/figures/v16_mse1e-4_k56_six_methods/metrics `
+  --method-set published --reference --dpi 300
+```
 
-默认 `--method-set published` 比较 Ours、Park、Liang、Dung、Kang 和 Luo，输出 `v16_published_methods_input.png`。`--reference` 默认启用；若 JSON 含原始真实曲线参考指标，还会生成 `v16_published_methods_reference.png`，可用 `--no-reference` 关闭。增加 `--method-set all` 可把 Yeh 和统一贪心也放入同一张 2×2 图。四个子图依次是 MSE、阈值通过率、最终内部节点数和完整算法时间；Ours 的 network time 只作为独立文字注释，不能替代端到端时间柱。
+图片只读取实测 JSON，不重跑方法，也不得人工缩放或替换某个方法的误差。
 
-## 8. Ours 拟合案例
+合成 `source K=56` 与网络 `Kc=56` 恰好同时到达容量上限，但含义不同。该层
+没有冗余候选余量，报告必须单列其 dense pass 与 deployment pass；任一项失败
+都保留为失败，不能通过降低或平均化 90% worst-source 正式门槛处理。
 
-只展示当前方法的论文案例时使用专用入口：
+## 8. 真实曲线六方法可视化
 
-~~~powershell
-python scripts/visualize_v16_ours_cases.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_simplified_certified_k96.pt `
-  --real-samples-per-dataset 2 `
-  --selection-seed 20260909 `
-  --mse-tolerance 2.5e-5 `
-  --device cuda `
-  --dpi 300 `
-  --output-dir outputs/figures/v16_simplified_certified_k96/ours_cases
-~~~
+每条留出真实曲线生成一张 3×2 图，六个面板共享相同原始参考折线和输入点，
+并显示最终拟合曲线、控制多边形、控制顶点、曲线上的内部节点、MSE、
+PASS/FAIL、最终 K 和完整方法时间；Ours 额外标注 network time。
 
-每条留出测试曲线生成一个 `ours__<dataset>__<sample-id>.png`，同时生成 `ours_cases_overview.png` 和 `deployment_visualizations.json`。单例图包含：
+```powershell
+python scripts/visualize_v16_real_deployments.py `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt `
+  --output-dir outputs/figures/v16_mse1e-4_k56_six_methods/real_cases `
+  --real-samples-per-dataset 2 --selection-seed 20260910 `
+  --manifest UJI=data/splits/uji_pen_v2.jsonl `
+  --manifest NaturalEarth=data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
+  --manifest USGS=data/processed/usgs_contours/large_scale/manifest.jsonl `
+  --mse-tolerance 1e-4 `
+  --max-internal-knots 56 --gradient-steps 12 `
+  --paper-initial-knots 56 --paper-admm-iterations 1000 `
+  --paper-lambda-bisections 10 --paper-relocation-iterations 12 `
+  --liang-dense-knots 56 --liang-feature-samples 1025 `
+  --dung-scan-intervals 10 --dung-optimization-iterations 10 `
+  --luo-eta 0.5 --luo-de-population 20 --luo-de-iterations 100 `
+  --network-warmups 10 --network-repeats 100 `
+  --end-to-end-repeats 3 `
+  --torch-num-threads 4 --device cuda --dpi 300
+```
 
-- 原始参考折线（仅用于评价）和网络实际读取的采样点；
-- Ours 最终部署 B 样条；
-- 控制多边形、带索引的控制顶点 `P_i`；
-- 曲线上的内部节点 `C(u_i)`、带索引的节点位置和完整参数域节点条；
-- 最终内部节点数、输入点 MSE、参考点 MSE、是否通过阈值、network time 与 network+refit 时间。
+完整节点向量和控制顶点坐标写入 `deployment_visualizations.json`。失败样本必须
+保留；不能只挑通过样本展示。
 
-总览图用于快速展示多条曲线的拟合形态，精确节点值、完整节点向量和控制顶点坐标以 JSON 为准。脚本默认使用 UJI、Natural Earth 和 USGS 的独立 test split；可重复传入 `--manifest NAME=PATH` 指定其他已准备的真实数据 manifest。
+## 9. 一键 RTX 3090 流水线
 
-## 9. 真实曲线四方法诊断图
+以下命令按同一协议串行执行新训练、资格检查、六方法合成/真实数据比较、
+四指标绘图和真实曲线六方法可视化：
 
-几何可视化故意只展示 Ours、Kang、Yeh 和统一贪心四种方法，以保持版面可读；这不等于定量 benchmark 只有四个方法。
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/run_v16_mse1e-4_3090.ps1
+```
 
-~~~powershell
-python scripts/visualize_v16_real_deployments.py --checkpoint outputs/checkpoints/candidate_selection_v16_simplified_certified_k96.pt --real-samples-per-dataset 2 --selection-seed 20260909 --mse-tolerance 2.5e-5 --device auto --output-dir outputs/figures/v16_simplified_certified_k96/four_method_cases
-~~~
+脚本默认拒绝覆盖同名产物，也不自动 resume。若 checkpoint 未通过
+90% / `1e-4` 正式门槛，默认在资格检查处停止，不生成可误用的正式结果。
 
-每幅图包含原始参考折线、共同输入点、最终曲线、控制顶点和节点位置；标题给出输入 MSE、参考 MSE、节点数、network time 与完整方法时间。
+## 10. 历史消融边界
 
-## 10. 正式与诊断产物边界
+旧 `Kc=96 / MSE=2.5e-5 / 97%`、旧 K64、旧固定 0.5 KeepMask 和旧八方法图只可
+明确标作历史消融或诊断。它们不是当前主协议，不能与本轮结果混表。Yeh 和
+统一贪心仍可用 `--method-set all` 做附加控制，但当前正式六方法主表不包含
+它们。
 
-`candidate_selection_v16_simplified_certified_k96.pt` 是当前正式训练的目标路径，不是文件名本身即可证明合格的随仓库结果。运行上述两种绘图前必须先执行 `inspect_v16_checkpoint.py` 并得到返回码 0；当前若尚未训练出合格主 `.pt`，就不能声称已经生成正式比较图或正式案例图。
-
-为排查旧权重，可在两个绘图入口增加 `--allow-unqualified-diagnostic`。此时输入 benchmark JSON 本身也必须是允许诊断生成的报告；所有 PNG 和 JSON 会保留 `DIAGNOSTIC NOT FINAL` 标记，不得进入正式论文表格或结论。
-
-## 11. 结果发布检查
-
-1. 先检查 checkpoint qualification，不把 proposal 或 target_not_met 权重当正式模型；
-2. 固定独立 test split、seed、manifest 和 checkpoint SHA-256；
-3. 对所有方法使用同一输入、参数归一化和 MSE 定义；
-4. 同时报告平均、P95、最大 MSE、通过率和节点数；
-5. 区分 network time 与 full method time；
-6. 失败样本不得删除，诊断回退不得伪装成一次性网络结果；
-7. PNG 必须由保存的逐样本 JSON 重绘。
-
-代码入口：[fit_v16_point_cloud.py](../scripts/fit_v16_point_cloud.py)、[benchmark_v16_datasets.py](../scripts/benchmark_v16_datasets.py)、[plot_v16_method_comparison.py](../scripts/plot_v16_method_comparison.py)、[visualize_v16_ours_cases.py](../scripts/visualize_v16_ours_cases.py)、[visualize_v16_real_deployments.py](../scripts/visualize_v16_real_deployments.py)。
+代码入口：[fit_v16_point_cloud.py](../scripts/fit_v16_point_cloud.py)、
+[benchmark_v16_datasets.py](../scripts/benchmark_v16_datasets.py)、
+[plot_v16_method_comparison.py](../scripts/plot_v16_method_comparison.py)、
+[visualize_v16_real_deployments.py](../scripts/visualize_v16_real_deployments.py)。

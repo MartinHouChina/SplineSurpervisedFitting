@@ -12,11 +12,57 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from spline_fitting.data.synthetic import (  # noqa: E402
     SyntheticCubicBSplineDataset,
+    build_open_clamped_knot_vector,
     certify_source_knot_minimality,
+    generate_cubic_bspline_sample,
 )
 
 
 class CanonicalLabelTests(unittest.TestCase):
+    def test_fixed_k56_source_uses_explicit_smaller_minimum_span(self) -> None:
+        sample = generate_cubic_bspline_sample(
+            num_points=192,
+            min_control_points=60,
+            max_control_points=60,
+            knot_min_span=0.01,
+            noise_std=0.0,
+            generator=torch.Generator().manual_seed(5600),
+        )
+        internal = sample.knot_vector[4:-4]
+        spans = torch.diff(
+            torch.cat([internal.new_zeros(1), internal, internal.new_ones(1)])
+        )
+
+        self.assertEqual(internal.numel(), 56)
+        self.assertEqual(sample.control_points.shape[0], 60)
+        self.assertEqual(sample.knot_vector.numel(), 64)
+        self.assertGreaterEqual(float(spans.min()), 0.01 - 1e-6)
+
+        dataset_sample = SyntheticCubicBSplineDataset(
+            size=1,
+            num_points=192,
+            min_control_points=60,
+            max_control_points=60,
+            knot_min_span=0.01,
+            noise_std=0.001,
+            certified_minimal_source=True,
+            canonical_knot_tolerance=0.01,
+            minimality_audit_points=256,
+            return_ground_truth=False,
+            cache_samples=False,
+            seed=5600,
+        )[0]
+        self.assertEqual(dataset_sample["source_internal_knot_count"], 56)
+        self.assertTrue(dataset_sample["source_minimality_certified"])
+
+    def test_knot_builder_rejects_nonfinite_or_nonpositive_minimum_span(
+        self,
+    ) -> None:
+        for value in (float("nan"), float("inf"), 0.0, -0.01):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "finite and positive"):
+                    build_open_clamped_knot_vector(8, min_span=value)
+
     def test_minimality_certificate_rejects_redundant_polynomial_knots(self) -> None:
         parameters = torch.linspace(0.0, 1.0, 129, dtype=torch.float64)
         polynomial_curve = torch.stack(

@@ -16,6 +16,7 @@ from spline_fitting.checkpointing import (
     LATEST_OBJECTIVE_VERSION,
     V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
     V16_ADAPTIVE_SELECTION_REVISION,
+    V16_CERTIFIED_SYNTHETIC_CONTRACT,
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
     V16_FORMAL_PASS_RATE,
     V16_SIMPLIFICATION_CONTRACT,
@@ -46,19 +47,22 @@ def qualified_v16_metadata(*, target=0.90, observed=0.92):
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
         "simplification_contract": V16_SIMPLIFICATION_CONTRACT,
         "simplification_ready": True,
-        "synthetic_data_contract": "source_subset_threshold_minimal_v1",
+        "synthetic_data_contract": V16_CERTIFIED_SYNTHETIC_CONTRACT,
         "dataset_config": {
             "certified_minimal_source": True,
             "canonical_knot_tolerance": 0.005,
             "minimality_margin": 0.2,
             "minimality_audit_points": 512,
+            "min_control_points": 8,
+            "max_control_points": 60,
+            "knot_min_span": 0.01,
         },
         "model_config": {
             "one_shot_selection_policy": "mass_topk",
             "one_shot_adaptive_threshold": True,
             "one_shot_safety_sigma": 0.05,
             "one_shot_safety_knots": 0,
-            "max_internal_knots": 16,
+            "max_internal_knots": 56,
         },
         "stage": "joint",
         "training_config": {
@@ -73,10 +77,16 @@ def qualified_v16_metadata(*, target=0.90, observed=0.92):
         "validation_metrics": {
             "worst_dense_pass_rate": 0.98,
             "worst_deployment_pass_rate": observed,
+            "qualification_dense_pass_rate": 0.96,
+            "qualification_deployment_pass_rate": observed,
             "keep_count": 8.0,
             "synthetic_count_mae": 0.75,
             "synthetic_knot_match_f1": 0.8,
             "synthetic_knot_matched_mae": 0.004,
+            "synthetic_boundary_knot_count": 56,
+            "synthetic_boundary_sample_count": 32,
+            "synthetic_boundary_dense_pass_rate": 0.96,
+            "synthetic_boundary_deployment_pass_rate": 0.92,
         },
         "deployment_config": {
             "mse_tolerance": 2.5e-5,
@@ -154,6 +164,24 @@ def test_v16_formal_qualification_checks_exact_reporting_tolerance():
     assert any("MSE tolerance" in reason for reason in result["reasons"])
 
 
+def test_v16_configured_target_uses_boundary_aware_qualification_rate():
+    checkpoint = qualified_v16_metadata(target=0.90, observed=0.95)
+    checkpoint["validation_metrics"].update(
+        synthetic_boundary_deployment_pass_rate=0.85,
+        qualification_deployment_pass_rate=0.85,
+    )
+    checkpoint["best_deployment_pass_constraint_satisfied"] = False
+    checkpoint["checkpoint_quality"] = "target_not_met"
+    result = assess_v16_checkpoint(checkpoint)
+    assert not result["configured_target_met"]
+    assert not result["configured_checkpoint_accepted"]
+    assert any("K=56 deployment pass rate" in reason for reason in result["reasons"])
+    assert not any(
+        "saved deployment-target flag is inconsistent" in reason
+        for reason in result["reasons"]
+    )
+
+
 def test_v16_formal_qualification_rejects_legacy_fixed_threshold_revision():
     checkpoint = qualified_v16_metadata()
     checkpoint.pop("architecture_revision")
@@ -169,7 +197,7 @@ def test_v16_formal_qualification_rejects_legacy_fixed_threshold_revision():
 
 def test_v16_formal_qualification_rejects_degenerate_all_keep_solution():
     checkpoint = qualified_v16_metadata()
-    checkpoint["validation_metrics"]["keep_count"] = 16.0
+    checkpoint["validation_metrics"]["keep_count"] = 56.0
     result = assess_v16_checkpoint(checkpoint)
     assert not result["formal_reporting_eligible"]
     assert any("all-keep" in reason for reason in result["reasons"])
@@ -236,6 +264,63 @@ def test_v16_formal_qualification_checks_minimality_certificate_strength(
 ):
     checkpoint = qualified_v16_metadata()
     checkpoint["dataset_config"][field] = value
+    result = assess_v16_checkpoint(checkpoint)
+    assert not result["formal_reporting_eligible"]
+    assert any(reason in item for item in result["reasons"])
+
+
+@pytest.mark.parametrize(
+    "mutation,reason",
+    [
+        (
+            lambda checkpoint: checkpoint["dataset_config"].update(
+                min_control_points=9
+            ),
+            "minimum must be 8 control points",
+        ),
+        (
+            lambda checkpoint: checkpoint["dataset_config"].update(
+                max_control_points=59
+            ),
+            "maximum must be 60 control points",
+        ),
+        (
+            lambda checkpoint: checkpoint["dataset_config"].update(
+                knot_min_span=0.02
+            ),
+            "knot_min_span must equal 0.01",
+        ),
+        (
+            lambda checkpoint: checkpoint["model_config"].update(
+                max_internal_knots=64
+            ),
+            "capacity must equal 56",
+        ),
+        (
+            lambda checkpoint: checkpoint["validation_metrics"].update(
+                synthetic_boundary_sample_count=0
+            ),
+            "at least 32 synthetic samples",
+        ),
+        (
+            lambda checkpoint: checkpoint["validation_metrics"].update(
+                synthetic_boundary_dense_pass_rate=0.89
+            ),
+            "K=56 dense proposal pass rate",
+        ),
+        (
+            lambda checkpoint: checkpoint["validation_metrics"].update(
+                synthetic_boundary_deployment_pass_rate=0.89
+            ),
+            "K=56 deployment pass rate",
+        ),
+    ],
+)
+def test_v16_formal_qualification_enforces_k4_56_protocol(
+    mutation, reason,
+):
+    checkpoint = qualified_v16_metadata()
+    mutation(checkpoint)
     result = assess_v16_checkpoint(checkpoint)
     assert not result["formal_reporting_eligible"]
     assert any(reason in item for item in result["reasons"])

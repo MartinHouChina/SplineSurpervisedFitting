@@ -16,6 +16,7 @@ from spline_fitting.data.synthetic import (
     generate_cubic_bspline_sample,
 )
 from spline_fitting.evaluation.knot_diagnostics import build_open_knot_vector
+from spline_fitting.evaluation.bspline_inference import refit_bspline_control_points
 from spline_fitting.evaluation.sparse_knot_paper import (
     _relocate_clusters,
     fit_sparse_knots_paper,
@@ -153,6 +154,56 @@ class SparseKnotPaperTests(unittest.TestCase):
             float((relocated - true_knot).abs()),
             float((starting - true_knot).abs()),
         )
+
+    def test_algorithm4_can_retain_a_double_knot(self) -> None:
+        parameters = torch.linspace(0.0, 1.0, 101, dtype=self.dtype)
+        true_knots = torch.tensor([0.5, 0.5], dtype=self.dtype)
+        controls = torch.tensor(
+            [
+                [0.0, 0.0],
+                [0.15, 0.9],
+                [0.35, -0.8],
+                [0.65, 0.8],
+                [0.85, -0.9],
+                [1.0, 0.0],
+            ],
+            dtype=self.dtype,
+        )
+        points = evaluate_bspline_curve(
+            parameters,
+            controls,
+            build_open_knot_vector(true_knots, degree=3),
+            degree=3,
+        )
+
+        relocated, refits = _relocate_clusters(
+            parameters,
+            points,
+            [torch.tensor([0.4, 0.6], dtype=self.dtype)],
+            degree=3,
+            initial_spacing=0.1,
+            tolerance=1e-4,
+            max_iterations=12,
+        )
+
+        self.assertEqual(relocated.numel(), 2)
+        torch.testing.assert_close(relocated[0], relocated[1])
+        self.assertLess(float((relocated - 0.5).abs().max()), 1e-3)
+        self.assertGreater(refits, 2)
+
+        deployed = refit_bspline_control_points(
+            parameters,
+            points,
+            relocated,
+            degree=3,
+            smoothness_weight=0.0,
+            control_ridge=0.0,
+            interpolate_endpoints=True,
+        )
+        # Multiplicity is part of spline complexity: it must survive the
+        # common refit and count as two knot-vector entries / two basis DOFs.
+        torch.testing.assert_close(deployed.internal_knots, relocated)
+        self.assertEqual(deployed.control_points.shape[0], relocated.numel() + 4)
 
     def test_knots_are_ordered_bounded_and_thresholded(self) -> None:
         parameters = torch.linspace(0.0, 1.0, 65, dtype=self.dtype)

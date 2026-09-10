@@ -71,6 +71,27 @@ def test_baselines_report_common_endpoint_refit_and_euclidean_mse(method: str) -
         assert result.diagnostics["paper_feasibility_repair_used"] is False
         assert "native_final_fit_mse_without_endpoint_constraint" in result.diagnostics
         assert result.diagnostics["native_endpoint_constrained_mse"] == float(fit.fit_mse)
+        assert result.diagnostics["relocated_internal_knot_count"] == sum(
+            result.diagnostics["relocated_knot_multiplicities"]
+        )
+        assert result.diagnostics["relocated_unique_knot_count"] == len(
+            result.diagnostics["relocated_knot_multiplicities"]
+        )
+        assert (
+            result.diagnostics[
+                "native_sparse_feasible_final_common_refit_failed"
+            ]
+            == (
+                result.diagnostics["sparse_stage_threshold_satisfied"]
+                and not result.diagnostics["threshold_satisfied"]
+            )
+        )
+        assert result.diagnostics[
+            "sparse_and_final_mse_are_directly_comparable"
+        ] is False
+    if method == "luo_linf_de_2022_adaptation":
+        assert "dense_initial_fit_mse" in result.diagnostics
+        assert "candidate_refit_mse_before_de" in result.diagnostics
     knot_cap = (
         3
         if method

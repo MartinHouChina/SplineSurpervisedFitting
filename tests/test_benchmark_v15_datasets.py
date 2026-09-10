@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 from spline_fitting.checkpointing import (
     V16_ADAPTIVE_SELECTION_REVISION,
+    V16_CERTIFIED_SYNTHETIC_CONTRACT,
     V16_SIMPLIFICATION_CONTRACT,
 )
 spec = importlib.util.spec_from_file_location("benchmark_v15", ROOT / "scripts/benchmark_v15_datasets.py")
@@ -29,19 +30,22 @@ def v16_checkpoint(*, target=0.90, observed=0.92, stage="joint"):
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
         "simplification_contract": V16_SIMPLIFICATION_CONTRACT,
         "simplification_ready": True,
-        "synthetic_data_contract": "source_subset_threshold_minimal_v1",
+        "synthetic_data_contract": V16_CERTIFIED_SYNTHETIC_CONTRACT,
         "dataset_config": {
             "certified_minimal_source": True,
             "canonical_knot_tolerance": 0.005,
             "minimality_margin": 0.2,
             "minimality_audit_points": 512,
+            "min_control_points": 8,
+            "max_control_points": 60,
+            "knot_min_span": 0.01,
         },
         "model_config": {
             "one_shot_selection_policy": "mass_topk",
             "one_shot_adaptive_threshold": True,
             "one_shot_safety_sigma": 0.05,
             "one_shot_safety_knots": 0,
-            "max_internal_knots": 16,
+            "max_internal_knots": 56,
         },
         "stage": stage,
         "training_config": {
@@ -56,10 +60,16 @@ def v16_checkpoint(*, target=0.90, observed=0.92, stage="joint"):
         "validation_metrics": {
             "worst_dense_pass_rate": 0.98,
             "worst_deployment_pass_rate": observed,
+            "qualification_dense_pass_rate": 0.96,
+            "qualification_deployment_pass_rate": observed,
             "keep_count": 8.0,
             "synthetic_count_mae": 0.75,
             "synthetic_knot_match_f1": 0.8,
             "synthetic_knot_matched_mae": 0.004,
+            "synthetic_boundary_knot_count": 56,
+            "synthetic_boundary_sample_count": 32,
+            "synthetic_boundary_dense_pass_rate": 0.96,
+            "synthetic_boundary_deployment_pass_rate": observed,
         },
         "deployment_config": {
             "mse_tolerance": 2.5e-5,
@@ -94,6 +104,28 @@ def test_balanced_sampling_visits_each_group_and_is_reproducible():
     assert len(set(first)) == 6
     assert len({records[i]["group_id"] for i in first[:3]}) == 3
     assert len(benchmark.balanced_indices(records, 100, 42)) == 12
+
+
+def test_published_method_set_is_exactly_the_requested_six_methods():
+    assert benchmark.PUBLISHED_METHODS == (
+        "ours",
+        "park_dominant_point_2007_adaptation",
+        "liang_feature_iki_2017_adaptation",
+        "dung_direct_knot_2017_adaptation",
+        "kang_sparse_2015_adaptation",
+        "luo_linf_de_2022_adaptation",
+    )
+    arguments = benchmark.parser().parse_args(
+        [
+            "--checkpoint",
+            "checkpoint.pt",
+            "--output-dir",
+            "comparison",
+            "--method-set",
+            "published",
+        ]
+    )
+    assert arguments.method_set == "published"
 
 
 def test_failures_remain_in_pass_rate_denominator():
@@ -307,13 +339,17 @@ def test_v16_wrapper_uses_explicit_objective_and_dedicated_paths(monkeypatch):
 
     monkeypatch.setattr(wrapper, "shared_main", capture)
     wrapper.main(["--skip-real"])
-    assert called["argv"] == ["--skip-real"]
+    assert called["argv"] == ["--skip-real", "--max-knot-count", "56"]
     assert called["expected_objective"] == benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
     assert (
         called["default_checkpoint"].name
-        == "candidate_selection_v16_simplified_certified_k96.pt"
+        == "candidate_selection_v16_mse1e-4_k56.pt"
     )
     assert called["default_output_dir"].name == "v16_multidata"
+
+    called.clear()
+    wrapper.main(["--max-knot-count=12"])
+    assert called["argv"] == ["--max-knot-count=12"]
 
 
 def test_v16_report_labels_cannot_claim_v15(tmp_path):

@@ -112,7 +112,11 @@ class V16SubsetLoss(nn.Module):
         complexity_weight: float = 0.05, complexity_activation_ratio: float = 0.8,
         tail_weight: float = 0.5, tail_fraction: float = 0.2,
         solver_jitter: float = 1e-10, ranked_prefix_teacher: bool = True,
-        teacher_prefix_search_steps: int = 7, knot_position_beta: float = 0.01,
+        teacher_prefix_search_steps: int = 7, teacher_low_count_sweep: int = 0,
+        synthetic_count_role: str = "exact",
+        synthetic_geometry_oracle_teacher: bool = False,
+        oracle_teacher_extra_knots: int = 2,
+        knot_position_beta: float = 0.01,
     ) -> None:
         super().__init__()
         if not math.isfinite(mse_tolerance) or mse_tolerance <= 0:
@@ -161,8 +165,32 @@ class V16SubsetLoss(nn.Module):
             or teacher_prefix_search_steps < 1
         ):
             raise ValueError("teacher_prefix_search_steps must be a positive integer")
+        if (
+            isinstance(teacher_low_count_sweep, bool)
+            or not isinstance(teacher_low_count_sweep, int)
+            or teacher_low_count_sweep < 0
+        ):
+            raise ValueError("teacher_low_count_sweep must be a non-negative integer")
+        if synthetic_count_role not in {"exact", "upper_bound"}:
+            raise ValueError(
+                "synthetic_count_role must be 'exact' or 'upper_bound'"
+            )
+        if not isinstance(synthetic_geometry_oracle_teacher, bool):
+            raise ValueError("synthetic_geometry_oracle_teacher must be boolean")
+        if (
+            isinstance(oracle_teacher_extra_knots, bool)
+            or not isinstance(oracle_teacher_extra_knots, int)
+            or oracle_teacher_extra_knots < 0
+        ):
+            raise ValueError("oracle_teacher_extra_knots must be non-negative")
         self.ranked_prefix_teacher = ranked_prefix_teacher
         self.teacher_prefix_search_steps = teacher_prefix_search_steps
+        self.teacher_low_count_sweep = teacher_low_count_sweep
+        self.synthetic_count_role = synthetic_count_role
+        self.synthetic_geometry_oracle_teacher = (
+            synthetic_geometry_oracle_teacher
+        )
+        self.oracle_teacher_extra_knots = oracle_teacher_extra_knots
         self.knot_position_beta = float(knot_position_beta)
 
     @staticmethod
@@ -355,12 +383,17 @@ class V16SubsetLoss(nn.Module):
         # K, and it includes both deployment extrema.  Seven intervals at
         # Kc=96 evaluate approximately 4, 6, 12, 21, 34, 51, 72 and 96.
         grid_denominator = self.teacher_prefix_search_steps
+        low_count_limit = min(capacity, self.teacher_low_count_sweep)
+        low_count_counts = (
+            set(range(minimum, low_count_limit + 1))
+            if low_count_limit >= minimum else set()
+        )
         coarse_counts = sorted({
             minimum + round(
                 (capacity - minimum) * (step / grid_denominator) ** 2
             )
             for step in range(grid_denominator + 1)
-        } | {minimum, capacity})
+        } | {minimum, capacity} | low_count_counts)
         evaluated_masks = []
         evaluated_mse = []
         for count_value in coarse_counts:
@@ -707,6 +740,82 @@ class V16SubsetLoss(nn.Module):
             torch.cat(prediction_nearest).mean() if prediction_nearest else zero,
         )
 
+    def _synthetic_oracle_candidate_mask(
+        self, predicted, target, target_mask, valid,
+    ) -> torch.Tensor:
+        """Match candidate slots to certified knots without using keep scores.
+
+        This training-only mask breaks the ranked-prefix teacher's self-confirming
+        loop: a poor initial ranking can no longer make a compact, geometrically
+        correct combination invisible. ``predicted`` and ``target`` must already
+        share the certified target parameterization.
+        """
+        if predicted.ndim != 2 or target.ndim != 2:
+            raise ValueError("oracle candidates and targets must be batched matrices")
+        if predicted.shape[0] != target.shape[0] or target_mask.shape != target.shape:
+            raise ValueError("oracle candidates and targets must share the batch")
+        if target_mask.dtype != torch.bool or valid.dtype != torch.bool:
+            raise ValueError("oracle target mask and validity must be boolean")
+        if valid.shape != predicted.shape[:1]:
+            raise ValueError("oracle validity must have shape [B]")
+        # Transfer the small assignment batch once in each direction. Calling
+        # ``.cpu()`` separately for every labelled row forces dozens of CUDA
+        # synchronizations on mixed batches and can dominate a 3090 training
+        # step even though the dynamic program itself is tiny (Kc <= 64 here).
+        predicted_cpu = predicted.detach().double().cpu()
+        target_cpu = target.detach().double().cpu()
+        target_mask_cpu = target_mask.detach().cpu()
+        valid_cpu = valid.detach().cpu()
+        result_cpu = torch.zeros_like(predicted_cpu, dtype=torch.bool)
+        for row in valid_cpu.nonzero(as_tuple=False).flatten().tolist():
+            row_targets = target_cpu[row][target_mask_cpu[row]].sort().values
+            if row_targets.numel() > predicted_cpu.shape[1]:
+                raise ValueError("oracle target count exceeds candidate capacity")
+            if not row_targets.numel():
+                continue
+            candidate_ids, _ = self._ordered_pair_indices(
+                predicted_cpu[row].sort().values,
+                row_targets,
+            )
+            result_cpu[row, candidate_ids] = True
+        return result_cpu.to(device=predicted.device)
+
+    @staticmethod
+    def _expand_teacher_mask(
+        mask: torch.Tensor,
+        scores: torch.Tensor,
+        extra_knots: int,
+        eligible: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Add the highest-scored unused slots without changing existing slots."""
+        if mask.shape != scores.shape or mask.dtype != torch.bool:
+            raise ValueError("teacher mask and scores must share boolean [B,K] shape")
+        if eligible is not None and (
+            eligible.dtype != torch.bool or eligible.shape != mask.shape[:1]
+        ):
+            raise ValueError("teacher expansion eligibility must be boolean [B]")
+        if isinstance(extra_knots, bool) or not isinstance(extra_knots, int):
+            raise ValueError("extra_knots must be an integer")
+        if extra_knots <= 0:
+            return mask.clone()
+        available = (~mask).sum(-1)
+        additions = torch.minimum(
+            available, available.new_full(available.shape, extra_knots)
+        )
+        order = torch.argsort(
+            scores.masked_fill(mask, float("-inf")),
+            dim=-1, descending=True, stable=True,
+        )
+        rank = torch.empty_like(order)
+        rank.scatter_(
+            1, order,
+            torch.arange(order.shape[1], device=order.device).expand_as(order),
+        )
+        expanded = mask | (rank < additions.unsqueeze(-1))
+        if eligible is not None:
+            expanded = torch.where(eligible.unsqueeze(-1), expanded, mask)
+        return expanded
+
     @staticmethod
     def _ordered_pair_indices(
         predicted: torch.Tensor, target: torch.Tensor,
@@ -854,6 +963,8 @@ class V16SubsetLoss(nn.Module):
             prefix_feasible_fraction = zero
             prefix_fallback_fraction = zero
             prefix_search_evaluations = zero
+            oracle_teacher_feasible_fraction = zero
+            oracle_teacher_selected_fraction = zero
             selected_knot_position_loss = selected_knot_nearest_mae = zero
             selected_to_true_knot_mae = zero
             deployment_true_parameter_loss = deployment_true_parameter_mae = zero
@@ -871,6 +982,8 @@ class V16SubsetLoss(nn.Module):
                 raise ValueError("select_mask must return a boolean [B,K] tensor")
             deployment_mse = self._decode_mse(model, context, mask, points, degree)
             count = mask.sum(-1).to(dense_mse.dtype)
+            oracle_teacher_feasible_fraction = zero
+            oracle_teacher_selected_fraction = zero
             # Independent draws only: neither the deterministic deployment nor
             # any edited/optimized target is assigned a Bernoulli log-probability.
             random_masks = torch.bernoulli(
@@ -914,6 +1027,42 @@ class V16SubsetLoss(nn.Module):
                     # combination into the future deployed Top-K prefix.
                     compared_masks = [best_mask, mask]
                     compared_mse = [searched_best_mse, deployment_mse.detach()]
+                    oracle_pool_indices = []
+                    if (
+                        self.synthetic_geometry_oracle_teacher
+                        and bool(geometry_valid.any())
+                    ):
+                        oracle_mask = self._synthetic_oracle_candidate_mask(
+                            supervised_proposals,
+                            geometry_knots,
+                            geometry_mask,
+                            geometry_valid,
+                        )
+                        # Real/uncertified rows have no oracle. Preserve their
+                        # prefix teacher rows so the batched comparison cannot
+                        # accidentally offer them an empty subset.
+                        oracle_mask = torch.where(
+                            geometry_valid.unsqueeze(-1), oracle_mask, best_mask,
+                        )
+                        expanded_oracle = self._expand_teacher_mask(
+                            oracle_mask,
+                            probabilities.detach(),
+                            self.oracle_teacher_extra_knots,
+                            eligible=geometry_valid,
+                        )
+                        for oracle_trial in (oracle_mask, expanded_oracle):
+                            if any(
+                                torch.equal(oracle_trial, existing)
+                                for existing in compared_masks
+                            ):
+                                continue
+                            oracle_pool_indices.append(len(compared_masks))
+                            compared_masks.append(oracle_trial)
+                            compared_mse.append(
+                                self._decode_mse(
+                                    model, context, oracle_trial, points, degree,
+                                )
+                            )
                     constrain_method = getattr(
                         model, "constrain_selection_mask", None
                     )
@@ -950,6 +1099,18 @@ class V16SubsetLoss(nn.Module):
                     searched_best_mse = torch.where(
                         any_feasible, selected_mse, searched_best_mse,
                     )
+                    if oracle_pool_indices:
+                        oracle_mse = candidate_mse[oracle_pool_indices]
+                        oracle_teacher_feasible_fraction = (
+                            (oracle_mse <= tolerance.unsqueeze(0)).any(0)
+                            & geometry_valid
+                        ).double().sum() / geometry_valid.double().sum().clamp_min(1)
+                        chosen_oracle = torch.zeros_like(best_index, dtype=torch.bool)
+                        for oracle_index in oracle_pool_indices:
+                            chosen_oracle |= best_index == oracle_index
+                        oracle_teacher_selected_fraction = (
+                            chosen_oracle & geometry_valid
+                        ).double().sum() / geometry_valid.double().sum().clamp_min(1)
                 else:
                     compared_masks = [mask]
                     compared_mse = [deployment_mse.detach()]
@@ -987,6 +1148,8 @@ class V16SubsetLoss(nn.Module):
                     prefix_search_evaluations = dense_mse.new_tensor(
                         float(len(compared_masks))
                     )
+                    oracle_teacher_feasible_fraction = zero
+                    oracle_teacher_selected_fraction = zero
             # Re-decode the actual chosen set with gradients. Targets are from
             # this model/context, so relocation is trained for the selected set.
             best_mse = self._decode_mse(model, context, best_mask, points, degree)
@@ -1122,22 +1285,55 @@ class V16SubsetLoss(nn.Module):
                 supervised_requested = requested_score[
                     supervised_valid
                 ].clamp_min(0.0)
-                # Before the deployed subset is feasible, the true-count label
-                # may safely correct under-selection but must not demand still
-                # more pruning.  Once feasible, use the full symmetric pull.
-                count_label_active = (
-                    (deployment_mse.detach()[supervised_valid] <= tolerance[supervised_valid])
-                    | (supervised_requested < supervised_score_target)
-                )
-                if bool(count_label_active.any()):
-                    supervised_count_loss = F.smooth_l1_loss(
-                        torch.log1p(supervised_requested[count_label_active]),
-                        torch.log1p(
-                            supervised_score_target[count_label_active]
-                        ),
+                if self.synthetic_count_role == "exact":
+                    # Before the deployed subset is feasible, the true-count
+                    # label may safely correct under-selection but must not
+                    # demand still more pruning. Once feasible, use the full
+                    # symmetric pull (the historical v16 behaviour).
+                    count_label_active = (
+                        (
+                            deployment_mse.detach()[supervised_valid]
+                            <= tolerance[supervised_valid]
+                        )
+                        | (supervised_requested < supervised_score_target)
                     )
+                    if bool(count_label_active.any()):
+                        supervised_count_loss = F.smooth_l1_loss(
+                            torch.log1p(
+                                supervised_requested[count_label_active]
+                            ),
+                            torch.log1p(
+                                supervised_score_target[count_label_active]
+                            ),
+                        )
+                    else:
+                        supervised_count_loss = zero
                 else:
-                    supervised_count_loss = zero
+                    # The source-subset certificate proves that the supplied
+                    # source representation is irreducible only while its knot
+                    # coordinates remain fixed. Once the survivor decoder may
+                    # relocate knots, source K is a feasible upper bound, not a
+                    # proof of the globally minimal continuous representation.
+                    # Therefore never pull a smaller feasible teacher back up
+                    # to source K; penalize only safe over-retention.
+                    upper_bound_active = (
+                        deployment_mse.detach()[supervised_valid]
+                        <= tolerance[supervised_valid]
+                    )
+                    if bool(upper_bound_active.any()):
+                        log_excess = F.relu(
+                            torch.log1p(
+                                supervised_requested[upper_bound_active]
+                            )
+                            - torch.log1p(
+                                supervised_score_target[upper_bound_active]
+                            )
+                        )
+                        supervised_count_loss = F.smooth_l1_loss(
+                            log_excess, torch.zeros_like(log_excess),
+                        )
+                    else:
+                        supervised_count_loss = zero
                 supervised_count_mae = (
                     count[supervised_valid] - supervised_target[supervised_valid]
                 ).abs().mean()
@@ -1207,6 +1403,8 @@ class V16SubsetLoss(nn.Module):
             "prefix_teacher_feasible_fraction": prefix_feasible_fraction,
             "prefix_teacher_fallback_fraction": prefix_fallback_fraction,
             "prefix_teacher_search_evaluations": prefix_search_evaluations,
+            "oracle_teacher_feasible_fraction": oracle_teacher_feasible_fraction,
+            "oracle_teacher_selected_fraction": oracle_teacher_selected_fraction,
             "mask_entropy": entropy, "feasible_complexity_loss": complexity,
         }
         return loss, {name: value.detach() for name, value in metrics.items()}

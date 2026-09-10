@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 import math
 import random
@@ -13,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +53,13 @@ def parser():
     )
     p.add_argument("--train-size", type=int, default=2400, help="Mixture draws per epoch")
     p.add_argument("--val-size", type=int, default=500, help="Synthetic validation curves")
+    p.add_argument(
+        "--synthetic-boundary-val-size",
+        type=int,
+        default=32,
+        help=("Synthetic validation slots fixed at the maximum source knot "
+              "count; these slots are included inside --val-size"),
+    )
     p.add_argument("--real-val-size", type=int, default=100, help="Maximum val curves per real source")
     p.add_argument("--real-manifest", action="append", type=Path, default=[])
     p.add_argument("--real-fraction", type=float, default=0.5)
@@ -59,12 +68,13 @@ def parser():
     p.add_argument("--point-dim", type=int, choices=(2, 3), default=2)
     p.add_argument("--min-control-points", type=int, default=8)
     p.add_argument(
-        "--max-control-points", type=int, default=24,
+        "--max-control-points", type=int, default=60,
         help="Maximum synthetic source control points; this does not change network Kc",
     )
     p.add_argument(
         "--candidate-knots", type=int, default=None,
-        help=("Internal candidate capacity Kc (default: 64 internal knots). "
+        help=("Internal candidate capacity Kc (default: 56 internal knots, "
+              "equivalent to 64 entries in a full cubic clamped knot vector). "
               "Changing it requires a new experiment"),
     )
     p.add_argument(
@@ -77,6 +87,11 @@ def parser():
     p.add_argument("--attention-heads", type=int, default=4)
     p.add_argument("--selector-layers", type=int, default=2)
     p.add_argument("--noise-std", type=float, default=0.001)
+    p.add_argument(
+        "--knot-min-span", type=float, default=0.01,
+        help=("Minimum parameter span between adjacent synthetic source knots. "
+              "The v16 default supports K=56; historical datasets retain 0.02"),
+    )
     p.add_argument(
         "--certified-minimal-source",
         action=argparse.BooleanOptionalAction,
@@ -112,7 +127,30 @@ def parser():
     p.add_argument(
         "--teacher-prefix-search-steps", type=int, default=7,
         help=("Training-only ranked-prefix feasibility search depth; seven "
-              "steps resolve a Kc=96 count boundary without deployment search"),
+              "steps resolve the default Kc=56 count boundary without "
+              "deployment search"),
+    )
+    p.add_argument(
+        "--teacher-low-count-sweep", type=int, default=16,
+        help=("Exactly evaluate every deployed ranked prefix up to this count "
+              "during training; 0 disables the simple-curve sweep"),
+    )
+    p.add_argument(
+        "--synthetic-count-role", choices=("exact", "upper_bound"),
+        default="upper_bound",
+        help=("Treat certified source K as an upper bound when survivor knots "
+              "may relocate; 'exact' preserves the historical v16 ablation"),
+    )
+    p.add_argument(
+        "--synthetic-geometry-oracle-teacher",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=("Training-only: add a score-independent monotone candidate/true-"
+              "knot assignment and its expanded mask to the teacher pool"),
+    )
+    p.add_argument(
+        "--oracle-teacher-extra-knots", type=int, default=2,
+        help="Extra high-score candidates in the oracle bootstrap safety mask",
     )
     p.add_argument("--count-weight", type=float, default=2.0)
     p.add_argument("--supervised-count-weight", type=float, default=1.0)
@@ -134,6 +172,12 @@ def parser():
     p.add_argument("--safety-anneal-epochs", type=int, default=10)
     p.add_argument("--one-shot-coverage-bins", type=int, default=4)
     p.add_argument("--min-selected-knots", type=int, default=4)
+    p.add_argument(
+        "--initial-keep-fraction", type=float, default=30 / 56,
+        help=("Initial selector probability mass as a fraction of Kc; proposal "
+              "training does not update the selector. The default is 30/56, "
+              "matching the mean K of the default synthetic K=4..56 range"),
+    )
     p.add_argument(
         "--relocation-blend", type=float, default=0.0,
         help="Initial uniform-rank relocation blend; zero starts from identity",
@@ -182,7 +226,7 @@ def validate_args(args):
         # Cubic open clamping contributes four zeros and four ones.
         args.candidate_knots = args.full_knot_vector_size - 8
     elif args.candidate_knots is None:
-        args.candidate_knots = 64
+        args.candidate_knots = 56
     if not 1 <= args.proposal_epochs < args.epochs:
         raise ValueError("require 1 <= proposal-epochs < epochs")
     for key in ("train_size", "val_size", "real_val_size", "batch_size", "hidden_dim",
@@ -197,7 +241,8 @@ def validate_args(args):
         "one_shot_safety_knots", "one_shot_coverage_bins",
         "min_selected_knots", "complexity_ramp_epochs", "final_safety_knots",
         "safety_anneal_epochs", "teacher_prefix_search_steps",
-        "minimality_max_attempts",
+        "teacher_low_count_sweep", "minimality_max_attempts",
+        "oracle_teacher_extra_knots", "synthetic_boundary_val_size",
     ):
         value = getattr(args, key)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -228,6 +273,13 @@ def validate_args(args):
         raise ValueError("one-shot-coverage-bins cannot exceed candidate-knots")
     if args.max_control_points > args.num_points:
         raise ValueError("max-control-points must not exceed num-points")
+    if not math.isfinite(args.knot_min_span) or args.knot_min_span <= 0:
+        raise ValueError("knot-min-span must be finite and positive")
+    if args.knot_min_span * (args.max_control_points - 3) >= 1.0:
+        raise ValueError(
+            "knot-min-span is too large for max-control-points; cubic source "
+            "generation requires knot-min-span * (max-control-points - 3) < 1"
+        )
     for key in (
         "mse_tolerance", "knot_match_tolerance", "lr", "joint_lr",
         "grad_clip", "tolerance_factor_min", "tolerance_factor_max",
@@ -255,6 +307,9 @@ def validate_args(args):
         raise ValueError("safety-anneal-epochs must be positive")
     if args.teacher_prefix_search_steps < 1:
         raise ValueError("teacher-prefix-search-steps must be positive")
+    # Both teacher budgets are safely clamped to Kc inside the objective. This
+    # keeps tiny unit-test/ablation capacities compatible with production
+    # defaults instead of requiring unrelated command-line overrides.
     if args.complexity_max_scale <= 0:
         raise ValueError("complexity-max-scale must be positive")
     if args.knot_position_beta <= 0:
@@ -270,6 +325,11 @@ def validate_args(args):
         raise ValueError("tolerance-factor-min must be <= tolerance-factor-max")
     if not math.isfinite(args.relocation_blend) or not 0 <= args.relocation_blend <= 1:
         raise ValueError("relocation-blend must lie in [0,1]")
+    if (
+        not math.isfinite(args.initial_keep_fraction)
+        or not 0.0 < args.initial_keep_fraction < 1.0
+    ):
+        raise ValueError("initial-keep-fraction must lie strictly inside (0,1)")
     if args.deployment_pass_target + args.complexity_pass_margin > 1:
         raise ValueError("deployment-pass-target + complexity-pass-margin cannot exceed one")
     if args.resume and args.init_checkpoint:
@@ -358,7 +418,7 @@ def update_simplification_controller(
     return float(complexity_scale), float(safety_scale)
 
 
-def summarize(rows, tolerance):
+def summarize(rows, tolerance, *, synthetic_boundary_knot_count=None):
     groups = defaultdict(list)
     for row in rows:
         groups[row["source"]].append(row)
@@ -414,9 +474,15 @@ def summarize(rows, tolerance):
         raise ValueError("validation cannot be empty")
     by_source = {name: group(values) for name, values in groups.items()}
     result = group(rows)
-    result.update(by_source=by_source,
-                  worst_dense_pass_rate=min(v["dense_pass_rate"] for v in by_source.values()),
-                  worst_deployment_pass_rate=min(v["deployment_pass_rate"] for v in by_source.values()))
+    worst_source_dense = min(v["dense_pass_rate"] for v in by_source.values())
+    worst_source_deployment = min(
+        v["deployment_pass_rate"] for v in by_source.values()
+    )
+    result.update(
+        by_source=by_source,
+        worst_dense_pass_rate=worst_source_dense,
+        worst_deployment_pass_rate=worst_source_deployment,
+    )
     synthetic = by_source.get("Synthetic", {})
     if "count_mae" in synthetic:
         result["synthetic_count_mae"] = synthetic["count_mae"]
@@ -424,6 +490,58 @@ def summarize(rows, tolerance):
     if "knot_match_f1" in synthetic:
         result["synthetic_knot_match_f1"] = synthetic["knot_match_f1"]
         result["synthetic_knot_matched_mae"] = synthetic["knot_matched_mae"]
+    # The upper end of a source-count range is also the proposal-capacity
+    # boundary in the formal K=4..56 protocol.  An aggregate Synthetic rate can
+    # hide a complete failure of that sparse stratum, so retain an explicit
+    # boundary audit and use it together with the per-data-source minimum for
+    # training gates and checkpoint selection.
+    boundary_dense = None
+    boundary_deployment = None
+    if synthetic_boundary_knot_count is not None:
+        if (
+            isinstance(synthetic_boundary_knot_count, bool)
+            or not isinstance(synthetic_boundary_knot_count, int)
+            or synthetic_boundary_knot_count < 0
+        ):
+            raise ValueError(
+                "synthetic_boundary_knot_count must be a non-negative integer"
+            )
+        boundary_rows = [
+            row for row in rows
+            if row["source"] == "Synthetic"
+            and row.get("target_k") == synthetic_boundary_knot_count
+        ]
+        result["synthetic_boundary_knot_count"] = synthetic_boundary_knot_count
+        result["synthetic_boundary_sample_count"] = len(boundary_rows)
+        if boundary_rows:
+            boundary_summary = group(boundary_rows)
+            boundary_dense = boundary_summary["dense_pass_rate"]
+            boundary_deployment = boundary_summary["deployment_pass_rate"]
+            result["synthetic_boundary_dense_pass_rate"] = boundary_dense
+            result[
+                "synthetic_boundary_deployment_pass_rate"
+            ] = boundary_deployment
+            for source_name, output_name in (
+                ("count_mae", "synthetic_boundary_count_mae"),
+                ("knot_match_f1", "synthetic_boundary_knot_match_f1"),
+                ("knot_matched_mae", "synthetic_boundary_knot_matched_mae"),
+            ):
+                if source_name in boundary_summary:
+                    result[output_name] = boundary_summary[source_name]
+        else:
+            result["synthetic_boundary_dense_pass_rate"] = None
+            result["synthetic_boundary_deployment_pass_rate"] = None
+            result["synthetic_boundary_count_mae"] = None
+            result["synthetic_boundary_knot_match_f1"] = None
+            result["synthetic_boundary_knot_matched_mae"] = None
+    result["qualification_dense_pass_rate"] = (
+        min(worst_source_dense, boundary_dense)
+        if boundary_dense is not None else worst_source_dense
+    )
+    result["qualification_deployment_pass_rate"] = (
+        min(worst_source_deployment, boundary_deployment)
+        if boundary_deployment is not None else worst_source_deployment
+    )
     return result
 
 
@@ -431,6 +549,7 @@ def summarize(rows, tolerance):
 def validate(
     model, loader, device, tolerance, *, stage="joint",
     knot_match_tolerance=0.01, log_every=10,
+    synthetic_boundary_knot_count=None,
 ):
     if stage not in ("proposal", "joint"):
         raise ValueError("stage must be 'proposal' or 'joint'")
@@ -544,14 +663,26 @@ def validate(
                 )
             rows.append(row)
         progress(step, len(loader), "  validation", every=log_every)
-    return summarize(rows, tolerance)
+    return summarize(
+        rows,
+        tolerance,
+        synthetic_boundary_knot_count=synthetic_boundary_knot_count,
+    )
 
 
 def checkpoint_rank(
     metrics, target, safety_margin=0.0, *, simplification_ready=True,
 ):
-    safe = metrics["worst_deployment_pass_rate"] >= target + safety_margin
-    feasible = metrics["worst_deployment_pass_rate"] >= target
+    deployment_pass = metrics.get(
+        "qualification_deployment_pass_rate",
+        metrics["worst_deployment_pass_rate"],
+    )
+    dense_pass = metrics.get(
+        "qualification_dense_pass_rate",
+        metrics.get("worst_dense_pass_rate", 0.0),
+    )
+    safe = deployment_pass >= target + safety_margin
+    feasible = deployment_pass >= target
     tail = metrics.get("deployment_mse_p95", metrics["deployment_mse"])
     if feasible and simplification_ready:
         # Once the curriculum is mature, prefer a formally reportable
@@ -583,7 +714,7 @@ def checkpoint_rank(
             if math.isfinite(count_mae) else float("inf")
         )
         reporting_geometry_ready = bool(
-            metrics.get("worst_dense_pass_rate", 0.0) >= target
+            dense_pass >= target
             and count_mae <= V16_FORMAL_SYNTHETIC_COUNT_MAE_MAX
             and knot_f1 >= V16_FORMAL_SYNTHETIC_KNOT_F1_MIN
             and knot_mae <= V16_FORMAL_SYNTHETIC_MATCHED_MAE_MAX
@@ -601,12 +732,12 @@ def checkpoint_rank(
             -metrics["deployment_mse"],
         )
     if safe:
-        return (2, metrics["worst_deployment_pass_rate"], -tail, -metrics["deployment_mse"])
+        return (2, deployment_pass, -tail, -metrics["deployment_mse"])
     if feasible:
         # Inside the target-to-safety band, improve reliability before trying
         # to shave another knot from a statistically marginal checkpoint.
-        return (1, metrics["worst_deployment_pass_rate"], -tail, -metrics["deployment_mse"])
-    return (0, metrics["worst_deployment_pass_rate"], -tail, -metrics["deployment_mse"])
+        return (1, deployment_pass, -tail, -metrics["deployment_mse"])
+    return (0, deployment_pass, -tail, -metrics["deployment_mse"])
 
 
 def serial_args(args):
@@ -623,6 +754,7 @@ def synthetic_dataset_config(args):
         min_control_points=args.min_control_points,
         max_control_points=args.max_control_points,
         noise_std=args.noise_std,
+        knot_min_span=args.knot_min_span,
         normalize=True,
         return_ground_truth=False,
         certified_minimal_source=args.certified_minimal_source,
@@ -645,20 +777,145 @@ def atomic_save(payload, path):
     temporary.replace(path)
 
 
-def transfer_proposal_weights(model, checkpoint):
-    """Warm-start every shape-compatible tensor needed for dense proposals."""
+@dataclass(frozen=True)
+class ProposalTransferReport:
+    """Exact audit trail for a proposal-only warm start."""
+
+    copied: tuple[str, ...]
+    resized: tuple[str, ...]
+    retained_target: tuple[str, ...]
+    skipped_mismatched: tuple[str, ...]
+
+    @property
+    def transferred_count(self) -> int:
+        return len(self.copied) + len(self.resized)
+
+
+def _resize_interval_queries(
+    source: torch.Tensor,
+    target: torch.Tensor,
+) -> torch.Tensor | None:
+    """Linearly resample only the ordered interval-query rank axis."""
+    if (
+        source.ndim != 2
+        or target.ndim != 2
+        or source.shape[1] != target.shape[1]
+    ):
+        return None
+    # ``interpolate`` treats the left-to-right query rank as a one-dimensional
+    # signal. ``align_corners=False`` maps cell centres to cell centres, which
+    # matches CandidateKnotHead's ``(rank + 0.5) / interval_count`` anchors.
+    resized = F.interpolate(
+        source.transpose(0, 1).unsqueeze(0),
+        size=target.shape[0],
+        mode="linear",
+        align_corners=False,
+    )
+    return resized.squeeze(0).transpose(0, 1).to(
+        device=target.device,
+        dtype=target.dtype,
+    )
+
+
+def transfer_proposal_weights(model, checkpoint) -> ProposalTransferReport:
+    """Warm-start proposal modules, explicitly adapting an ordered query table.
+
+    The selector and subset decoder are never transferred.  Of all mismatched
+    proposal tensors, only ``candidate_head.interval_queries`` is rank-resizable.
+    Candidate anchors remain the deterministic buffers constructed for the
+    target Kc, so a Kc=64 proposal checkpoint can safely initialize Kc=56.
+    """
+    source_objective = checkpoint.get("objective_version")
+    if (
+        source_objective is not None
+        and source_objective != V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+    ):
+        raise ValueError(
+            "initial checkpoint objective is not compatible with the v16 "
+            "counterfactual proposal network"
+        )
+
+    source_config = checkpoint.get("model_config")
+    target_config = model.get_config()
+    # Capacity and selector/deployment fields may intentionally differ. These
+    # keys define the encoder, ParameterHead and CandidateKnotHead tensors that
+    # are actually transferred.
+    proposal_contract_keys = (
+        "point_dim",
+        "degree",
+        "hidden_dim",
+        "encoder_layers",
+        "min_parameter_gap",
+        "min_knot_gap",
+        "attention_heads",
+        "parameter_residual_limit",
+        "structure_mode",
+    )
+    if source_config is not None:
+        mismatched = [
+            key for key in proposal_contract_keys
+            if key in source_config
+            and key in target_config
+            and source_config[key] != target_config[key]
+        ]
+        if mismatched:
+            details = ", ".join(
+                f"{key}={source_config[key]!r} (target "
+                f"{target_config[key]!r})"
+                for key in mismatched
+            )
+            raise ValueError(
+                "initial checkpoint has an incompatible proposal contract: "
+                + details
+            )
+
     old_state = checkpoint["model_state_dict"]
     state = model.state_dict()
     prefixes = ("encoder.", "parameter_head.", "candidate_head.")
-    copied = {
-        key: value for key, value in old_state.items()
-        if key.startswith(prefixes) and key in state and state[key].shape == value.shape
-    }
-    if not copied:
+    required = {key for key in state if key.startswith(prefixes)}
+    missing = sorted(required.difference(old_state))
+    if missing:
+        preview = ", ".join(missing[:3])
+        suffix = "..." if len(missing) > 3 else ""
+        raise ValueError(
+            "initial checkpoint is missing required proposal tensors: "
+            + preview
+            + suffix
+        )
+    copied: dict[str, torch.Tensor] = {}
+    resized: dict[str, torch.Tensor] = {}
+    retained_target: list[str] = []
+    skipped_mismatched: list[str] = []
+    for key, value in old_state.items():
+        if not key.startswith(prefixes) or key not in state:
+            continue
+        target = state[key]
+        # Anchors are a deterministic function of the target candidate count.
+        # Never trust or copy a checkpoint value, even when its shape happens
+        # to match (the non-persistent candidate-position anchors are absent).
+        if key == "candidate_head.interval_query_anchors":
+            retained_target.append(key)
+            continue
+        if target.shape == value.shape:
+            copied[key] = value
+            continue
+        if key == "candidate_head.interval_queries":
+            adapted = _resize_interval_queries(value, target)
+            if adapted is not None:
+                resized[key] = adapted
+                continue
+        skipped_mismatched.append(key)
+    transferred = {**copied, **resized}
+    if not transferred:
         raise ValueError("initial checkpoint has no compatible encoder/parameter/proposal tensors")
-    state.update(copied)
+    state.update(transferred)
     model.load_state_dict(state, strict=True)
-    return tuple(sorted(copied))
+    return ProposalTransferReport(
+        copied=tuple(sorted(copied)),
+        resized=tuple(sorted(resized)),
+        retained_target=tuple(sorted(retained_target)),
+        skipped_mismatched=tuple(sorted(skipped_mismatched)),
+    )
 
 
 def main(argv=None):
@@ -685,8 +942,14 @@ def main(argv=None):
     sources, provenance = load_real_sources(args.real_manifest, num_points=args.num_points,
                                            point_dim=args.point_dim,
                                            progress=lambda message: print(message, flush=True))
-    validation = ValidationCurves(dataset_config, sources, size=args.val_size, seed=args.val_seed,
-                                 real_per_source=args.real_val_size)
+    validation = ValidationCurves(
+        dataset_config,
+        sources,
+        size=args.val_size,
+        seed=args.val_seed,
+        real_per_source=args.real_val_size,
+        synthetic_boundary_samples=args.synthetic_boundary_val_size,
+    )
     loader_runtime = dict(
         num_workers=args.num_workers,
         pin_memory=device.type == "cuda",
@@ -706,7 +969,8 @@ def main(argv=None):
         one_shot_safety_sigma=args.one_shot_safety_sigma,
         one_shot_safety_knots=args.one_shot_safety_knots,
         one_shot_coverage_bins=args.one_shot_coverage_bins,
-        min_selected_knots=args.min_selected_knots)
+        min_selected_knots=args.min_selected_knots,
+        initial_keep_fraction=args.initial_keep_fraction)
     history, start_epoch, best_rank, proposal_rank, proposal_ready = [], 1, None, None, False
     complexity_scale, feasible_streak = 0.0, 0
     selection_safety_scale = 1.0
@@ -725,9 +989,47 @@ def main(argv=None):
                 "resume checkpoint uses an older simplification contract; "
                 "start a new run or use --init-checkpoint"
             )
+        expected_synthetic_contract = (
+            V16_CERTIFIED_SYNTHETIC_CONTRACT
+            if args.certified_minimal_source
+            else "random_source_uncertified"
+        )
+        if (
+            resume_payload.get("synthetic_data_contract")
+            != expected_synthetic_contract
+        ):
+            p.error(
+                "resume checkpoint uses an older synthetic source-range "
+                "contract; start a new K=4..56 run or use --init-checkpoint "
+                "for proposal-only transfer"
+            )
         ignored = {"epochs", "resume", "init_checkpoint", "output", "device", "num_workers",
-                   "torch_num_threads", "log_every_batches"}
-        previous_config = resume_payload["training_config"]
+                   "torch_num_threads", "log_every_batches", "initial_keep_fraction"}
+        previous_config = dict(resume_payload["training_config"])
+        # A legacy .last.pt must continue with the exact loss that created its
+        # optimizer state even though new-run CLI defaults are more aggressive.
+        # Perform this migration automatically so unattended/overnight resume
+        # commands do not need to know which refinement fields postdate them.
+        legacy_refinement_defaults = {
+            "teacher_low_count_sweep": 0,
+            "synthetic_count_role": "exact",
+            "synthetic_geometry_oracle_teacher": False,
+            "oracle_teacher_extra_knots": 2,
+            "initial_keep_fraction": 0.95,
+        }
+        for key, legacy_value in legacy_refinement_defaults.items():
+            if key not in previous_config:
+                previous_config[key] = legacy_value
+                setattr(args, key, legacy_value)
+                current_config[key] = legacy_value
+        # This value only initializes a fresh selector. A resumed model already
+        # contains the learned beta bias, so preserve the original provenance
+        # instead of allowing a harmless CLI default change to rewrite the
+        # saved training metadata.
+        args.initial_keep_fraction = previous_config["initial_keep_fraction"]
+        current_config["initial_keep_fraction"] = previous_config[
+            "initial_keep_fraction"
+        ]
         if Path(previous_config["output"]).resolve() != output:
             p.error("resume must use the original --output so its best/proposal artifacts remain available")
         if (resume_payload.get("stage") == "proposal"
@@ -758,11 +1060,22 @@ def main(argv=None):
     elif args.init_checkpoint:
         source_checkpoint = torch.load(args.init_checkpoint, map_location="cpu", weights_only=True)
         try:
-            copied = transfer_proposal_weights(model, source_checkpoint)
+            transfer = transfer_proposal_weights(model, source_checkpoint)
         except (KeyError, TypeError, ValueError) as error:
             p.error(str(error))
-        print(f"Transferred {len(copied)} encoder/parameter/proposal tensors; "
-              "selector and subset decoder start fresh.", flush=True)
+        print(
+            f"Transferred {transfer.transferred_count} proposal tensors "
+            f"({len(transfer.copied)} exact, {len(transfer.resized)} rank-resized); "
+            f"retained {len(transfer.retained_target)} target anchor buffer(s), "
+            f"skipped {len(transfer.skipped_mismatched)} other shape mismatch(es). "
+            "Selector and subset decoder start fresh.",
+            flush=True,
+        )
+        if transfer.resized:
+            print(
+                "  rank-resized: " + ", ".join(transfer.resized),
+                flush=True,
+            )
     model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     if resume_payload:
@@ -775,6 +1088,12 @@ def main(argv=None):
         policy_samples=args.policy_samples,
         counterfactual_edits=args.counterfactual_edits,
         teacher_prefix_search_steps=args.teacher_prefix_search_steps,
+        teacher_low_count_sweep=args.teacher_low_count_sweep,
+        synthetic_count_role=args.synthetic_count_role,
+        synthetic_geometry_oracle_teacher=(
+            args.synthetic_geometry_oracle_teacher
+        ),
+        oracle_teacher_extra_knots=args.oracle_teacher_extra_knots,
         count_weight=args.count_weight,
         supervised_count_weight=args.supervised_count_weight,
         supervised_over_count_weight=args.supervised_over_count_weight,
@@ -809,7 +1128,11 @@ def main(argv=None):
     )
     print(
         "Simplification curriculum: training-only ranked-prefix teacher "
-        f"steps={args.teacher_prefix_search_steps}; certified over-count "
+        f"steps={args.teacher_prefix_search_steps}, exact low-K sweep through "
+        f"K={args.teacher_low_count_sweep}; certified source K role="
+        f"{args.synthetic_count_role}; geometry-oracle bootstrap="
+        f"{args.synthetic_geometry_oracle_teacher} (+"
+        f"{args.oracle_teacher_extra_knots}); certified over-count "
         f"weight={args.supervised_over_count_weight:g}, symmetric true-count "
         f"weight={args.supervised_count_weight:g}; complexity multiplier "
         f"0..{args.complexity_max_scale:g}; safety "
@@ -818,7 +1141,13 @@ def main(argv=None):
         "Deployment still uses one network forward and one final refit.",
         flush=True,
     )
-    print("Validation checkpoint quality uses the worst source pass rate. Additional subset fits run only during training.", flush=True)
+    print(
+        "Validation checkpoint quality uses the worst data-source rate and "
+        f"an explicit K={args.max_control_points - 4} boundary audit "
+        f"(n={min(args.synthetic_boundary_val_size, args.val_size)}). "
+        "Additional subset fits run only during training.",
+        flush=True,
+    )
     for epoch in range(start_epoch, args.epochs + 1):
         stage = "proposal" if epoch <= args.proposal_epochs else "joint"
         applied_safety_scale = selection_safety_scale
@@ -831,7 +1160,10 @@ def main(argv=None):
             model.load_state_dict(best_proposal["model_state_dict"], strict=True)
             proposal_gate = args.proposal_pass_target
             proposal_ready = (
-                best_proposal["validation_metrics"]["worst_dense_pass_rate"]
+                best_proposal["validation_metrics"].get(
+                    "qualification_dense_pass_rate",
+                    best_proposal["validation_metrics"]["worst_dense_pass_rate"],
+                )
                 >= proposal_gate
             )
             if not proposal_ready and not args.allow_infeasible_proposals:
@@ -891,11 +1223,12 @@ def main(argv=None):
             stage=stage,
             knot_match_tolerance=args.knot_match_tolerance,
             log_every=args.log_every_batches,
+            synthetic_boundary_knot_count=args.max_control_points - 4,
         )
         train_metrics = {k: v/samples for k, v in total.items()}
         applied_complexity_scale = complexity_scale
         if stage == "joint":
-            observed_pass = measured["worst_deployment_pass_rate"]
+            observed_pass = measured["qualification_deployment_pass_rate"]
             if observed_pass >= args.deployment_pass_target:
                 feasible_streak += 1
             else:
@@ -922,7 +1255,10 @@ def main(argv=None):
         history.append(entry)
         improved = False
         if stage == "proposal":
-            rank = (measured["worst_dense_pass_rate"], -measured["dense_mse"])
+            rank = (
+                measured["qualification_dense_pass_rate"],
+                -measured["dense_mse"],
+            )
             if proposal_rank is None or rank > tuple(proposal_rank):
                 proposal_rank, improved = rank, True
             proposal_ready = proposal_rank[0] >= min(
@@ -943,7 +1279,11 @@ def main(argv=None):
             )
             if best_rank is None or rank > tuple(best_rank):
                 best_rank, improved = rank, True
-        accepted = stage == "joint" and measured["worst_deployment_pass_rate"] >= args.deployment_pass_target
+        accepted = (
+            stage == "joint"
+            and measured["qualification_deployment_pass_rate"]
+            >= args.deployment_pass_target
+        )
         payload = dict(objective_version=V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
             model_config=model.get_config(), model_state_dict={k:v.detach().cpu() for k,v in model.state_dict().items()},
             optimizer_state_dict=optimizer.state_dict(), epoch=epoch, stage=stage,
@@ -1006,6 +1346,14 @@ def main(argv=None):
             rng_state=torch.get_rng_state(), cuda_rng_state=torch.cuda.get_rng_state_all() if device.type == "cuda" else [],
             loss_config=dict(policy_samples=args.policy_samples, counterfactual_edits=args.counterfactual_edits,
                              teacher_prefix_search_steps=args.teacher_prefix_search_steps,
+                             teacher_low_count_sweep=args.teacher_low_count_sweep,
+                             synthetic_count_role=args.synthetic_count_role,
+                             synthetic_geometry_oracle_teacher=(
+                                 args.synthetic_geometry_oracle_teacher
+                             ),
+                             oracle_teacher_extra_knots=(
+                                 args.oracle_teacher_extra_knots
+                             ),
                              ranked_prefix_teacher=objective.ranked_prefix_teacher,
                              knot_position_beta=objective.knot_position_beta,
                              mse_tolerance=args.mse_tolerance, solver_jitter=objective.solver_jitter,
@@ -1029,12 +1377,29 @@ def main(argv=None):
         history_path.write_text(json.dumps(history, indent=2, allow_nan=False), encoding="utf-8")
         print(f"Epoch {epoch:03} val dense={measured['dense_pass_rate']:.1%} "
               f"deployment={measured['deployment_pass_rate']:.1%} worst-source={measured['worst_deployment_pass_rate']:.1%} "
+              f"qualification={measured['qualification_deployment_pass_rate']:.1%} "
               f"MSE={measured['deployment_mse']:.3e} K={measured['keep_count']:.2f} "
               f"mass={measured['keep_probability_mass']:.2f} beta={measured['adaptive_keep_threshold']:.2f} "
               f"complexity={applied_complexity_scale:.2f}->{complexity_scale:.2f} "
               f"safety={safety_knots}+{safety_sigma:.2f}sigma "
               f"scale={applied_safety_scale:.2f}->{selection_safety_scale:.2f} "
               f"target_met={accepted}", flush=True)
+        boundary_n = measured["synthetic_boundary_sample_count"]
+        if boundary_n:
+            print(
+                f"  Synthetic K={measured['synthetic_boundary_knot_count']}: "
+                f"n={boundary_n}, "
+                f"dense={measured['synthetic_boundary_dense_pass_rate']:.1%}, "
+                "deployment="
+                f"{measured['synthetic_boundary_deployment_pass_rate']:.1%}",
+                flush=True,
+            )
+        else:
+            print(
+                f"  Synthetic K={measured['synthetic_boundary_knot_count']}: "
+                "boundary audit unavailable (uncertified diagnostic data)",
+                flush=True,
+            )
         for name, values in measured["by_source"].items():
             count_detail = (
                 f", targetK={values['target_count_mean']:.2f}, "

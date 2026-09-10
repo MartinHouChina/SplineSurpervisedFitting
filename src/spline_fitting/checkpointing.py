@@ -46,7 +46,9 @@ V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION = (
     "candidate_selection_counterfactual_bspline_v16"
 )
 V16_ADAPTIVE_SELECTION_REVISION = "v16_ranked_prefix_count_coupled_mass_topk"
-V16_CERTIFIED_SYNTHETIC_CONTRACT = "source_subset_threshold_minimal_v1"
+V16_CERTIFIED_SYNTHETIC_CONTRACT = (
+    "source_subset_threshold_minimal_k4_56_span001_v2"
+)
 V16_SIMPLIFICATION_CONTRACT = (
     "ranked_prefix_certified_cardinality_adaptive_complexity_v1"
 )
@@ -60,6 +62,12 @@ V16_FORMAL_KNOT_MATCH_TOLERANCE = 0.01
 V16_FORMAL_SYNTHETIC_COUNT_MAE_MAX = 2.0
 V16_FORMAL_SYNTHETIC_KNOT_F1_MIN = 0.60
 V16_FORMAL_SYNTHETIC_MATCHED_MAE_MAX = 0.005
+V16_FORMAL_SYNTHETIC_MIN_INTERNAL_KNOTS = 4
+V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS = 56
+V16_FORMAL_SYNTHETIC_MIN_CONTROL_POINTS = 8
+V16_FORMAL_SYNTHETIC_MAX_CONTROL_POINTS = 60
+V16_FORMAL_SYNTHETIC_KNOT_MIN_SPAN = 0.01
+V16_FORMAL_SYNTHETIC_BOUNDARY_SAMPLES_MIN = 32
 V16_FORMAL_FINAL_SAFETY_SIGMA_MAX = 0.05
 # Historical training scripts import this alias. Keep their v15 defaults and
 # checkpoint labels unchanged; v16 has a dedicated trainer and explicit label.
@@ -75,6 +83,13 @@ def _finite_checkpoint_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return result if math.isfinite(result) else None
+
+
+def _checkpoint_int(value: Any) -> int | None:
+    """Return an exact checkpoint integer without accepting booleans."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
 
 
 def assess_v16_checkpoint(
@@ -141,7 +156,34 @@ def assess_v16_checkpoint(
     )
     minimality_audit_points = dataset_config.get("minimality_audit_points")
     candidate_capacity = _finite_checkpoint_float(
-        model_config.get("max_internal_knots", training.get("candidate_knots"))
+        model_config.get("max_internal_knots")
+    )
+    synthetic_min_control_points = _checkpoint_int(
+        dataset_config.get("min_control_points")
+    )
+    synthetic_max_control_points = _checkpoint_int(
+        dataset_config.get("max_control_points")
+    )
+    synthetic_knot_min_span = _finite_checkpoint_float(
+        dataset_config.get("knot_min_span")
+    )
+    synthetic_boundary_knot_count = _checkpoint_int(
+        validation.get("synthetic_boundary_knot_count")
+    )
+    synthetic_boundary_sample_count = _checkpoint_int(
+        validation.get("synthetic_boundary_sample_count")
+    )
+    synthetic_boundary_dense_pass_rate = _finite_checkpoint_float(
+        validation.get("synthetic_boundary_dense_pass_rate")
+    )
+    synthetic_boundary_deployment_pass_rate = _finite_checkpoint_float(
+        validation.get("synthetic_boundary_deployment_pass_rate")
+    )
+    observed_qualification_dense = _finite_checkpoint_float(
+        validation.get("qualification_dense_pass_rate")
+    )
+    observed_qualification_deployment = _finite_checkpoint_float(
+        validation.get("qualification_deployment_pass_rate")
     )
     observed_keep_count = _finite_checkpoint_float(
         validation.get("keep_count")
@@ -169,8 +211,8 @@ def assess_v16_checkpoint(
     )
     configured_target_met = (
         configured_deployment is not None
-        and observed_deployment is not None
-        and observed_deployment >= configured_deployment
+        and observed_qualification_deployment is not None
+        and observed_qualification_deployment >= configured_deployment
     )
     configured_checkpoint_accepted = (
         checkpoint.get("stage") == "joint" and configured_target_met
@@ -228,10 +270,33 @@ def assess_v16_checkpoint(
     certified_synthetic = dataset_config.get("certified_minimal_source")
     if synthetic_contract != V16_CERTIFIED_SYNTHETIC_CONTRACT:
         reasons.append(
-            "synthetic data contract is not the certified source-subset minimality revision"
+            "synthetic data contract is not the certified K=4..56 source-subset "
+            "minimality revision"
         )
     if certified_synthetic is not True:
         reasons.append("certified-minimal synthetic source generation is not enabled")
+    if synthetic_min_control_points != V16_FORMAL_SYNTHETIC_MIN_CONTROL_POINTS:
+        reasons.append(
+            "formal synthetic source minimum must be 8 control points "
+            "(4 internal knots)"
+        )
+    if synthetic_max_control_points != V16_FORMAL_SYNTHETIC_MAX_CONTROL_POINTS:
+        reasons.append(
+            "formal synthetic source maximum must be 60 control points "
+            "(56 internal knots)"
+        )
+    if (
+        synthetic_knot_min_span is None
+        or not math.isclose(
+            synthetic_knot_min_span,
+            V16_FORMAL_SYNTHETIC_KNOT_MIN_SPAN,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+    ):
+        reasons.append(
+            "formal synthetic knot_min_span must equal 0.01 for the K=4..56 protocol"
+        )
     if certificate_rms_tolerance is None or certificate_rms_tolerance <= 0:
         reasons.append("synthetic minimality RMS tolerance is missing or invalid")
     elif (
@@ -257,8 +322,15 @@ def assess_v16_checkpoint(
             f"synthetic minimality audit grid has fewer than "
             f"{V16_MINIMALITY_AUDIT_POINTS} points"
         )
-    if candidate_capacity is None or candidate_capacity <= 0:
-        reasons.append("candidate-knot capacity is missing or invalid")
+    if candidate_capacity is None or not math.isclose(
+        candidate_capacity,
+        V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS,
+        rel_tol=0.0,
+        abs_tol=0.0,
+    ):
+        reasons.append(
+            "formal v16 candidate-knot capacity must equal 56 internal knots"
+        )
     if observed_keep_count is None or observed_keep_count < 0:
         reasons.append("validation mean retained-knot count is missing or invalid")
     elif (
@@ -292,6 +364,102 @@ def assess_v16_checkpoint(
         reasons.append(
             "certified synthetic matched-knot MAE exceeds the formal limit "
             f"{V16_FORMAL_SYNTHETIC_MATCHED_MAE_MAX:g}"
+        )
+    if (
+        synthetic_boundary_knot_count
+        != V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS
+    ):
+        reasons.append(
+            "formal validation boundary must be the K=56 synthetic stratum"
+        )
+    if (
+        synthetic_boundary_sample_count is None
+        or synthetic_boundary_sample_count
+        < V16_FORMAL_SYNTHETIC_BOUNDARY_SAMPLES_MIN
+    ):
+        reasons.append(
+            "formal validation K=56 boundary audit must contain at least "
+            f"{V16_FORMAL_SYNTHETIC_BOUNDARY_SAMPLES_MIN} synthetic samples"
+        )
+    if (
+        synthetic_boundary_dense_pass_rate is None
+        or not 0.0 <= synthetic_boundary_dense_pass_rate <= 1.0
+    ):
+        reasons.append("K=56 dense proposal pass rate is missing or invalid")
+    elif synthetic_boundary_dense_pass_rate < required:
+        reasons.append(
+            f"observed K=56 dense proposal pass rate "
+            f"{synthetic_boundary_dense_pass_rate:.3%} is below the required "
+            f"{required:.3%}"
+        )
+    if (
+        synthetic_boundary_deployment_pass_rate is None
+        or not 0.0 <= synthetic_boundary_deployment_pass_rate <= 1.0
+    ):
+        reasons.append("K=56 deployment pass rate is missing or invalid")
+    elif synthetic_boundary_deployment_pass_rate < required:
+        reasons.append(
+            f"observed K=56 deployment pass rate "
+            f"{synthetic_boundary_deployment_pass_rate:.3%} is below the required "
+            f"{required:.3%}"
+        )
+    expected_qualification_dense = None
+    if (
+        observed_dense is not None
+        and synthetic_boundary_dense_pass_rate is not None
+    ):
+        expected_qualification_dense = min(
+            observed_dense, synthetic_boundary_dense_pass_rate
+        )
+    expected_qualification_deployment = None
+    if (
+        observed_deployment is not None
+        and synthetic_boundary_deployment_pass_rate is not None
+    ):
+        expected_qualification_deployment = min(
+            observed_deployment, synthetic_boundary_deployment_pass_rate
+        )
+    if observed_qualification_dense is None:
+        reasons.append("qualification dense pass rate is missing or invalid")
+    elif (
+        expected_qualification_dense is not None
+        and not math.isclose(
+            observed_qualification_dense,
+            expected_qualification_dense,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+    ):
+        reasons.append(
+            "qualification dense pass rate is inconsistent with "
+            "min(worst-source, K=56)"
+        )
+    elif observed_qualification_dense < required:
+        reasons.append(
+            f"observed qualification dense pass rate "
+            f"{observed_qualification_dense:.3%} is below the required "
+            f"{required:.3%}"
+        )
+    if observed_qualification_deployment is None:
+        reasons.append("qualification deployment pass rate is missing or invalid")
+    elif (
+        expected_qualification_deployment is not None
+        and not math.isclose(
+            observed_qualification_deployment,
+            expected_qualification_deployment,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+    ):
+        reasons.append(
+            "qualification deployment pass rate is inconsistent with "
+            "min(worst-source, K=56)"
+        )
+    elif observed_qualification_deployment < required:
+        reasons.append(
+            f"observed qualification deployment pass rate "
+            f"{observed_qualification_deployment:.3%} is below the required "
+            f"{required:.3%}"
         )
     if (
         recorded_match_tolerance is None
@@ -384,16 +552,47 @@ def assess_v16_checkpoint(
             )
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "required_reporting_pass_rate": required,
         "required_mse_tolerance": required_tolerance,
         "configured_proposal_pass_target": configured_proposal,
         "configured_deployment_pass_target": configured_deployment,
         "observed_worst_dense_pass_rate": observed_dense,
         "observed_worst_deployment_pass_rate": observed_deployment,
+        "observed_qualification_dense_pass_rate": observed_qualification_dense,
+        "observed_qualification_deployment_pass_rate": (
+            observed_qualification_deployment
+        ),
         "recorded_mse_tolerance": recorded_tolerance,
         "recorded_knot_match_tolerance": recorded_match_tolerance,
         "candidate_knot_capacity": candidate_capacity,
+        "formal_synthetic_min_internal_knots": (
+            V16_FORMAL_SYNTHETIC_MIN_INTERNAL_KNOTS
+        ),
+        "formal_synthetic_max_internal_knots": (
+            V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS
+        ),
+        "formal_synthetic_min_control_points": (
+            V16_FORMAL_SYNTHETIC_MIN_CONTROL_POINTS
+        ),
+        "formal_synthetic_max_control_points": (
+            V16_FORMAL_SYNTHETIC_MAX_CONTROL_POINTS
+        ),
+        "formal_synthetic_knot_min_span": V16_FORMAL_SYNTHETIC_KNOT_MIN_SPAN,
+        "formal_synthetic_boundary_samples_min": (
+            V16_FORMAL_SYNTHETIC_BOUNDARY_SAMPLES_MIN
+        ),
+        "synthetic_min_control_points": synthetic_min_control_points,
+        "synthetic_max_control_points": synthetic_max_control_points,
+        "synthetic_knot_min_span": synthetic_knot_min_span,
+        "synthetic_boundary_knot_count": synthetic_boundary_knot_count,
+        "synthetic_boundary_sample_count": synthetic_boundary_sample_count,
+        "synthetic_boundary_dense_pass_rate": (
+            synthetic_boundary_dense_pass_rate
+        ),
+        "synthetic_boundary_deployment_pass_rate": (
+            synthetic_boundary_deployment_pass_rate
+        ),
         "observed_mean_retained_knots": observed_keep_count,
         "configured_target_met": configured_target_met,
         "configured_checkpoint_accepted": configured_checkpoint_accepted,

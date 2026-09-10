@@ -43,6 +43,14 @@ from compare_knot_methods import _select_indices
 from visualize_batch_comparison import _dataset_config_from_checkpoint
 
 METHODS = ("ours", *COMPARISON_BASELINE_METHODS)
+PUBLISHED_METHODS = (
+    "ours",
+    "park_dominant_point_2007_adaptation",
+    "liang_feature_iki_2017_adaptation",
+    "dung_direct_knot_2017_adaptation",
+    "kang_sparse_2015_adaptation",
+    "luo_linf_de_2022_adaptation",
+)
 LABELS = {
     "ours": "Ours v15 learned",
     "park_dominant_point_2007_adaptation": "Park & Lee 2007 (DOM adaptation)",
@@ -78,6 +86,15 @@ def parser(*, default_checkpoint: Path | None = None,
     p.add_argument("--seed", type=int, default=20000)
     p.add_argument("--selection-seed", type=int, default=20260908)
     p.add_argument("--real-samples-per-dataset", type=int, default=10)
+    p.add_argument(
+        "--method-set",
+        choices=("published", "all"),
+        default="all",
+        help=(
+            "'published' evaluates Ours, Park, Liang, Dung, Kang and Luo; "
+            "'all' additionally evaluates Yeh and uniform greedy"
+        ),
+    )
     p.add_argument("--manifest", action="append", default=[], metavar="NAME=PATH")
     p.add_argument("--skip-synthetic", action="store_true")
     p.add_argument("--skip-real", action="store_true")
@@ -814,24 +831,25 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
             rows = recover_journal(journal)
     else:
         metadata_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+    methods = PUBLISHED_METHODS if args.method_set == "published" else METHODS
     done = {(r["dataset"], r["sample_id"], r["method"]) for r in rows}
-    expected = {(c["dataset"], c["sample_id"], m) for c in cases for m in METHODS}
+    expected = {(c["dataset"], c["sample_id"], m) for c in cases for m in methods}
     if len(done) != len(rows) or not done.issubset(expected):
         p.error("Journal contains duplicate or unexpected experiment records")
     if done != expected:
         print("Warming numerical solvers (excluded from timing)...", flush=True)
         t = torch.linspace(0, 1, 32, dtype=torch.float64)
         warm_points = torch.stack((t, t.square()), dim=-1)
-        for method in METHODS[1:]:
+        for method in methods[1:]:
             run_published_baseline(
                 method,
                 warm_points,
                 **published_baseline_kwargs(args, degree=model.degree, warmup=True),
             )
-    print(f"{len(cases)} curves x {len(METHODS)} methods; device={device}; MSE tolerance={args.mse_tolerance:g}", flush=True)
+    print(f"{len(cases)} curves x {len(methods)} methods; device={device}; MSE tolerance={args.mse_tolerance:g}", flush=True)
     with journal.open("a", encoding="utf-8") as handle:
         for i, case in enumerate(cases, 1):
-            for method in METHODS:
+            for method in methods:
                 if (case["dataset"], case["sample_id"], method) in done:
                     continue
                 row = {"dataset": case["dataset"], "sample_id": case["sample_id"], "group_id": case["group_id"],

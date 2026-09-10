@@ -19,6 +19,7 @@ candidate_selection_counterfactual_bspline_v16
 | [数学定义](math_formulation.md) | 参数、候选、组合代价与训练目标 |
 | [PPT 速查](presentation_demo.md) | 十页展示顺序和禁止误述项 |
 | [验证记录](v16_verification.md) | 测试、当前 checkpoint 状态和待完成实验 |
+| [Kang/Luo 1e-4 复查](kang_luo_mse1e-4_audit.md) | 统一阈值、修正项、分阶段失效诊断和正式预算 |
 | [流程图 SVG](figures/v16_pipeline.svg) / [PNG](figures/v16_pipeline.png) | 同一 v16 流程图的矢量版和 1600×760 位图 |
 
 ## 2. v16 代码
@@ -32,7 +33,7 @@ candidate_selection_counterfactual_bspline_v16
 | src/spline_fitting/losses/v16_subset_loss.py | 可微标准 refit、Bernoulli 策略梯度、反事实集合及在线蒸馏 |
 | src/spline_fitting/losses/deployment_bspline_loss.py | 训练期可微标准 B 样条 refit |
 | src/spline_fitting/evaluation/bspline_inference.py | 部署期标准 B 样条控制顶点求解 |
-| src/spline_fitting/checkpointing.py | v16 构建及 90% 工程资格审计；MSE 阈值仍为 2.5e-5 |
+| src/spline_fitting/checkpointing.py | v16 构建及 90% 工程资格审计；MSE 阈值由检查命令显式指定 |
 
 ### 数据
 
@@ -51,15 +52,16 @@ candidate_selection_counterfactual_bspline_v16
 | 文件 | 作用 |
 |---|---|
 | scripts/train_v16.py | 两阶段训练、worst-source gate、续训和 checkpoint qualification |
-| scripts/run_v16_overnight_12h.ps1 | Kc=64、source K=4..24、MSE=5e-5 的无人值守串行入口；自动等待/续训、资格分流、八方法 benchmark 和 Ours 案例图 |
+| scripts/run_v16_mse1e-4_3090.ps1 | 当前 Kc=56（完整节点向量 64 项）、source K=4..56（控制顶点 8..60）、`knot_min_span=0.01`、MSE=1e-4 的 3090 串行入口；训练、资格检查、六方法四指标及真实案例图 |
+| scripts/run_v16_overnight_12h.ps1 | 历史 Kc=64、MSE=5e-5 无人值守入口；只用于旧消融追溯，不是当前命令 |
 | scripts/inspect_v16_checkpoint.py | 训练后统一资格检查；合格返回 0，不合格返回 2 |
 | scripts/fit_v16_point_cloud.py | 单条用户点云部署，输出 PNG/JSON |
-| scripts/benchmark_v16_datasets.py | v16 合成和三个真实数据集的八方法配对测试 |
+| scripts/benchmark_v16_datasets.py | v16 合成和三个真实数据集的六方法主表；`--method-set all` 可运行附加控制 |
 | scripts/benchmark_v15_datasets.py | benchmark 的共享执行内核；v16 入口依赖它，不能删除 |
 | scripts/plot_v16_method_comparison.py | 从正式 v16 benchmark JSON 生成 Ours/Park/Liang/Dung/Kang/Luo 的 2×2 MSE、通过率、节点数和时间图；`--method-set all` 增加 Yeh/贪心 |
 | scripts/plot_v15_dataset_benchmark.py | v15/v16 兼容的旧通用指标绘图入口；保留给历史报告 |
 | scripts/visualize_v16_ours_cases.py | Ours 留出真实曲线单例结构图和多案例总览；标注采样点、曲线、控制顶点及节点参数条 |
-| scripts/visualize_v16_real_deployments.py | Ours/Kang/Yeh/uniform greedy 的真实曲线四宫格 |
+| scripts/visualize_v16_real_deployments.py | Ours/Park/Liang/Dung/Kang/Luo 的真实曲线 3×2 对比图；逐面板展示输入/参考、拟合、控制多边形与顶点、节点、MSE、K 和完整耗时，Ours 另列网络耗时 |
 | scripts/smoke_v16_subset_learning.py | 最小组合学习机制检查；输出写入临时目录 |
 
 ## 3. 公开方法适配
@@ -84,10 +86,10 @@ candidate_selection_counterfactual_bspline_v16
 检查命令：
 
 ~~~powershell
-python scripts/inspect_v16_checkpoint.py --checkpoint outputs/checkpoints/candidate_selection_v16_simplified_certified_k96.pt --required-pass-rate 0.90 --mse-tolerance 2.5e-5
+python scripts/inspect_v16_checkpoint.py --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56.pt --required-pass-rate 0.90 --mse-tolerance 1e-4
 ~~~
 
-`candidate_selection_v16_simplified_certified_k96.pt` 是正式训练目标，不保证当前工作区已经存在或合格；文件名不能代替上述资格审计。当前 Kc=64/96 训练、完整向量64（Kc=56）消融、合成最简数据合同和旧 proposal 迁移规则见[训练流程](training_pipeline.md)及[合成曲线最简性报告](synthetic_data_minimality_report.md)。旧固定阈值权重只能用新 output 配合 `--init-checkpoint` 迁移兼容张量；不能 `--resume` 成当前架构。未合格权重的图只允许通过 `--allow-unqualified-diagnostic` 生成，并必须保留水印。
+`candidate_selection_v16_mse1e-4_k56.pt` 是本轮待训练的正式目标，不保证当前工作区已经存在或合格；文件名不能代替上述资格审计。旧 K64/K96 仅保留为历史容量或阈值消融。合成最简数据合同和旧 proposal 迁移规则见[训练流程](training_pipeline.md)及[合成曲线最简性报告](synthetic_data_minimality_report.md)。旧 K64 proposal 只可用新 output 配合 `--init-checkpoint` warm start：65 个 interval query 沿参数域插值为 57 个，其他形状兼容的 proposal 张量迁移，Selector、联合解码器和优化器新训；不能 `--resume` 成当前 K56 合同。未合格权重的图只允许通过 `--allow-unqualified-diagnostic` 生成，并必须保留水印。
 
 ## 5. 输出目录
 
@@ -113,7 +115,10 @@ outputs/
 
 正式结果目录不要使用 smoke、test 或 latest。
 
-本轮夜间入口按 checkpoint SHA-256 自动区分 `formal_<hash>` 与 `diagnostic_<hash>`。运行总状态和每阶段命令、返回码、耗时、日志及最终目录记录在 `outputs/logs/candidate_selection_v16_mse5e-5_k64/overnight_manifest.json`；完整参数、续训规则和产物树见[训练流程第 9 节](training_pipeline.md#9-12-小时无人值守训练比较与案例图)。
+当前 1e-4 串行入口按 checkpoint SHA-256 自动区分 `formal_<hash>` 与
+`diagnostic_<hash>`。运行总状态和每阶段命令、返回码、耗时及最终目录记录在
+`outputs/logs/candidate_selection_v16_mse1e-4_k56/pipeline_manifest.json`。旧
+`mse5e-5_k64` overnight manifest 只属于历史消融。
 
 ## 6. 测试
 
@@ -126,8 +131,8 @@ v16 主测试：
 | tests/test_train_v16.py | 两阶段 gate、保存、恢复、资格和配置校验 |
 | tests/test_v16_checkpoint_integration.py | checkpoint 构建、未达标拒绝及诊断放行 |
 | tests/test_fit_v16_point_cloud.py | 用户点云部署、JSON/PNG 和诊断水印 |
-| tests/test_visualize_v16_real_deployments.py | 真实四宫格与资格守卫 |
-| tests/test_benchmark_v15_datasets.py | v15/v16 共享 benchmark、七个基线和报告 |
+| tests/test_visualize_v16_real_deployments.py | 真实六方法 3×2 图与资格守卫 |
+| tests/test_benchmark_v15_datasets.py | v15/v16 共享 benchmark、六方法主集合、附加控制和报告 |
 | tests/test_plot_v15_dataset_benchmark.py | 指标绘图及诊断水印 |
 | tests/test_plot_v16_method_comparison.py | v16 正式方法图、方法集合、输入审计及诊断水印 |
 

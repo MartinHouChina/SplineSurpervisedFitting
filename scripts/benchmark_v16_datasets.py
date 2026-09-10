@@ -18,13 +18,23 @@ from benchmark_v15_datasets import main as shared_main
 from spline_fitting.checkpointing import V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
 
 
+def _has_option(arguments: list[str], option: str) -> bool:
+    return any(
+        value == option or value.startswith(option + "=")
+        for value in arguments
+    )
+
+
 def main(argv=None):
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if not _has_option(arguments, "--max-knot-count"):
+        arguments.extend(("--max-knot-count", "56"))
     return shared_main(
-        argv,
+        arguments,
         expected_objective=V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
         default_checkpoint=Path(
             "outputs/checkpoints/"
-            "candidate_selection_v16_simplified_certified_k96.pt"
+            "candidate_selection_v16_mse1e-4_k56.pt"
         ),
         default_output_dir=Path("outputs/comparisons/v16_multidata"),
     )

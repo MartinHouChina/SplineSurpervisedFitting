@@ -25,6 +25,13 @@ def points():
                         torch.stack([t, (5 * t).cos()], -1)])
 
 
+def test_new_model_default_uses_56_internal_candidates():
+    model = V16CandidateSelectionNetwork()
+    assert model.max_internal_knots == 56
+    assert model.candidate_head.interval_queries.shape[0] == 57
+    assert model.get_config()["max_internal_knots"] == 56
+
+
 @pytest.mark.parametrize("kind", ["empty", "full", "mixed"])
 def test_subset_outputs_strict_and_finite(network, points, kind):
     context = network.encode_candidates(points)
@@ -158,6 +165,21 @@ def test_adaptive_beta_is_curve_level_and_centers_raw_importance(points):
     )
 
 
+def test_initial_keep_fraction_controls_untrained_adaptive_beta_prior():
+    model = V16CandidateSelectionNetwork(
+        hidden_dim=16, encoder_layers=1, max_internal_knots=6,
+        attention_heads=2, selector_layers=1,
+        one_shot_selection_policy="mass_topk",
+        one_shot_adaptive_threshold=True,
+        initial_keep_fraction=0.22,
+    )
+    expected_beta = torch.log(torch.tensor(0.78 / 0.22))
+    torch.testing.assert_close(
+        model.adaptive_threshold_head[-1].bias.detach()[0], expected_beta,
+    )
+    assert model.get_config()["initial_keep_fraction"] == pytest.approx(0.22)
+
+
 def test_runtime_selection_safety_is_validated_and_serialized():
     model = V16CandidateSelectionNetwork(
         hidden_dim=16, encoder_layers=1, max_internal_knots=6,
@@ -272,6 +294,7 @@ def test_repeated_points_remain_strict(network):
     {"mse_tolerance": 0}, {"min_knot_gap": 0.5}, {"min_parameter_gap": -1},
     {"relocation_blend": float("nan")}, {"hidden_dim": 15},
     {"max_internal_knots": 0}, {"selector_layers": 0}, {"structure_mode": "legacy"},
+    {"initial_keep_fraction": 0.0}, {"initial_keep_fraction": 1.0},
 ])
 def test_constructor_validation(options):
     with pytest.raises(ValueError):

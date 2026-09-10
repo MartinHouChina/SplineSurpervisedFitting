@@ -32,8 +32,11 @@ def test_default_profile_is_engineering_90_and_reduced_cost():
     assert args.deployment_pass_target == pytest.approx(0.90)
     assert (args.epochs, args.proposal_epochs) == (60, 20)
     assert (args.train_size, args.val_size, args.real_val_size) == (2400, 500, 100)
+    assert args.synthetic_boundary_val_size == 32
     assert args.batch_size == 16
-    assert args.candidate_knots == 64
+    assert (args.min_control_points, args.max_control_points) == (8, 60)
+    assert args.candidate_knots == 56
+    assert args.knot_min_span == pytest.approx(0.01)
     assert args.one_shot_selection_policy == "mass_topk"
     assert args.one_shot_safety_sigma == pytest.approx(0.25)
     assert args.one_shot_safety_knots == 2
@@ -41,6 +44,11 @@ def test_default_profile_is_engineering_90_and_reduced_cost():
     assert args.final_safety_knots == 0
     assert args.safety_anneal_epochs == 10
     assert args.teacher_prefix_search_steps == 7
+    assert args.teacher_low_count_sweep == 16
+    assert args.synthetic_count_role == "upper_bound"
+    assert args.initial_keep_fraction == pytest.approx(30 / 56)
+    assert args.synthetic_geometry_oracle_teacher is False
+    assert args.oracle_teacher_extra_knots == 2
     assert args.supervised_count_weight == pytest.approx(1.0)
     assert args.supervised_over_count_weight == pytest.approx(1.0)
     assert args.complexity_max_scale == pytest.approx(4.0)
@@ -52,6 +60,9 @@ def test_default_profile_is_engineering_90_and_reduced_cost():
     assert args.minimality_margin == pytest.approx(0.2)
     assert args.minimality_audit_points == 512
     config = train_v16.synthetic_dataset_config(args)
+    assert config["min_control_points"] == 8
+    assert config["max_control_points"] == 60
+    assert config["knot_min_span"] == pytest.approx(0.01)
     assert config["certified_minimal_source"] is True
     assert config["canonical_knot_tolerance"] == pytest.approx(
         args.mse_tolerance ** 0.5
@@ -71,6 +82,12 @@ def test_certified_count_labels_require_enough_candidate_capacity():
         "--candidate-knots", "15", "--max-control-points", "24",
     ])
     with pytest.raises(ValueError, match="maximum synthetic internal-knot count"):
+        train_v16.validate_args(args)
+
+
+def test_synthetic_knot_span_must_support_the_maximum_source_count():
+    args = train_v16.parser().parse_args(["--knot-min-span", "0.02"])
+    with pytest.raises(ValueError, match="knot-min-span.*max-control-points"):
         train_v16.validate_args(args)
 
 
@@ -107,19 +124,121 @@ def test_proposal_transfer_includes_parameter_head_but_not_selector():
             if name.startswith("parameter_head."):
                 value.fill_(0.125)
     selector_before = target.keep_head.weight.detach().clone()
-    copied = train_v16.transfer_proposal_weights(
+    transfer = train_v16.transfer_proposal_weights(
         target, {"model_state_dict": source.state_dict()},
     )
-    assert any(name.startswith("encoder.") for name in copied)
-    assert any(name.startswith("parameter_head.") for name in copied)
-    assert any(name.startswith("candidate_head.") for name in copied)
-    assert not any(name.startswith("keep_head.") for name in copied)
+    transferred = transfer.copied + transfer.resized
+    assert any(name.startswith("encoder.") for name in transferred)
+    assert any(name.startswith("parameter_head.") for name in transferred)
+    assert any(name.startswith("candidate_head.") for name in transferred)
+    assert not any(name.startswith("keep_head.") for name in transferred)
+    assert transfer.resized == ("candidate_head.interval_queries",)
+    assert transfer.retained_target == (
+        "candidate_head.interval_query_anchors",
+    )
     assert all(
         torch.allclose(value, torch.full_like(value, 0.125))
         for name, value in target.named_parameters()
         if name.startswith("parameter_head.")
     )
     torch.testing.assert_close(target.keep_head.weight, selector_before)
+
+
+def test_k64_to_k56_transfer_interpolates_only_interval_query_ranks():
+    source = V16CandidateSelectionNetwork(
+        point_dim=2, hidden_dim=16, encoder_layers=1,
+        max_internal_knots=64, attention_heads=4, selector_layers=1,
+    )
+    target = V16CandidateSelectionNetwork(
+        point_dim=2, hidden_dim=16, encoder_layers=1,
+        max_internal_knots=56, attention_heads=4, selector_layers=1,
+    )
+    with torch.no_grad():
+        ranks = (
+            (torch.arange(65, dtype=torch.float32) + 0.5) / 65
+        ).unsqueeze(-1)
+        source.candidate_head.interval_queries.copy_(
+            ranks.expand(-1, source.hidden_dim)
+        )
+    target_anchors = target.candidate_head.interval_query_anchors.clone()
+    target_selector = target.keep_head.weight.detach().clone()
+
+    transfer = train_v16.transfer_proposal_weights(
+        target, {"model_state_dict": source.state_dict()},
+    )
+
+    assert transfer.resized == ("candidate_head.interval_queries",)
+    assert transfer.retained_target == (
+        "candidate_head.interval_query_anchors",
+    )
+    expected = (
+        ((torch.arange(57, dtype=torch.float32) + 0.5) / 57)
+        .unsqueeze(-1)
+        .expand(-1, 16)
+    )
+    torch.testing.assert_close(
+        target.candidate_head.interval_queries.detach(), expected,
+    )
+    torch.testing.assert_close(
+        target.candidate_head.interval_query_anchors, target_anchors,
+    )
+    torch.testing.assert_close(target.keep_head.weight, target_selector)
+
+
+def test_proposal_transfer_never_overwrites_deterministic_target_anchors():
+    source = V16CandidateSelectionNetwork(
+        hidden_dim=16, encoder_layers=1, max_internal_knots=56,
+        attention_heads=4, selector_layers=1,
+    )
+    target = V16CandidateSelectionNetwork(
+        hidden_dim=16, encoder_layers=1, max_internal_knots=56,
+        attention_heads=4, selector_layers=1,
+    )
+    with torch.no_grad():
+        source.candidate_head.interval_query_anchors.fill_(0.123)
+    expected = target.candidate_head.interval_query_anchors.clone()
+    transfer = train_v16.transfer_proposal_weights(
+        target, {"model_state_dict": source.state_dict()},
+    )
+    assert transfer.retained_target == (
+        "candidate_head.interval_query_anchors",
+    )
+    torch.testing.assert_close(
+        target.candidate_head.interval_query_anchors, expected,
+    )
+
+
+def test_proposal_transfer_rejects_wrong_objective_or_partial_contract():
+    source = V16CandidateSelectionNetwork(
+        point_dim=2, hidden_dim=16, encoder_layers=1,
+        max_internal_knots=64, attention_heads=4, selector_layers=1,
+    )
+    target = V16CandidateSelectionNetwork(
+        point_dim=2, hidden_dim=16, encoder_layers=1,
+        max_internal_knots=56, attention_heads=4, selector_layers=1,
+    )
+    checkpoint = {
+        "objective_version": "unrelated_objective",
+        "model_config": source.get_config(),
+        "model_state_dict": source.state_dict(),
+    }
+    with pytest.raises(ValueError, match="objective is not compatible"):
+        train_v16.transfer_proposal_weights(target, checkpoint)
+
+    checkpoint["objective_version"] = V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+    checkpoint["model_config"] = {
+        **source.get_config(),
+        "point_dim": 3,
+    }
+    with pytest.raises(ValueError, match="incompatible proposal contract.*point_dim"):
+        train_v16.transfer_proposal_weights(target, checkpoint)
+
+    checkpoint["model_config"] = source.get_config()
+    incomplete = dict(source.state_dict())
+    incomplete.pop("candidate_head.interval_queries")
+    checkpoint["model_state_dict"] = incomplete
+    with pytest.raises(ValueError, match="missing required proposal tensors"):
+        train_v16.transfer_proposal_weights(target, checkpoint)
 
 
 @pytest.fixture(autouse=True)
@@ -329,6 +448,48 @@ def test_validation_is_group_balanced_and_never_uses_test(real_manifest, dataset
     assert all(validation[index]["source"] == "TestReal" for index in range(2, 4))
 
 
+def test_validation_reserves_deterministic_maximum_complexity_slots(
+    dataset_config,
+):
+    validation = ValidationCurves(
+        dataset_config,
+        size=5,
+        seed=1234,
+        synthetic_boundary_samples=3,
+    )
+    repeated = ValidationCurves(
+        dataset_config,
+        size=5,
+        seed=1234,
+        synthetic_boundary_samples=3,
+    )
+    assert len(validation) == 5
+    assert validation.synthetic_boundary is not None
+    assert validation.synthetic_boundary.min_control_points == 12
+    assert validation.synthetic_boundary.max_control_points == 12
+    assert all(
+        validation.entries[index][1] is validation.synthetic_boundary
+        for index in range(3)
+    )
+    assert all(
+        validation.entries[index][1] is validation.synthetic
+        for index in range(3, 5)
+    )
+    for index in range(5):
+        torch.testing.assert_close(
+            validation[index]["points"], repeated[index]["points"],
+            rtol=0,
+            atol=0,
+        )
+
+    with pytest.raises(ValueError, match="non-negative integer"):
+        ValidationCurves(
+            dataset_config,
+            size=2,
+            synthetic_boundary_samples=True,
+        )
+
+
 def test_group_sampler_caps_without_duplicates_and_balances_prefix():
     records = [dict(group_id="large") for _ in range(8)] + [dict(group_id="small")]
     selected = grouped_indices(records, 100, seed=42)
@@ -379,6 +540,32 @@ def test_validation_summary_reports_certified_count_and_position_accuracy():
     assert synthetic["knot_match_recall"] == pytest.approx(21 / 24)
     assert synthetic["knot_matched_mae"] == pytest.approx(0.095 / 21)
     assert result["synthetic_count_mae"] == pytest.approx(1.5)
+
+
+def test_validation_summary_audits_capacity_boundary_separately():
+    rows = [
+        dict(
+            source="Synthetic", mse=mse, dense_mse=dense_mse, k=keep,
+            target_k=target, probability_mass=float(keep),
+            adaptive_threshold=0.5,
+        )
+        for mse, dense_mse, keep, target in (
+            (5e-5, 1e-5, 52, 56),
+            (2e-4, 2e-4, 50, 56),
+            (1e-5, 1e-5, 4, 4),
+        )
+    ]
+    result = train_v16.summarize(
+        rows,
+        1e-4,
+        synthetic_boundary_knot_count=56,
+    )
+    assert result["synthetic_boundary_knot_count"] == 56
+    assert result["synthetic_boundary_sample_count"] == 2
+    assert result["synthetic_boundary_dense_pass_rate"] == pytest.approx(0.5)
+    assert result["synthetic_boundary_deployment_pass_rate"] == pytest.approx(0.5)
+    assert result["qualification_dense_pass_rate"] == pytest.approx(0.5)
+    assert result["qualification_deployment_pass_rate"] == pytest.approx(0.5)
 
 
 def test_mature_checkpoint_ranking_prefers_certified_count_and_knot_accuracy():
@@ -498,7 +685,7 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
     original = torch.load(last_path, map_location="cpu", weights_only=True)
     assert original["objective_version"] == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
     assert original["epoch"] == 2 and original["stage"] == "joint"
-    assert original["qualification"]["schema_version"] == 2
+    assert original["qualification"]["schema_version"] == 3
     assert original["qualification"]["required_reporting_pass_rate"] == 0.90
     assert original["qualification"]["configured_proposal_pass_target"] == 0.0
     assert not original["qualification"]["formal_reporting_eligible"]
@@ -512,7 +699,10 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
     step_before = max(float(state["step"]) for state in original["optimizer_state_dict"]["state"].values())
     resumed_command = deepcopy(command)
     resumed_command[resumed_command.index("--epochs") + 1] = "3"
-    resumed_command.extend(["--resume", str(last_path)])
+    resumed_command.extend([
+        "--initial-keep-fraction", "0.33",
+        "--resume", str(last_path),
+    ])
     assert train_v16.main(resumed_command) == 0
     resumed = torch.load(last_path, map_location="cpu", weights_only=True)
     assert resumed["epoch"] == 3 and resumed["stage"] == "joint"
@@ -522,6 +712,9 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
     assert step_after == step_before + 2
     assert json.loads((tmp_path / "tiny_v16.history.json").read_text()) == resumed["history"]
     assert resumed["training_config"]["epochs"] == 3
+    assert resumed["training_config"]["initial_keep_fraction"] == pytest.approx(
+        original["training_config"]["initial_keep_fraction"]
+    )
     best = torch.load(output, map_location="cpu", weights_only=True)
     assert best["epoch"] in (2, 3)
     assert best["deployment_config"]["network_forwards"] == 1

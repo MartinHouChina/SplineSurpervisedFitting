@@ -1,6 +1,12 @@
-"""Visualize v16 deployments and independent baselines on held-out curves.
+"""Visualize v16 and six published-method adaptations on held-out curves.
 
-Each PNG uses the same normalized ordered observations for all four methods.
+Each PNG uses the same normalized ordered observations for all six methods:
+Ours v16, Park & Lee, Liang, Dung & Tjahjowidodo, Kang, and Luo.  Every
+panel shows the observations/reference, final B-spline, control polygon and
+vertices, and internal-knot locations.  Titles report the common MSE, final
+internal-knot count and complete method time; Ours additionally reports its
+device-resident network-forward time.
+
 The plotted curve is the final endpoint-constrained, unregularized standard
 B-spline fit.  Original reference observations are evaluation-only and never
 participate in a refit.  ``--ours-only`` produces paper-ready single-method
@@ -29,6 +35,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from benchmark_v15_datasets import (  # noqa: E402
     LABELS,
     measure_ours,
+    measure_numerical_baseline,
     prepare_cases,
     reference_mse,
     resolve_comparison_capacities,
@@ -39,18 +46,17 @@ from spline_fitting.checkpointing import (  # noqa: E402
     assess_v16_checkpoint,
     build_model_from_checkpoint,
 )
-from spline_fitting.evaluation.published_baselines import (  # noqa: E402
-    run_published_baseline,
-)
-
-
-# This per-curve diagnostic deliberately remains a legible 2x2 view.  The
-# dataset benchmark and its three-metric figure include every published method.
+# Keep the qualitative figure aligned with the six-method quantitative report.
+# Yeh and the repository-native uniform greedy control remain available in the
+# full benchmark but are intentionally not presented as part of this requested
+# six-method published comparison.
 METHODS = (
     "ours",
+    "park_dominant_point_2007_adaptation",
+    "liang_feature_iki_2017_adaptation",
+    "dung_direct_knot_2017_adaptation",
     "kang_sparse_2015_adaptation",
-    "yeh_feature_cdf_2020",
-    "uniform_gradient_pruning",
+    "luo_linf_de_2022_adaptation",
 )
 
 
@@ -60,13 +66,14 @@ def parser() -> argparse.ArgumentParser:
         "--checkpoint", type=Path,
         default=Path(
             "outputs/checkpoints/"
-            "candidate_selection_v16_simplified_certified_k96.pt"
+            "candidate_selection_v16_mse1e-4_k56.pt"
         ),
     )
     result.add_argument(
         "--output-dir", type=Path,
         default=Path(
-            "outputs/figures/v16_simplified_certified_k96/four_method_cases"
+            "outputs/figures/candidate_selection_v16_mse1e-4_k56/"
+            "six_method_cases"
         ),
     )
     result.add_argument(
@@ -85,6 +92,24 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--paper-admm-iterations", type=int, default=400)
     result.add_argument("--paper-lambda-bisections", type=int, default=8)
     result.add_argument("--paper-relocation-iterations", type=int, default=8)
+    result.add_argument("--park-shape-weight", type=float, default=0.8)
+    result.add_argument(
+        "--liang-dense-knots", type=int, default=None,
+        help="Dense preliminary knot count; defaults to --paper-initial-knots.",
+    )
+    result.add_argument("--liang-initial-knots", type=int, default=4)
+    result.add_argument("--liang-curvature-weight", type=float, default=0.5)
+    result.add_argument("--liang-feature-samples", type=int, default=1025)
+    result.add_argument(
+        "--dung-max-error", type=float, default=None,
+        help="Native maximum-distance budget; defaults to sqrt(MSE tolerance).",
+    )
+    result.add_argument("--dung-scan-intervals", type=int, default=10)
+    result.add_argument("--dung-optimization-iterations", type=int, default=10)
+    result.add_argument("--luo-eta", type=float, default=0.5)
+    result.add_argument("--luo-de-population", type=int, default=10)
+    result.add_argument("--luo-de-iterations", type=int, default=50)
+    result.add_argument("--luo-seed", type=int, default=2022)
     result.add_argument("--network-warmups", type=int, default=1)
     result.add_argument("--network-repeats", type=int, default=3)
     result.add_argument("--end-to-end-repeats", type=int, default=1)
@@ -95,7 +120,7 @@ def parser() -> argparse.ArgumentParser:
         "--ours-only", action="store_true",
         help=(
             "Draw one detailed Ours-only PNG per case instead of the compact "
-            "four-method diagnostic; the JSON still records every plotted value."
+            "six-method comparison; the JSON still records every plotted value."
         ),
     )
     result.add_argument(
@@ -170,15 +195,21 @@ def _method_label(method: str) -> str:
 
 PLOT_LABELS = {
     "ours": "Ours v16",
+    "park_dominant_point_2007_adaptation": "Park & Lee 2007 adaptation",
+    "liang_feature_iki_2017_adaptation": "Liang et al. 2017 adaptation",
+    "dung_direct_knot_2017_adaptation": (
+        "Dung & Tjahjowidodo 2017 adaptation"
+    ),
     "kang_sparse_2015_adaptation": "Kang 2015 adaptation",
-    "yeh_feature_cdf_2020": "Yeh 2020 adaptation",
-    "uniform_gradient_pruning": "Uniform Kmax greedy + relocation",
+    "luo_linf_de_2022_adaptation": "Luo et al. 2022 adaptation",
 }
 PLOT_COLORS = {
     "ours": "#128a73",
+    "park_dominant_point_2007_adaptation": "#3976b7",
+    "liang_feature_iki_2017_adaptation": "#d08a24",
+    "dung_direct_knot_2017_adaptation": "#6b9e38",
     "kang_sparse_2015_adaptation": "#7a55a3",
-    "yeh_feature_cdf_2020": "#3976b7",
-    "uniform_gradient_pruning": "#cb4f4b",
+    "luo_linf_de_2022_adaptation": "#cb4f4b",
 }
 
 
@@ -192,23 +223,13 @@ def _run_method(method, *, model, points, case, device, args, objective_version)
             objective_version=objective_version,
         )
     else:
-        result = run_published_baseline(
-            method,
-            points.double().cpu(),
-            mse_tolerance=args.mse_tolerance,
-            max_internal_knots=args.max_internal_knots,
-            degree=model.degree,
-            gradient_steps=args.gradient_steps,
-            paper_initial_knots=args.paper_initial_knots,
-            paper_admm_iterations=args.paper_admm_iterations,
-            paper_lambda_bisections=args.paper_lambda_bisections,
-            paper_relocation_iterations=args.paper_relocation_iterations,
-        )
-        fit, parameters = result.fit, result.parameters
-        total_ms, network_ms, diagnostics = (
-            result.elapsed_ms,
-            None,
-            result.diagnostics,
+        fit, parameters, total_ms, network_ms, diagnostics = (
+            measure_numerical_baseline(
+                method,
+                points.double().cpu(),
+                args,
+                degree=model.degree,
+            )
         )
     mse = float(fit.fit_mse)
     dense_reference_mse = reference_mse(fit, parameters, case)
@@ -434,7 +455,7 @@ def plot_ours_overview(
     columns = min(2, len(items))
     rows = math.ceil(len(items) / columns)
     figure = plt.figure(figsize=(6.2 * columns, 4.4 * rows + 0.8))
-    legend_handles = legend_labels = None
+    legend_entries: dict[str, object] = {}
     for index, (case, result) in enumerate(items, 1):
         if result.get("status") != "ok":
             raise ValueError("the Ours overview cannot include a failed result")
@@ -452,8 +473,9 @@ def plot_ours_overview(
             f"K={result['final_k']} | MSE={result['mse']:.2e} | {status}",
             fontsize=9,
         )
-        if legend_handles is None:
-            legend_handles, legend_labels = axis.get_legend_handles_labels()
+        handles, labels = axis.get_legend_handles_labels()
+        for handle, label in zip(handles, labels, strict=True):
+            legend_entries.setdefault(label, handle)
     for index in range(len(items) + 1, rows * columns + 1):
         blank = figure.add_subplot(rows, columns, index)
         blank.set_axis_off()
@@ -462,8 +484,8 @@ def plot_ours_overview(
         fontsize=14,
     )
     figure.legend(
-        legend_handles, legend_labels, loc="lower center", ncol=3,
-        fontsize=8, frameon=True,
+        list(legend_entries.values()), list(legend_entries),
+        loc="lower center", ncol=3, fontsize=8, frameon=True,
     )
     figure.tight_layout(rect=(0.0, 0.075, 1.0, 0.96))
     if diagnostic:
@@ -476,45 +498,86 @@ def plot_ours_overview(
         figure.savefig(path, dpi=dpi, bbox_inches="tight")
     finally:
         plt.close(figure)
+
+
 def plot_case(path: Path, *, case: dict, results: list[dict],
               tolerance: float, diagnostic: bool, dpi: int) -> None:
+    """Render the same held-out curve for the six requested methods."""
+    method_order = tuple(result["method"] for result in results)
+    if method_order != METHODS:
+        raise ValueError(
+            "six-method visualization requires exactly this order: "
+            + ", ".join(METHODS)
+        )
     dimension = int(case["points"].shape[-1])
-    figure = plt.figure(figsize=(14, 11), constrained_layout=True)
+    figure = plt.figure(figsize=(15, 16.5), constrained_layout=True)
+    legend_entries: dict[str, object] = {}
     for index, result in enumerate(results, 1):
         axis = figure.add_subplot(
-            2, 2, index, projection="3d" if dimension == 3 else None
+            3, 2, index, projection="3d" if dimension == 3 else None
         )
         color = PLOT_COLORS[result["method"]]
         _plot_geometry(axis, case=case, result=result, color=color)
+        handles, labels = axis.get_legend_handles_labels()
+        for handle, label in zip(handles, labels, strict=True):
+            legend_entries.setdefault(label, handle)
         if result.get("status") != "ok":
             axis.set_title(
                 f"{PLOT_LABELS[result['method']]} — FAILED\n{result['error']}",
                 fontsize=9,
             )
-            axis.legend(loc="best", fontsize=7)
             continue
         ref_text = (
-            f" | ref={result['reference_mse']:.2e}"
+            f" | reference MSE={result['reference_mse']:.2e}"
             if result["reference_mse"] is not None else ""
         )
         timing = (
-            f"net={result['network_ms']:.2f} ms | total={result['total_ms']:.2f} ms"
+            f"full method={result['total_ms']:.2f} ms | "
+            f"network only={result['network_ms']:.2f} ms"
             if result["network_ms"] is not None
-            else f"complete={result['total_ms']:.2f} ms"
+            else f"full method={result['total_ms']:.2f} ms"
         )
+        status = "PASS" if result["fit_pass"] else "FAIL"
         axis.set_title(
-            f"{PLOT_LABELS[result['method']]}\n"
-            f"K={result['final_k']} | MSE={result['mse']:.2e}{ref_text}\n"
-            f"{timing}"
-            , fontsize=9)
-        if index == 1:
-            axis.legend(loc="best", fontsize=7)
+            f"{PLOT_LABELS[result['method']]} — {status}\n"
+            f"input MSE={result['mse']:.2e} | K={result['final_k']}"
+            f"{ref_text}\n{timing}",
+            fontsize=8.8,
+        )
+        knots = result["fit"].internal_knots.detach().cpu().double().tolist()
+        if len(knots) <= 10:
+            knot_text = "u=[" + ", ".join(f"{value:.3f}" for value in knots) + "]"
+        elif knots:
+            knot_text = (
+                "u=["
+                + ", ".join(f"{value:.3f}" for value in knots[:4])
+                + ", …, "
+                + ", ".join(f"{value:.3f}" for value in knots[-3:])
+                + f"] ({len(knots)} values; full vector in JSON)"
+            )
+        else:
+            knot_text = "u=[] (cubic Bezier)"
+        text_method = getattr(axis, "text2D", axis.text)
+        text_method(
+            0.01, 0.015, knot_text, transform=axis.transAxes,
+            ha="left", va="bottom", fontsize=6.8, color="#5c296d",
+            bbox={
+                "boxstyle": "round,pad=0.2", "facecolor": "white",
+                "alpha": 0.72, "edgecolor": "#b99bc2", "linewidth": 0.5,
+            },
+        )
     title = (
         f"Held-out real curve: {case['dataset']} / {case['sample_id']}\n"
-        f"shared MSE tolerance={tolerance:.3e}; endpoint-constrained, "
-        "unregularized standard B-spline fits"
+        f"shared input-point MSE tolerance={tolerance:.3e}; all panels use the "
+        "same endpoint-constrained, unregularized standard B-spline refit"
     )
     figure.suptitle(title, fontsize=15)
+    if legend_entries:
+        figure.legend(
+            list(legend_entries.values()), list(legend_entries),
+            loc="lower center", ncol=3,
+            fontsize=8, frameon=True,
+        )
     if diagnostic:
         figure.text(
             0.5, 0.5, "DIAGNOSTIC NOT FINAL — UNQUALIFIED CHECKPOINT",
@@ -633,7 +696,7 @@ def run(args: argparse.Namespace) -> dict:
                 )
             else:
                 print(f"  {result['label']}: {result['error']}", flush=True)
-        prefix = "ours__" if args.ours_only else ""
+        prefix = "ours__" if args.ours_only else "six_methods__"
         filename = f"{prefix}{_slug(case['dataset'])}__{_slug(case['sample_id'])}.png"
         image_path = args.output_dir / filename
         if image_path.exists() and not args.overwrite:
@@ -695,7 +758,9 @@ def run(args: argparse.Namespace) -> dict:
             "mse_definition": (
                 "mean(sum((prediction-observation)^2, coordinates)); no square root"
             ),
-            "visualization_mode": "ours_only" if args.ours_only else "four_method",
+            "visualization_mode": (
+                "ours_only" if args.ours_only else "six_published_methods"
+            ),
             "overview_image": None,
             "method_order": list(plotted_methods),
             "knot_capacities": capacities,

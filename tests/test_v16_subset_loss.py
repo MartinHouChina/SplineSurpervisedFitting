@@ -303,6 +303,73 @@ def test_certified_true_count_is_an_explicit_nonmonotone_prefix_probe():
     assert metrics["subset_best_pass_rate"] == 1
 
 
+def test_low_count_sweep_finds_nonmonotone_simple_prefix_without_label_guide():
+    model = PrefixPolicyModel()
+    objective = GuidedNonmonotonePrefixLoss(
+        mse_tolerance=1e-4,
+        policy_samples=2,
+        counterfactual_edits=0,
+        teacher_prefix_search_steps=1,
+        teacher_low_count_sweep=1,
+        fit_weight=0,
+        dense_weight=0,
+        policy_weight=0,
+        distillation_weight=0,
+        count_weight=0,
+        ranking_weight=0,
+        entropy_weight=0,
+        complexity_weight=0,
+        supervised_count_weight=0,
+        supervised_over_count_weight=0,
+    )
+    _, metrics = objective(model, curve_batch()[:1])
+    assert metrics["subset_best_count"] == 1
+    assert metrics["subset_best_pass_rate"] == 1
+
+
+def test_geometry_oracle_mask_is_score_independent_and_monotone_unique():
+    objective = V16SubsetLoss(policy_samples=2)
+    candidates = torch.tensor([[0.10, 0.24, 0.49, 0.76, 0.90]])
+    targets = torch.tensor([[0.20, 0.80, 0.0]])
+    target_mask = torch.tensor([[True, True, False]])
+    oracle = objective._synthetic_oracle_candidate_mask(
+        candidates, targets, target_mask, torch.tensor([True]),
+    )
+    assert torch.equal(
+        oracle, torch.tensor([[False, True, False, True, False]])
+    )
+    expanded = objective._expand_teacher_mask(
+        oracle,
+        torch.tensor([[0.1, 0.0, 0.8, 0.0, 0.9]]),
+        2,
+    )
+    assert torch.equal(
+        expanded, torch.tensor([[False, True, True, True, True]])
+    )
+
+
+def test_geometry_oracle_expansion_is_not_applied_to_unlabelled_rows():
+    objective = V16SubsetLoss(
+        policy_samples=2,
+        synthetic_geometry_oracle_teacher=True,
+        oracle_teacher_extra_knots=2,
+    )
+    oracle = torch.tensor([
+        [False, True, False, True],
+        [True, False, False, False],
+    ])
+    scores = torch.tensor([
+        [0.9, 0.1, 0.8, 0.0],
+        [0.0, 0.9, 0.8, 0.7],
+    ])
+    valid = torch.tensor([True, False])
+    expanded = objective._expand_teacher_mask(
+        oracle, scores, 2, eligible=valid,
+    )
+    assert torch.equal(expanded[0], torch.tensor([True, True, True, True]))
+    assert torch.equal(expanded[1], oracle[1])
+
+
 def test_certified_count_penalizes_only_safe_valid_overprediction():
     model = PolicyOnlyModel()
     objective = TableSubsetLoss(
@@ -359,6 +426,30 @@ def test_certified_symmetric_count_pull_corrects_underprediction():
     assert torch.all(model.logits.grad < 0)
 
 
+def test_certified_upper_bound_does_not_pull_feasible_teacher_up_to_source_k():
+    model = PolicyOnlyModel()
+    objective = TableSubsetLoss(
+        mse_tolerance=1e-4, policy_samples=2,
+        fit_weight=0, dense_weight=0, policy_weight=0,
+        distillation_weight=0, count_weight=0, ranking_weight=0,
+        entropy_weight=0, complexity_weight=0,
+        supervised_count_weight=1, supervised_over_count_weight=0,
+        synthetic_count_role="upper_bound",
+    )
+    draws = torch.tensor([[[1., 0.]], [[0., 1.]]])
+    with patch("torch.bernoulli", return_value=draws):
+        loss, metrics = objective(
+            model, curve_batch()[:1],
+            synthetic_target_count=torch.tensor([2]),
+            synthetic_target_valid=torch.tensor([True]),
+        )
+    loss.backward()
+    assert metrics["deployment_pass_rate"] == 1
+    assert metrics["supervised_count_loss"] == 0
+    assert model.logits.grad is not None
+    torch.testing.assert_close(model.logits.grad, torch.zeros_like(model.logits.grad))
+
+
 def test_certified_geometry_supervises_parameter_proposal_and_relocated_knots():
     torch.manual_seed(41)
     points = curve_batch()
@@ -401,6 +492,7 @@ def test_certified_geometry_supervises_parameter_proposal_and_relocated_knots():
     )
     joint_objective = V16SubsetLoss(
         policy_samples=2, counterfactual_edits=0,
+        synthetic_geometry_oracle_teacher=True,
         fit_weight=0, dense_weight=0, policy_weight=0,
         distillation_weight=0, count_weight=0, ranking_weight=0,
         entropy_weight=0, complexity_weight=0,
@@ -416,6 +508,8 @@ def test_certified_geometry_supervises_parameter_proposal_and_relocated_knots():
     )
     joint_loss.backward()
     assert joint_metrics["selected_knot_position_loss"] > 0
+    assert 0 <= joint_metrics["oracle_teacher_feasible_fraction"] <= 1
+    assert 0 <= joint_metrics["oracle_teacher_selected_fraction"] <= 1
     assert joint_model.relocation_update.weight.grad is not None
     assert joint_model.relocation_update.weight.grad.abs().sum() > 0
 

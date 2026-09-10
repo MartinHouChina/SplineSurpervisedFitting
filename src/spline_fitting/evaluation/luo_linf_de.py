@@ -31,11 +31,14 @@ class LuoLinfDEResult:
     degree: int
     mse_tolerance: float
     initial_internal_knots: torch.Tensor
+    dense_initial_fit_mse: float
+    dense_initial_threshold_satisfied: bool
     selected_regularization: float
     sparse_fit_mse: float
     jump_values: torch.Tensor
     candidate_indices: torch.Tensor
     candidate_knots: torch.Tensor
+    candidate_refit_mse: float
     optimized_knots: torch.Tensor
     final_fit: BSplineLeastSquaresFit
     admm_iterations: int
@@ -190,10 +193,10 @@ def _select_regularization(
     max_iterations: int,
     admm_tolerance: float,
     bisection_iterations: int,
-) -> tuple[_LinfState, float, int, int]:
+) -> tuple[_LinfState, float, int, int, float]:
     dense = _least_squares_state(basis, points, jump_matrix)
     if dense.mse > mse_tolerance + 1e-12:
-        return dense, 0.0, 1, 0
+        return dense, 0.0, 1, 0, dense.mse
     scale = float((basis.T @ points).norm() / jump_matrix.norm().clamp_min(1e-12))
     current = max(scale * 1e-4, 1e-12)
     lower = 0.0
@@ -215,7 +218,7 @@ def _select_regularization(
             upper = current
             break
     if upper is None:
-        return best, lower, trials, iterations
+        return best, lower, trials, iterations, dense.mse
     for _ in range(bisection_iterations):
         current = 0.5 * (lower + upper)
         state = _solve_linf1_admm(
@@ -228,7 +231,7 @@ def _select_regularization(
             lower, best = current, state
         else:
             upper = current
-    return best, lower, trials, iterations
+    return best, lower, trials, iterations, dense.mse
 
 
 def _local_maximum_candidates(
@@ -243,6 +246,9 @@ def _local_maximum_candidates(
     if values.numel() < 3:
         local = torch.arange(values.numel(), device=knots.device)
     else:
+        # Luo--Kang--Yang Algorithm 3.1 loops over i=2,...,n-p-1
+        # (one-based notation), so the first and last jump entries are
+        # deliberately excluded from the length-three sliding window.
         middle = torch.arange(1, values.numel() - 1, device=knots.device)
         keep = (values[middle] >= values[middle - 1]) & (
             values[middle] >= values[middle + 1]
@@ -307,10 +313,10 @@ def _differential_evolution(
     crossover_probability: float,
     min_gap: float,
     seed: int,
-) -> tuple[torch.Tensor, float, float, int]:
+) -> tuple[torch.Tensor, float, float, int, float]:
     if candidates.numel() == 0 or iterations == 0:
-        _, error = _fit_and_max_error(parameters, points, candidates, degree)
-        return candidates, error, error, 1
+        fit, error = _fit_and_max_error(parameters, points, candidates, degree)
+        return candidates, error, error, 1, float(fit.fit_mse)
     generator = torch.Generator(device="cpu").manual_seed(seed)
     count = int(candidates.numel())
     population = [candidates.detach().clone()]
@@ -319,8 +325,11 @@ def _differential_evolution(
         population.append(_ordered_with_gap(raw, min_gap))
     population_tensor = torch.stack(population)
     errors = []
+    candidate_refit_mse: float | None = None
     for individual in population_tensor:
-        _, error = _fit_and_max_error(parameters, points, individual, degree)
+        fit, error = _fit_and_max_error(parameters, points, individual, degree)
+        if candidate_refit_mse is None:
+            candidate_refit_mse = float(fit.fit_mse)
         errors.append(error)
     error_tensor = torch.tensor(errors, dtype=parameters.dtype)
     evaluations = population_size
@@ -354,6 +363,7 @@ def _differential_evolution(
         initial_error,
         float(error_tensor[best_index]),
         evaluations,
+        float(candidate_refit_mse),
     )
 
 
@@ -415,30 +425,34 @@ def fit_luo_linf_de(
     jump_matrix = _pth_derivative_jump_matrix(
         knot_vector, degree, controls_count
     )
-    sparse, regularization, trials, admm_iterations = _select_regularization(
-        basis,
-        points,
-        jump_matrix,
-        mse_tolerance,
-        rho=admm_rho,
-        max_iterations=admm_max_iterations,
-        admm_tolerance=admm_tolerance,
-        bisection_iterations=lambda_bisection_iterations,
+    sparse, regularization, trials, admm_iterations, dense_initial_mse = (
+        _select_regularization(
+            basis,
+            points,
+            jump_matrix,
+            mse_tolerance,
+            rho=admm_rho,
+            max_iterations=admm_max_iterations,
+            admm_tolerance=admm_tolerance,
+            bisection_iterations=lambda_bisection_iterations,
+        )
     )
     candidate_indices, candidate_knots, jump_values = _local_maximum_candidates(
         initial_knots, sparse.jumps, eta
     )
-    optimized, initial_me, final_me, de_evaluations = _differential_evolution(
-        parameters,
-        points,
-        candidate_knots,
-        degree=degree,
-        population_size=de_population,
-        iterations=de_iterations,
-        differential_weight=de_weight,
-        crossover_probability=de_crossover,
-        min_gap=min_gap,
-        seed=seed,
+    optimized, initial_me, final_me, de_evaluations, candidate_refit_mse = (
+        _differential_evolution(
+            parameters,
+            points,
+            candidate_knots,
+            degree=degree,
+            population_size=de_population,
+            iterations=de_iterations,
+            differential_weight=de_weight,
+            crossover_probability=de_crossover,
+            min_gap=min_gap,
+            seed=seed,
+        )
     )
     final_fit = refit_bspline_control_points(
         parameters,
@@ -453,11 +467,16 @@ def fit_luo_linf_de(
         degree=degree,
         mse_tolerance=float(mse_tolerance),
         initial_internal_knots=initial_knots,
+        dense_initial_fit_mse=dense_initial_mse,
+        dense_initial_threshold_satisfied=(
+            dense_initial_mse <= mse_tolerance + 1e-12
+        ),
         selected_regularization=regularization,
         sparse_fit_mse=sparse.mse,
         jump_values=jump_values.detach().clone(),
         candidate_indices=candidate_indices.detach().clone(),
         candidate_knots=candidate_knots.detach().clone(),
+        candidate_refit_mse=candidate_refit_mse,
         optimized_knots=optimized.detach().clone(),
         final_fit=final_fit,
         admm_iterations=admm_iterations,

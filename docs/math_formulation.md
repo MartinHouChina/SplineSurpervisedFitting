@@ -1,6 +1,6 @@
 # v16 数学定义
 
-本文只描述 `objective_version=candidate_selection_counterfactual_bspline_v16` 的当前实现。v16 不使用 v12–v15 的离线教师，但继承并改良了其中有效的一次性 `adaptive beta + mass-TopK` 思路；存活节点重定位由 v16 的集合条件解码器重新实现。
+本文只描述 `objective_version=candidate_selection_counterfactual_bspline_v16` 的当前实现。当前主协议使用 `Kc=56` 个内部候选、合成 source `K=4..56`（控制顶点 8..60）和 `MSE<=1e-4`。三次开放样条全保留时完整节点向量为 64 项、控制顶点为 60 个。v16 不使用 v12–v15 的离线教师，但继承并改良了其中有效的一次性 `adaptive beta + mass-TopK` 思路；存活节点重定位由 v16 的集合条件解码器重新实现。
 
 ## 1. 阈值约束目标
 
@@ -27,9 +27,12 @@ E(U,t,Q)
 E(U,t,Q)\le\varepsilon.
 \]
 
-默认 ε=2.5×10^-5，对应 RMS=0.005。v16 是该离散连续问题的学习近似，不证明全局最优，也不对单个输入提供硬可行性保证。
+当前 ε=1×10^-4，对应 RMS=0.01。v16 是该离散连续问题的学习近似，不证明全局最优，也不对单个输入提供硬可行性保证。
 
 ### 1.1 合成源的阈值最简证书
+
+当前 `K=4..56` 生成显式使用 `knot_min_span=0.01`。K=56 有 57 个 span；
+底层历史默认 0.02 会使最小总长度达到 1.14，因而不能用于当前边界层。
 
 对合成源节点集合 \(U_s\)，干净固定参数化下额外要求
 
@@ -137,7 +140,7 @@ K_{\min},K_c
 \right).
 \]
 
-随后按 \(p_j\) 执行一次全局 Top-K，并用有限参数区间锚点防止全部节点聚集在同一局部。默认 \(\sigma_s=0.25\)、\(K_s=2\)、\(K_{\min}=4\)。这里没有额外 CountHead、逐次删除或部署 refit 搜索；`p>=0.5` 仅作为旧式消融保留。
+随后按 \(p_j\) 执行一次全局 Top-K。当前 `coverage_bins=0`，不强制参数区间锚点；安全储备从 \((\sigma_s,K_s)=(0.20,2)\) 退火到 \((0.03,0)\)，且 \(K_{\min}=4\)。Joint 初始 keep fraction 为 \(30/56\)，对应初始概率质量约 30；它只是训练初始化，不是部署最终 K。这里没有额外 CountHead、逐次删除或部署 refit 搜索；`p>=0.5` 仅作为旧式消融保留。
 
 ## 5. 集合条件参数更新
 
@@ -246,7 +249,7 @@ z^\star=
 \end{cases}
 \]
 
-这里的候选 z 来自当前部署、有限加/删反事实、全保留集合，以及沿候选分数排序从 \(K_c\) 对数覆盖到 \(K_{\min}\) 的多尺度预算。结构化候选复用部署的最小数量和参数分区覆盖算子；独立随机采样只用于策略估计，不能违反部署约束后再充当结构化教师。
+这里的候选 z 来自当前部署、有限加/删反事实、全保留集合、`K=4..16` 的逐计数 ranked prefix，以及更高 K 的粗到细预算。certified Synthetic 还加入 geometry-oracle `Ktrue` 和截断到 Kc 的 `Ktrue+2` 组合。独立随机采样只用于策略估计，不能违反部署约束后再充当结构化教师。
 
 ## 10. 二值选择梯度
 
@@ -284,7 +287,7 @@ L_{\mathrm{policy}}
 
 proposal 排序最大化 worst-source dense pass，再最小化 dense MSE。joint 未达 90% 目标时先提高 worst-source deployment pass 并降低 P95/平均 MSE；处于 90% 到 92% 安全线之间时仍优先可靠性；达到 `target + safety margin` 后才先最小化平均 K，再比较 P95 和平均 MSE。
 
-当前 `V16_FORMAL_PASS_RATE=0.90`：工程协议要求 stage=joint、配置目标和实测 worst-source deployment pass 均不低于 0.90，并且 proposal gate 未被消融绕过。这里 0.90 是跨曲线通过比例；每条曲线仍以 E≤2.5×10^-5 判定，MSE 约束没有放宽。总体通过率不参与替代 worst-source 指标。
+当前 `V16_FORMAL_PASS_RATE=0.90`：工程协议要求 stage=joint、配置目标和实测 worst-source deployment pass 均不低于 0.90，并且 proposal gate 未被消融绕过。这里 0.90 是跨曲线通过比例；每条曲线仍以 E≤1×10^-4 判定，MSE 约束没有放宽。`source K=56` 与 `Kc=56` 同时位于容量边界、没有冗余候选余量，该层的 dense/deployment pass 必须单列，失败不得通过总体平均或放宽 90% 门槛隐藏。
 
 代码对应：
 
