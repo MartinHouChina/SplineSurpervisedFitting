@@ -94,10 +94,25 @@ Joint 同时训练候选排序、一次性数量选择、参数反馈和存活�
 
 ## 5. RTX 3090 训练
 
+Linux 推荐直接运行完整流水线：
+
+```bash
+bash scripts/run_v16_mse1e-4_3090.sh \
+  --device cuda \
+  --run-name candidate_selection_v16_mse1e-4_k56_linux
+```
+
+它会串行完成 fresh 训练、正式资格审计、六方法 benchmark、四指标图和真实数据案例图。
+运行 `bash scripts/run_v16_mse1e-4_3090.sh --help` 可查看参数；脚本使用当前已经激活的
+Python 环境，也可通过 `--python /path/to/python` 指定。
+
+下面是训练阶段的展开命令：
+
 ```powershell
 python scripts/train_v16.py `
   --epochs 80 --proposal-epochs 16 `
-  --train-size 3000 --val-size 600 --real-val-size 100 `
+  --train-size 3000 --val-size 600 `
+  --synthetic-boundary-val-size 32 --real-val-size 100 `
   --batch-size 64 --num-points 192 `
   --min-control-points 8 --max-control-points 60 `
   --knot-min-span 0.01 `

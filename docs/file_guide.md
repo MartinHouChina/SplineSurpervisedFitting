@@ -53,6 +53,7 @@ candidate_selection_counterfactual_bspline_v16
 |---|---|
 | scripts/train_v16.py | 两阶段训练、worst-source gate、续训和 checkpoint qualification |
 | scripts/run_v16_mse1e-4_3090.ps1 | 当前 Kc=56（完整节点向量 64 项）、source K=4..56（控制顶点 8..60）、`knot_min_span=0.01`、MSE=1e-4 的 3090 串行入口；训练、资格检查、六方法四指标及真实案例图 |
+| scripts/run_v16_mse1e-4_3090.sh | 与上述当前协议等价的 Linux 原生 Bash 串行入口；支持日志、防覆盖、资格失败停止、`--dry-run` 和参数覆盖 |
 | scripts/run_v16_overnight_12h.ps1 | 历史 Kc=64、MSE=5e-5 无人值守入口；只用于旧消融追溯，不是当前命令 |
 | scripts/inspect_v16_checkpoint.py | 训练后统一资格检查；合格返回 0，不合格返回 2 |
 | scripts/fit_v16_point_cloud.py | 单条用户点云部署，输出 PNG/JSON |

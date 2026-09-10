@@ -48,6 +48,17 @@ powershell -NoProfile -ExecutionPolicy Bypass `
   -File scripts/run_v16_mse1e-4_3090.ps1
 ```
 
+Linux 原生 Bash：
+
+```bash
+bash scripts/run_v16_mse1e-4_3090.sh \
+  --device cuda \
+  --run-name candidate_selection_v16_mse1e-4_k56_linux
+```
+
+若当前环境已经激活，可用 `--python "$(command -v python)"` 明确指定解释器；脚本
+不负责切换 Conda/venv。`--dry-run` 只打印完整命令，`--help` 查看可调训练与评测参数。
+
 该入口按顺序执行：
 
 1. 新训练 `Kc=56 / source K=4..56 / MSE=1e-4`；
@@ -69,8 +80,9 @@ query 沿参数域插值为 57 个，新模型重新生成固定锚点。Selecto
 [训练流程](docs/training_pipeline.md)中的完整参数恢复 `.last.pt`，训练已经成功而仅后处理
 失败时直接重跑 benchmark/绘图，不要重新训练。
 
-Windows worker 异常时增加 `-NumWorkers 0`。若 batch 64 在 24 GB 显存上仍 OOM，请用
-新的 `-RunName` 并设置 `-BatchSize 32`，不要覆盖或混接原实验。
+Windows worker 异常时增加 `-NumWorkers 0`；Linux 对应参数为 `--num-workers 0`。若
+batch 64 在 24 GB 显存上仍 OOM，请使用新的实验名并将 batch 调成 32，不要覆盖或混接
+原实验。
 
 ## 资格检查
 
