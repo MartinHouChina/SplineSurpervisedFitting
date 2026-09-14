@@ -1,0 +1,703 @@
+Checking real manifests and train/val/test group separation...
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl
+  Checking groups/files: 2000/18219
+  Checking groups/files: 4000/18219
+  Checking groups/files: 6000/18219
+  Checking groups/files: 8000/18219
+  Checking groups/files: 10000/18219
+  Checking groups/files: 12000/18219
+  Checking groups/files: 14000/18219
+  Checking groups/files: 16000/18219
+  Checking groups/files: 18000/18219
+  Checking groups/files: 18219/18219
+  Ready uji_pen_characters_v2: train=9670, val=2456 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl
+  Checking groups/files: 2000/3908
+  Checking groups/files: 3908/3908
+  Ready natural_earth_10m_coastline: train=2625, val=750 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl
+  Checking groups/files: 2000/6654
+  Checking groups/files: 4000/6654
+  Checking groups/files: 6000/6654
+  Checking groups/files: 6654/6654
+  Ready usgs_tnm_contours_large_scale: train=4024, val=1210 (test excluded from training)
+Transferred 41 proposal tensors (40 exact, 1 rank-resized); retained 1 target anchor buffer(s), skipped 0 other shape mismatch(es). Selector and subset decoder start fresh.
+  rank-resized: candidate_head.interval_queries
+v16 adaptive mass_topk: cuda, Kc=56 internal (full cubic knot vector at all-keep=64), MSE tolerance=0.0001; 3000 train draws, 900 validation curves; real sources=3
+Synthetic source contract: clean source-subset threshold-minimal certificate at RMS=0.01, margin=20%, audit_points=512
+Simplification curriculum: training-only ranked-prefix teacher steps=7, exact low-K sweep through K=16; certified source K role=upper_bound; geometry-oracle bootstrap=True (+2); certified over-count weight=1, symmetric true-count weight=1; deterministic Joint-epoch complexity multiplier 0..6; safety 2+0.2sigma -> 0+0.03sigma. Deployment still uses one network forward and one final refit.
+Checkpoint selection minimizes mean per-curve subset cost: feasible curves trade K against a bounded MSE tie-break; infeasible curves use a logarithmic MSE penalty. Aggregate pass rates and the explicit K=56 boundary audit (n=32) are reported but never gate training. Additional subset fits run only during training.
+Proposal-stage synthetic stratification: 50.0% from K>=40; the remainder uses K=4..39. Joint training always uses the original K=4..56 distribution.
+Epoch 001/104 proposal [........................] 1/47 MSE=2.179e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 001/104 proposal [=====...................] 10/47 MSE=2.567e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 001/104 proposal [==========..............] 20/47 MSE=2.714e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 001/104 proposal [===============.........] 30/47 MSE=3.694e-04 pass=51.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 001/104 proposal [====================....] 40/47 MSE=1.928e-04 pass=62.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 001/104 proposal [========================] 47/47 MSE=2.315e-04 pass=58.9% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 001 val dense=76.0% deployment=76.0% worst-source=64.7% qualification=0.0% MSE=2.138e-04 K=56.00 mass=30.87 beta=-0.21 soft_cost=1.6292 selection_score=-1.6292 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.9238e-03, ordered_assignment_MAE=5.1087e-03, matched_K=34.92
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=64.7%, deployment=64.7%, MSE=3.174e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.697, param_RMSE=2.861e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=6.311e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.179e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.270e-06, K=56.00
+Epoch 002/104 proposal [........................] 1/47 MSE=3.325e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 002/104 proposal [=====...................] 10/47 MSE=1.801e-04 pass=62.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 002/104 proposal [==========..............] 20/47 MSE=3.182e-04 pass=56.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 002/104 proposal [===============.........] 30/47 MSE=2.252e-04 pass=60.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 002/104 proposal [====================....] 40/47 MSE=1.455e-04 pass=62.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 002/104 proposal [========================] 47/47 MSE=2.490e-04 pass=67.9% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 002 val dense=76.2% deployment=76.2% worst-source=65.0% qualification=0.0% MSE=2.025e-04 K=56.00 mass=30.89 beta=-0.21 soft_cost=1.6188 selection_score=-1.6188 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.9371e-03, ordered_assignment_MAE=5.1229e-03, matched_K=34.94
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=65.0%, deployment=65.0%, MSE=3.004e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.697, param_RMSE=2.800e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.031e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.183e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.504e-06, K=56.00
+Epoch 003/104 proposal [........................] 1/47 MSE=2.429e-04 pass=60.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 003/104 proposal [=====...................] 10/47 MSE=3.224e-04 pass=62.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 003/104 proposal [==========..............] 20/47 MSE=2.735e-04 pass=57.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 003/104 proposal [===============.........] 30/47 MSE=2.315e-04 pass=70.3% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 003/104 proposal [====================....] 40/47 MSE=1.502e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 003/104 proposal [========================] 47/47 MSE=3.800e-04 pass=57.1% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 003 val dense=76.4% deployment=76.4% worst-source=65.2% qualification=0.0% MSE=2.027e-04 K=56.00 mass=30.89 beta=-0.21 soft_cost=1.6133 selection_score=-1.6133 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.9179e-03, ordered_assignment_MAE=5.0759e-03, matched_K=34.58
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=65.2%, deployment=65.2%, MSE=3.007e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.698, param_RMSE=2.815e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.661e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.168e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.781e-06, K=56.00
+Epoch 004/104 proposal [........................] 1/47 MSE=2.377e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 004/104 proposal [=====...................] 10/47 MSE=2.490e-04 pass=64.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 004/104 proposal [==========..............] 20/47 MSE=2.562e-04 pass=64.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 004/104 proposal [===============.........] 30/47 MSE=2.270e-04 pass=60.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 004/104 proposal [====================....] 40/47 MSE=2.738e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 004/104 proposal [========================] 47/47 MSE=1.043e-04 pass=71.4% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 004 val dense=76.6% deployment=76.6% worst-source=65.5% qualification=0.0% MSE=1.930e-04 K=56.00 mass=30.88 beta=-0.21 soft_cost=1.6032 selection_score=-1.6032 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.9579e-03, ordered_assignment_MAE=5.1159e-03, matched_K=34.74
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=65.5%, deployment=65.5%, MSE=2.860e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.700, param_RMSE=2.822e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.599e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.214e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.050e-06, K=56.00
+Epoch 005/104 proposal [........................] 1/47 MSE=2.570e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 005/104 proposal [=====...................] 10/47 MSE=2.300e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 005/104 proposal [==========..............] 20/47 MSE=1.756e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 005/104 proposal [===============.........] 30/47 MSE=2.817e-04 pass=62.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 005/104 proposal [====================....] 40/47 MSE=1.951e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 005/104 proposal [========================] 47/47 MSE=2.530e-04 pass=64.3% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 005 val dense=76.4% deployment=76.4% worst-source=65.3% qualification=0.0% MSE=1.950e-04 K=56.00 mass=30.91 beta=-0.21 soft_cost=1.6031 selection_score=-1.6031 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.8675e-03, ordered_assignment_MAE=5.0060e-03, matched_K=34.84
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=65.3%, deployment=65.3%, MSE=2.890e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.698, param_RMSE=2.792e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.301e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.228e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.026e-06, K=56.00
+Epoch 006/104 proposal [........................] 1/47 MSE=1.972e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 006/104 proposal [=====...................] 10/47 MSE=2.107e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 006/104 proposal [==========..............] 20/47 MSE=1.422e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 006/104 proposal [===============.........] 30/47 MSE=2.238e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 006/104 proposal [====================....] 40/47 MSE=2.197e-04 pass=57.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 006/104 proposal [========================] 47/47 MSE=1.829e-04 pass=66.1% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 006 val dense=77.2% deployment=77.2% worst-source=66.5% qualification=0.0% MSE=1.848e-04 K=56.00 mass=30.88 beta=-0.21 soft_cost=1.5802 selection_score=-1.5802 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.8008e-03, ordered_assignment_MAE=4.9585e-03, matched_K=34.69
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=66.5%, deployment=66.5%, MSE=2.735e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.694, param_RMSE=2.780e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=9.354e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.268e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.483e-06, K=56.00
+Epoch 007/104 proposal [........................] 1/47 MSE=2.075e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 007/104 proposal [=====...................] 10/47 MSE=1.555e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 007/104 proposal [==========..............] 20/47 MSE=2.048e-04 pass=62.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 007/104 proposal [===============.........] 30/47 MSE=1.935e-04 pass=70.3% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 007/104 proposal [====================....] 40/47 MSE=1.116e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 007/104 proposal [========================] 47/47 MSE=1.067e-04 pass=71.4% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 007 val dense=77.1% deployment=77.1% worst-source=66.3% qualification=0.0% MSE=1.808e-04 K=56.00 mass=30.90 beta=-0.21 soft_cost=1.5724 selection_score=-1.5724 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.7601e-03, ordered_assignment_MAE=4.9313e-03, matched_K=34.66
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=66.3%, deployment=66.3%, MSE=2.676e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.689, param_RMSE=2.812e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.189e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.236e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.173e-06, K=56.00
+Epoch 008/104 proposal [........................] 1/47 MSE=1.558e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 008/104 proposal [=====...................] 10/47 MSE=1.933e-04 pass=60.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 008/104 proposal [==========..............] 20/47 MSE=2.067e-04 pass=64.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 008/104 proposal [===============.........] 30/47 MSE=1.684e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 008/104 proposal [====================....] 40/47 MSE=2.891e-04 pass=56.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 008/104 proposal [========================] 47/47 MSE=1.817e-04 pass=66.1% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 008 val dense=77.8% deployment=77.8% worst-source=67.3% qualification=0.0% MSE=1.764e-04 K=56.00 mass=30.93 beta=-0.21 soft_cost=1.5557 selection_score=-1.5557 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.6827e-03, ordered_assignment_MAE=4.8647e-03, matched_K=34.76
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=67.3%, deployment=67.3%, MSE=2.609e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.686, param_RMSE=2.821e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.716e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.288e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.562e-06, K=56.00
+Epoch 009/104 proposal [........................] 1/47 MSE=2.059e-04 pass=60.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 009/104 proposal [=====...................] 10/47 MSE=1.071e-04 pass=82.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 009/104 proposal [==========..............] 20/47 MSE=2.001e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 009/104 proposal [===============.........] 30/47 MSE=1.728e-04 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 009/104 proposal [====================....] 40/47 MSE=1.085e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 009/104 proposal [========================] 47/47 MSE=2.609e-04 pass=51.8% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 009 val dense=78.7% deployment=78.7% worst-source=68.5% qualification=0.0% MSE=1.695e-04 K=56.00 mass=30.90 beta=-0.21 soft_cost=1.5319 selection_score=-1.5319 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.6724e-03, ordered_assignment_MAE=4.8271e-03, matched_K=34.51
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=68.5%, deployment=68.5%, MSE=2.506e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.686, param_RMSE=2.758e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.341e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.251e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.430e-06, K=56.00
+Epoch 010/104 proposal [........................] 1/47 MSE=1.979e-04 pass=64.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 010/104 proposal [=====...................] 10/47 MSE=1.740e-04 pass=59.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 010/104 proposal [==========..............] 20/47 MSE=1.412e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 010/104 proposal [===============.........] 30/47 MSE=2.612e-04 pass=51.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 010/104 proposal [====================....] 40/47 MSE=1.703e-04 pass=64.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 010/104 proposal [========================] 47/47 MSE=2.318e-04 pass=67.9% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 010 val dense=78.7% deployment=78.7% worst-source=68.7% qualification=0.0% MSE=1.665e-04 K=56.00 mass=30.92 beta=-0.21 soft_cost=1.5274 selection_score=-1.5274 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.6638e-03, ordered_assignment_MAE=4.8337e-03, matched_K=34.98
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=68.7%, deployment=68.7%, MSE=2.461e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.683, param_RMSE=2.844e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.229e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.273e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.270e-06, K=56.00
+Epoch 011/104 proposal [........................] 1/47 MSE=2.516e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 011/104 proposal [=====...................] 10/47 MSE=1.452e-04 pass=64.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 011/104 proposal [==========..............] 20/47 MSE=1.854e-04 pass=64.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 011/104 proposal [===============.........] 30/47 MSE=1.852e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 011/104 proposal [====================....] 40/47 MSE=1.824e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 011/104 proposal [========================] 47/47 MSE=1.836e-04 pass=60.7% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 011 val dense=79.2% deployment=79.2% worst-source=69.3% qualification=0.0% MSE=1.599e-04 K=56.00 mass=30.94 beta=-0.21 soft_cost=1.5060 selection_score=-1.5060 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5874e-03, ordered_assignment_MAE=4.7559e-03, matched_K=34.83
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=69.3%, deployment=69.3%, MSE=2.363e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.683, param_RMSE=2.797e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.431e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.245e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.431e-06, K=56.00
+Epoch 012/104 proposal [........................] 1/47 MSE=2.111e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 012/104 proposal [=====...................] 10/47 MSE=1.402e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 012/104 proposal [==========..............] 20/47 MSE=1.059e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 012/104 proposal [===============.........] 30/47 MSE=1.688e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 012/104 proposal [====================....] 40/47 MSE=1.807e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 012/104 proposal [========================] 47/47 MSE=8.401e-05 pass=82.1% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 012 val dense=79.4% deployment=79.4% worst-source=69.7% qualification=0.0% MSE=1.565e-04 K=56.00 mass=30.96 beta=-0.21 soft_cost=1.4987 selection_score=-1.4987 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5754e-03, ordered_assignment_MAE=4.8085e-03, matched_K=34.89
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=69.7%, deployment=69.7%, MSE=2.311e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.681, param_RMSE=2.793e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.690e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.308e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.373e-06, K=56.00
+Epoch 013/104 proposal [........................] 1/47 MSE=1.877e-04 pass=64.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 013/104 proposal [=====...................] 10/47 MSE=1.956e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 013/104 proposal [==========..............] 20/47 MSE=1.375e-04 pass=70.3% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 013/104 proposal [===============.........] 30/47 MSE=1.564e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 013/104 proposal [====================....] 40/47 MSE=2.838e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 013/104 proposal [========================] 47/47 MSE=9.562e-05 pass=67.9% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 013 val dense=80.1% deployment=80.1% worst-source=70.7% qualification=0.0% MSE=1.568e-04 K=56.00 mass=30.99 beta=-0.21 soft_cost=1.4874 selection_score=-1.4874 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5627e-03, ordered_assignment_MAE=4.7341e-03, matched_K=34.82
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=70.7%, deployment=70.7%, MSE=2.316e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.681, param_RMSE=2.797e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.521e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.290e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.421e-06, K=56.00
+Epoch 014/104 proposal [........................] 1/47 MSE=1.482e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 014/104 proposal [=====...................] 10/47 MSE=1.328e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 014/104 proposal [==========..............] 20/47 MSE=1.470e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 014/104 proposal [===============.........] 30/47 MSE=1.711e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 014/104 proposal [====================....] 40/47 MSE=1.895e-04 pass=60.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 014/104 proposal [========================] 47/47 MSE=1.074e-04 pass=80.4% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 014 val dense=80.7% deployment=80.7% worst-source=71.5% qualification=0.0% MSE=1.489e-04 K=56.00 mass=30.99 beta=-0.21 soft_cost=1.4677 selection_score=-1.4677 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5688e-03, ordered_assignment_MAE=4.7800e-03, matched_K=35.05
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=71.5%, deployment=71.5%, MSE=2.197e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.680, param_RMSE=2.763e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=9.103e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.279e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.346e-06, K=56.00
+Epoch 015/104 proposal [........................] 1/47 MSE=1.826e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 015/104 proposal [=====...................] 10/47 MSE=1.521e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 015/104 proposal [==========..............] 20/47 MSE=1.647e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 015/104 proposal [===============.........] 30/47 MSE=8.233e-05 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 015/104 proposal [====================....] 40/47 MSE=1.452e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 015/104 proposal [========================] 47/47 MSE=1.107e-04 pass=73.2% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 015 val dense=80.1% deployment=80.1% worst-source=70.8% qualification=0.0% MSE=1.450e-04 K=56.00 mass=30.97 beta=-0.21 soft_cost=1.4645 selection_score=-1.4645 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5833e-03, ordered_assignment_MAE=4.7936e-03, matched_K=34.72
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=70.8%, deployment=70.8%, MSE=2.137e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.675, param_RMSE=2.802e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=9.446e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.291e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.397e-06, K=56.00
+Epoch 016/104 proposal [........................] 1/47 MSE=1.013e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 016/104 proposal [=====...................] 10/47 MSE=1.537e-04 pass=70.3% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 016/104 proposal [==========..............] 20/47 MSE=2.264e-04 pass=57.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 016/104 proposal [===============.........] 30/47 MSE=1.812e-04 pass=64.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 016/104 proposal [====================....] 40/47 MSE=1.648e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 016/104 proposal [========================] 47/47 MSE=1.690e-04 pass=64.3% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 016 val dense=81.1% deployment=81.1% worst-source=72.3% qualification=0.0% MSE=1.453e-04 K=56.00 mass=30.96 beta=-0.21 soft_cost=1.4563 selection_score=-1.4563 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5913e-03, ordered_assignment_MAE=4.7800e-03, matched_K=34.68
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=72.3%, deployment=72.3%, MSE=2.141e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.672, param_RMSE=2.863e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=9.608e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.372e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.654e-06, K=56.00
+Epoch 017/104 proposal [........................] 1/47 MSE=1.679e-04 pass=70.3% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 017/104 proposal [=====...................] 10/47 MSE=3.108e-04 pass=53.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 017/104 proposal [==========..............] 20/47 MSE=8.699e-05 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 017/104 proposal [===============.........] 30/47 MSE=1.943e-04 pass=62.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 017/104 proposal [====================....] 40/47 MSE=7.838e-05 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 017/104 proposal [========================] 47/47 MSE=1.103e-04 pass=71.4% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 017 val dense=81.2% deployment=81.2% worst-source=72.5% qualification=0.0% MSE=1.486e-04 K=56.00 mass=30.94 beta=-0.21 soft_cost=1.4521 selection_score=-1.4521 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5870e-03, ordered_assignment_MAE=4.7692e-03, matched_K=34.94
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=72.5%, deployment=72.5%, MSE=2.192e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.676, param_RMSE=2.890e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.618e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.309e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.206e-06, K=56.00
+Epoch 018/104 proposal [........................] 1/47 MSE=2.533e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 018/104 proposal [=====...................] 10/47 MSE=7.870e-05 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 018/104 proposal [==========..............] 20/47 MSE=2.515e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 018/104 proposal [===============.........] 30/47 MSE=9.872e-05 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 018/104 proposal [====================....] 40/47 MSE=1.393e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 018/104 proposal [========================] 47/47 MSE=1.643e-04 pass=66.1% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 018 val dense=81.1% deployment=81.1% worst-source=72.3% qualification=0.0% MSE=1.448e-04 K=56.00 mass=30.93 beta=-0.21 soft_cost=1.4480 selection_score=-1.4480 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.6020e-03, ordered_assignment_MAE=4.7656e-03, matched_K=35.01
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=72.3%, deployment=72.3%, MSE=2.135e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.672, param_RMSE=2.833e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.130e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.291e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.060e-06, K=56.00
+Epoch 019/104 proposal [........................] 1/47 MSE=1.016e-04 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 019/104 proposal [=====...................] 10/47 MSE=8.437e-05 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 019/104 proposal [==========..............] 20/47 MSE=6.266e-05 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 019/104 proposal [===============.........] 30/47 MSE=7.740e-05 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 019/104 proposal [====================....] 40/47 MSE=1.063e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 019/104 proposal [========================] 47/47 MSE=1.571e-04 pass=71.4% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 019 val dense=81.6% deployment=81.6% worst-source=73.0% qualification=0.0% MSE=1.434e-04 K=56.00 mass=30.95 beta=-0.21 soft_cost=1.4351 selection_score=-1.4351 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5910e-03, ordered_assignment_MAE=4.7708e-03, matched_K=34.74
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=73.0%, deployment=73.0%, MSE=2.115e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.670, param_RMSE=2.879e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.790e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.288e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.177e-06, K=56.00
+Epoch 020/104 proposal [........................] 1/47 MSE=2.168e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 020/104 proposal [=====...................] 10/47 MSE=1.335e-04 pass=70.3% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 020/104 proposal [==========..............] 20/47 MSE=1.147e-04 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 020/104 proposal [===============.........] 30/47 MSE=1.109e-04 pass=70.3% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 020/104 proposal [====================....] 40/47 MSE=1.133e-04 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 020/104 proposal [========================] 47/47 MSE=1.075e-04 pass=73.2% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 020 val dense=81.3% deployment=81.3% worst-source=72.7% qualification=0.0% MSE=1.422e-04 K=56.00 mass=30.94 beta=-0.21 soft_cost=1.4429 selection_score=-1.4429 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5578e-03, ordered_assignment_MAE=4.7443e-03, matched_K=34.61
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=72.7%, deployment=72.7%, MSE=2.096e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.671, param_RMSE=2.845e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.431e-07, K=56.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=1.274e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.079e-06, K=56.00
+Epoch 021/104 proposal [........................] 1/47 MSE=9.516e-05 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 021/104 proposal [=====...................] 10/47 MSE=1.626e-04 pass=70.3% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 021/104 proposal [==========..............] 20/47 MSE=1.021e-04 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 021/104 proposal [===============.........] 30/47 MSE=1.559e-04 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 021/104 proposal [====================....] 40/47 MSE=1.822e-04 pass=62.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 021/104 proposal [========================] 47/47 MSE=1.337e-04 pass=71.4% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 021 val dense=81.8% deployment=81.8% worst-source=73.2% qualification=0.0% MSE=1.375e-04 K=56.00 mass=30.91 beta=-0.21 soft_cost=1.4305 selection_score=-1.4305 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.6108e-03, ordered_assignment_MAE=4.7675e-03, matched_K=34.71
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=73.2%, deployment=73.2%, MSE=2.026e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.672, param_RMSE=2.837e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.781e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.273e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.060e-06, K=56.00
+Epoch 022/104 proposal [........................] 1/47 MSE=2.256e-04 pass=60.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 022/104 proposal [=====...................] 10/47 MSE=1.395e-04 pass=64.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 022/104 proposal [==========..............] 20/47 MSE=1.645e-04 pass=70.3% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 022/104 proposal [===============.........] 30/47 MSE=8.330e-05 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 022/104 proposal [====================....] 40/47 MSE=1.639e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 022/104 proposal [========================] 47/47 MSE=1.402e-04 pass=64.3% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 022 val dense=82.1% deployment=82.1% worst-source=73.5% qualification=0.0% MSE=1.354e-04 K=56.00 mass=30.91 beta=-0.21 soft_cost=1.4230 selection_score=-1.4230 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5357e-03, ordered_assignment_MAE=4.7278e-03, matched_K=34.99
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=73.5%, deployment=73.5%, MSE=1.995e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.675, param_RMSE=2.827e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.979e-07, K=56.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.249e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.946e-06, K=56.00
+Epoch 023/104 proposal [........................] 1/47 MSE=8.715e-05 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 023/104 proposal [=====...................] 10/47 MSE=1.748e-04 pass=60.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 023/104 proposal [==========..............] 20/47 MSE=1.276e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 023/104 proposal [===============.........] 30/47 MSE=7.768e-05 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 023/104 proposal [====================....] 40/47 MSE=1.301e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 023/104 proposal [========================] 47/47 MSE=2.322e-04 pass=62.5% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 023 val dense=82.6% deployment=82.6% worst-source=74.3% qualification=0.0% MSE=1.349e-04 K=56.00 mass=30.92 beta=-0.21 soft_cost=1.4125 selection_score=-1.4125 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5326e-03, ordered_assignment_MAE=4.7250e-03, matched_K=34.76
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=74.3%, deployment=74.3%, MSE=1.987e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.671, param_RMSE=2.900e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.742e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.294e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.240e-06, K=56.00
+Epoch 024/104 proposal [........................] 1/47 MSE=1.138e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 024/104 proposal [=====...................] 10/47 MSE=1.812e-04 pass=60.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 024/104 proposal [==========..............] 20/47 MSE=8.351e-05 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 024/104 proposal [===============.........] 30/47 MSE=1.135e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 024/104 proposal [====================....] 40/47 MSE=9.706e-05 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 024/104 proposal [========================] 47/47 MSE=6.918e-05 pass=83.9% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 024 val dense=83.0% deployment=83.0% worst-source=74.8% qualification=0.0% MSE=1.317e-04 K=56.00 mass=30.92 beta=-0.21 soft_cost=1.4039 selection_score=-1.4039 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5259e-03, ordered_assignment_MAE=4.7025e-03, matched_K=34.62
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=74.8%, deployment=74.8%, MSE=1.939e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.676, param_RMSE=2.865e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.802e-07, K=56.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.273e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.075e-06, K=56.00
+Epoch 025/104 proposal [........................] 1/47 MSE=1.414e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 025/104 proposal [=====...................] 10/47 MSE=1.192e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 025/104 proposal [==========..............] 20/47 MSE=1.291e-04 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 025/104 proposal [===============.........] 30/47 MSE=6.131e-05 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 025/104 proposal [====================....] 40/47 MSE=1.083e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 025/104 proposal [========================] 47/47 MSE=1.185e-04 pass=76.8% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 025 val dense=83.0% deployment=83.0% worst-source=75.0% qualification=0.0% MSE=1.303e-04 K=56.00 mass=30.92 beta=-0.21 soft_cost=1.4043 selection_score=-1.4043 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5035e-03, ordered_assignment_MAE=4.6696e-03, matched_K=34.55
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.0%, deployment=75.0%, MSE=1.921e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.673, param_RMSE=2.873e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.626e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.230e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.608e-06, K=56.00
+Epoch 026/104 proposal [........................] 1/47 MSE=1.534e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 026/104 proposal [=====...................] 10/47 MSE=9.985e-05 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 026/104 proposal [==========..............] 20/47 MSE=1.276e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 026/104 proposal [===============.........] 30/47 MSE=1.562e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 026/104 proposal [====================....] 40/47 MSE=1.527e-04 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 026/104 proposal [========================] 47/47 MSE=8.248e-05 pass=82.1% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 026 val dense=82.9% deployment=82.9% worst-source=74.7% qualification=0.0% MSE=1.317e-04 K=56.00 mass=30.91 beta=-0.21 soft_cost=1.4022 selection_score=-1.4022 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.4587e-03, ordered_assignment_MAE=4.6315e-03, matched_K=34.49
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=74.7%, deployment=74.7%, MSE=1.941e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.675, param_RMSE=2.865e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.362e-07, K=56.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.244e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.952e-06, K=56.00
+Epoch 027/104 proposal [........................] 1/47 MSE=1.551e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 027/104 proposal [=====...................] 10/47 MSE=9.866e-05 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 027/104 proposal [==========..............] 20/47 MSE=1.565e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 027/104 proposal [===============.........] 30/47 MSE=1.024e-04 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 027/104 proposal [====================....] 40/47 MSE=8.329e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 027/104 proposal [========================] 47/47 MSE=6.817e-05 pass=76.8% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 027 val dense=83.7% deployment=83.7% worst-source=75.8% qualification=0.0% MSE=1.299e-04 K=56.00 mass=30.92 beta=-0.21 soft_cost=1.3932 selection_score=-1.3932 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.4625e-03, ordered_assignment_MAE=4.6298e-03, matched_K=34.23
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.8%, deployment=75.8%, MSE=1.913e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.673, param_RMSE=2.891e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.839e-07, K=56.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.225e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.840e-06, K=56.00
+Epoch 028/104 proposal [........................] 1/47 MSE=9.484e-05 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 028/104 proposal [=====...................] 10/47 MSE=2.630e-04 pass=60.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 028/104 proposal [==========..............] 20/47 MSE=1.226e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 028/104 proposal [===============.........] 30/47 MSE=1.088e-04 pass=70.3% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 028/104 proposal [====================....] 40/47 MSE=1.171e-04 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 028/104 proposal [========================] 47/47 MSE=1.106e-04 pass=82.1% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 028 val dense=83.6% deployment=83.6% worst-source=75.8% qualification=0.0% MSE=1.295e-04 K=56.00 mass=30.91 beta=-0.21 soft_cost=1.3915 selection_score=-1.3915 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.4911e-03, ordered_assignment_MAE=4.7122e-03, matched_K=34.77
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.8%, deployment=75.8%, MSE=1.908e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.676, param_RMSE=2.888e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.995e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.238e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.834e-06, K=56.00
+Epoch 029/104 proposal [........................] 1/47 MSE=1.308e-04 pass=62.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 029/104 proposal [=====...................] 10/47 MSE=9.584e-05 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 029/104 proposal [==========..............] 20/47 MSE=6.718e-05 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 029/104 proposal [===============.........] 30/47 MSE=6.142e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 029/104 proposal [====================....] 40/47 MSE=9.331e-05 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 029/104 proposal [========================] 47/47 MSE=1.680e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 029 val dense=83.4% deployment=83.4% worst-source=75.7% qualification=0.0% MSE=1.296e-04 K=56.00 mass=30.92 beta=-0.21 soft_cost=1.3966 selection_score=-1.3966 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.4359e-03, ordered_assignment_MAE=4.6113e-03, matched_K=34.86
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.7%, deployment=75.7%, MSE=1.909e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.675, param_RMSE=2.875e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.310e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.248e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.927e-06, K=56.00
+Epoch 030/104 proposal [........................] 1/47 MSE=1.670e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 030/104 proposal [=====...................] 10/47 MSE=1.159e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 030/104 proposal [==========..............] 20/47 MSE=2.156e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 030/104 proposal [===============.........] 30/47 MSE=1.573e-04 pass=60.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 030/104 proposal [====================....] 40/47 MSE=1.484e-04 pass=65.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 030/104 proposal [========================] 47/47 MSE=2.014e-04 pass=73.2% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 030 val dense=83.1% deployment=83.1% worst-source=75.0% qualification=0.0% MSE=1.280e-04 K=56.00 mass=30.92 beta=-0.21 soft_cost=1.3905 selection_score=-1.3905 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.3900e-03, ordered_assignment_MAE=4.6188e-03, matched_K=34.46
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.0%, deployment=75.0%, MSE=1.885e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.677, param_RMSE=2.843e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.223e-07, K=56.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.222e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.818e-06, K=56.00
+Epoch 031/104 proposal [........................] 1/47 MSE=1.065e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 031/104 proposal [=====...................] 10/47 MSE=8.810e-05 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 031/104 proposal [==========..............] 20/47 MSE=1.402e-04 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 031/104 proposal [===============.........] 30/47 MSE=8.350e-05 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 031/104 proposal [====================....] 40/47 MSE=1.545e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 031/104 proposal [========================] 47/47 MSE=1.385e-04 pass=78.6% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 031 val dense=84.2% deployment=84.2% worst-source=76.8% qualification=0.0% MSE=1.257e-04 K=56.00 mass=30.91 beta=-0.21 soft_cost=1.3773 selection_score=-1.3773 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.4698e-03, ordered_assignment_MAE=4.6714e-03, matched_K=34.79
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.8%, deployment=76.8%, MSE=1.850e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.675, param_RMSE=2.856e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.722e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.279e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.088e-06, K=56.00
+Epoch 032/104 proposal [........................] 1/47 MSE=1.071e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 032/104 proposal [=====...................] 10/47 MSE=1.462e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 032/104 proposal [==========..............] 20/47 MSE=1.164e-04 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 032/104 proposal [===============.........] 30/47 MSE=1.013e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 032/104 proposal [====================....] 40/47 MSE=7.220e-05 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 032/104 proposal [========================] 47/47 MSE=8.616e-05 pass=76.8% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 032 val dense=84.3% deployment=84.3% worst-source=77.0% qualification=0.0% MSE=1.246e-04 K=56.00 mass=30.89 beta=-0.21 soft_cost=1.3736 selection_score=-1.3736 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.4670e-03, ordered_assignment_MAE=4.6755e-03, matched_K=34.88
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=77.0%, MSE=1.833e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.674, param_RMSE=2.915e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.911e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.260e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.594e-06, K=56.00
+Epoch 033/104 proposal [........................] 1/47 MSE=7.858e-05 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 033/104 proposal [=====...................] 10/47 MSE=9.833e-05 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 033/104 proposal [==========..............] 20/47 MSE=1.190e-04 pass=82.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 033/104 proposal [===============.........] 30/47 MSE=1.192e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 033/104 proposal [====================....] 40/47 MSE=1.115e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 033/104 proposal [========================] 47/47 MSE=1.134e-04 pass=76.8% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 033 val dense=84.1% deployment=84.1% worst-source=76.7% qualification=0.0% MSE=1.196e-04 K=56.00 mass=30.90 beta=-0.21 soft_cost=1.3726 selection_score=-1.3726 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.3972e-03, ordered_assignment_MAE=4.5936e-03, matched_K=34.76
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=76.7%, MSE=1.759e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.674, param_RMSE=2.877e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.252e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.260e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.694e-06, K=56.00
+Epoch 034/104 proposal [........................] 1/47 MSE=1.520e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 034/104 proposal [=====...................] 10/47 MSE=1.221e-04 pass=82.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 034/104 proposal [==========..............] 20/47 MSE=1.102e-04 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 034/104 proposal [===============.........] 30/47 MSE=7.948e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 034/104 proposal [====================....] 40/47 MSE=8.947e-05 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 034/104 proposal [========================] 47/47 MSE=1.401e-04 pass=67.9% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 034 val dense=84.1% deployment=84.1% worst-source=76.7% qualification=0.0% MSE=1.188e-04 K=56.00 mass=30.89 beta=-0.21 soft_cost=1.3706 selection_score=-1.3706 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.4111e-03, ordered_assignment_MAE=4.5629e-03, matched_K=34.55
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=76.7%, MSE=1.746e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.675, param_RMSE=2.907e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.806e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.269e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.535e-06, K=56.00
+Epoch 035/104 proposal [........................] 1/47 MSE=1.096e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 035/104 proposal [=====...................] 10/47 MSE=1.356e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 035/104 proposal [==========..............] 20/47 MSE=1.268e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 035/104 proposal [===============.........] 30/47 MSE=1.678e-04 pass=64.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 035/104 proposal [====================....] 40/47 MSE=7.318e-05 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 035/104 proposal [========================] 47/47 MSE=6.882e-05 pass=66.1% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 035 val dense=83.9% deployment=83.9% worst-source=76.3% qualification=0.0% MSE=1.178e-04 K=56.00 mass=30.87 beta=-0.21 soft_cost=1.3739 selection_score=-1.3739 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.3746e-03, ordered_assignment_MAE=4.5396e-03, matched_K=34.55
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=76.3%, MSE=1.732e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.674, param_RMSE=2.904e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.584e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.244e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.515e-06, K=56.00
+Epoch 036/104 proposal [........................] 1/47 MSE=1.368e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 036/104 proposal [=====...................] 10/47 MSE=9.712e-05 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 036/104 proposal [==========..............] 20/47 MSE=9.197e-05 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 036/104 proposal [===============.........] 30/47 MSE=8.009e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 036/104 proposal [====================....] 40/47 MSE=1.384e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 036/104 proposal [========================] 47/47 MSE=1.544e-04 pass=62.5% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 036 val dense=84.7% deployment=84.7% worst-source=77.5% qualification=0.0% MSE=1.178e-04 K=56.00 mass=30.87 beta=-0.21 soft_cost=1.3608 selection_score=-1.3608 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.4258e-03, ordered_assignment_MAE=4.6326e-03, matched_K=35.01
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.5%, deployment=77.5%, MSE=1.732e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.674, param_RMSE=2.897e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.357e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.243e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.510e-06, K=56.00
+Epoch 037/104 proposal [........................] 1/47 MSE=9.334e-05 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 037/104 proposal [=====...................] 10/47 MSE=1.186e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 037/104 proposal [==========..............] 20/47 MSE=1.048e-04 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 037/104 proposal [===============.........] 30/47 MSE=1.161e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 037/104 proposal [====================....] 40/47 MSE=2.022e-04 pass=64.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 037/104 proposal [========================] 47/47 MSE=8.321e-05 pass=82.1% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 037 val dense=84.2% deployment=84.2% worst-source=76.8% qualification=0.0% MSE=1.140e-04 K=56.00 mass=30.87 beta=-0.21 soft_cost=1.3642 selection_score=-1.3642 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.3993e-03, ordered_assignment_MAE=4.5920e-03, matched_K=34.70
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.8%, deployment=76.8%, MSE=1.675e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.677, param_RMSE=2.899e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.902e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.260e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.625e-06, K=56.00
+Epoch 038/104 proposal [........................] 1/47 MSE=1.905e-04 pass=57.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 038/104 proposal [=====...................] 10/47 MSE=1.404e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 038/104 proposal [==========..............] 20/47 MSE=6.379e-05 pass=89.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 038/104 proposal [===============.........] 30/47 MSE=1.404e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 038/104 proposal [====================....] 40/47 MSE=1.248e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 038/104 proposal [========================] 47/47 MSE=8.465e-05 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 038 val dense=84.9% deployment=84.9% worst-source=77.8% qualification=0.0% MSE=1.140e-04 K=56.00 mass=30.86 beta=-0.21 soft_cost=1.3562 selection_score=-1.3562 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.3876e-03, ordered_assignment_MAE=4.6108e-03, matched_K=34.92
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.8%, deployment=77.8%, MSE=1.675e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.676, param_RMSE=2.892e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=6.840e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.256e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.456e-06, K=56.00
+Epoch 039/104 proposal [........................] 1/47 MSE=8.984e-05 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 039/104 proposal [=====...................] 10/47 MSE=1.034e-04 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 039/104 proposal [==========..............] 20/47 MSE=1.173e-04 pass=73.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 039/104 proposal [===============.........] 30/47 MSE=9.216e-05 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 039/104 proposal [====================....] 40/47 MSE=1.585e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 039/104 proposal [========================] 47/47 MSE=6.994e-05 pass=78.6% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 039 val dense=84.2% deployment=84.2% worst-source=76.8% qualification=0.0% MSE=1.138e-04 K=56.00 mass=30.87 beta=-0.21 soft_cost=1.3635 selection_score=-1.3635 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.4028e-03, ordered_assignment_MAE=4.5774e-03, matched_K=35.08
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.8%, deployment=76.8%, MSE=1.672e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.675, param_RMSE=2.943e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.163e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.237e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.421e-06, K=56.00
+Epoch 040/104 proposal [........................] 1/47 MSE=1.197e-04 pass=67.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 040/104 proposal [=====...................] 10/47 MSE=1.038e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 040/104 proposal [==========..............] 20/47 MSE=7.476e-05 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 040/104 proposal [===============.........] 30/47 MSE=9.839e-05 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 040/104 proposal [====================....] 40/47 MSE=8.048e-05 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 040/104 proposal [========================] 47/47 MSE=1.187e-04 pass=69.6% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 040 val dense=85.0% deployment=85.0% worst-source=78.0% qualification=0.0% MSE=1.189e-04 K=56.00 mass=30.88 beta=-0.21 soft_cost=1.3559 selection_score=-1.3559 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.3870e-03, ordered_assignment_MAE=4.5293e-03, matched_K=34.57
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=78.0%, deployment=78.0%, MSE=1.748e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.678, param_RMSE=2.852e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.451e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.287e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.697e-06, K=56.00
+Proposal schedule complete; loading the lowest-cost dense initializer (pass=0.0%, reporting reference=90.0%). Joint training starts unconditionally.
+Epoch 041/104 joint [........................] 1/47 MSE=1.244e-03 pass=34.4% K=34.0 teacherK=41.5 countMAE=15.26
+Epoch 041/104 joint [=====...................] 10/47 MSE=1.001e-03 pass=32.8% K=35.7 teacherK=41.5 countMAE=14.56
+Epoch 041/104 joint [==========..............] 20/47 MSE=1.258e-03 pass=15.6% K=37.2 teacherK=45.1 countMAE=15.33
+Epoch 041/104 joint [===============.........] 30/47 MSE=1.065e-03 pass=25.0% K=38.4 teacherK=44.1 countMAE=16.63
+Epoch 041/104 joint [====================....] 40/47 MSE=1.259e-03 pass=18.8% K=39.6 teacherK=47.1 countMAE=13.51
+Epoch 041/104 joint [========================] 47/47 MSE=1.196e-03 pass=14.3% K=40.5 teacherK=49.7 countMAE=14.49
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 041 val dense=85.7% deployment=21.4% worst-source=2.0% qualification=0.0% MSE=1.089e-03 K=40.43 mass=37.20 beta=-0.69 soft_cost=3.6056 selection_score=-3.6056 complexity=0.00->0.55 safety=2+0.20sigma scale=1.00->0.91 pass_reference_only=0.0%
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=79.0%, deployment=2.0%, MSE=1.520e-03, K=40.82, targetK=31.74, count_MAE=14.63, bias=+9.08, knot_F1@0.01=0.592, param_RMSE=2.893e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=88.0%, MSE=6.837e-05, K=38.93
+  natural_earth_10m_coastline: dense=97.0%, deployment=34.0%, MSE=3.372e-04, K=39.79
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=59.0%, MSE=2.758e-04, K=40.22
+Epoch 042/104 joint [........................] 1/47 MSE=1.028e-03 pass=12.5% K=40.5 teacherK=48.7 countMAE=16.25
+Epoch 042/104 joint [=====...................] 10/47 MSE=1.128e-03 pass=15.6% K=41.2 teacherK=48.6 countMAE=16.20
+Epoch 042/104 joint [==========..............] 20/47 MSE=9.934e-04 pass=12.5% K=42.0 teacherK=49.0 countMAE=16.12
+Epoch 042/104 joint [===============.........] 30/47 MSE=9.362e-04 pass=14.1% K=42.2 teacherK=48.5 countMAE=16.56
+Epoch 042/104 joint [====================....] 40/47 MSE=9.002e-04 pass=17.2% K=42.8 teacherK=47.9 countMAE=13.15
+Epoch 042/104 joint [========================] 47/47 MSE=8.963e-04 pass=23.2% K=43.1 teacherK=47.8 countMAE=15.59
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 042 val dense=85.0% deployment=21.6% worst-source=1.2% qualification=0.0% MSE=8.764e-04 K=43.31 mass=40.18 beta=-0.97 soft_cost=3.4589 selection_score=-3.4589 complexity=0.55->1.09 safety=2+0.18sigma scale=0.91->0.82 pass_reference_only=0.0%
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=78.0%, deployment=1.2%, MSE=1.224e-03, K=44.04, targetK=31.74, count_MAE=15.99, bias=+12.30, knot_F1@0.01=0.615, param_RMSE=2.894e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=86.0%, MSE=6.336e-05, K=40.45
+  natural_earth_10m_coastline: dense=97.0%, deployment=36.0%, MSE=2.637e-04, K=42.26
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=65.0%, MSE=2.169e-04, K=42.84
+Epoch 043/104 joint [........................] 1/47 MSE=8.643e-04 pass=20.3% K=42.8 teacherK=46.3 countMAE=18.39
+Epoch 043/104 joint [=====...................] 10/47 MSE=8.212e-04 pass=18.8% K=43.6 teacherK=47.1 countMAE=18.02

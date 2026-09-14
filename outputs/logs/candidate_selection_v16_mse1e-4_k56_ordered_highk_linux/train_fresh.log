@@ -1,0 +1,269 @@
+Checking real manifests and train/val/test group separation...
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl
+  Checking groups/files: 2000/18219
+  Checking groups/files: 4000/18219
+  Checking groups/files: 6000/18219
+  Checking groups/files: 8000/18219
+  Checking groups/files: 10000/18219
+  Checking groups/files: 12000/18219
+  Checking groups/files: 14000/18219
+  Checking groups/files: 16000/18219
+  Checking groups/files: 18000/18219
+  Checking groups/files: 18219/18219
+  Ready uji_pen_characters_v2: train=9670, val=2456 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl
+  Checking groups/files: 2000/3908
+  Checking groups/files: 3908/3908
+  Ready natural_earth_10m_coastline: train=2625, val=750 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl
+  Checking groups/files: 2000/6654
+  Checking groups/files: 4000/6654
+  Checking groups/files: 6000/6654
+  Checking groups/files: 6654/6654
+  Ready usgs_tnm_contours_large_scale: train=4024, val=1210 (test excluded from training)
+Transferred 41 proposal tensors (41 exact, 0 rank-resized); retained 1 target anchor buffer(s), skipped 0 other shape mismatch(es). Selector and subset decoder start fresh.
+v16 adaptive mass_topk: cuda, Kc=56 internal (full cubic knot vector at all-keep=64), MSE tolerance=0.0001; 3000 train draws, 900 validation curves; real sources=3
+Synthetic source contract: clean source-subset threshold-minimal certificate at RMS=0.01, margin=20%, audit_points=512
+Simplification curriculum: training-only ranked-prefix teacher steps=7, exact low-K sweep through K=16; certified source K role=upper_bound; geometry-oracle bootstrap=True (+2); certified over-count weight=1, symmetric true-count weight=1; complexity multiplier 0..6; safety 2+0.2sigma -> 0+0.03sigma. Deployment still uses one network forward and one final refit.
+Validation checkpoint quality uses the worst data-source rate and an explicit K=56 boundary audit (n=32). Additional subset fits run only during training.
+Epoch 001/80 proposal [........................] 1/47 MSE=1.452e-04 pass=71.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 001/80 proposal [=====...................] 10/47 MSE=1.087e-04 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 001/80 proposal [==========..............] 20/47 MSE=5.678e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 001/80 proposal [===============.........] 30/47 MSE=9.811e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 001/80 proposal [====================....] 40/47 MSE=1.141e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 001/80 proposal [========================] 47/47 MSE=2.060e-04 pass=73.2% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 001 val dense=82.1% deployment=82.1% worst-source=73.7% qualification=0.0% MSE=1.663e-04 K=56.00 mass=30.90 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=73.7%, deployment=73.7%, MSE=2.461e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.696, param_RMSE=2.794e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.159e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.171e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.191e-06, K=56.00
+Epoch 002/80 proposal [........................] 1/47 MSE=9.526e-05 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 002/80 proposal [=====...................] 10/47 MSE=7.654e-05 pass=85.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 002/80 proposal [==========..............] 20/47 MSE=1.579e-04 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 002/80 proposal [===============.........] 30/47 MSE=1.310e-04 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 002/80 proposal [====================....] 40/47 MSE=1.676e-04 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 002/80 proposal [========================] 47/47 MSE=1.384e-04 pass=85.7% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 002 val dense=81.8% deployment=81.8% worst-source=73.2% qualification=0.0% MSE=1.634e-04 K=56.00 mass=30.94 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=73.2%, deployment=73.2%, MSE=2.418e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.698, param_RMSE=2.884e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=6.804e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.180e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.232e-06, K=56.00
+Epoch 003/80 proposal [........................] 1/47 MSE=1.298e-04 pass=82.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 003/80 proposal [=====...................] 10/47 MSE=1.399e-04 pass=89.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 003/80 proposal [==========..............] 20/47 MSE=1.031e-04 pass=82.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 003/80 proposal [===============.........] 30/47 MSE=1.141e-04 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 003/80 proposal [====================....] 40/47 MSE=7.949e-05 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 003/80 proposal [========================] 47/47 MSE=9.617e-05 pass=78.6% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 003 val dense=82.7% deployment=82.7% worst-source=74.5% qualification=0.0% MSE=1.589e-04 K=56.00 mass=30.94 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=74.5%, deployment=74.5%, MSE=2.351e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.700, param_RMSE=2.815e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.528e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.179e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.244e-06, K=56.00
+Epoch 004/80 proposal [........................] 1/47 MSE=9.533e-05 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 004/80 proposal [=====...................] 10/47 MSE=7.520e-05 pass=89.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 004/80 proposal [==========..............] 20/47 MSE=1.229e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 004/80 proposal [===============.........] 30/47 MSE=1.045e-04 pass=82.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 004/80 proposal [====================....] 40/47 MSE=1.095e-04 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 004/80 proposal [========================] 47/47 MSE=4.789e-05 pass=85.7% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 004 val dense=83.3% deployment=83.3% worst-source=75.5% qualification=0.0% MSE=1.556e-04 K=56.00 mass=30.95 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.5%, deployment=75.5%, MSE=2.301e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.701, param_RMSE=2.795e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.272e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.158e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.135e-06, K=56.00
+Epoch 005/80 proposal [........................] 1/47 MSE=4.831e-05 pass=87.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 005/80 proposal [=====...................] 10/47 MSE=6.044e-05 pass=87.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 005/80 proposal [==========..............] 20/47 MSE=9.264e-05 pass=87.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 005/80 proposal [===============.........] 30/47 MSE=7.597e-05 pass=82.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 005/80 proposal [====================....] 40/47 MSE=1.347e-04 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 005/80 proposal [========================] 47/47 MSE=2.645e-05 pass=94.6% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 005 val dense=82.3% deployment=82.3% worst-source=74.0% qualification=0.0% MSE=1.548e-04 K=56.00 mass=30.91 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=74.0%, deployment=74.0%, MSE=2.290e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.699, param_RMSE=2.809e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.327e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.165e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.148e-06, K=56.00
+Epoch 006/80 proposal [........................] 1/47 MSE=3.328e-05 pass=89.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 006/80 proposal [=====...................] 10/47 MSE=1.027e-04 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 006/80 proposal [==========..............] 20/47 MSE=1.061e-04 pass=85.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 006/80 proposal [===============.........] 30/47 MSE=1.700e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 006/80 proposal [====================....] 40/47 MSE=7.393e-05 pass=85.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 006/80 proposal [========================] 47/47 MSE=9.638e-05 pass=85.7% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 006 val dense=83.6% deployment=83.6% worst-source=75.8% qualification=0.0% MSE=1.547e-04 K=56.00 mass=30.91 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.8%, deployment=75.8%, MSE=2.287e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.703, param_RMSE=2.854e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.195e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.212e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.471e-06, K=56.00
+Epoch 007/80 proposal [........................] 1/47 MSE=1.007e-04 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 007/80 proposal [=====...................] 10/47 MSE=1.237e-04 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 007/80 proposal [==========..............] 20/47 MSE=4.146e-05 pass=89.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 007/80 proposal [===============.........] 30/47 MSE=9.768e-05 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 007/80 proposal [====================....] 40/47 MSE=9.512e-05 pass=89.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 007/80 proposal [========================] 47/47 MSE=9.346e-05 pass=78.6% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 007 val dense=83.4% deployment=83.4% worst-source=75.7% qualification=0.0% MSE=1.514e-04 K=56.00 mass=30.93 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.7%, deployment=75.7%, MSE=2.238e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.701, param_RMSE=2.858e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=6.850e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.172e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.165e-06, K=56.00
+Epoch 008/80 proposal [........................] 1/47 MSE=7.025e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 008/80 proposal [=====...................] 10/47 MSE=8.284e-05 pass=82.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 008/80 proposal [==========..............] 20/47 MSE=8.770e-05 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 008/80 proposal [===============.........] 30/47 MSE=3.576e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 008/80 proposal [====================....] 40/47 MSE=8.481e-05 pass=85.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 008/80 proposal [========================] 47/47 MSE=7.874e-05 pass=80.4% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 008 val dense=83.4% deployment=83.4% worst-source=75.7% qualification=0.0% MSE=1.526e-04 K=56.00 mass=30.92 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.7%, deployment=75.7%, MSE=2.256e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.700, param_RMSE=2.883e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.632e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.172e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.316e-06, K=56.00
+Epoch 009/80 proposal [........................] 1/47 MSE=4.955e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 009/80 proposal [=====...................] 10/47 MSE=1.138e-04 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 009/80 proposal [==========..............] 20/47 MSE=1.374e-04 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 009/80 proposal [===============.........] 30/47 MSE=2.024e-04 pass=78.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 009/80 proposal [====================....] 40/47 MSE=6.382e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 009/80 proposal [========================] 47/47 MSE=1.113e-04 pass=80.4% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 009 val dense=83.1% deployment=83.1% worst-source=75.2% qualification=0.0% MSE=1.530e-04 K=56.00 mass=30.91 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.2%, deployment=75.2%, MSE=2.262e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.697, param_RMSE=2.877e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.086e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.151e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.131e-06, K=56.00
+Epoch 010/80 proposal [........................] 1/47 MSE=1.627e-04 pass=82.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 010/80 proposal [=====...................] 10/47 MSE=1.403e-04 pass=68.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 010/80 proposal [==========..............] 20/47 MSE=1.374e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 010/80 proposal [===============.........] 30/47 MSE=7.819e-05 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 010/80 proposal [====================....] 40/47 MSE=4.612e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 010/80 proposal [========================] 47/47 MSE=1.084e-04 pass=78.6% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 010 val dense=83.7% deployment=83.7% worst-source=76.0% qualification=0.0% MSE=1.507e-04 K=56.00 mass=30.90 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.0%, deployment=76.0%, MSE=2.228e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.701, param_RMSE=2.865e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.231e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.164e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.263e-06, K=56.00
+Epoch 011/80 proposal [........................] 1/47 MSE=4.123e-05 pass=89.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 011/80 proposal [=====...................] 10/47 MSE=7.734e-05 pass=87.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 011/80 proposal [==========..............] 20/47 MSE=1.150e-04 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 011/80 proposal [===============.........] 30/47 MSE=8.831e-05 pass=85.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 011/80 proposal [====================....] 40/47 MSE=8.643e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 011/80 proposal [========================] 47/47 MSE=1.362e-04 pass=83.9% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 011 val dense=84.3% deployment=84.3% worst-source=77.0% qualification=0.0% MSE=1.484e-04 K=56.00 mass=30.88 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=77.0%, MSE=2.195e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.702, param_RMSE=2.867e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=6.505e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.124e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.014e-06, K=56.00
+Epoch 012/80 proposal [........................] 1/47 MSE=6.983e-05 pass=85.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 012/80 proposal [=====...................] 10/47 MSE=1.625e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 012/80 proposal [==========..............] 20/47 MSE=7.249e-05 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 012/80 proposal [===============.........] 30/47 MSE=1.731e-04 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 012/80 proposal [====================....] 40/47 MSE=1.845e-04 pass=87.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 012/80 proposal [========================] 47/47 MSE=9.484e-05 pass=83.9% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 012 val dense=84.1% deployment=84.1% worst-source=76.5% qualification=0.0% MSE=1.480e-04 K=56.00 mass=30.88 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.5%, deployment=76.5%, MSE=2.188e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.701, param_RMSE=2.881e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=6.816e-07, K=56.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.135e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.177e-06, K=56.00
+Epoch 013/80 proposal [........................] 1/47 MSE=9.733e-05 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 013/80 proposal [=====...................] 10/47 MSE=4.949e-05 pass=90.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 013/80 proposal [==========..............] 20/47 MSE=7.759e-05 pass=85.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 013/80 proposal [===============.........] 30/47 MSE=5.149e-05 pass=92.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 013/80 proposal [====================....] 40/47 MSE=6.903e-05 pass=87.5% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 013/80 proposal [========================] 47/47 MSE=1.249e-04 pass=75.0% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 013 val dense=84.7% deployment=84.7% worst-source=77.5% qualification=0.0% MSE=1.461e-04 K=56.00 mass=30.87 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.5%, deployment=77.5%, MSE=2.160e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.702, param_RMSE=2.879e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=6.857e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.133e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.043e-06, K=56.00
+Epoch 014/80 proposal [........................] 1/47 MSE=1.094e-04 pass=81.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 014/80 proposal [=====...................] 10/47 MSE=1.008e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 014/80 proposal [==========..............] 20/47 MSE=1.248e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 014/80 proposal [===============.........] 30/47 MSE=5.778e-05 pass=82.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 014/80 proposal [====================....] 40/47 MSE=1.720e-04 pass=76.6% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 014/80 proposal [========================] 47/47 MSE=9.391e-05 pass=85.7% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 014 val dense=85.2% deployment=85.2% worst-source=78.3% qualification=0.0% MSE=1.439e-04 K=56.00 mass=30.88 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=78.3%, deployment=78.3%, MSE=2.127e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.702, param_RMSE=2.856e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.352e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.129e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.103e-06, K=56.00
+Epoch 015/80 proposal [........................] 1/47 MSE=1.318e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 015/80 proposal [=====...................] 10/47 MSE=3.059e-05 pass=92.2% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 015/80 proposal [==========..............] 20/47 MSE=1.108e-04 pass=82.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 015/80 proposal [===============.........] 30/47 MSE=6.821e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 015/80 proposal [====================....] 40/47 MSE=1.006e-04 pass=85.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 015/80 proposal [========================] 47/47 MSE=6.795e-05 pass=82.1% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 015 val dense=84.4% deployment=84.4% worst-source=77.2% qualification=0.0% MSE=1.464e-04 K=56.00 mass=30.87 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.2%, deployment=77.2%, MSE=2.163e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.703, param_RMSE=2.868e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.628e-07, K=56.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.158e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.150e-06, K=56.00
+Epoch 016/80 proposal [........................] 1/47 MSE=8.619e-05 pass=85.9% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 016/80 proposal [=====...................] 10/47 MSE=2.121e-05 pass=93.8% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 016/80 proposal [==========..............] 20/47 MSE=1.439e-04 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 016/80 proposal [===============.........] 30/47 MSE=8.481e-05 pass=84.4% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 016/80 proposal [====================....] 40/47 MSE=9.101e-05 pass=89.1% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 016/80 proposal [========================] 47/47 MSE=5.133e-05 pass=92.9% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [=.......................] 1/15 
+  validation [================........] 10/15 
+  validation [========================] 15/15 
+Epoch 016 val dense=85.9% deployment=85.9% worst-source=79.2% qualification=0.0% MSE=1.442e-04 K=56.00 mass=30.86 beta=-0.21 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=79.2%, deployment=79.2%, MSE=2.131e-04, K=56.00, targetK=31.74, count_MAE=24.26, bias=+24.26, knot_F1@0.01=0.701, param_RMSE=2.872e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.444e-07, K=56.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.162e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.185e-06, K=56.00
+STOP: dense proposal did not reach the safety gate 90.0% in every source. Inspect /home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_linux.history.json; increase proposal training/candidate budget before simplification.

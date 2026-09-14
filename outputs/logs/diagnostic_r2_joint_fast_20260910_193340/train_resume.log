@@ -1,0 +1,700 @@
+Checking real manifests and train/val/test group separation...
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl
+  Checking groups/files: 2000/18219
+  Checking groups/files: 4000/18219
+  Checking groups/files: 6000/18219
+  Checking groups/files: 8000/18219
+  Checking groups/files: 10000/18219
+  Checking groups/files: 12000/18219
+  Checking groups/files: 14000/18219
+  Checking groups/files: 16000/18219
+  Checking groups/files: 18000/18219
+  Checking groups/files: 18219/18219
+  Ready uji_pen_characters_v2: train=9670, val=2456 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl
+  Checking groups/files: 2000/3908
+  Checking groups/files: 3908/3908
+  Ready natural_earth_10m_coastline: train=2625, val=750 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl
+  Checking groups/files: 2000/6654
+  Checking groups/files: 4000/6654
+  Checking groups/files: 6000/6654
+  Checking groups/files: 6654/6654
+  Ready usgs_tnm_contours_large_scale: train=4024, val=1210 (test excluded from training)
+v16 adaptive mass_topk: cuda, Kc=56 internal (full cubic knot vector at all-keep=64), MSE tolerance=0.0001; 3000 train draws, 450 validation curves; real sources=3
+Synthetic source contract: clean source-subset threshold-minimal certificate at RMS=0.01, margin=20%, audit_points=512
+Simplification curriculum: training-only ranked-prefix teacher steps=7, exact low-K sweep through K=16; certified source K role=upper_bound; geometry-oracle bootstrap=True (+2); certified over-count weight=1, symmetric true-count weight=1; deterministic Joint-epoch complexity multiplier 0..6; safety 2+0.2sigma -> 0+0.03sigma. Deployment still uses one network forward and one final refit.
+Checkpoint selection minimizes mean per-curve subset cost: feasible curves trade K against a bounded MSE tie-break; infeasible curves use a logarithmic MSE penalty. Aggregate pass rates and the explicit K=56 boundary audit (n=16) are reported but never gate training. Additional subset fits run only during training.
+Proposal-stage synthetic stratification: 50.0% from K>=40; the remainder uses K=4..39. Joint training always uses the original K=4..56 distribution.
+Epoch 021/81 joint [=.......................] 1/24 MSE=7.486e-05 pass=78.1% K=44.5 teacherK=41.5 countMAE=20.00
+Epoch 021/81 joint [====================....] 20/24 MSE=7.087e-05 pass=81.2% K=44.9 teacherK=40.9 countMAE=20.74
+Epoch 021/81 joint [========================] 24/24 MSE=1.049e-04 pass=69.6% K=43.1 teacherK=39.6 countMAE=17.68
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 021 val dense=82.4% deployment=76.4% worst-source=70.0% qualification=0.0% MSE=1.454e-04 K=44.75 mass=44.19 beta=-2.92 soft_cost=1.3214 selection_score=-1.3214 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=74.3%, deployment=70.0%, MSE=1.895e-04, K=50.17, targetK=32.82, count_MAE=17.35, bias=+17.35, knot_F1@0.01=0.719, param_RMSE=3.463e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=7.124e-05, K=26.24
+  natural_earth_10m_coastline: dense=96.0%, deployment=86.0%, MSE=6.517e-05, K=38.46
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=92.0%, MSE=3.529e-05, K=37.06
+Epoch 022/81 joint [=.......................] 1/24 MSE=8.166e-05 pass=78.1% K=44.9 teacherK=42.1 countMAE=19.24
+Epoch 022/81 joint [====================....] 20/24 MSE=9.870e-05 pass=75.0% K=44.7 teacherK=41.1 countMAE=18.42
+Epoch 022/81 joint [========================] 24/24 MSE=6.902e-05 pass=75.0% K=43.5 teacherK=41.1 countMAE=20.24
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 022 val dense=83.3% deployment=77.6% worst-source=69.3% qualification=0.0% MSE=1.358e-04 K=44.04 mass=43.49 beta=-2.85 soft_cost=1.2752 selection_score=-1.2752 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.7%, deployment=69.3%, MSE=1.847e-04, K=49.71, targetK=32.82, count_MAE=16.89, bias=+16.89, knot_F1@0.01=0.725, param_RMSE=3.599e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=2.852e-05, K=24.76
+  natural_earth_10m_coastline: dense=96.0%, deployment=90.0%, MSE=5.625e-05, K=37.50
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=2.921e-05, K=35.82
+Epoch 023/81 joint [=.......................] 1/24 MSE=9.143e-05 pass=79.7% K=41.4 teacherK=37.4 countMAE=18.71
+Epoch 023/81 joint [====================....] 20/24 MSE=8.901e-05 pass=81.2% K=41.5 teacherK=38.1 countMAE=18.51
+Epoch 023/81 joint [========================] 24/24 MSE=1.172e-04 pass=78.6% K=40.0 teacherK=35.9 countMAE=17.79
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 023 val dense=83.6% deployment=81.3% worst-source=75.3% qualification=0.0% MSE=1.268e-04 K=42.71 mass=42.17 beta=-2.76 soft_cost=1.1710 selection_score=-1.1710 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.0%, deployment=75.3%, MSE=1.710e-04, K=49.16, targetK=32.82, count_MAE=16.33, bias=+16.33, knot_F1@0.01=0.728, param_RMSE=3.428e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=94.0%, MSE=3.172e-05, K=20.88
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=5.538e-05, K=34.82
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=98.0%, MSE=2.838e-05, K=33.74
+Epoch 024/81 joint [=.......................] 1/24 MSE=7.479e-05 pass=79.7% K=43.0 teacherK=39.5 countMAE=17.40
+Epoch 024/81 joint [====================....] 20/24 MSE=9.440e-05 pass=77.3% K=40.2 teacherK=36.4 countMAE=16.58
+Epoch 024/81 joint [========================] 24/24 MSE=9.327e-05 pass=60.7% K=40.0 teacherK=39.0 countMAE=14.43
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 024 val dense=83.3% deployment=76.9% worst-source=70.0% qualification=0.0% MSE=1.358e-04 K=41.29 mass=40.74 beta=-2.59 soft_cost=1.2220 selection_score=-1.2220 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.7%, deployment=70.0%, MSE=1.812e-04, K=48.28, targetK=32.82, count_MAE=15.46, bias=+15.46, knot_F1@0.01=0.729, param_RMSE=3.422e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=3.498e-05, K=18.34
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=6.618e-05, K=32.10
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=94.0%, MSE=3.428e-05, K=31.46
+Epoch 025/81 joint [=.......................] 1/24 MSE=9.822e-05 pass=72.7% K=41.9 teacherK=38.7 countMAE=16.20
+Epoch 025/81 joint [====================....] 20/24 MSE=1.539e-04 pass=69.5% K=39.4 teacherK=36.7 countMAE=15.75
+Epoch 025/81 joint [========================] 24/24 MSE=6.390e-05 pass=83.9% K=40.4 teacherK=37.5 countMAE=18.30
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 025 val dense=83.3% deployment=77.3% worst-source=71.3% qualification=0.0% MSE=1.373e-04 K=41.01 mass=40.51 beta=-2.55 soft_cost=1.2222 selection_score=-1.2222 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.7%, deployment=71.3%, MSE=1.845e-04, K=48.20, targetK=32.82, count_MAE=15.37, bias=+15.37, knot_F1@0.01=0.728, param_RMSE=3.477e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=3.562e-05, K=16.82
+  natural_earth_10m_coastline: dense=96.0%, deployment=82.0%, MSE=6.146e-05, K=31.94
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.173e-05, K=31.16
+Epoch 026/81 joint [=.......................] 1/24 MSE=9.384e-05 pass=76.6% K=41.7 teacherK=38.5 countMAE=15.56
+Epoch 026/81 joint [====================....] 20/24 MSE=1.071e-04 pass=73.4% K=39.9 teacherK=37.2 countMAE=16.83
+Epoch 026/81 joint [========================] 24/24 MSE=1.091e-04 pass=82.1% K=36.4 teacherK=33.0 countMAE=16.86
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 026 val dense=82.9% deployment=70.0% worst-source=63.7% qualification=0.0% MSE=1.559e-04 K=39.55 mass=39.04 beta=-2.44 soft_cost=1.3714 selection_score=-1.3714 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.0%, deployment=63.7%, MSE=2.016e-04, K=47.20, targetK=32.82, count_MAE=14.37, bias=+14.37, knot_F1@0.01=0.733, param_RMSE=3.514e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=86.0%, MSE=5.493e-05, K=14.82
+  natural_earth_10m_coastline: dense=96.0%, deployment=70.0%, MSE=9.396e-05, K=29.30
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=92.0%, MSE=4.466e-05, K=28.66
+Epoch 027/81 joint [=.......................] 1/24 MSE=1.292e-04 pass=70.3% K=39.5 teacherK=37.5 countMAE=15.44
+Epoch 027/81 joint [====================....] 20/24 MSE=8.209e-05 pass=73.4% K=40.1 teacherK=38.2 countMAE=16.73
+Epoch 027/81 joint [========================] 24/24 MSE=8.645e-05 pass=83.9% K=38.5 teacherK=35.1 countMAE=15.88
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 027 val dense=83.3% deployment=77.3% worst-source=72.0% qualification=0.0% MSE=1.320e-04 K=40.37 mass=39.85 beta=-2.59 soft_cost=1.2059 selection_score=-1.2059 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.7%, deployment=72.0%, MSE=1.733e-04, K=47.79, targetK=32.82, count_MAE=14.97, bias=+14.97, knot_F1@0.01=0.728, param_RMSE=3.467e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=86.0%, MSE=4.474e-05, K=15.40
+  natural_earth_10m_coastline: dense=96.0%, deployment=82.0%, MSE=6.703e-05, K=31.04
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.643e-05, K=30.14
+Epoch 028/81 joint [=.......................] 1/24 MSE=8.981e-05 pass=79.7% K=36.5 teacherK=33.1 countMAE=15.47
+Epoch 028/81 joint [====================....] 20/24 MSE=1.122e-04 pass=68.0% K=37.8 teacherK=35.9 countMAE=15.24
+Epoch 028/81 joint [========================] 24/24 MSE=6.972e-05 pass=80.4% K=35.1 teacherK=31.3 countMAE=15.07
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 028 val dense=84.2% deployment=75.8% worst-source=70.7% qualification=0.0% MSE=1.368e-04 K=39.58 mass=39.09 beta=-2.46 soft_cost=1.2323 selection_score=-1.2323 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=70.7%, MSE=1.777e-04, K=47.29, targetK=32.82, count_MAE=14.46, bias=+14.46, knot_F1@0.01=0.729, param_RMSE=3.514e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=86.0%, MSE=4.849e-05, K=14.36
+  natural_earth_10m_coastline: dense=96.0%, deployment=80.0%, MSE=7.715e-05, K=29.52
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=92.0%, MSE=3.935e-05, K=28.64
+Epoch 029/81 joint [=.......................] 1/24 MSE=9.399e-05 pass=81.2% K=40.6 teacherK=38.2 countMAE=15.84
+Epoch 029/81 joint [====================....] 20/24 MSE=1.070e-04 pass=71.9% K=39.5 teacherK=37.3 countMAE=15.07
+Epoch 029/81 joint [========================] 24/24 MSE=1.069e-04 pass=73.2% K=40.0 teacherK=38.1 countMAE=15.32
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 029 val dense=83.6% deployment=70.2% worst-source=64.3% qualification=0.0% MSE=1.479e-04 K=39.01 mass=38.52 beta=-2.43 soft_cost=1.3207 selection_score=-1.3207 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.0%, deployment=64.3%, MSE=1.897e-04, K=46.92, targetK=32.82, count_MAE=14.10, bias=+14.10, knot_F1@0.01=0.732, param_RMSE=3.605e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=82.0%, MSE=6.161e-05, K=13.10
+  natural_earth_10m_coastline: dense=96.0%, deployment=72.0%, MSE=8.869e-05, K=28.58
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=92.0%, MSE=4.252e-05, K=27.90
+Epoch 030/81 joint [=.......................] 1/24 MSE=9.589e-05 pass=68.0% K=38.5 teacherK=37.0 countMAE=14.04
+Epoch 030/81 joint [====================....] 20/24 MSE=7.144e-05 pass=80.5% K=41.3 teacherK=38.3 countMAE=16.94
+Epoch 030/81 joint [========================] 24/24 MSE=1.509e-04 pass=69.6% K=39.4 teacherK=37.7 countMAE=14.48
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 030 val dense=83.6% deployment=75.8% worst-source=69.7% qualification=0.0% MSE=1.335e-04 K=39.68 mass=39.19 beta=-2.48 soft_cost=1.2072 selection_score=-1.2072 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.0%, deployment=69.7%, MSE=1.759e-04, K=47.27, targetK=32.82, count_MAE=14.45, bias=+14.45, knot_F1@0.01=0.728, param_RMSE=3.640e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=88.0%, MSE=4.316e-05, K=14.24
+  natural_earth_10m_coastline: dense=96.0%, deployment=80.0%, MSE=6.819e-05, K=30.08
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.470e-05, K=29.16
+Epoch 031/81 joint [=.......................] 1/24 MSE=9.213e-05 pass=78.9% K=37.9 teacherK=34.8 countMAE=15.31
+Epoch 031/81 joint [====================....] 20/24 MSE=9.189e-05 pass=75.8% K=39.0 teacherK=36.7 countMAE=16.07
+Epoch 031/81 joint [========================] 24/24 MSE=7.557e-05 pass=80.4% K=38.5 teacherK=34.8 countMAE=16.31
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 031 val dense=83.3% deployment=82.0% worst-source=75.0% qualification=0.0% MSE=1.210e-04 K=40.78 mass=40.31 beta=-2.70 soft_cost=1.1273 selection_score=-1.1273 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.7%, deployment=75.0%, MSE=1.628e-04, K=48.14, targetK=32.82, count_MAE=15.31, bias=+15.31, knot_F1@0.01=0.726, param_RMSE=3.458e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=3.055e-05, K=15.62
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=5.288e-05, K=31.88
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=98.0%, MSE=2.900e-05, K=30.68
+Epoch 032/81 joint [=.......................] 1/24 MSE=8.130e-05 pass=80.5% K=40.0 teacherK=36.8 countMAE=16.37
+Epoch 032/81 joint [====================....] 20/24 MSE=8.958e-05 pass=76.6% K=39.5 teacherK=36.9 countMAE=15.35
+Epoch 032/81 joint [========================] 24/24 MSE=9.393e-05 pass=69.6% K=33.2 teacherK=31.5 countMAE=15.20
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 032 val dense=83.6% deployment=71.1% worst-source=66.3% qualification=0.0% MSE=1.446e-04 K=38.86 mass=38.38 beta=-2.52 soft_cost=1.3150 selection_score=-1.3150 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.0%, deployment=66.3%, MSE=1.839e-04, K=47.01, targetK=32.82, count_MAE=14.19, bias=+14.19, knot_F1@0.01=0.731, param_RMSE=3.517e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=82.0%, MSE=6.329e-05, K=11.92
+  natural_earth_10m_coastline: dense=96.0%, deployment=70.0%, MSE=9.164e-05, K=28.26
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=90.0%, MSE=4.274e-05, K=27.48
+Epoch 033/81 joint [=.......................] 1/24 MSE=1.014e-04 pass=68.0% K=37.4 teacherK=35.8 countMAE=14.43
+Epoch 033/81 joint [====================....] 20/24 MSE=1.249e-04 pass=68.8% K=38.6 teacherK=36.6 countMAE=13.83
+Epoch 033/81 joint [========================] 24/24 MSE=1.058e-04 pass=73.2% K=38.6 teacherK=35.0 countMAE=15.46
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 033 val dense=83.1% deployment=78.0% worst-source=72.0% qualification=0.0% MSE=1.298e-04 K=39.60 mass=39.13 beta=-2.58 soft_cost=1.1720 selection_score=-1.1720 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.3%, deployment=72.0%, MSE=1.712e-04, K=47.38, targetK=32.82, count_MAE=14.55, bias=+14.55, knot_F1@0.01=0.728, param_RMSE=3.589e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=4.320e-05, K=13.26
+  natural_earth_10m_coastline: dense=96.0%, deployment=86.0%, MSE=6.380e-05, K=29.94
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=94.0%, MSE=3.357e-05, K=28.98
+Epoch 034/81 joint [=.......................] 1/24 MSE=1.286e-04 pass=71.9% K=38.8 teacherK=36.7 countMAE=14.77
+Epoch 034/81 joint [====================....] 20/24 MSE=9.912e-05 pass=69.5% K=39.9 teacherK=38.2 countMAE=14.44
+Epoch 034/81 joint [========================] 24/24 MSE=8.735e-05 pass=76.8% K=38.1 teacherK=35.3 countMAE=14.76
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 034 val dense=82.9% deployment=77.3% worst-source=71.0% qualification=0.0% MSE=1.296e-04 K=39.10 mass=38.62 beta=-2.53 soft_cost=1.1916 selection_score=-1.1916 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.0%, deployment=71.0%, MSE=1.701e-04, K=47.09, targetK=32.82, count_MAE=14.26, bias=+14.26, knot_F1@0.01=0.729, param_RMSE=3.499e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=4.163e-05, K=12.98
+  natural_earth_10m_coastline: dense=96.0%, deployment=84.0%, MSE=6.832e-05, K=28.52
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.565e-05, K=27.86
+Epoch 035/81 joint [=.......................] 1/24 MSE=8.806e-05 pass=78.9% K=37.0 teacherK=34.6 countMAE=14.57
+Epoch 035/81 joint [====================....] 20/24 MSE=9.300e-05 pass=78.1% K=38.7 teacherK=36.1 countMAE=14.97
+Epoch 035/81 joint [========================] 24/24 MSE=1.306e-04 pass=66.1% K=40.5 teacherK=39.1 countMAE=12.86
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 035 val dense=83.6% deployment=76.0% worst-source=71.3% qualification=0.0% MSE=1.338e-04 K=37.96 mass=37.47 beta=-2.39 soft_cost=1.1782 selection_score=-1.1782 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.0%, deployment=71.3%, MSE=1.735e-04, K=46.16, targetK=32.82, count_MAE=13.34, bias=+13.34, knot_F1@0.01=0.731, param_RMSE=3.547e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=92.0%, MSE=4.598e-05, K=11.96
+  natural_earth_10m_coastline: dense=96.0%, deployment=76.0%, MSE=7.661e-05, K=26.66
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=88.0%, MSE=4.053e-05, K=26.06
+Epoch 036/81 joint [=.......................] 1/24 MSE=8.997e-05 pass=74.2% K=35.3 teacherK=33.0 countMAE=14.43
+Epoch 036/81 joint [====================....] 20/24 MSE=8.685e-05 pass=80.5% K=36.4 teacherK=34.0 countMAE=14.59
+Epoch 036/81 joint [========================] 24/24 MSE=6.794e-05 pass=85.7% K=37.0 teacherK=34.2 countMAE=15.28
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 036 val dense=84.0% deployment=83.6% worst-source=78.0% qualification=0.0% MSE=1.187e-04 K=38.82 mass=38.37 beta=-2.52 soft_cost=1.0614 selection_score=-1.0614 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=78.0%, MSE=1.582e-04, K=46.87, targetK=32.82, count_MAE=14.04, bias=+14.04, knot_F1@0.01=0.733, param_RMSE=3.617e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=2.996e-05, K=13.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=90.0%, MSE=5.793e-05, K=27.92
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=98.0%, MSE=3.116e-05, K=27.24
+Epoch 037/81 joint [=.......................] 1/24 MSE=9.449e-05 pass=82.0% K=38.7 teacherK=34.9 countMAE=15.93
+Epoch 037/81 joint [====================....] 20/24 MSE=8.648e-05 pass=75.8% K=39.9 teacherK=38.0 countMAE=13.63
+Epoch 037/81 joint [========================] 24/24 MSE=1.281e-04 pass=76.8% K=34.6 teacherK=32.8 countMAE=13.41
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 037 val dense=83.3% deployment=84.2% worst-source=78.7% qualification=0.0% MSE=1.166e-04 K=38.30 mass=37.84 beta=-2.39 soft_cost=1.0392 selection_score=-1.0392 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.7%, deployment=78.7%, MSE=1.555e-04, K=46.38, targetK=32.82, count_MAE=13.56, bias=+13.56, knot_F1@0.01=0.739, param_RMSE=3.752e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=2.835e-05, K=12.70
+  natural_earth_10m_coastline: dense=96.0%, deployment=92.0%, MSE=5.777e-05, K=27.30
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=98.0%, MSE=3.019e-05, K=26.40
+Epoch 038/81 joint [=.......................] 1/24 MSE=6.211e-05 pass=86.7% K=36.2 teacherK=33.0 countMAE=15.72
+Epoch 038/81 joint [====================....] 20/24 MSE=8.811e-05 pass=79.7% K=39.1 teacherK=37.1 countMAE=13.20
+Epoch 038/81 joint [========================] 24/24 MSE=7.987e-05 pass=83.9% K=37.2 teacherK=34.3 countMAE=14.24
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 038 val dense=84.2% deployment=82.4% worst-source=78.3% qualification=0.0% MSE=1.225e-04 K=37.78 mass=37.30 beta=-2.34 soft_cost=1.0599 selection_score=-1.0599 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=78.3%, MSE=1.614e-04, K=46.04, targetK=32.82, count_MAE=13.21, bias=+13.21, knot_F1@0.01=0.738, param_RMSE=3.737e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=92.0%, MSE=3.869e-05, K=11.60
+  natural_earth_10m_coastline: dense=96.0%, deployment=86.0%, MSE=6.417e-05, K=26.44
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=94.0%, MSE=3.180e-05, K=25.72
+Epoch 039/81 joint [=.......................] 1/24 MSE=8.621e-05 pass=77.3% K=39.5 teacherK=36.9 countMAE=13.59
+Epoch 039/81 joint [====================....] 20/24 MSE=7.553e-05 pass=82.0% K=35.4 teacherK=32.6 countMAE=13.26
+Epoch 039/81 joint [========================] 24/24 MSE=1.021e-04 pass=71.4% K=37.2 teacherK=35.3 countMAE=11.82
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 039 val dense=83.8% deployment=78.7% worst-source=73.3% qualification=0.0% MSE=1.309e-04 K=36.57 mass=36.10 beta=-2.03 soft_cost=1.1032 selection_score=-1.1032 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=73.3%, MSE=1.728e-04, K=44.87, targetK=32.82, count_MAE=12.05, bias=+12.05, knot_F1@0.01=0.737, param_RMSE=3.711e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=3.326e-05, K=11.50
+  natural_earth_10m_coastline: dense=96.0%, deployment=84.0%, MSE=7.077e-05, K=24.68
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=88.0%, MSE=3.741e-05, K=23.72
+Epoch 040/81 joint [=.......................] 1/24 MSE=9.947e-05 pass=75.8% K=38.5 teacherK=36.7 countMAE=13.20
+Epoch 040/81 joint [====================....] 20/24 MSE=1.010e-04 pass=71.9% K=34.1 teacherK=32.3 countMAE=11.20
+Epoch 040/81 joint [========================] 24/24 MSE=8.772e-05 pass=91.1% K=35.2 teacherK=31.2 countMAE=15.11
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 040 val dense=83.8% deployment=82.2% worst-source=76.7% qualification=0.0% MSE=1.207e-04 K=37.38 mass=36.93 beta=-2.31 soft_cost=1.0545 selection_score=-1.0545 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=76.7%, MSE=1.596e-04, K=45.68, targetK=32.82, count_MAE=12.85, bias=+12.85, knot_F1@0.01=0.741, param_RMSE=3.829e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=3.594e-05, K=11.44
+  natural_earth_10m_coastline: dense=96.0%, deployment=90.0%, MSE=6.057e-05, K=25.98
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=94.0%, MSE=3.225e-05, K=24.94
+Epoch 041/81 joint [=.......................] 1/24 MSE=7.895e-05 pass=85.9% K=35.9 teacherK=33.2 countMAE=13.23
+Epoch 041/81 joint [====================....] 20/24 MSE=9.701e-05 pass=78.1% K=38.2 teacherK=35.1 countMAE=13.01
+Epoch 041/81 joint [========================] 24/24 MSE=9.685e-05 pass=73.2% K=37.9 teacherK=35.6 countMAE=12.70
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 041 val dense=83.6% deployment=79.8% worst-source=75.3% qualification=0.0% MSE=1.272e-04 K=36.59 mass=36.11 beta=-2.20 soft_cost=1.0903 selection_score=-1.0903 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.0%, deployment=75.3%, MSE=1.651e-04, K=45.06, targetK=32.82, count_MAE=12.24, bias=+12.24, knot_F1@0.01=0.740, param_RMSE=3.716e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=88.0%, MSE=4.547e-05, K=10.68
+  natural_earth_10m_coastline: dense=96.0%, deployment=86.0%, MSE=6.959e-05, K=24.46
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=92.0%, MSE=3.867e-05, K=23.76
+Epoch 042/81 joint [=.......................] 1/24 MSE=9.659e-05 pass=78.1% K=36.3 teacherK=33.9 countMAE=12.63
+Epoch 042/81 joint [====================....] 20/24 MSE=6.383e-05 pass=85.2% K=34.5 teacherK=32.0 countMAE=12.40
+Epoch 042/81 joint [========================] 24/24 MSE=8.385e-05 pass=80.4% K=36.2 teacherK=33.6 countMAE=12.41
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 042 val dense=83.3% deployment=79.1% worst-source=73.0% qualification=0.0% MSE=1.323e-04 K=36.40 mass=35.93 beta=-2.14 soft_cost=1.0874 selection_score=-1.0874 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.7%, deployment=73.0%, MSE=1.744e-04, K=44.86, targetK=32.82, count_MAE=12.04, bias=+12.04, knot_F1@0.01=0.739, param_RMSE=3.769e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=94.0%, MSE=4.050e-05, K=10.54
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=6.762e-05, K=24.36
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=92.0%, MSE=3.618e-05, K=23.54
+Epoch 043/81 joint [=.......................] 1/24 MSE=1.091e-04 pass=75.8% K=35.3 teacherK=33.9 countMAE=11.41
+Epoch 043/81 joint [====================....] 20/24 MSE=7.674e-05 pass=84.4% K=36.2 teacherK=33.5 countMAE=12.82
+Epoch 043/81 joint [========================] 24/24 MSE=8.698e-05 pass=82.1% K=32.6 teacherK=30.4 countMAE=12.59
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 043 val dense=82.9% deployment=82.9% worst-source=78.0% qualification=0.0% MSE=1.247e-04 K=37.05 mass=36.59 beta=-2.26 soft_cost=1.0341 selection_score=-1.0341 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=75.0%, deployment=78.0%, MSE=1.665e-04, K=45.24, targetK=32.82, count_MAE=12.42, bias=+12.42, knot_F1@0.01=0.741, param_RMSE=3.772e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=98.0%, MSE=2.963e-05, K=11.70
+  natural_earth_10m_coastline: dense=96.0%, deployment=90.0%, MSE=6.219e-05, K=25.62
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=90.0%, MSE=3.194e-05, K=24.66
+Epoch 044/81 joint [=.......................] 1/24 MSE=9.052e-05 pass=84.4% K=33.7 teacherK=30.4 countMAE=13.35
+Epoch 044/81 joint [====================....] 20/24 MSE=9.176e-05 pass=82.0% K=34.9 teacherK=32.5 countMAE=12.07
+Epoch 044/81 joint [========================] 24/24 MSE=1.080e-04 pass=66.1% K=30.7 teacherK=29.3 countMAE=9.83
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 044 val dense=84.2% deployment=71.1% worst-source=67.0% qualification=0.0% MSE=1.434e-04 K=35.49 mass=35.02 beta=-2.05 soft_cost=1.2554 selection_score=-1.2554 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=67.0%, MSE=1.811e-04, K=44.26, targetK=32.82, count_MAE=11.44, bias=+11.44, knot_F1@0.01=0.748, param_RMSE=3.727e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=82.0%, MSE=6.216e-05, K=9.52
+  natural_earth_10m_coastline: dense=96.0%, deployment=68.0%, MSE=9.505e-05, K=22.38
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=88.0%, MSE=4.642e-05, K=21.98
+Epoch 045/81 joint [=.......................] 1/24 MSE=9.885e-05 pass=71.9% K=34.5 teacherK=33.6 countMAE=11.58
+Epoch 045/81 joint [====================....] 20/24 MSE=1.039e-04 pass=70.3% K=35.2 teacherK=33.4 countMAE=11.86
+Epoch 045/81 joint [========================] 24/24 MSE=1.181e-04 pass=78.6% K=33.2 teacherK=30.8 countMAE=11.42
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 045 val dense=84.2% deployment=82.7% worst-source=76.7% qualification=0.0% MSE=1.264e-04 K=36.78 mass=36.32 beta=-2.24 soft_cost=1.0400 selection_score=-1.0400 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=76.7%, MSE=1.678e-04, K=45.10, targetK=32.82, count_MAE=12.28, bias=+12.28, knot_F1@0.01=0.740, param_RMSE=3.753e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=3.302e-05, K=11.02
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=6.379e-05, K=25.10
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=94.0%, MSE=3.394e-05, K=24.26
+Epoch 046/81 joint [=.......................] 1/24 MSE=9.583e-05 pass=75.8% K=37.8 teacherK=35.6 countMAE=12.28
+Epoch 046/81 joint [====================....] 20/24 MSE=8.344e-05 pass=70.3% K=35.2 teacherK=33.6 countMAE=12.78
+Epoch 046/81 joint [========================] 24/24 MSE=5.393e-05 pass=87.5% K=34.0 teacherK=30.4 countMAE=11.91
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 046 val dense=83.8% deployment=84.2% worst-source=78.3% qualification=0.0% MSE=1.193e-04 K=37.05 mass=36.60 beta=-2.33 soft_cost=1.0105 selection_score=-1.0105 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=78.3%, MSE=1.582e-04, K=45.34, targetK=32.82, count_MAE=12.52, bias=+12.52, knot_F1@0.01=0.742, param_RMSE=3.764e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=98.0%, MSE=3.327e-05, K=11.16
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=6.049e-05, K=25.52
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.088e-05, K=24.74
+Epoch 047/81 joint [=.......................] 1/24 MSE=9.626e-05 pass=82.0% K=35.4 teacherK=32.4 countMAE=13.18
+Epoch 047/81 joint [====================....] 20/24 MSE=8.664e-05 pass=78.9% K=35.1 teacherK=32.7 countMAE=13.10
+Epoch 047/81 joint [========================] 24/24 MSE=6.882e-05 pass=83.9% K=35.6 teacherK=33.3 countMAE=12.23
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 047 val dense=83.8% deployment=82.2% worst-source=77.7% qualification=0.0% MSE=1.227e-04 K=36.55 mass=36.09 beta=-2.25 soft_cost=1.0445 selection_score=-1.0445 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=77.7%, MSE=1.607e-04, K=45.07, targetK=32.82, count_MAE=12.25, bias=+12.25, knot_F1@0.01=0.740, param_RMSE=3.716e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=94.0%, MSE=3.825e-05, K=10.40
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=6.647e-05, K=24.38
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=92.0%, MSE=3.541e-05, K=23.70
+Epoch 048/81 joint [=.......................] 1/24 MSE=6.749e-05 pass=86.7% K=33.3 teacherK=30.5 countMAE=13.01
+Epoch 048/81 joint [====================....] 20/24 MSE=8.268e-05 pass=79.7% K=34.8 teacherK=32.3 countMAE=12.44
+Epoch 048/81 joint [========================] 24/24 MSE=9.399e-05 pass=78.6% K=37.0 teacherK=35.0 countMAE=12.56
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 048 val dense=84.4% deployment=83.6% worst-source=78.7% qualification=0.0% MSE=1.210e-04 K=36.65 mass=36.19 beta=-2.29 soft_cost=1.0238 selection_score=-1.0238 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.3%, deployment=78.7%, MSE=1.588e-04, K=45.12, targetK=32.82, count_MAE=12.30, bias=+12.30, knot_F1@0.01=0.741, param_RMSE=3.740e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=92.0%, MSE=3.944e-05, K=10.44
+  natural_earth_10m_coastline: dense=96.0%, deployment=92.0%, MSE=6.296e-05, K=24.78
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.378e-05, K=23.94
+Epoch 049/81 joint [=.......................] 1/24 MSE=7.140e-05 pass=82.0% K=36.6 teacherK=34.1 countMAE=12.22
+Epoch 049/81 joint [====================....] 20/24 MSE=9.756e-05 pass=75.0% K=34.1 teacherK=32.8 countMAE=11.33
+Epoch 049/81 joint [========================] 24/24 MSE=8.767e-05 pass=73.2% K=38.3 teacherK=36.1 countMAE=11.21
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 049 val dense=83.6% deployment=82.0% worst-source=76.3% qualification=0.0% MSE=1.271e-04 K=36.62 mass=36.15 beta=-2.27 soft_cost=1.0411 selection_score=-1.0411 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.0%, deployment=76.3%, MSE=1.681e-04, K=45.05, targetK=32.82, count_MAE=12.23, bias=+12.23, knot_F1@0.01=0.738, param_RMSE=3.826e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=92.0%, MSE=3.949e-05, K=10.32
+  natural_earth_10m_coastline: dense=96.0%, deployment=92.0%, MSE=6.161e-05, K=25.04
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.443e-05, K=23.88
+Epoch 050/81 joint [=.......................] 1/24 MSE=8.116e-05 pass=78.9% K=34.1 teacherK=31.9 countMAE=11.44
+Epoch 050/81 joint [====================....] 20/24 MSE=8.632e-05 pass=77.3% K=32.8 teacherK=30.1 countMAE=12.25
+Epoch 050/81 joint [========================] 24/24 MSE=6.085e-05 pass=85.7% K=34.2 teacherK=32.1 countMAE=11.48
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 050 val dense=83.8% deployment=78.4% worst-source=73.0% qualification=0.0% MSE=1.284e-04 K=35.98 mass=35.52 beta=-2.20 soft_cost=1.0964 selection_score=-1.0964 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=73.0%, MSE=1.671e-04, K=44.50, targetK=32.82, count_MAE=11.68, bias=+11.68, knot_F1@0.01=0.742, param_RMSE=3.796e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=4.120e-05, K=10.10
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=7.293e-05, K=23.74
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=90.0%, MSE=3.928e-05, K=22.94
+Epoch 051/81 joint [=.......................] 1/24 MSE=9.277e-05 pass=71.9% K=36.4 teacherK=34.9 countMAE=11.42
+Epoch 051/81 joint [====================....] 20/24 MSE=9.700e-05 pass=71.9% K=35.7 teacherK=33.6 countMAE=10.88
+Epoch 051/81 joint [========================] 24/24 MSE=6.727e-05 pass=78.6% K=36.5 teacherK=34.4 countMAE=12.43
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 051 val dense=84.0% deployment=80.2% worst-source=75.0% qualification=0.0% MSE=1.248e-04 K=36.09 mass=35.62 beta=-2.22 soft_cost=1.0586 selection_score=-1.0586 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=75.0%, MSE=1.620e-04, K=44.69, targetK=32.82, count_MAE=11.87, bias=+11.87, knot_F1@0.01=0.739, param_RMSE=3.805e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=94.0%, MSE=4.166e-05, K=9.76
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=7.151e-05, K=23.96
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=90.0%, MSE=3.755e-05, K=22.92
+Epoch 052/81 joint [=.......................] 1/24 MSE=8.562e-05 pass=79.7% K=32.8 teacherK=30.9 countMAE=12.77
+Epoch 052/81 joint [====================....] 20/24 MSE=1.016e-04 pass=81.2% K=36.5 teacherK=34.4 countMAE=12.76
+Epoch 052/81 joint [========================] 24/24 MSE=9.978e-05 pass=80.4% K=33.6 teacherK=31.5 countMAE=12.18
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 052 val dense=84.0% deployment=82.7% worst-source=77.3% qualification=0.0% MSE=1.194e-04 K=36.76 mass=36.31 beta=-2.31 soft_cost=1.0299 selection_score=-1.0299 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=77.3%, MSE=1.582e-04, K=45.15, targetK=32.82, count_MAE=12.33, bias=+12.33, knot_F1@0.01=0.744, param_RMSE=3.754e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=3.059e-05, K=10.68
+  natural_earth_10m_coastline: dense=96.0%, deployment=92.0%, MSE=6.181e-05, K=25.20
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=92.0%, MSE=3.282e-05, K=24.04
+Epoch 053/81 joint [=.......................] 1/24 MSE=7.083e-05 pass=82.8% K=37.8 teacherK=35.1 countMAE=13.47
+Epoch 053/81 joint [====================....] 20/24 MSE=8.544e-05 pass=76.6% K=35.3 teacherK=33.2 countMAE=11.59
+Epoch 053/81 joint [========================] 24/24 MSE=6.734e-05 pass=82.1% K=36.2 teacherK=34.0 countMAE=13.26
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 053 val dense=83.8% deployment=79.3% worst-source=73.7% qualification=0.0% MSE=1.289e-04 K=35.65 mass=35.19 beta=-2.10 soft_cost=1.0738 selection_score=-1.0738 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=73.7%, MSE=1.695e-04, K=44.12, targetK=32.82, count_MAE=11.30, bias=+11.30, knot_F1@0.01=0.741, param_RMSE=3.799e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=94.0%, MSE=3.268e-05, K=10.40
+  natural_earth_10m_coastline: dense=96.0%, deployment=92.0%, MSE=6.834e-05, K=23.58
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=86.0%, MSE=4.171e-05, K=22.16
+Epoch 054/81 joint [=.......................] 1/24 MSE=6.695e-05 pass=81.2% K=32.0 teacherK=30.2 countMAE=11.41
+Epoch 054/81 joint [====================....] 20/24 MSE=8.841e-05 pass=80.5% K=34.7 teacherK=31.7 countMAE=12.32
+Epoch 054/81 joint [========================] 24/24 MSE=9.025e-05 pass=82.1% K=36.2 teacherK=34.1 countMAE=11.79
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 054 val dense=84.0% deployment=78.9% worst-source=73.0% qualification=0.0% MSE=1.318e-04 K=35.83 mass=35.36 beta=-2.31 soft_cost=1.0900 selection_score=-1.0900 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=73.0%, MSE=1.719e-04, K=44.38, targetK=32.82, count_MAE=11.56, bias=+11.56, knot_F1@0.01=0.739, param_RMSE=3.838e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=4.294e-05, K=9.90
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=7.366e-05, K=23.72
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=94.0%, MSE=3.831e-05, K=22.58
+Epoch 055/81 joint [=.......................] 1/24 MSE=7.189e-05 pass=81.2% K=34.1 teacherK=31.9 countMAE=12.29
+Epoch 055/81 joint [====================....] 20/24 MSE=7.431e-05 pass=81.2% K=34.9 teacherK=32.4 countMAE=11.56
+Epoch 055/81 joint [========================] 24/24 MSE=1.055e-04 pass=71.4% K=36.4 teacherK=34.5 countMAE=10.92
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 055 val dense=83.8% deployment=81.1% worst-source=75.3% qualification=0.0% MSE=1.254e-04 K=36.24 mass=35.78 beta=-2.31 soft_cost=1.0638 selection_score=-1.0638 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=75.3%, MSE=1.631e-04, K=44.75, targetK=32.82, count_MAE=11.93, bias=+11.93, knot_F1@0.01=0.739, param_RMSE=3.787e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=88.0%, MSE=4.601e-05, K=9.94
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=6.752e-05, K=24.48
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.633e-05, K=23.26
+Epoch 056/81 joint [=.......................] 1/24 MSE=8.329e-05 pass=80.5% K=37.9 teacherK=35.4 countMAE=12.31
+Epoch 056/81 joint [====================....] 20/24 MSE=8.508e-05 pass=78.1% K=35.5 teacherK=33.8 countMAE=12.30
+Epoch 056/81 joint [========================] 24/24 MSE=6.787e-05 pass=83.9% K=38.2 teacherK=35.6 countMAE=13.33
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 056 val dense=84.2% deployment=83.1% worst-source=78.3% qualification=0.0% MSE=1.228e-04 K=36.44 mass=36.00 beta=-2.44 soft_cost=1.0282 selection_score=-1.0282 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=78.3%, MSE=1.602e-04, K=45.01, targetK=32.82, count_MAE=12.19, bias=+12.19, knot_F1@0.01=0.740, param_RMSE=3.773e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=94.0%, MSE=4.054e-05, K=9.92
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=6.844e-05, K=24.34
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.474e-05, K=23.58
+Epoch 057/81 joint [=.......................] 1/24 MSE=6.439e-05 pass=83.6% K=32.9 teacherK=30.3 countMAE=11.59
+Epoch 057/81 joint [====================....] 20/24 MSE=7.968e-05 pass=82.8% K=34.8 teacherK=32.5 countMAE=12.17
+Epoch 057/81 joint [========================] 24/24 MSE=9.109e-05 pass=78.6% K=31.7 teacherK=30.2 countMAE=10.18
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 057 val dense=84.0% deployment=80.0% worst-source=74.7% qualification=0.0% MSE=1.277e-04 K=35.66 mass=35.22 beta=-2.15 soft_cost=1.0715 selection_score=-1.0715 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=74.7%, MSE=1.675e-04, K=44.18, targetK=32.82, count_MAE=11.35, bias=+11.35, knot_F1@0.01=0.743, param_RMSE=3.779e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=94.0%, MSE=3.171e-05, K=10.20
+  natural_earth_10m_coastline: dense=96.0%, deployment=90.0%, MSE=7.314e-05, K=23.48
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=88.0%, MSE=3.974e-05, K=22.18
+Epoch 058/81 joint [=.......................] 1/24 MSE=8.826e-05 pass=79.7% K=34.3 teacherK=32.0 countMAE=11.24
+Epoch 058/81 joint [====================....] 20/24 MSE=8.098e-05 pass=81.2% K=36.0 teacherK=33.6 countMAE=11.70
+Epoch 058/81 joint [========================] 24/24 MSE=8.642e-05 pass=76.8% K=36.5 teacherK=34.6 countMAE=11.00
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 058 val dense=84.0% deployment=82.0% worst-source=75.7% qualification=0.0% MSE=1.264e-04 K=35.84 mass=35.39 beta=-2.28 soft_cost=1.0323 selection_score=-1.0323 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=75.7%, MSE=1.664e-04, K=44.25, targetK=32.82, count_MAE=11.43, bias=+11.43, knot_F1@0.01=0.740, param_RMSE=3.855e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=94.0%, MSE=3.677e-05, K=10.06
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=6.758e-05, K=24.10
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.481e-05, K=22.92
+Epoch 059/81 joint [=.......................] 1/24 MSE=9.628e-05 pass=82.8% K=35.7 teacherK=33.4 countMAE=10.81
+Epoch 059/81 joint [====================....] 20/24 MSE=8.453e-05 pass=83.6% K=34.9 teacherK=32.6 countMAE=12.17
+Epoch 059/81 joint [========================] 24/24 MSE=6.354e-05 pass=83.9% K=31.4 teacherK=28.6 countMAE=11.51
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 059 val dense=83.8% deployment=84.2% worst-source=78.7% qualification=0.0% MSE=1.196e-04 K=36.53 mass=36.08 beta=-2.43 soft_cost=1.0058 selection_score=-1.0058 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=78.7%, MSE=1.578e-04, K=44.95, targetK=32.82, count_MAE=12.13, bias=+12.13, knot_F1@0.01=0.738, param_RMSE=3.795e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=94.0%, MSE=3.453e-05, K=10.34
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=6.196e-05, K=24.88
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=98.0%, MSE=3.296e-05, K=23.82
+Epoch 060/81 joint [=.......................] 1/24 MSE=8.490e-05 pass=80.5% K=36.3 teacherK=33.8 countMAE=12.15
+Epoch 060/81 joint [====================....] 20/24 MSE=5.533e-05 pass=87.5% K=31.5 teacherK=28.7 countMAE=12.79
+Epoch 060/81 joint [========================] 24/24 MSE=8.203e-05 pass=85.7% K=34.7 teacherK=32.6 countMAE=13.05
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 060 val dense=83.6% deployment=82.4% worst-source=76.3% qualification=0.0% MSE=1.219e-04 K=36.04 mass=35.58 beta=-2.34 soft_cost=1.0225 selection_score=-1.0225 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.0%, deployment=76.3%, MSE=1.613e-04, K=44.40, targetK=32.82, count_MAE=11.58, bias=+11.58, knot_F1@0.01=0.741, param_RMSE=3.825e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=94.0%, MSE=3.168e-05, K=10.40
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=6.418e-05, K=24.34
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.312e-05, K=23.24
+Epoch 061/81 joint [=.......................] 1/24 MSE=8.313e-05 pass=84.4% K=33.5 teacherK=31.2 countMAE=11.58
+Epoch 061/81 joint [====================....] 20/24 MSE=8.167e-05 pass=76.6% K=35.2 teacherK=32.9 countMAE=10.99
+Epoch 061/81 joint [========================] 24/24 MSE=6.010e-05 pass=87.5% K=31.4 teacherK=29.1 countMAE=12.32
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 061 val dense=84.2% deployment=81.8% worst-source=77.7% qualification=0.0% MSE=1.245e-04 K=35.78 mass=35.34 beta=-2.31 soft_cost=1.0417 selection_score=-1.0417 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=77.7%, MSE=1.624e-04, K=44.41, targetK=32.82, count_MAE=11.58, bias=+11.58, knot_F1@0.01=0.741, param_RMSE=3.709e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=3.923e-05, K=9.44
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=7.038e-05, K=23.62
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=92.0%, MSE=3.631e-05, K=22.56
+Epoch 062/81 joint [=.......................] 1/24 MSE=9.913e-05 pass=71.9% K=36.4 teacherK=34.5 countMAE=11.26
+Epoch 062/81 joint [====================....] 20/24 MSE=8.399e-05 pass=79.7% K=36.1 teacherK=34.1 countMAE=11.83
+Epoch 062/81 joint [========================] 24/24 MSE=6.458e-05 pass=83.9% K=38.4 teacherK=36.1 countMAE=12.66
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 062 val dense=84.2% deployment=84.9% worst-source=79.3% qualification=0.0% MSE=1.150e-04 K=36.77 mass=36.34 beta=-2.54 soft_cost=1.0008 selection_score=-1.0008 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=79.3%, MSE=1.531e-04, K=45.08, targetK=32.82, count_MAE=12.26, bias=+12.26, knot_F1@0.01=0.743, param_RMSE=3.777e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=98.0%, MSE=2.856e-05, K=10.74
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=5.767e-05, K=25.40
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.007e-05, K=24.34
+Epoch 063/81 joint [=.......................] 1/24 MSE=6.914e-05 pass=88.3% K=33.4 teacherK=30.1 countMAE=12.36
+Epoch 063/81 joint [====================....] 20/24 MSE=7.151e-05 pass=84.4% K=34.1 teacherK=31.7 countMAE=12.38
+Epoch 063/81 joint [========================] 24/24 MSE=6.369e-05 pass=85.7% K=35.7 teacherK=33.3 countMAE=12.66
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 063 val dense=83.6% deployment=84.2% worst-source=79.0% qualification=0.0% MSE=1.176e-04 K=36.20 mass=35.75 beta=-2.34 soft_cost=0.9988 selection_score=-0.9988 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.0%, deployment=79.0%, MSE=1.546e-04, K=44.61, targetK=32.82, count_MAE=11.78, bias=+11.78, knot_F1@0.01=0.740, param_RMSE=3.719e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=3.408e-05, K=10.20
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=6.184e-05, K=24.62
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=94.0%, MSE=3.476e-05, K=23.32
+Epoch 064/81 joint [=.......................] 1/24 MSE=8.558e-05 pass=78.9% K=35.8 teacherK=33.4 countMAE=11.15
+Epoch 064/81 joint [====================....] 20/24 MSE=7.602e-05 pass=85.9% K=34.0 teacherK=32.0 countMAE=11.15
+Epoch 064/81 joint [========================] 24/24 MSE=1.071e-04 pass=78.6% K=36.4 teacherK=33.8 countMAE=11.26
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 064 val dense=83.8% deployment=82.7% worst-source=76.7% qualification=0.0% MSE=1.202e-04 K=35.93 mass=35.48 beta=-2.30 soft_cost=1.0113 selection_score=-1.0113 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=76.7%, MSE=1.574e-04, K=44.42, targetK=32.82, count_MAE=11.60, bias=+11.60, knot_F1@0.01=0.743, param_RMSE=3.763e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=98.0%, MSE=3.445e-05, K=9.74
+  natural_earth_10m_coastline: dense=96.0%, deployment=92.0%, MSE=6.574e-05, K=24.24
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=94.0%, MSE=3.694e-05, K=22.90
+Epoch 065/81 joint [=.......................] 1/24 MSE=9.771e-05 pass=80.5% K=37.4 teacherK=35.3 countMAE=12.11
+Epoch 065/81 joint [====================....] 20/24 MSE=6.052e-05 pass=88.3% K=34.9 teacherK=31.6 countMAE=12.67
+Epoch 065/81 joint [========================] 24/24 MSE=5.997e-05 pass=78.6% K=33.1 teacherK=31.3 countMAE=10.49
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 065 val dense=84.0% deployment=76.2% worst-source=69.7% qualification=0.0% MSE=1.299e-04 K=35.11 mass=34.65 beta=-2.12 soft_cost=1.1105 selection_score=-1.1105 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=69.7%, MSE=1.693e-04, K=43.61, targetK=32.82, count_MAE=10.79, bias=+10.79, knot_F1@0.01=0.740, param_RMSE=3.834e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=92.0%, MSE=3.939e-05, K=9.56
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=7.203e-05, K=23.02
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=88.0%, MSE=4.261e-05, K=21.70
+Epoch 066/81 joint [=.......................] 1/24 MSE=6.777e-05 pass=82.0% K=33.3 teacherK=31.5 countMAE=11.38
+Epoch 066/81 joint [====================....] 20/24 MSE=7.852e-05 pass=81.2% K=31.9 teacherK=29.6 countMAE=12.01
+Epoch 066/81 joint [========================] 24/24 MSE=6.003e-05 pass=83.9% K=32.8 teacherK=31.1 countMAE=12.68
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 066 val dense=84.2% deployment=80.4% worst-source=76.3% qualification=0.0% MSE=1.234e-04 K=35.86 mass=35.41 beta=-2.39 soft_cost=1.0718 selection_score=-1.0718 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=76.3%, MSE=1.579e-04, K=44.63, targetK=32.82, count_MAE=11.81, bias=+11.81, knot_F1@0.01=0.741, param_RMSE=3.670e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=82.0%, MSE=4.850e-05, K=9.26
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=7.681e-05, K=23.20
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.809e-05, K=22.46
+Epoch 067/81 joint [=.......................] 1/24 MSE=7.796e-05 pass=80.5% K=29.4 teacherK=27.5 countMAE=11.29
+Epoch 067/81 joint [====================....] 20/24 MSE=8.186e-05 pass=82.8% K=34.1 teacherK=32.1 countMAE=11.76
+Epoch 067/81 joint [========================] 24/24 MSE=6.996e-05 pass=83.9% K=33.6 teacherK=31.2 countMAE=12.02
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 067 val dense=84.2% deployment=80.7% worst-source=74.0% qualification=0.0% MSE=1.239e-04 K=35.67 mass=35.22 beta=-2.25 soft_cost=1.0400 selection_score=-1.0400 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=74.0%, MSE=1.642e-04, K=44.03, targetK=32.82, count_MAE=11.21, bias=+11.21, knot_F1@0.01=0.741, param_RMSE=3.754e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=98.0%, MSE=2.984e-05, K=10.30
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=6.421e-05, K=24.04
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=90.0%, MSE=3.603e-05, K=22.52
+Epoch 068/81 joint [=.......................] 1/24 MSE=9.025e-05 pass=78.1% K=35.2 teacherK=33.2 countMAE=11.80
+Epoch 068/81 joint [====================....] 20/24 MSE=1.177e-04 pass=68.0% K=33.0 teacherK=32.2 countMAE=10.69
+Epoch 068/81 joint [========================] 24/24 MSE=6.015e-05 pass=87.5% K=35.0 teacherK=32.4 countMAE=14.85
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 068 val dense=84.0% deployment=83.6% worst-source=78.0% qualification=0.0% MSE=1.183e-04 K=36.15 mass=35.69 beta=-2.43 soft_cost=1.0020 selection_score=-1.0020 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=78.0%, MSE=1.562e-04, K=44.56, targetK=32.82, count_MAE=11.73, bias=+11.73, knot_F1@0.01=0.740, param_RMSE=3.701e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=3.138e-05, K=10.36
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=6.259e-05, K=24.56
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=94.0%, MSE=3.388e-05, K=23.06
+Epoch 069/81 joint [=.......................] 1/24 MSE=6.177e-05 pass=89.8% K=31.6 teacherK=28.6 countMAE=12.99
+Epoch 069/81 joint [====================....] 20/24 MSE=6.943e-05 pass=83.6% K=34.5 teacherK=32.5 countMAE=11.53
+Epoch 069/81 joint [========================] 24/24 MSE=1.008e-04 pass=83.9% K=38.1 teacherK=35.8 countMAE=11.95
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 069 val dense=84.2% deployment=80.0% worst-source=75.0% qualification=0.0% MSE=1.271e-04 K=35.28 mass=34.80 beta=-2.10 soft_cost=1.0498 selection_score=-1.0498 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=75.0%, MSE=1.663e-04, K=43.78, targetK=32.82, count_MAE=10.96, bias=+10.96, knot_F1@0.01=0.742, param_RMSE=3.792e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=3.450e-05, K=9.78
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=6.961e-05, K=23.22
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=86.0%, MSE=4.204e-05, K=21.82
+Epoch 070/81 joint [=.......................] 1/24 MSE=6.491e-05 pass=77.3% K=33.2 teacherK=31.4 countMAE=10.88
+Epoch 070/81 joint [====================....] 20/24 MSE=8.666e-05 pass=78.9% K=34.9 teacherK=33.5 countMAE=12.34
+Epoch 070/81 joint [========================] 24/24 MSE=7.137e-05 pass=87.5% K=38.0 teacherK=34.9 countMAE=13.97
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 070 val dense=84.0% deployment=86.7% worst-source=81.0% qualification=0.0% MSE=1.055e-04 K=37.51 mass=37.06 beta=-2.71 soft_cost=0.9756 selection_score=-0.9756 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=81.0%, MSE=1.416e-04, K=45.80, targetK=32.82, count_MAE=12.97, bias=+12.97, knot_F1@0.01=0.739, param_RMSE=3.602e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.582e-05, K=10.78
+  natural_earth_10m_coastline: dense=96.0%, deployment=96.0%, MSE=4.857e-05, K=26.66
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=98.0%, MSE=2.584e-05, K=25.34
+Epoch 071/81 joint [=.......................] 1/24 MSE=8.028e-05 pass=85.2% K=35.6 teacherK=32.2 countMAE=12.85
+Epoch 071/81 joint [====================....] 20/24 MSE=8.083e-05 pass=82.8% K=32.0 teacherK=30.0 countMAE=10.89
+Epoch 071/81 joint [========================] 24/24 MSE=5.452e-05 pass=83.9% K=33.7 teacherK=31.3 countMAE=11.84
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 071 val dense=84.0% deployment=80.7% worst-source=75.7% qualification=0.0% MSE=1.208e-04 K=35.50 mass=35.05 beta=-2.35 soft_cost=1.0506 selection_score=-1.0506 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=75.7%, MSE=1.558e-04, K=44.11, targetK=32.82, count_MAE=11.28, bias=+11.28, knot_F1@0.01=0.746, param_RMSE=3.713e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=88.0%, MSE=4.465e-05, K=9.28
+  natural_earth_10m_coastline: dense=96.0%, deployment=88.0%, MSE=6.977e-05, K=23.40
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.861e-05, K=22.18
+Epoch 072/81 joint [=.......................] 1/24 MSE=9.088e-05 pass=79.7% K=33.8 teacherK=31.7 countMAE=10.98
+Epoch 072/81 joint [====================....] 20/24 MSE=6.882e-05 pass=81.2% K=33.6 teacherK=31.6 countMAE=11.63
+Epoch 072/81 joint [========================] 24/24 MSE=6.669e-05 pass=78.6% K=33.5 teacherK=31.0 countMAE=11.03
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 072 val dense=83.8% deployment=82.9% worst-source=77.0% qualification=0.0% MSE=1.207e-04 K=35.45 mass=34.99 beta=-2.26 soft_cost=1.0039 selection_score=-1.0039 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=77.0%, MSE=1.587e-04, K=43.85, targetK=32.82, count_MAE=11.02, bias=+11.02, knot_F1@0.01=0.740, param_RMSE=3.735e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=98.0%, MSE=3.166e-05, K=10.00
+  natural_earth_10m_coastline: dense=96.0%, deployment=92.0%, MSE=6.661e-05, K=23.60
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=94.0%, MSE=3.576e-05, K=22.36
+Epoch 073/81 joint [=.......................] 1/24 MSE=6.542e-05 pass=85.2% K=33.4 teacherK=31.1 countMAE=11.73
+Epoch 073/81 joint [====================....] 20/24 MSE=8.300e-05 pass=76.6% K=31.9 teacherK=30.7 countMAE=10.95
+Epoch 073/81 joint [========================] 24/24 MSE=7.184e-05 pass=80.4% K=35.2 teacherK=31.7 countMAE=10.68
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 073 val dense=84.0% deployment=85.8% worst-source=80.3% qualification=0.0% MSE=1.097e-04 K=36.65 mass=36.19 beta=-2.65 soft_cost=0.9756 selection_score=-0.9756 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=80.3%, MSE=1.456e-04, K=44.93, targetK=32.82, count_MAE=12.11, bias=+12.11, knot_F1@0.01=0.741, param_RMSE=3.640e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=98.0%, MSE=2.906e-05, K=10.64
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=5.445e-05, K=25.42
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=98.0%, MSE=3.022e-05, K=24.16
+Epoch 074/81 joint [=.......................] 1/24 MSE=9.083e-05 pass=84.4% K=35.4 teacherK=32.6 countMAE=11.95
+Epoch 074/81 joint [====================....] 20/24 MSE=7.041e-05 pass=78.1% K=36.4 teacherK=34.2 countMAE=11.64
+Epoch 074/81 joint [========================] 24/24 MSE=1.207e-04 pass=75.0% K=34.1 teacherK=32.6 countMAE=11.47
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 074 val dense=84.0% deployment=81.8% worst-source=76.3% qualification=0.0% MSE=1.193e-04 K=35.65 mass=35.18 beta=-2.31 soft_cost=1.0219 selection_score=-1.0219 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=76.3%, MSE=1.559e-04, K=44.09, targetK=32.82, count_MAE=11.27, bias=+11.27, knot_F1@0.01=0.743, param_RMSE=3.671e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=98.0%, MSE=2.974e-05, K=10.34
+  natural_earth_10m_coastline: dense=96.0%, deployment=92.0%, MSE=7.060e-05, K=23.60
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=88.0%, MSE=3.788e-05, K=22.40
+Epoch 075/81 joint [=.......................] 1/24 MSE=7.753e-05 pass=81.2% K=34.2 teacherK=32.0 countMAE=11.73
+Epoch 075/81 joint [====================....] 20/24 MSE=7.282e-05 pass=83.6% K=33.5 teacherK=31.5 countMAE=11.73
+Epoch 075/81 joint [========================] 24/24 MSE=6.818e-05 pass=87.5% K=33.6 teacherK=30.6 countMAE=12.67
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 075 val dense=84.7% deployment=83.8% worst-source=78.3% qualification=0.0% MSE=1.195e-04 K=35.68 mass=35.21 beta=-2.35 soft_cost=0.9911 selection_score=-0.9911 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.7%, deployment=78.3%, MSE=1.572e-04, K=44.13, targetK=32.82, count_MAE=11.30, bias=+11.30, knot_F1@0.01=0.745, param_RMSE=3.643e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=3.389e-05, K=9.72
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=6.273e-05, K=23.96
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=94.0%, MSE=3.537e-05, K=22.68
+Epoch 076/81 joint [=.......................] 1/24 MSE=8.703e-05 pass=81.2% K=35.0 teacherK=32.8 countMAE=11.54
+Epoch 076/81 joint [====================....] 20/24 MSE=6.725e-05 pass=80.5% K=33.1 teacherK=30.8 countMAE=11.60
+Epoch 076/81 joint [========================] 24/24 MSE=6.868e-05 pass=83.9% K=36.8 teacherK=34.1 countMAE=11.95
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 076 val dense=83.8% deployment=82.4% worst-source=76.0% qualification=0.0% MSE=1.227e-04 K=35.56 mass=35.10 beta=-2.34 soft_cost=1.0091 selection_score=-1.0091 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=76.0%, MSE=1.611e-04, K=44.00, targetK=32.82, count_MAE=11.18, bias=+11.18, knot_F1@0.01=0.745, param_RMSE=3.676e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=98.0%, MSE=3.589e-05, K=9.56
+  natural_earth_10m_coastline: dense=96.0%, deployment=92.0%, MSE=6.470e-05, K=23.98
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=96.0%, MSE=3.701e-05, K=22.52
+Epoch 077/81 joint [=.......................] 1/24 MSE=5.632e-05 pass=85.9% K=29.7 teacherK=27.4 countMAE=10.47
+Epoch 077/81 joint [====================....] 20/24 MSE=7.512e-05 pass=80.5% K=33.9 teacherK=32.2 countMAE=10.26
+Epoch 077/81 joint [========================] 24/24 MSE=5.193e-05 pass=89.3% K=32.2 teacherK=29.5 countMAE=11.53
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 077 val dense=84.2% deployment=83.1% worst-source=77.7% qualification=0.0% MSE=1.163e-04 K=35.66 mass=35.21 beta=-2.36 soft_cost=0.9916 selection_score=-0.9916 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=77.7%, MSE=1.517e-04, K=44.20, targetK=32.82, count_MAE=11.38, bias=+11.38, knot_F1@0.01=0.742, param_RMSE=3.567e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=3.453e-05, K=9.68
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=6.485e-05, K=23.74
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=92.0%, MSE=3.729e-05, K=22.28
+Epoch 078/81 joint [=.......................] 1/24 MSE=6.955e-05 pass=86.7% K=30.2 teacherK=28.0 countMAE=12.40
+Epoch 078/81 joint [====================....] 20/24 MSE=6.809e-05 pass=78.1% K=35.1 teacherK=33.5 countMAE=11.00
+Epoch 078/81 joint [========================] 24/24 MSE=9.896e-05 pass=83.9% K=32.9 teacherK=30.4 countMAE=9.52
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 078 val dense=84.2% deployment=83.6% worst-source=78.7% qualification=0.0% MSE=1.187e-04 K=35.82 mass=35.35 beta=-2.41 soft_cost=1.0006 selection_score=-1.0006 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.0%, deployment=78.7%, MSE=1.541e-04, K=44.40, targetK=32.82, count_MAE=11.58, bias=+11.58, knot_F1@0.01=0.745, param_RMSE=3.533e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=94.0%, MSE=4.005e-05, K=9.60
+  natural_earth_10m_coastline: dense=96.0%, deployment=92.0%, MSE=6.543e-05, K=23.92
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=94.0%, MSE=3.792e-05, K=22.42
+Epoch 079/81 joint [=.......................] 1/24 MSE=6.611e-05 pass=82.0% K=34.5 teacherK=32.2 countMAE=11.86
+Epoch 079/81 joint [====================....] 20/24 MSE=6.698e-05 pass=81.2% K=34.6 teacherK=32.0 countMAE=11.49
+Epoch 079/81 joint [========================] 24/24 MSE=5.916e-05 pass=82.1% K=30.1 teacherK=28.3 countMAE=12.03
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 079 val dense=83.8% deployment=80.7% worst-source=74.3% qualification=0.0% MSE=1.250e-04 K=35.20 mass=34.73 beta=-2.24 soft_cost=1.0342 selection_score=-1.0342 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.3%, deployment=74.3%, MSE=1.631e-04, K=43.68, targetK=32.82, count_MAE=10.86, bias=+10.86, knot_F1@0.01=0.745, param_RMSE=3.642e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=98.0%, MSE=3.653e-05, K=9.46
+  natural_earth_10m_coastline: dense=96.0%, deployment=90.0%, MSE=6.865e-05, K=23.54
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=92.0%, MSE=4.123e-05, K=21.74
+Epoch 080/81 joint [=.......................] 1/24 MSE=6.515e-05 pass=82.0% K=33.0 teacherK=30.7 countMAE=11.61
+Epoch 080/81 joint [====================....] 20/24 MSE=6.700e-05 pass=85.9% K=32.5 teacherK=30.7 countMAE=11.43
+Epoch 080/81 joint [========================] 24/24 MSE=8.503e-05 pass=80.4% K=33.4 teacherK=31.5 countMAE=10.76
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 080 val dense=84.0% deployment=79.3% worst-source=73.0% qualification=0.0% MSE=1.266e-04 K=34.85 mass=34.36 beta=-2.16 soft_cost=1.0515 selection_score=-1.0515 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.7%, deployment=73.0%, MSE=1.648e-04, K=43.32, targetK=32.82, count_MAE=10.50, bias=+10.50, knot_F1@0.01=0.750, param_RMSE=3.723e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=98.0%, MSE=3.529e-05, K=9.54
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=7.049e-05, K=22.90
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=84.0%, MSE=4.507e-05, K=21.30
+Epoch 081/81 joint [=.......................] 1/24 MSE=8.709e-05 pass=82.8% K=33.7 teacherK=31.7 countMAE=11.02
+Epoch 081/81 joint [====================....] 20/24 MSE=9.371e-05 pass=85.9% K=33.8 teacherK=32.0 countMAE=11.38
+Epoch 081/81 joint [========================] 24/24 MSE=1.137e-04 pass=78.6% K=36.9 teacherK=35.1 countMAE=10.71
+  validation [======..................] 1/4 
+  validation [========================] 4/4 
+Epoch 081 val dense=84.4% deployment=81.1% worst-source=75.3% qualification=0.0% MSE=1.252e-04 K=34.98 mass=34.51 beta=-2.19 soft_cost=1.0200 selection_score=-1.0200 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=25, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.3%, deployment=75.3%, MSE=1.632e-04, K=43.49, targetK=32.82, count_MAE=10.67, bias=+10.67, knot_F1@0.01=0.746, param_RMSE=3.582e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=96.0%, MSE=3.738e-05, K=9.24
+  natural_earth_10m_coastline: dense=96.0%, deployment=94.0%, MSE=6.638e-05, K=23.14
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=88.0%, MSE=4.355e-05, K=21.46
+Saved best v16: /home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux_r2_joint_fast.pt; quality=soft_fit_complexity_selected. Last/resume: /home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux_r2_joint_fast.last.pt
