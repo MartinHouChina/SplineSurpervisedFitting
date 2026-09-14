@@ -58,9 +58,9 @@ V16_CHECKPOINT_SELECTION = V16_CHECKPOINT_SELECTION_CONTRACT
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--epochs", type=int, default=104, help="Total proposal plus joint epochs")
+    p.add_argument("--epochs", type=int, default=128, help="Total proposal plus joint epochs")
     p.add_argument(
-        "--proposal-epochs", type=int, default=40,
+        "--proposal-epochs", type=int, default=64,
         help="Last proposal-stage epoch (total, not extra epochs when resuming)",
     )
     p.add_argument("--train-size", type=int, default=2400, help="Mixture draws per epoch")

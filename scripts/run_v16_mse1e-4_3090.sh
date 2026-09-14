@@ -7,8 +7,8 @@ PYTHON_BIN="python"
 SIMPLIFICATION_CONTRACT="synthetic_ground_truth_ordered_keep_and_relocation_v4"
 RUN_NAME="candidate_selection_v16_mse1e-4_k56_supervised_linux"
 DEVICE="cuda"
-EPOCHS=104
-PROPOSAL_EPOCHS=40
+EPOCHS=128
+PROPOSAL_EPOCHS=64
 TRAIN_SIZE=3000
 VAL_SIZE=600
 REAL_VAL_SIZE=100
@@ -38,8 +38,8 @@ Main options:
   --python PATH                   Python executable (default: python)
   --run-name NAME                Fresh output name
   --device auto|cpu|cuda         Training/evaluation device (default: cuda)
-  --epochs N                     Total epochs (default: 104)
-  --proposal-epochs N            Proposal-stage epochs (default: 40)
+  --epochs N                     Total epochs (default: 128)
+  --proposal-epochs N            Proposal-stage epochs (default: 64)
   --train-size N                 Training draws per epoch (default: 3000)
   --val-size N                   Synthetic validation curves (default: 600)
   --real-val-size N              Validation curves per real source (default: 100)

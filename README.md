@@ -17,7 +17,7 @@
 | 合成 source K | 4–56 个内部节点（8–60 个控制顶点） |
 | 网络容量 | `Kc=56` 个内部候选；全保留时完整三次节点向量为 64 项 |
 | 主阈值 | `MSE <= 1e-4`，其中 MSE 不开方、不除以坐标维数 |
-| 训练长度 | Proposal 40 + Joint 64 = 104 epochs |
+| 训练长度 | Proposal 64 + Joint 64 = 128 epochs |
 | 部署 | 1 次网络 forward + 1 次 mass-TopK + 1 次标准 refit |
 
 ## 数据流

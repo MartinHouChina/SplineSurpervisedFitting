@@ -34,7 +34,7 @@ def test_default_profile_keeps_ninety_percent_as_reporting_reference():
     train_v16.validate_args(args)
     assert args.proposal_pass_target == pytest.approx(0.90)
     assert args.deployment_pass_target == pytest.approx(0.90)
-    assert (args.epochs, args.proposal_epochs) == (104, 40)
+    assert (args.epochs, args.proposal_epochs) == (128, 64)
     assert (args.train_size, args.val_size, args.real_val_size) == (2400, 500, 100)
     assert args.synthetic_boundary_val_size == 32
     assert args.batch_size == 16
@@ -876,11 +876,11 @@ def test_selection_safety_anneals_conservatively_and_requires_final_state():
     assert train_v16.selection_safety(args, 0.5) == pytest.approx((0.15, 1))
     assert train_v16.selection_safety(args, 0.0) == pytest.approx((0.05, 0))
     assert not train_v16.simplification_is_ready(
-        args, epoch=49, stage="joint",
+        args, epoch=73, stage="joint",
         applied_safety_scale=1 / 9, applied_complexity_scale=32 / 9,
     )
     assert train_v16.simplification_is_ready(
-        args, epoch=50, stage="joint",
+        args, epoch=74, stage="joint",
         applied_safety_scale=0.0, applied_complexity_scale=4.0,
     )
 
@@ -889,16 +889,16 @@ def test_joint_curriculum_is_deterministic_and_independent_of_pass_rate():
     args = train_v16.parser().parse_args([])
     train_v16.validate_args(args)
     assert train_v16.simplification_schedule(
-        args, epoch=40, stage="proposal",
+        args, epoch=64, stage="proposal",
     ) == pytest.approx((0.0, 1.0))
     assert train_v16.simplification_schedule(
-        args, epoch=41, stage="joint",
+        args, epoch=65, stage="joint",
     ) == pytest.approx((0.0, 1.0))
     assert train_v16.simplification_schedule(
-        args, epoch=45, stage="joint",
+        args, epoch=69, stage="joint",
     ) == pytest.approx((16 / 9, 5 / 9))
     assert train_v16.simplification_schedule(
-        args, epoch=50, stage="joint",
+        args, epoch=74, stage="joint",
     ) == pytest.approx((4.0, 0.0))
 
 

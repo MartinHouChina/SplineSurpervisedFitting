@@ -48,7 +48,7 @@ Q[B,M,D]
 
 ## 4. 两阶段训练
 
-### Proposal（40 epochs）
+### Proposal（64 epochs）
 
 - 训练参数化与高召回有序候选；
 - 50% 合成 draw 来自 source `K=40..56`；

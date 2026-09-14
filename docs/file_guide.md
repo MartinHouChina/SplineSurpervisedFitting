@@ -16,7 +16,7 @@
 
 | 路径 | 作用 |
 |---|---|
-| `scripts/train_v16.py` | certified Synthetic-only 的 40-epoch Proposal + 64-epoch Joint |
+| `scripts/train_v16.py` | certified Synthetic-only 的 64-epoch Proposal + 64-epoch Joint（共 128） |
 | `scripts/inspect_v16_checkpoint.py` | 检查 supervised v16 结构资格 |
 | `scripts/fit_v16_point_cloud.py` | 用户有序点云的一次性部署 |
 | `scripts/benchmark_v16_datasets.py` | 六方法×Synthetic/UJI/Natural Earth/USGS/IndustrialOffset 对比 |

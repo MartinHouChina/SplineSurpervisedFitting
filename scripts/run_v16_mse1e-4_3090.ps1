@@ -12,8 +12,8 @@ param(
     [string]$RunName = "candidate_selection_v16_mse1e-4_k56_supervised",
     [ValidateSet("auto", "cpu", "cuda")]
     [string]$Device = "cuda",
-    [int]$Epochs = 104,
-    [int]$ProposalEpochs = 40,
+    [int]$Epochs = 128,
+    [int]$ProposalEpochs = 64,
     [int]$TrainSize = 3000,
     [int]$ValSize = 600,
     [int]$RealValSize = 100,

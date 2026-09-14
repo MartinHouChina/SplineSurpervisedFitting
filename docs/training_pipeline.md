@@ -19,7 +19,7 @@
 
 UJI Pen、Natural Earth、USGS 和 IndustrialOffset manifest 可以传给训练入口，但只建立留出验证集；正式配置必须是 `--real-fraction 0`。外部样本不进入 optimizer step。
 
-## 2. Proposal 阶段（epoch 1–40）
+## 2. Proposal 阶段（epoch 1–64）
 
 该阶段训练 GeometryEncoder、ParameterHead 和 CandidateKnotHead，Selector 与 selected-only decoder 尚不承担最终组合学习。
 
@@ -34,9 +34,9 @@ UJI Pen、Natural Earth、USGS 和 IndustrialOffset manifest 可以传给训练�
 
 当 `Kc>K*` 时，一一匹配只选择 `K*` 个互异且保持顺序的候选；当 `Kc=K*` 时每个候选必须与相同序位的真节点对应。Proposal 的合成抽样有 50% 来自 `K>=40`，其余来自低 K 区间，以加强容量边界召回。
 
-第 40 个 epoch 后按计划无条件进入 Joint。aggregate pass 不会延长 Proposal 或触发 STOP。
+第 64 个 epoch 后按计划无条件进入 Joint。aggregate pass 不会延长 Proposal 或触发 STOP。
 
-## 3. Joint 阶段（epoch 41–104）
+## 3. Joint 阶段（epoch 65–128）
 
 Joint 恢复 source `K=4..56` 的原始抽样分布，并对每条合成样本执行：
 
@@ -119,7 +119,7 @@ Windows/RTX 3090：
 powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
   -RunName candidate_selection_v16_mse1e-4_k56_supervised `
   -Device cuda `
-  -Epochs 104 -ProposalEpochs 40 `
+  -Epochs 128 -ProposalEpochs 64 `
   -TrainSize 3000 -ValSize 600 -RealValSize 100 `
   -BatchSize 64 -NumWorkers 4
 ```
@@ -130,7 +130,7 @@ powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
 
 ```powershell
 python scripts/train_v16.py `
-  --epochs 104 --proposal-epochs 40 `
+  --epochs 128 --proposal-epochs 64 `
   --train-size 3000 --val-size 600 --synthetic-boundary-val-size 32 `
   --real-val-size 100 --real-fraction 0 `
   --min-control-points 8 --max-control-points 60 `
@@ -168,7 +168,7 @@ Linux 直接训练使用相同参数名，只把 PowerShell 续行符替换为�
 
 ```bash
 python scripts/train_v16.py \
-  --epochs 104 --proposal-epochs 40 \
+  --epochs 128 --proposal-epochs 64 \
   --train-size 3000 --val-size 600 --batch-size 64 \
   --min-control-points 8 --max-control-points 60 \
   --candidate-knots 56 --num-points 192 \
