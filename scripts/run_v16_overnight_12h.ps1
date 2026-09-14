@@ -457,7 +457,7 @@ function Get-FreshTrainingArguments {
         "--complexity-ramp-epochs", "8",
         "--complexity-max-scale", "4.0",
         "--complexity-pass-margin", "0.02",
-        "--one-shot-coverage-bins", "4",
+        "--one-shot-coverage-bins", "0",
         "--min-selected-knots", "4",
         "--policy-samples", "2",
         "--counterfactual-edits", "2",

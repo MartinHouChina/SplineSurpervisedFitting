@@ -3,8 +3,10 @@
 The formal path uses certified synthetic parameters and knots as direct labels:
 an ordered one-to-one assignment supplies the KeepMask target, the labelled knot
 count supervises adaptive mass-TopK, and the labelled subset supervises survivor
-relocation.  It therefore needs no online subset-search teacher.  The historical
-online counterfactual path remains available only for explicit legacy ablations.
+relocation.  A cached per-source-knot deletion MSE from the same minimality
+certificate can additionally weight critical slots without any online solve.
+The historical online counterfactual path remains available only for explicit
+legacy ablations.
 Deployment always selects once and performs one final standard B-spline refit.
 """
 
@@ -115,7 +117,19 @@ class V16SubsetLoss(nn.Module):
         true_parameter_weight: float = 0.1,
         proposal_knot_coverage_weight: float = 1.0,
         proposal_knot_assignment_weight: float = 1.0,
+        proposal_multiscale_recall_weight: float = 0.0,
         selected_knot_position_weight: float = 1.0,
+        keep_dice_weight: float = 0.0,
+        keep_cdf_weight: float = 0.0,
+        parameter_gap_weight: float = 0.0,
+        parameter_bias_weight: float = 0.0,
+        fine_teacher_weight: float = 0.0,
+        fine_teacher_ranking_weight: float = 0.0,
+        fine_teacher_temperature: float = 0.5,
+        keep_fuzzy_negative_radius: float = 0.01,
+        keep_fuzzy_negative_floor: float = 0.1,
+        proposal_parameter_warp_gradient_scale: float = 0.0,
+        joint_parameter_warp_gradient_scale: float = 0.1,
         false_remove_weight: float = 5.0, ranking_margin: float = 1.0,
         dense_weight: float = 0.25, entropy_weight: float = 0.0,
         complexity_weight: float = 0.05, complexity_activation_ratio: float = 0.8,
@@ -146,7 +160,15 @@ class V16SubsetLoss(nn.Module):
             ("true_parameter_weight", true_parameter_weight),
             ("proposal_knot_coverage_weight", proposal_knot_coverage_weight),
             ("proposal_knot_assignment_weight", proposal_knot_assignment_weight),
+            ("proposal_multiscale_recall_weight", proposal_multiscale_recall_weight),
             ("selected_knot_position_weight", selected_knot_position_weight),
+            ("keep_dice_weight", keep_dice_weight),
+            ("keep_cdf_weight", keep_cdf_weight),
+            ("parameter_gap_weight", parameter_gap_weight),
+            ("parameter_bias_weight", parameter_bias_weight),
+            ("fine_teacher_weight", fine_teacher_weight),
+            ("fine_teacher_ranking_weight", fine_teacher_ranking_weight),
+            ("keep_fuzzy_negative_radius", keep_fuzzy_negative_radius),
             ("false_remove_weight", false_remove_weight),
             ("ranking_margin", ranking_margin),
             ("entropy_weight", entropy_weight), ("complexity_weight", complexity_weight),
@@ -159,6 +181,30 @@ class V16SubsetLoss(nn.Module):
             setattr(self, name, float(value))
         if false_remove_weight < 1.0:
             raise ValueError("false_remove_weight must be at least one")
+        if (
+            not math.isfinite(fine_teacher_temperature)
+            or fine_teacher_temperature <= 0
+        ):
+            raise ValueError("fine_teacher_temperature must be finite and positive")
+        self.fine_teacher_temperature = float(fine_teacher_temperature)
+        if keep_fuzzy_negative_radius <= 0:
+            raise ValueError("keep_fuzzy_negative_radius must be positive")
+        if (
+            not math.isfinite(keep_fuzzy_negative_floor)
+            or not 0 <= keep_fuzzy_negative_floor <= 1
+        ):
+            raise ValueError("keep_fuzzy_negative_floor must lie in [0,1]")
+        self.keep_fuzzy_negative_floor = float(keep_fuzzy_negative_floor)
+        for name, value in (
+            (
+                "proposal_parameter_warp_gradient_scale",
+                proposal_parameter_warp_gradient_scale,
+            ),
+            ("joint_parameter_warp_gradient_scale", joint_parameter_warp_gradient_scale),
+        ):
+            if not math.isfinite(value) or not 0 <= value <= 1:
+                raise ValueError(f"{name} must lie in [0,1]")
+            setattr(self, name, float(value))
         if not 0 < complexity_activation_ratio <= 1:
             raise ValueError("complexity_activation_ratio must lie in (0,1]")
         if not 0 < tail_fraction <= 1:
@@ -679,6 +725,11 @@ class V16SubsetLoss(nn.Module):
             min=target_parameters[:, :1], max=target_parameters[:, -1:]
         )
 
+    @staticmethod
+    def _scale_gradient(value: torch.Tensor, scale: float) -> torch.Tensor:
+        """Keep the forward value while limiting a cross-task gradient path."""
+        return value.detach() + float(scale) * (value - value.detach())
+
     def _directed_knot_loss(
         self, predicted, predicted_mask, target, target_mask, valid,
     ):
@@ -699,6 +750,167 @@ class V16SubsetLoss(nn.Module):
             nearest, torch.zeros_like(nearest), beta=self.knot_position_beta,
         )
         return loss, nearest.mean()
+
+    @staticmethod
+    def _parameter_gap_and_bias_loss(
+        predicted: torch.Tensor,
+        target: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Resolve local interval distortion and signed parameter drift.
+
+        Pointwise parameter MSE alone is dominated by the many easy samples in
+        smooth regions.  Log-gap supervision gives every sampling interval a
+        relative error signal, while the per-curve signed mean explicitly
+        exposes systematic left/right parameter bias.
+        """
+        if predicted.shape != target.shape or predicted.ndim != 2:
+            raise ValueError("parameter supervision requires matching [B,M] tensors")
+        if not predicted.is_floating_point() or not target.is_floating_point():
+            raise ValueError("parameter supervision tensors must be floating point")
+        epsilon = torch.finfo(predicted.dtype).eps
+        predicted_gaps = predicted.diff(dim=-1).clamp_min(epsilon)
+        target_gaps = target.diff(dim=-1).clamp_min(epsilon)
+        log_gap_error = predicted_gaps.log() - target_gaps.log()
+        gap_loss = F.smooth_l1_loss(
+            log_gap_error,
+            torch.zeros_like(log_gap_error),
+            beta=0.25,
+        )
+        signed_bias = (predicted - target).mean(dim=-1)
+        # Report in raw parameter units, optimize relative to the 0.01 knot
+        # matching scale so this term cannot disappear next to fit penalties.
+        bias_loss = (signed_bias / 0.01).square().mean()
+        return gap_loss, bias_loss, signed_bias.abs().mean()
+
+    @staticmethod
+    def _multiscale_candidate_recall(
+        predicted: torch.Tensor,
+        target: torch.Tensor,
+        target_mask: torch.Tensor,
+        valid: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Strict 0.005/0.010/0.020 recall surrogate and diagnostics.
+
+        The logarithmic normalized distance prevents the loose 0.02 scale from
+        hiding misses at publication-scale tolerances, without the exploding
+        gradients of a raw ``distance / 0.005`` penalty.
+        """
+        active = target_mask & valid.unsqueeze(-1)
+        zero = predicted.new_zeros(())
+        if not bool(active.any()):
+            return zero, zero, zero, zero
+        nearest = (
+            predicted.unsqueeze(-1) - target.unsqueeze(1)
+        ).abs().amin(dim=1)[active]
+        training_scales = nearest.new_tensor((0.0025, 0.005, 0.010))
+        normalized = torch.log1p(
+            (nearest.unsqueeze(-1) / training_scales).square()
+        ).mean(-1)
+        tail_count = max(1, math.ceil(normalized.numel() * 0.2))
+        loss = normalized.mean() + 0.5 * normalized.topk(tail_count).values.mean()
+        reporting_scales = nearest.new_tensor((0.005, 0.010, 0.020))
+        recalls = tuple(
+            (nearest <= scale).to(nearest.dtype).mean()
+            for scale in reporting_scales
+        )
+        return loss, recalls[0], recalls[1], recalls[2]
+
+    @staticmethod
+    def _keep_distribution_losses(
+        probabilities: torch.Tensor,
+        target_mask: torch.Tensor,
+        positions: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Set overlap and ordered spatial-mass losses for KeepMask learning."""
+        if probabilities.shape != target_mask.shape or positions.shape != target_mask.shape:
+            raise ValueError("Keep distribution tensors must share [B,K]")
+        target = target_mask.to(probabilities.dtype)
+        epsilon = torch.finfo(probabilities.dtype).eps
+        overlap = 2.0 * (probabilities * target).sum(-1)
+        dice = 1.0 - (
+            (overlap + epsilon)
+            / (probabilities.sum(-1) + target.sum(-1) + epsilon)
+        )
+
+        order = positions.detach().argsort(dim=-1, stable=True)
+        ordered_probability = probabilities.gather(1, order)
+        ordered_target = target.gather(1, order)
+        probability_distribution = ordered_probability / ordered_probability.sum(
+            -1, keepdim=True
+        ).clamp_min(epsilon)
+        target_distribution = ordered_target / ordered_target.sum(
+            -1, keepdim=True
+        ).clamp_min(1.0)
+        cdf = F.mse_loss(
+            probability_distribution.cumsum(-1),
+            target_distribution.cumsum(-1),
+            reduction="none",
+        ).mean(-1)
+        return dice.mean(), cdf.mean()
+
+    @staticmethod
+    def _weighted_pairwise_ranking_loss(
+        logits: torch.Tensor,
+        positive_mask: torch.Tensor,
+        negative_confidence: torch.Tensor,
+        *,
+        margin: float,
+        positive_margin: torch.Tensor | None = None,
+        positive_weight: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Rank positives without treating plausible substitutes as hard negatives."""
+        if (
+            logits.ndim != 2
+            or positive_mask.shape != logits.shape
+            or positive_mask.dtype != torch.bool
+            or negative_confidence.shape != logits.shape
+        ):
+            raise ValueError("ranking tensors must share [B,K] shape")
+        if (
+            not logits.is_floating_point()
+            or not negative_confidence.is_floating_point()
+            or not torch.isfinite(logits).all()
+            or not torch.isfinite(negative_confidence).all()
+            or torch.any((negative_confidence < 0) | (negative_confidence > 1))
+        ):
+            raise ValueError(
+                "ranking logits/confidence must be finite with confidence in [0,1]"
+            )
+        if not math.isfinite(margin) or margin < 0:
+            raise ValueError("ranking margin must be finite and non-negative")
+        if positive_margin is None:
+            positive_margin = torch.zeros_like(logits)
+        if positive_weight is None:
+            positive_weight = torch.ones_like(logits)
+        for name, value in (
+            ("positive_margin", positive_margin),
+            ("positive_weight", positive_weight),
+        ):
+            if (
+                value.shape != logits.shape
+                or not value.is_floating_point()
+                or not torch.isfinite(value).all()
+                or torch.any(value < 0)
+            ):
+                raise ValueError(f"{name} must be finite non-negative [B,K]")
+
+        pair_mask = positive_mask.unsqueeze(-1) & (~positive_mask).unsqueeze(-2)
+        if not bool(pair_mask.any()):
+            return logits.new_zeros(())
+        penalty = F.softplus(
+            margin
+            + positive_margin.unsqueeze(-1)
+            - logits.unsqueeze(-1)
+            + logits.unsqueeze(-2)
+        )
+        pair_weight = (
+            positive_weight.unsqueeze(-1)
+            * negative_confidence.unsqueeze(-2)
+        )
+        active_weight = pair_weight[pair_mask]
+        return (
+            penalty[pair_mask] * active_weight
+        ).sum() / active_weight.sum().clamp_min(torch.finfo(logits.dtype).eps)
 
     def _proposal_ordered_assignment_loss(
         self, predicted, target, target_mask, valid,
@@ -873,6 +1085,50 @@ class V16SubsetLoss(nn.Module):
             result_cpu[row, candidate_order[candidate_ids]] = True
         return result_cpu.to(device=predicted.device)
 
+    def _ordered_ground_truth_candidate_values(
+        self,
+        predicted: torch.Tensor,
+        target: torch.Tensor,
+        target_mask: torch.Tensor,
+        valid: torch.Tensor,
+        target_values: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Move per-true-knot teacher values onto their assigned candidate slots."""
+        if target_values.shape != target.shape:
+            raise ValueError("per-knot teacher values must match target knot shape")
+        if not target_values.is_floating_point() or not torch.isfinite(target_values).all():
+            raise ValueError("per-knot teacher values must be finite floating point")
+        if torch.any(target_values[target_mask] < 0):
+            raise ValueError("per-knot teacher values must be non-negative")
+        predicted_cpu = predicted.detach().double().cpu()
+        target_cpu = target.detach().double().cpu()
+        target_mask_cpu = target_mask.detach().cpu()
+        valid_cpu = valid.detach().cpu()
+        value_cpu = target_values.detach().double().cpu()
+        result_cpu = torch.zeros_like(predicted_cpu)
+        result_valid_cpu = torch.zeros_like(predicted_cpu, dtype=torch.bool)
+        for row in valid_cpu.nonzero(as_tuple=False).flatten().tolist():
+            target_ids = target_mask_cpu[row].nonzero(as_tuple=False).flatten()
+            target_order = target_cpu[row, target_ids].argsort(stable=True)
+            sorted_target_ids = target_ids[target_order]
+            row_targets = target_cpu[row, sorted_target_ids]
+            if row_targets.numel() > predicted_cpu.shape[1]:
+                raise ValueError("teacher knot count exceeds candidate capacity")
+            if not row_targets.numel():
+                continue
+            candidate_order = predicted_cpu[row].argsort(stable=True)
+            candidate_ids, matched_target_ids = self._ordered_pair_indices(
+                predicted_cpu[row, candidate_order], row_targets,
+            )
+            assigned = candidate_order[candidate_ids]
+            source_ids = sorted_target_ids[matched_target_ids.cpu()]
+            result_cpu[row, assigned] = value_cpu[row, source_ids]
+            result_valid_cpu[row, assigned] = True
+        return (
+            result_cpu.to(device=predicted.device, dtype=predicted.dtype),
+            result_valid_cpu.to(device=predicted.device),
+        )
+
     def _synthetic_oracle_candidate_mask(
         self, predicted, target, target_mask, valid,
     ) -> torch.Tensor:
@@ -997,6 +1253,15 @@ class V16SubsetLoss(nn.Module):
         proposal_knot_assignment_loss,
         proposal_knot_assignment_mae,
         proposal_knot_assignment_count,
+        proposal_multiscale_recall_loss,
+        proposal_recall_at_005,
+        proposal_recall_at_010,
+        proposal_recall_at_020,
+        proposal_parameter_gap_loss,
+        proposal_parameter_bias_loss,
+        proposal_parameter_bias_mae,
+        geometry_single_deletion_mse,
+        fine_teacher_available,
     ):
         """Train Joint directly from certified synthetic knot labels.
 
@@ -1035,6 +1300,42 @@ class V16SubsetLoss(nn.Module):
         )
         if not torch.equal(target_mask.sum(-1), labelled_counts):
             raise RuntimeError("ordered ground-truth assignment lost labelled knots")
+
+        fine_teacher_active = (
+            self.fine_teacher_weight > 0
+            or self.fine_teacher_ranking_weight > 0
+        )
+        if fine_teacher_active and not fine_teacher_available:
+            raise ValueError(
+                "fine-grained teacher weights require synthetic "
+                "target_single_deletion_mse labels"
+            )
+        if fine_teacher_available:
+            teacher_delete_mse, teacher_value_valid = (
+                self._ordered_ground_truth_candidate_values(
+                    supervised_proposals,
+                    geometry_knots,
+                    geometry_mask,
+                    geometry_valid,
+                    geometry_single_deletion_mse,
+                )
+            )
+            if not torch.equal(teacher_value_valid, target_mask):
+                raise RuntimeError(
+                    "fine teacher values and ordered KeepMask assignment disagree"
+                )
+            epsilon = torch.finfo(teacher_delete_mse.dtype).tiny
+            teacher_log_margin = torch.log(
+                (teacher_delete_mse + epsilon)
+                / tolerance.to(teacher_delete_mse.dtype).unsqueeze(-1)
+            )
+            teacher_risk = torch.sigmoid(
+                teacher_log_margin / self.fine_teacher_temperature
+            ) * target_mask.to(teacher_delete_mse.dtype)
+        else:
+            teacher_delete_mse = torch.zeros_like(proposals)
+            teacher_log_margin = torch.zeros_like(proposals)
+            teacher_risk = torch.zeros_like(proposals)
 
         deployment_mask = model.select_mask(context)
         if (
@@ -1081,12 +1382,24 @@ class V16SubsetLoss(nn.Module):
         )
         positive_count = target_mask.sum(-1).clamp_min(1)
         negative_mask = ~target_mask
-        negative_count = negative_mask.sum(-1).clamp_min(1)
+        distances_to_true = (
+            supervised_proposals.unsqueeze(-1) - geometry_knots.unsqueeze(1)
+        ).abs().masked_fill(~geometry_mask.unsqueeze(1), 1.0)
+        nearest_true = distances_to_true.amin(-1)
+        negative_confidence = (
+            self.keep_fuzzy_negative_floor
+            + (1.0 - self.keep_fuzzy_negative_floor)
+            * (nearest_true / self.keep_fuzzy_negative_radius).clamp(0.0, 1.0)
+        )
+        if not fine_teacher_active:
+            negative_confidence = torch.ones_like(negative_confidence)
+        negative_weight = negative_mask.to(element_loss.dtype) * negative_confidence
+        negative_count = negative_weight.sum(-1).clamp_min(1.0)
         positive_loss = (
             element_loss * target_mask.to(element_loss.dtype)
         ).sum(-1) / positive_count
         negative_loss = (
-            element_loss * negative_mask.to(element_loss.dtype)
+            element_loss * negative_weight
         ).sum(-1) / negative_count
         has_negative = negative_mask.any(-1)
         keep_supervision_loss = torch.where(
@@ -1096,6 +1409,18 @@ class V16SubsetLoss(nn.Module):
             ) / (self.false_remove_weight + 1.0),
             positive_loss,
         ).mean()
+        keep_dice_loss, keep_cdf_loss = self._keep_distribution_losses(
+            probabilities,
+            target_mask,
+            supervised_proposals,
+        )
+        if fine_teacher_active:
+            fine_teacher_loss = (
+                F.softplus(-logits)[target_mask]
+                * teacher_risk[target_mask].to(logits.dtype)
+            ).mean()
+        else:
+            fine_teacher_loss = logits.new_zeros(())
         requested_score = context.get(
             "one_shot_requested_count_score", probabilities.sum(-1)
         )
@@ -1121,16 +1446,25 @@ class V16SubsetLoss(nn.Module):
             log_excess, torch.zeros_like(log_excess)
         )
 
-        positive = target_mask.unsqueeze(-1)
-        negative = (~target_mask).unsqueeze(-2)
-        pair_mask = positive & negative
-        pair_penalty = F.softplus(
-            self.ranking_margin - logits.unsqueeze(-1) + logits.unsqueeze(-2)
+        pair_mask = target_mask.unsqueeze(-1) & (~target_mask).unsqueeze(-2)
+        ranking_loss = self._weighted_pairwise_ranking_loss(
+            logits,
+            target_mask,
+            negative_confidence,
+            margin=self.ranking_margin,
         )
-        ranking_loss = (
-            pair_penalty[pair_mask].mean() if bool(pair_mask.any())
-            else logits.new_zeros(())
-        )
+        if fine_teacher_active and bool(pair_mask.any()):
+            risk = teacher_risk.to(logits.dtype)
+            fine_teacher_ranking_loss = self._weighted_pairwise_ranking_loss(
+                logits,
+                target_mask,
+                negative_confidence,
+                margin=self.ranking_margin,
+                positive_margin=risk,
+                positive_weight=risk.clamp_min(0.5),
+            )
+        else:
+            fine_teacher_ranking_loss = logits.new_zeros(())
         entropy = -(
             probabilities * F.logsigmoid(logits)
             + (1 - probabilities) * F.logsigmoid(-logits)
@@ -1140,7 +1474,10 @@ class V16SubsetLoss(nn.Module):
             warped = output["internal_knots"].clone()
             warped[geometry_valid] = self._warp_knots_to_target_parameterization(
                 output["internal_knots"][geometry_valid],
-                output["params"][geometry_valid],
+                self._scale_gradient(
+                    output["params"][geometry_valid],
+                    self.joint_parameter_warp_gradient_scale,
+                ),
                 geometry_params[geometry_valid],
             )
             return self._selected_knot_loss(
@@ -1156,7 +1493,10 @@ class V16SubsetLoss(nn.Module):
         deployed_coverage = self._directed_knot_loss(
             self._warp_knots_to_target_parameterization(
                 deployment_output["internal_knots"],
-                deployment_output["params"],
+                self._scale_gradient(
+                    deployment_output["params"],
+                    self.joint_parameter_warp_gradient_scale,
+                ),
                 geometry_params,
             ),
             deployment_mask,
@@ -1167,7 +1507,10 @@ class V16SubsetLoss(nn.Module):
         labelled_coverage = self._directed_knot_loss(
             self._warp_knots_to_target_parameterization(
                 labelled_output["internal_knots"],
-                labelled_output["params"],
+                self._scale_gradient(
+                    labelled_output["params"],
+                    self.joint_parameter_warp_gradient_scale,
+                ),
                 geometry_params,
             ),
             target_mask,
@@ -1204,6 +1547,27 @@ class V16SubsetLoss(nn.Module):
         true_parameter_mae = 0.5 * (
             proposal_true_parameter_mae + deployment_true_parameter_mae
         )
+        deployed_parameter_shape = self._parameter_gap_and_bias_loss(
+            deployment_output["params"], geometry_params,
+        )
+        labelled_parameter_shape = self._parameter_gap_and_bias_loss(
+            labelled_output["params"], geometry_params,
+        )
+        parameter_gap_loss = (
+            proposal_parameter_gap_loss
+            + deployed_parameter_shape[0]
+            + labelled_parameter_shape[0]
+        ) / 3.0
+        parameter_bias_loss = (
+            proposal_parameter_bias_loss
+            + deployed_parameter_shape[1]
+            + labelled_parameter_shape[1]
+        ) / 3.0
+        parameter_bias_mae = (
+            proposal_parameter_bias_mae
+            + deployed_parameter_shape[2]
+            + labelled_parameter_shape[2]
+        ) / 3.0
         selected_fit = 0.5 * (
             self._tail_aware_mean(self._fit_penalty(deployment_mse, tolerance))
             + self._tail_aware_mean(self._fit_penalty(labelled_mse, tolerance))
@@ -1212,6 +1576,10 @@ class V16SubsetLoss(nn.Module):
             self.fit_weight * selected_fit
             + self.dense_weight * dense_penalty
             + self.distillation_weight * keep_supervision_loss
+            + self.keep_dice_weight * keep_dice_loss
+            + self.keep_cdf_weight * keep_cdf_loss
+            + self.fine_teacher_weight * fine_teacher_loss
+            + self.fine_teacher_ranking_weight * fine_teacher_ranking_loss
             + (self.count_weight + self.supervised_count_weight) * count_loss
             + self.supervised_over_count_weight * over_count_loss
             + self.ranking_weight * ranking_loss
@@ -1219,7 +1587,11 @@ class V16SubsetLoss(nn.Module):
             + self.true_parameter_weight * true_parameter_loss
             + self.proposal_knot_coverage_weight * proposal_knot_coverage_loss
             + self.proposal_knot_assignment_weight * proposal_knot_assignment_loss
+            + self.proposal_multiscale_recall_weight
+            * proposal_multiscale_recall_loss
             + self.selected_knot_position_weight * selected_knot_position_loss
+            + self.parameter_gap_weight * parameter_gap_loss
+            + self.parameter_bias_weight * parameter_bias_loss
         )
         if not torch.isfinite(loss):
             raise RuntimeError("non-finite v16 supervised subset objective")
@@ -1228,6 +1600,22 @@ class V16SubsetLoss(nn.Module):
         supervised_count_mae = (
             deployment_count - target_count.to(deployment_count.dtype)
         ).abs().mean()
+        true_positive = (deployment_mask & target_mask).sum().to(dense_mse.dtype)
+        predicted_positive = deployment_mask.sum().clamp_min(1).to(dense_mse.dtype)
+        labelled_positive = target_mask.sum().clamp_min(1).to(dense_mse.dtype)
+        keep_precision = true_positive / predicted_positive
+        keep_recall = true_positive / labelled_positive
+        keep_f1 = (
+            2.0 * keep_precision * keep_recall
+            / (keep_precision + keep_recall).clamp_min(
+                torch.finfo(dense_mse.dtype).eps
+            )
+        )
+        critical = target_mask & (teacher_risk >= 0.75)
+        critical_false_delete_rate = (
+            (critical & ~deployment_mask).sum().to(dense_mse.dtype)
+            / critical.sum().clamp_min(1).to(dense_mse.dtype)
+        )
         metrics = {
             "loss": loss,
             "dense_mse": dense_mse.mean(),
@@ -1240,6 +1628,27 @@ class V16SubsetLoss(nn.Module):
             # teacher distillation. Prefer supervised_keep_loss in new reports.
             "mask_distillation_loss": keep_supervision_loss,
             "supervised_keep_loss": keep_supervision_loss,
+            "keep_dice_loss": keep_dice_loss,
+            "keep_cdf_loss": keep_cdf_loss,
+            "keep_mask_precision": keep_precision,
+            "keep_mask_recall": keep_recall,
+            "keep_mask_f1": keep_f1,
+            "fine_teacher_loss": fine_teacher_loss,
+            "fine_teacher_ranking_loss": fine_teacher_ranking_loss,
+            "fine_teacher_mean_risk": (
+                teacher_risk[target_mask].mean()
+                if bool(target_mask.any()) else zero
+            ),
+            "fine_teacher_mean_log_delete_margin": (
+                teacher_log_margin[target_mask].mean()
+                if bool(target_mask.any()) else zero
+            ),
+            "critical_false_delete_rate": critical_false_delete_rate,
+            "fuzzy_negative_fraction": (
+                ((negative_confidence < 1.0) & negative_mask)
+                .to(dense_mse.dtype).sum()
+                / negative_mask.sum().clamp_min(1).to(dense_mse.dtype)
+            ),
             "structured_count_loss": count_loss,
             "structured_count_mae": (
                 requested_score - score_target.to(requested_score.dtype)
@@ -1261,6 +1670,13 @@ class V16SubsetLoss(nn.Module):
             "proposal_knot_assignment_loss": proposal_knot_assignment_loss,
             "proposal_knot_assignment_mae": proposal_knot_assignment_mae,
             "proposal_knot_assignment_count": proposal_knot_assignment_count,
+            "proposal_multiscale_recall_loss": proposal_multiscale_recall_loss,
+            "proposal_recall_at_005": proposal_recall_at_005,
+            "proposal_recall_at_010": proposal_recall_at_010,
+            "proposal_recall_at_020": proposal_recall_at_020,
+            "parameter_gap_loss": parameter_gap_loss,
+            "parameter_bias_loss": parameter_bias_loss,
+            "parameter_bias_mae": parameter_bias_mae,
             "selected_knot_position_loss": selected_knot_position_loss,
             "selected_knot_coverage_loss": 0.5 * (
                 deployed_coverage[0] + labelled_coverage[0]
@@ -1290,7 +1706,8 @@ class V16SubsetLoss(nn.Module):
         complexity_scale: float = 1.0, synthetic_target_count=None,
         synthetic_target_valid=None, target_params=None,
         target_internal_knots=None, target_internal_knot_mask=None,
-        target_geometry_valid=None,
+        target_geometry_valid=None, target_single_deletion_mse=None,
+        target_single_deletion_mask=None, target_single_deletion_valid=None,
     ):
         if stage not in ("proposal", "joint"):
             raise ValueError("stage must be 'proposal' or 'joint'")
@@ -1326,6 +1743,66 @@ class V16SubsetLoss(nn.Module):
             target_geometry_valid, points=points,
         )
         zero = points.new_zeros(())
+        fine_teacher_available = False
+        if target_single_deletion_mse is None:
+            geometry_single_deletion_mse = (
+                torch.zeros_like(geometry_knots)
+                if isinstance(geometry_knots, torch.Tensor)
+                else torch.zeros_like(proposals)
+            )
+        else:
+            if (
+                not isinstance(target_single_deletion_mse, torch.Tensor)
+                or target_single_deletion_mse.shape != geometry_knots.shape
+                or not target_single_deletion_mse.is_floating_point()
+            ):
+                raise ValueError(
+                    "target_single_deletion_mse must be floating-point with "
+                    "the target knot shape"
+                )
+            geometry_single_deletion_mse = target_single_deletion_mse.to(
+                device=points.device, dtype=points.dtype,
+            )
+            if (
+                not torch.isfinite(geometry_single_deletion_mse).all()
+                or torch.any(geometry_single_deletion_mse[geometry_mask] < 0)
+            ):
+                raise ValueError(
+                    "target_single_deletion_mse must be finite and non-negative"
+                )
+            if (
+                not isinstance(target_single_deletion_mask, torch.Tensor)
+                or target_single_deletion_mask.shape != geometry_mask.shape
+                or target_single_deletion_mask.dtype != torch.bool
+            ):
+                raise ValueError(
+                    "target_single_deletion_mask must be boolean with the "
+                    "target knot shape"
+                )
+            if (
+                not isinstance(target_single_deletion_valid, torch.Tensor)
+                or target_single_deletion_valid.shape != geometry_valid.shape
+                or target_single_deletion_valid.dtype != torch.bool
+            ):
+                raise ValueError(
+                    "target_single_deletion_valid must be boolean [B]"
+                )
+            deletion_mask = target_single_deletion_mask.to(points.device)
+            deletion_valid = target_single_deletion_valid.to(points.device)
+            if bool((deletion_valid & ~geometry_valid).any()):
+                raise ValueError(
+                    "single-deletion teacher cannot be valid without knot labels"
+                )
+            if bool(
+                deletion_valid.any()
+                and not torch.equal(
+                    deletion_mask[deletion_valid], geometry_mask[deletion_valid]
+                )
+            ):
+                raise ValueError(
+                    "single-deletion teacher mask must match true knot mask"
+                )
+            fine_teacher_available = bool(deletion_valid.all())
         supervised_proposals = proposals
         if bool(geometry_valid.any()):
             proposal_true_parameter_loss = F.mse_loss(
@@ -1337,10 +1814,18 @@ class V16SubsetLoss(nn.Module):
                 - geometry_params[geometry_valid]
             ).abs().mean()
             supervised_proposals = proposals.clone()
+            parameter_warp_scale = (
+                self.proposal_parameter_warp_gradient_scale
+                if stage == "proposal"
+                else self.joint_parameter_warp_gradient_scale
+            )
             supervised_proposals[geometry_valid] = (
                 self._warp_knots_to_target_parameterization(
                     proposals[geometry_valid],
-                    context["proposal_params"][geometry_valid],
+                    self._scale_gradient(
+                        context["proposal_params"][geometry_valid],
+                        parameter_warp_scale,
+                    ),
                     geometry_params[geometry_valid],
                 )
             )
@@ -1363,14 +1848,46 @@ class V16SubsetLoss(nn.Module):
                 geometry_mask,
                 geometry_valid,
             )
+            (
+                proposal_multiscale_recall_loss,
+                proposal_recall_at_005,
+                proposal_recall_at_010,
+                proposal_recall_at_020,
+            ) = self._multiscale_candidate_recall(
+                supervised_proposals,
+                geometry_knots,
+                geometry_mask,
+                geometry_valid,
+            )
+            (
+                proposal_parameter_gap_loss,
+                proposal_parameter_bias_loss,
+                proposal_parameter_bias_mae,
+            ) = self._parameter_gap_and_bias_loss(
+                context["proposal_params"][geometry_valid],
+                geometry_params[geometry_valid],
+            )
         else:
             proposal_true_parameter_loss = proposal_true_parameter_mae = zero
             proposal_knot_coverage_loss = proposal_knot_nearest_mae = zero
             proposal_knot_assignment_loss = proposal_knot_assignment_mae = zero
             proposal_knot_assignment_count = zero
+            proposal_multiscale_recall_loss = zero
+            proposal_recall_at_005 = proposal_recall_at_010 = zero
+            proposal_recall_at_020 = zero
+            proposal_parameter_gap_loss = proposal_parameter_bias_loss = zero
+            proposal_parameter_bias_mae = zero
         dense_mse = self._fit(context["proposal_params"], proposals, torch.ones_like(proposals, dtype=torch.bool), points, degree)
         dense_penalty = self._tail_aware_mean(self._fit_penalty(dense_mse, tolerance))
         zero = dense_mse.new_zeros(())
+        parameter_gap_loss = proposal_parameter_gap_loss
+        parameter_bias_loss = proposal_parameter_bias_loss
+        parameter_bias_mae = proposal_parameter_bias_mae
+        keep_dice_loss = keep_cdf_loss = zero
+        keep_precision = keep_recall = keep_f1 = zero
+        fine_teacher_loss = fine_teacher_ranking_loss = zero
+        fine_teacher_mean_risk = fine_teacher_mean_log_delete_margin = zero
+        critical_false_delete_rate = fuzzy_negative_fraction = zero
         if stage == "proposal":
             loss = (
                 self.fit_weight * dense_penalty
@@ -1379,6 +1896,10 @@ class V16SubsetLoss(nn.Module):
                 * proposal_knot_coverage_loss
                 + self.proposal_knot_assignment_weight
                 * proposal_knot_assignment_loss
+                + self.proposal_multiscale_recall_weight
+                * proposal_multiscale_recall_loss
+                + self.parameter_gap_weight * proposal_parameter_gap_loss
+                + self.parameter_bias_weight * proposal_parameter_bias_loss
             )
             deployment_mse = best_mse = dense_mse
             count = dense_mse.new_full(dense_mse.shape, proposals.shape[1])
@@ -1423,6 +1944,15 @@ class V16SubsetLoss(nn.Module):
                     proposal_knot_assignment_loss=proposal_knot_assignment_loss,
                     proposal_knot_assignment_mae=proposal_knot_assignment_mae,
                     proposal_knot_assignment_count=proposal_knot_assignment_count,
+                    proposal_multiscale_recall_loss=proposal_multiscale_recall_loss,
+                    proposal_recall_at_005=proposal_recall_at_005,
+                    proposal_recall_at_010=proposal_recall_at_010,
+                    proposal_recall_at_020=proposal_recall_at_020,
+                    proposal_parameter_gap_loss=proposal_parameter_gap_loss,
+                    proposal_parameter_bias_loss=proposal_parameter_bias_loss,
+                    proposal_parameter_bias_mae=proposal_parameter_bias_mae,
+                    geometry_single_deletion_mse=geometry_single_deletion_mse,
+                    fine_teacher_available=fine_teacher_available,
                 )
             logits = context["keep_logits"]
             if logits.shape != proposals.shape or logits.device != points.device:
@@ -1823,7 +2353,11 @@ class V16SubsetLoss(nn.Module):
                     + self.proposal_knot_assignment_weight
                     * proposal_knot_assignment_loss
                     + self.selected_knot_position_weight
-                    * selected_knot_position_loss)
+                    * selected_knot_position_loss
+                    + self.proposal_multiscale_recall_weight
+                    * proposal_multiscale_recall_loss
+                    + self.parameter_gap_weight * parameter_gap_loss
+                    + self.parameter_bias_weight * parameter_bias_loss)
         if not torch.isfinite(loss):
             raise RuntimeError("non-finite v16 subset objective")
         metrics = {
@@ -1852,6 +2386,26 @@ class V16SubsetLoss(nn.Module):
             "proposal_knot_assignment_loss": proposal_knot_assignment_loss,
             "proposal_knot_assignment_mae": proposal_knot_assignment_mae,
             "proposal_knot_assignment_count": proposal_knot_assignment_count,
+            "proposal_multiscale_recall_loss": proposal_multiscale_recall_loss,
+            "proposal_recall_at_005": proposal_recall_at_005,
+            "proposal_recall_at_010": proposal_recall_at_010,
+            "proposal_recall_at_020": proposal_recall_at_020,
+            "parameter_gap_loss": parameter_gap_loss,
+            "parameter_bias_loss": parameter_bias_loss,
+            "parameter_bias_mae": parameter_bias_mae,
+            "keep_dice_loss": keep_dice_loss,
+            "keep_cdf_loss": keep_cdf_loss,
+            "keep_mask_precision": keep_precision,
+            "keep_mask_recall": keep_recall,
+            "keep_mask_f1": keep_f1,
+            "fine_teacher_loss": fine_teacher_loss,
+            "fine_teacher_ranking_loss": fine_teacher_ranking_loss,
+            "fine_teacher_mean_risk": fine_teacher_mean_risk,
+            "fine_teacher_mean_log_delete_margin": (
+                fine_teacher_mean_log_delete_margin
+            ),
+            "critical_false_delete_rate": critical_false_delete_rate,
+            "fuzzy_negative_fraction": fuzzy_negative_fraction,
             "selected_knot_position_loss": selected_knot_position_loss,
             "selected_knot_nearest_mae": selected_knot_nearest_mae,
             "selected_to_true_knot_mae": selected_to_true_knot_mae,

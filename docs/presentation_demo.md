@@ -18,6 +18,7 @@
 | UJI Pen | 否 | 是 | 是 |
 | Natural Earth coastline | 否 | 是 | 是 |
 | USGS contours | 否 | 是 | 是 |
+| IndustrialOffset（CAD 驱动半合成） | 否 | 是 | 是 |
 
 强调：真实数据没有真节点标签，当前正式训练只使用认证合成数据；真实数据仅检验泛化。
 
@@ -55,7 +56,7 @@ Proposal 到期无条件进入 Joint，pass rate 不参与阶段门控。
 
 ## 第 6 页：Joint 监督
 
-有序匹配直接产生 target KeepMask，真 K 监督概率质量和节点数，真参数/真节点监督两条 subset 解码路径的参数反馈与 survivor relocation。损失包括 existence BCE、正负 ranking、count、over-count、节点位置和拟合项。
+有序匹配直接产生 target KeepMask，真 K 监督概率质量和节点数，真参数/真节点监督两条 subset 解码路径的参数反馈与 survivor relocation。损失还包含多尺度 Proposal recall、Keep Dice/CDF、认证 single-deletion MSE 风险、参数 log-gap/bias 和模糊负例降权。
 
 正式 Joint 无在线 Hard-RMS、prefix/counterfactual/oracle Teacher，无 Teacher cache。真实数据不进入 loss。
 
@@ -75,7 +76,7 @@ Proposal 到期无条件进入 Joint，pass rate 不参与阶段门控。
 
 一条龙运行后选用以下实际产物：
 
-1. `report.md` 或 `summary.csv`：六方法×四数据集的 MSE、pass、final K、total time；
+1. `report.md` 或 `summary.csv`：六方法×五数据集的 MSE、pass、final K、total time；
 2. `v16_published_methods_input.png`：192 点输入口径的 2×2 指标图；
 3. `v16_published_methods_reference.png`：真实原始参考点口径的 2×2 指标图；
 4. 真实曲线六方法 3×2 案例图：参考/输入、拟合、控制多边形、控制顶点和内部节点。
@@ -85,7 +86,7 @@ Proposal 到期无条件进入 Joint，pass rate 不参与阶段门控。
 ## 第 10 页：结论与限制
 
 - 候选生成、KeepMask 和 survivor relocation 在一个固定深度网络内完成；
-- 认证合成标签消除了在线 Teacher 的自举偏差和训练搜索开销；
+- 认证合成标签消除了在线 Teacher 的自举偏差；逐节点删除 MSE 在数据认证时生成，loss forward 不再做 teacher 搜索；
 - 真实数据只用于泛化评估；
 - source-subset 最简性不等于连续全局最优；
 - K=56 是无候选冗余的容量边界，必须单独报告。

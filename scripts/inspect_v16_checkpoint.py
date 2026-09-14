@@ -185,6 +185,21 @@ def inspect_checkpoint(
         "  online Teacher: "
         + str(qualification.get("online_teacher", "not recorded"))
     )
+    print(
+        "  certified fine teacher: "
+        + str(qualification.get("fine_grained_teacher", "not recorded"))
+    )
+    print(
+        "  fine-teacher unit / online solves: "
+        + str(qualification.get("fine_teacher_error_unit", "not recorded"))
+        + " / "
+        + str(
+            qualification.get(
+                "fine_teacher_additional_spline_solves_per_batch",
+                "not recorded",
+            )
+        )
+    )
     internal_capacity = model_config.get("max_internal_knots")
     degree = model_config.get("degree", 3)
     try:

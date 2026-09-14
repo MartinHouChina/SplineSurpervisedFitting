@@ -184,6 +184,7 @@ def test_visualization_cli_exposes_every_published_method_option_for_1e4_cuda():
     assert args.liang_dense_knots == 64
     assert args.dung_scan_intervals == 12
     assert args.luo_de_population == 12
+    assert args.published_feasibility_safeguard is True
 
 
 def simple_case_and_result():

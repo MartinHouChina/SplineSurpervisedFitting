@@ -79,6 +79,10 @@ class CanonicalLabelTests(unittest.TestCase):
         self.assertFalse(certificate.certified)
         self.assertLess(float(certificate.full_fit_rms), 1e-10)
         self.assertLess(float(certificate.minimum_single_deletion_rms), 1e-10)
+        torch.testing.assert_close(
+            certificate.single_deletion_mse,
+            certificate.single_deletion_rms.square(),
+        )
 
     def test_certified_dataset_has_noise_invariant_minimal_labels(self) -> None:
         common = {
@@ -119,6 +123,29 @@ class CanonicalLabelTests(unittest.TestCase):
                 float(noisy["source_min_single_deletion_mse"]),
                 float(noisy["source_minimality_required_mse"]),
             )
+            deletion_mask = noisy["source_single_deletion_mask"]
+            deletion_mse = noisy["source_single_deletion_mse"]
+            self.assertEqual(deletion_mse.shape, noisy["true_internal_knots"].shape)
+            torch.testing.assert_close(
+                deletion_mask,
+                noisy["true_internal_knot_mask"],
+            )
+            self.assertTrue(
+                bool(
+                    torch.all(
+                        deletion_mse[deletion_mask]
+                        > noisy["source_minimality_required_mse"]
+                    )
+                )
+            )
+            torch.testing.assert_close(
+                deletion_mse[deletion_mask].min(),
+                noisy["source_min_single_deletion_mse"],
+            )
+            torch.testing.assert_close(
+                clean["source_single_deletion_mse"],
+                noisy["source_single_deletion_mse"],
+            )
             torch.testing.assert_close(
                 clean["true_internal_knots"], noisy["true_internal_knots"]
             )
@@ -145,7 +172,13 @@ class CanonicalLabelTests(unittest.TestCase):
         self.assertEqual(tuple(first["true_params"].shape), (48,))
         self.assertEqual(tuple(first["true_internal_knots"].shape), (4,))
         self.assertEqual(tuple(first["true_internal_knot_mask"].shape), (4,))
+        self.assertEqual(tuple(first["source_single_deletion_mse"].shape), (4,))
+        self.assertEqual(tuple(first["source_single_deletion_mask"].shape), (4,))
         self.assertEqual(int(first["true_internal_knot_mask"].sum()), 4)
+        torch.testing.assert_close(
+            first["source_single_deletion_mask"],
+            first["true_internal_knot_mask"],
+        )
         self.assertEqual(first["source_internal_knot_count"], 4)
         self.assertNotIn("true_control_points", first)
 

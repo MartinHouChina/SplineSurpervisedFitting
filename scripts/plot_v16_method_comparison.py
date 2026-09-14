@@ -47,9 +47,9 @@ SHORT_LABELS = {
     "ours": "Ours v16",
     "park_dominant_point_2007_adaptation": "Park & Lee (2007)",
     "liang_feature_iki_2017_adaptation": "Liang et al. (2017)",
-    "dung_direct_knot_2017_adaptation": "Dung & Tjahjowidodo (2017)",
-    "kang_sparse_2015_adaptation": "Kang et al. (2015)",
-    "luo_linf_de_2022_adaptation": "Luo et al. (2022)",
+    "dung_direct_knot_2017_adaptation": "Dung & Tjahjowidodo (2017) + safeguard",
+    "kang_sparse_2015_adaptation": "Kang et al. (2015) + safeguard",
+    "luo_linf_de_2022_adaptation": "Luo et al. (2022) + safeguard",
     "yeh_feature_cdf_2020": "Yeh et al. (2020)",
     "uniform_gradient_pruning": "Uniform greedy + gradient",
 }

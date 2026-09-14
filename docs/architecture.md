@@ -31,24 +31,34 @@ CandidateKnotHead 的候选按参数域有序；局部 cross-attention 的 memor
 
 ## 3. 训练标签如何进入网络
 
-正式训练 batch 只有 certified Synthetic，因此每行都有 `t*、U*、K*`。标签不作为网络输入；它们只用于计算损失：
+正式训练 batch 只有 certified Synthetic，因此每行都有 `t*、U*、K*`，以及最简性认证时得到的逐真节点删除误差 `D*`。标签不作为网络输入；它们只用于计算损失：
 
 ```text
 U_prop --ordered assignment--> target KeepMask
 K* --------------------------> mass/count target
 t* --------------------------> ParameterHead 与 subset parameter target
 U* --------------------------> proposal/relocation position target
+D* --------------------------> assigned positive slot 的 criticality/ranking 权重
 ```
+
+`D*_r` 是从完整 source 节点集中删除第 `r` 个真节点、重新做标准 B 样条最小二乘后的 mean squared Euclidean error。它随 `U*` 通过同一有序一一匹配搬到对应候选槽位，因此不会发生“Keep 标签指向一个候选、风险值指向另一个候选”的错位。该值在合成样本认证时已经生成，不由当前 Selector 排序产生。
 
 真实曲线不出现在训练 batch。真实 manifest 仅供 epoch 后的 held-out validation 和训练后的 benchmark/作图使用。
 
 ## 4. Proposal 与 Joint
 
-Proposal 先把参数域和 56 个候选位置学稳定；高 K 分层保证复杂样本在该阶段被充分看到。有序 assignment 与 directed coverage 同时使用：前者保证一一对应，后者保持召回方向。
+Proposal 先把参数域和 56 个候选位置学稳定；高 K 分层保证复杂样本在该阶段被充分看到。有序 assignment 与 directed coverage 同时使用：前者保证一一对应，后者保持召回方向。额外的多尺度 recall 项在训练尺度 `0.0025/0.005/0.010` 上惩罚最近候选距离，并对最差 20% 真节点加权，避免宽松的 `0.02` 指标掩盖精细位置偏差。
 
-Joint 解冻完整选择和 subset decoder。目标 mask 由当前 proposal 与真节点的有序匹配直接构造；Selector 学 existence、ranking 和 K，decoder 在实际部署 mask及标签 mask条件下学习参数反馈与 survivor relocation。
+Joint 解冻完整选择和 subset decoder。目标 mask 由当前 proposal 与真节点的有序匹配直接构造；Selector 学 existence、ranking 和 K，decoder 在实际部署 mask 及标签 mask 条件下学习参数反馈与 survivor relocation。逐候选 BCE 之外还使用：
 
-正式 Joint 没有在线 Teacher 搜索、Hard-RMS 循环或 Teacher cache。历史 `online_teacher` 分支只用于显式消融，不能与正式结果合并。
+- Dice：约束预测概率集合与 target KeepMask 的整体重叠；
+- ordered CDF：按候选位置排序后约束累计概率质量，减少节点质量偏向局部区域；
+- fuzzy negative：未被匹配但靠近真节点的候选属于身份模糊区，只降低其负类 BCE 权重，不把它改成正标签；
+- single-deletion risk：把 `D*/epsilon` 的对数 margin 经 sigmoid 转为关键性，增强高风险正槽位的 Keep 与正负排序约束。
+
+参数头同时接受逐点 MSE、相邻参数间隔的 log-gap 损失和每条曲线的有符号均值偏差损失。节点在预测参数域和真参数域之间做分段线性 warp 时，forward 值保持不变，而跨任务梯度由 scale 控制：当前 Proposal 为 `0`，Joint 为 `0.1`；它允许节点重定位给参数头有限反馈，避免节点损失完全主导参数化。
+
+正式 Joint 没有在线 Teacher 搜索、Hard-RMS 循环或 Teacher cache。这里的“细粒度 teacher”仅指认证合成样本携带的静态 single-deletion MSE 标签；其来源与当前网络分数无关，且 loss forward 的额外样条求解数为 0。历史 `online_teacher` 分支只用于显式消融，不能与正式结果合并。
 
 ## 5. 部署不变式
 
@@ -61,4 +71,4 @@ Joint 解冻完整选择和 subset decoder。目标 mask 由当前 proposal 与�
 
 ## 6. 当前主线与历史版本
 
-v8–v15 的核心是 Hard-RMS/离线 Teacher 蒸馏；早期 v16 的 counterfactual 版本仍需在线组合搜索。当前 supervised-only v16 用认证合成标签直接监督选择与移动，保留一次性部署结构，同时移除正式训练中的 Teacher 依赖。旧 checkpoint 不能靠改名升级为当前合同，只能在明确允许且形状兼容时用作 proposal 初始化。
+v8–v15 的核心是 Hard-RMS/离线 Teacher 蒸馏；早期 v16 的 counterfactual 版本仍需在线组合搜索。当前 supervised-only v16 用认证合成标签直接监督选择与移动，并复用认证过程的逐节点删除敏感度；它保留一次性部署结构，同时移除在线 self-teacher 和 cache 依赖。旧 checkpoint 不能靠改名升级为当前合同，只能在明确允许且形状兼容时用作 proposal 初始化。新增损失改变了训练目标，因此其效果必须由重训后的独立测试确认。

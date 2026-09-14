@@ -161,6 +161,11 @@ def assess_v16_checkpoint(
     training_real_fraction = _finite_checkpoint_float(training.get("real_fraction"))
     joint_supervision = loss_config.get("joint_supervision")
     synthetic_count_role = loss_config.get("synthetic_count_role")
+    fine_grained_teacher = loss_config.get("fine_grained_teacher")
+    fine_teacher_error_unit = loss_config.get("fine_teacher_error_unit")
+    fine_teacher_extra_solves = _checkpoint_int(
+        loss_config.get("fine_teacher_additional_spline_solves_per_batch")
+    )
     observed_dense = _finite_checkpoint_float(
         validation.get("worst_dense_pass_rate")
     )
@@ -470,6 +475,17 @@ def assess_v16_checkpoint(
         reasons.append("online ranked-prefix teacher must be disabled")
     if loss_config.get("online_teacher") is not False:
         reasons.append("online self-teacher must be disabled")
+    if fine_grained_teacher is not None:
+        if fine_grained_teacher != "certified_source_single_deletion_mse":
+            reasons.append("fine-grained teacher provenance is not certified source deletion MSE")
+        if fine_teacher_error_unit != "mean_squared_euclidean":
+            reasons.append("fine-grained teacher does not use MSE units")
+        if fine_teacher_extra_solves != 0:
+            reasons.append("fine-grained teacher unexpectedly adds online spline solves")
+        for name in ("fine_teacher_weight", "fine_teacher_ranking_weight"):
+            value = _finite_checkpoint_float(loss_weights.get(name))
+            if value is None or value <= 0:
+                reasons.append(f"fine-grained teacher weight is inactive: {name}")
     if synthetic_count_role != "exact":
         reasons.append("certified synthetic knot count must be an exact label")
     if checkpoint.get("stage") != "joint":
@@ -546,6 +562,11 @@ def assess_v16_checkpoint(
         "training_real_fraction": training_real_fraction,
         "joint_supervision": joint_supervision,
         "online_teacher": loss_config.get("online_teacher"),
+        "fine_grained_teacher": fine_grained_teacher,
+        "fine_teacher_error_unit": fine_teacher_error_unit,
+        "fine_teacher_additional_spline_solves_per_batch": (
+            fine_teacher_extra_solves
+        ),
         "synthetic_count_role": synthetic_count_role,
         "formal_synthetic_min_internal_knots": (
             V16_FORMAL_SYNTHETIC_MIN_INTERNAL_KNOTS

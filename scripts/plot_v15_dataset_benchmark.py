@@ -29,9 +29,9 @@ LABELS = {
     "ours": "Ours v15",
     "park_dominant_point_2007_adaptation": "Park & Lee 2007 (DOM adaptation)",
     "liang_feature_iki_2017_adaptation": "Liang et al. 2017 (feature-IKI adaptation)",
-    "dung_direct_knot_2017_adaptation": "Dung & Tjahjowidodo 2017 (serial adaptation)",
-    "kang_sparse_2015_adaptation": "Kang-inspired ADMM (diagnostic)",
-    "luo_linf_de_2022_adaptation": "Luo et al. 2022 ($l_{\\infty,1}$ + DE adaptation)",
+    "dung_direct_knot_2017_adaptation": "Dung & Tjahjowidodo 2017 (threshold-safe adaptation)",
+    "kang_sparse_2015_adaptation": "Kang-inspired ADMM + threshold safeguard",
+    "luo_linf_de_2022_adaptation": "Luo et al. 2022 ($l_{\\infty,1}$ + DE + safeguard)",
     "yeh_feature_cdf_2020": "Yeh 2020 (feature-CDF adaptation)",
     "uniform_gradient_pruning": "Uniform greedy + gradient",
 }

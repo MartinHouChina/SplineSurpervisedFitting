@@ -80,7 +80,7 @@ def parser() -> argparse.ArgumentParser:
         "--manifest", action="append", default=[], metavar="NAME=PATH",
         help=(
             "Prepared real-data manifest; repeat for several datasets. "
-            "Defaults to UJI, Natural Earth and USGS."
+            "Defaults to UJI, Natural Earth, USGS and IndustrialOffset."
         ),
     )
     result.add_argument("--real-samples-per-dataset", type=int, default=2)
@@ -110,6 +110,15 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--luo-de-population", type=int, default=10)
     result.add_argument("--luo-de-iterations", type=int, default=50)
     result.add_argument("--luo-seed", type=int, default=2022)
+    result.add_argument(
+        "--published-feasibility-safeguard",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Apply the disclosed common-MSE safeguard after a collapsed "
+            "Dung/Kang/Luo adaptation; disable it to visualize native collapse."
+        ),
+    )
     result.add_argument("--network-warmups", type=int, default=1)
     result.add_argument("--network-repeats", type=int, default=3)
     result.add_argument("--end-to-end-repeats", type=int, default=1)
@@ -198,10 +207,10 @@ PLOT_LABELS = {
     "park_dominant_point_2007_adaptation": "Park & Lee 2007 adaptation",
     "liang_feature_iki_2017_adaptation": "Liang et al. 2017 adaptation",
     "dung_direct_knot_2017_adaptation": (
-        "Dung & Tjahjowidodo 2017 adaptation"
+        "Dung & Tjahjowidodo 2017 threshold-safe adaptation"
     ),
-    "kang_sparse_2015_adaptation": "Kang 2015 adaptation",
-    "luo_linf_de_2022_adaptation": "Luo et al. 2022 adaptation",
+    "kang_sparse_2015_adaptation": "Kang 2015 threshold-safe adaptation",
+    "luo_linf_de_2022_adaptation": "Luo et al. 2022 threshold-safe adaptation",
 }
 PLOT_COLORS = {
     "ours": "#128a73",

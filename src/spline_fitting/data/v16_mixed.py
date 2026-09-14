@@ -48,6 +48,80 @@ def _minimal_knot_count_target(
     return count.reshape(()), torch.tensor(True)
 
 
+def _single_deletion_mse_target(
+    sample: dict | None,
+    *,
+    certified: bool,
+    max_internal_knots: int,
+    reference: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Build a padded per-knot deletion-risk target in MSE units.
+
+    Newly generated certified samples provide ``source_single_deletion_mse``.
+    The RMS fallback is accepted so previously materialized/custom samples can
+    opt in without silently changing units.  Samples with no per-knot payload
+    remain collate-compatible but carry an invalid all-zero target.
+    """
+    target = reference.new_zeros(max_internal_knots)
+    target_mask = torch.zeros(
+        max_internal_knots,
+        dtype=torch.bool,
+        device=reference.device,
+    )
+    invalid = torch.tensor(False, device=reference.device)
+    if (
+        not certified
+        or sample is None
+        or not sample.get("source_minimality_certified", False)
+    ):
+        return target, target_mask, invalid
+
+    if "source_single_deletion_mse" in sample:
+        source_values = torch.as_tensor(
+            sample["source_single_deletion_mse"],
+            device=reference.device,
+            dtype=reference.dtype,
+        )
+    elif "source_single_deletion_rms" in sample:
+        # Backward-compatible bridge for any externally materialized sample
+        # that retained the certificate's original RMS-valued vector.
+        source_rms = torch.as_tensor(
+            sample["source_single_deletion_rms"],
+            device=reference.device,
+            dtype=reference.dtype,
+        )
+        source_values = source_rms.square()
+    else:
+        return target, target_mask, invalid
+
+    if source_values.ndim != 1 or source_values.shape[0] > max_internal_knots:
+        raise RuntimeError("synthetic single-deletion target has an unexpected shape")
+    source_mask_value = sample.get(
+        "source_single_deletion_mask",
+        sample.get("true_internal_knot_mask"),
+    )
+    if source_mask_value is None:
+        raise RuntimeError("synthetic single-deletion target is missing its mask")
+    source_mask = torch.as_tensor(
+        source_mask_value,
+        device=reference.device,
+        dtype=torch.bool,
+    )
+    if source_mask.shape != source_values.shape:
+        raise RuntimeError("synthetic single-deletion mask has an unexpected shape")
+    if source_mask.any():
+        active = source_values[source_mask]
+        if not bool(torch.isfinite(active).all()) or bool((active < 0).any()):
+            raise RuntimeError(
+                "synthetic single-deletion MSE targets must be finite and non-negative"
+            )
+
+    capacity = source_values.shape[0]
+    target[:capacity] = source_values
+    target_mask[:capacity] = source_mask
+    return target, target_mask, torch.tensor(True, device=reference.device)
+
+
 def _curve_record(
     points: torch.Tensor,
     source: str,
@@ -59,6 +133,16 @@ def _curve_record(
     count, valid = _minimal_knot_count_target(
         synthetic_sample,
         certified=certified,
+    )
+    (
+        target_single_deletion_mse,
+        target_single_deletion_mask,
+        target_single_deletion_valid,
+    ) = _single_deletion_mse_target(
+        synthetic_sample,
+        certified=certified,
+        max_internal_knots=max_internal_knots,
+        reference=points,
     )
     if bool(valid):
         if synthetic_sample is None:
@@ -108,6 +192,13 @@ def _curve_record(
             max_internal_knots,
             dtype=torch.bool,
         )
+    if bool(target_single_deletion_valid) and not torch.equal(
+        target_single_deletion_mask.to(device=target_internal_knot_mask.device),
+        target_internal_knot_mask,
+    ):
+        raise RuntimeError(
+            "synthetic single-deletion mask must identify every true internal knot"
+        )
     return {
         "points": points,
         "source": source,
@@ -117,6 +208,9 @@ def _curve_record(
         "target_internal_knots": target_internal_knots,
         "target_internal_knot_mask": target_internal_knot_mask,
         "target_geometry_valid": valid.detach().clone(),
+        "target_single_deletion_mse": target_single_deletion_mse,
+        "target_single_deletion_mask": target_single_deletion_mask,
+        "target_single_deletion_valid": target_single_deletion_valid,
     }
 
 

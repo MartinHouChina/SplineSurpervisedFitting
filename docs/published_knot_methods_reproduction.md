@@ -18,7 +18,7 @@
 ## 2. 公平协议
 
 1. 六方法处理完全相同的配对曲线与相同归一化输入。
-2. Synthetic 按 source `K=4..56` 分层；真实数据来自 UJI、Natural Earth、USGS 的留出 test split。
+2. Synthetic 按 source `K=4..56` 分层；外部数据来自 UJI、Natural Earth、USGS、IndustrialOffset 的留出 test split。IndustrialOffset 必须标为 CAD 驱动半合成。
 3. 最大内部节点容量统一为 56；三次开放完整节点向量全容量为 64 项。
 4. 最终结果统一用端点约束、无平滑、无 ridge 的 CPU float64 标准 B 样条 refit。
 5. 公共误差为 `MSE=mean_i ||C(t_i)-Q_i||²`，阈值固定 `1e-4`。
@@ -31,7 +31,7 @@
 
 ## 3. Ours 的训练隔离
 
-Ours 的 checkpoint 只由 certified Synthetic 训练；UJI、Natural Earth、USGS 只用于 validation/test。Joint 用真参数、真 K 和有序节点匹配直接监督 KeepMask 与 relocation，不运行在线 Teacher。因此比较时不能把真实测试样本或其 reference 曲线回流到训练。
+Ours 的 checkpoint 只由 certified Synthetic 训练；UJI、Natural Earth、USGS、IndustrialOffset 只用于 validation/test。Joint 用真参数、真 K、有序节点匹配和认证 single-deletion MSE 直接监督 KeepMask 与 relocation，不运行在线 self-teacher。因此比较时不能把外部测试样本或其 reference 曲线回流到训练。
 
 ## 4. 正式运行
 
@@ -55,6 +55,7 @@ python scripts/benchmark_v16_datasets.py `
   --manifest UJI=data/splits/uji_pen_v2.jsonl `
   --manifest NaturalEarth=data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
   --manifest USGS=data/processed/usgs_contours/large_scale/manifest.jsonl `
+  --manifest IndustrialOffset=data/processed/industrial_offsets/v1/manifest.jsonl `
   --mse-tolerance 1e-4 --max-internal-knots 56 `
   --paper-initial-knots 56 --paper-admm-iterations 1000 `
   --paper-lambda-bisections 10 --paper-relocation-iterations 12 `
@@ -69,7 +70,7 @@ python scripts/benchmark_v16_datasets.py `
 
 ## 5. 结果解释
 
-- 不能根据少数简单或复杂个例概括方法普遍优劣；应同时看分层 Synthetic 和三个真实来源。
+- 不能根据少数简单或复杂个例概括方法普遍优劣；应同时看分层 Synthetic 和四个外部来源。
 - Kang/Luo 的稀疏阶段可行而压缩/重定位后失败时，应如实计为失败，不能用 dense 初值误差替代最终误差。
 - input MSE 通过而 reference MSE 失败，表示对重采样点拟合良好但原始几何保真不足。
 - 任何方法的超时或失败都不得从分母删除。

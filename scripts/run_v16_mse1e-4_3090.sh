@@ -52,7 +52,7 @@ Main options:
   --output-root PATH             Output root (default: repository outputs/)
   --init-checkpoint PATH         Optional proposal-only warm start
   --no-init-checkpoint           Train all modules from scratch
-  --prepare-real-data            Download/prepare missing UJI, Natural Earth and USGS data
+  --prepare-real-data            Prepare missing UJI, Natural Earth, USGS and industrial-offset data
   --diagnostic                   Continue after a structural-integrity audit failure
   --dry-run                      Print every command without executing Python
   -h, --help                     Show this help
@@ -187,6 +187,7 @@ done
 UJI_MANIFEST="$REPOSITORY_ROOT/data/splits/uji_pen_v2.jsonl"
 NATURAL_EARTH_MANIFEST="$REPOSITORY_ROOT/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl"
 USGS_MANIFEST="$REPOSITORY_ROOT/data/processed/usgs_contours/large_scale/manifest.jsonl"
+INDUSTRIAL_OFFSET_MANIFEST="$REPOSITORY_ROOT/data/processed/industrial_offsets/v1/manifest.jsonl"
 
 prepare_missing_real_data() {
   if [[ ! -f "$UJI_MANIFEST" ]]; then
@@ -224,13 +225,28 @@ prepare_missing_real_data() {
         --output-dir data/processed/usgs_contours/large_scale
     fi
   fi
+  if [[ ! -f "$INDUSTRIAL_OFFSET_MANIFEST" ]]; then
+    printf '\n[prepare_industrial_offsets] generating CAD-driven semi-synthetic offset curves\n'
+    if ((DRY_RUN)); then
+      printf ' %q' "$PYTHON_BIN" scripts/prepare_industrial_offsets.py \
+        --output-dir data/processed/industrial_offsets/v1 \
+        --variants-per-family 12 --source-points 384 --reference-points 768
+      printf '\n'
+    else
+      "$PYTHON_BIN" scripts/prepare_industrial_offsets.py \
+        --output-dir data/processed/industrial_offsets/v1 \
+        --variants-per-family 12 --source-points 384 --reference-points 768
+    fi
+  fi
 }
 
 if ((PREPARE_REAL_DATA)); then
   prepare_missing_real_data
 fi
 if ((DRY_RUN == 0)); then
-  for manifest in "$UJI_MANIFEST" "$NATURAL_EARTH_MANIFEST" "$USGS_MANIFEST"; do
+  for manifest in \
+    "$UJI_MANIFEST" "$NATURAL_EARTH_MANIFEST" "$USGS_MANIFEST" \
+    "$INDUSTRIAL_OFFSET_MANIFEST"; do
     [[ -f "$manifest" ]] || die \
       "required real-data manifest does not exist: $manifest; rerun with --prepare-real-data"
   done
@@ -265,8 +281,8 @@ run_logged() {
 printf 'Fresh v16 Linux profile: MSE=1e-4, Kc=56, source K=4..56, train/val=%s/%s, batch=%s.\n' \
   "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
 printf 'Simplification contract: %s\n' "$SIMPLIFICATION_CONTRACT"
-printf 'Checkpoint selection: mean_per_curve_subset_cost_v1; aggregate pass is reporting only.\n'
-printf 'Training supervision: certified Synthetic labels only; online Teacher disabled; real data is validation/test only.\n'
+printf 'Checkpoint selection: Proposal uses pass -> recall -> knot/parameter error; Joint uses mean_per_curve_subset_cost_v1. No aggregate-pass hard gate.\n'
+printf 'Training supervision: certified Synthetic labels + cached per-knot deletion-MSE teacher; online self-Teacher disabled; real data is validation/test only.\n'
 printf 'Proposal synthetic high-K share=%s at K>=%s; Joint restores K=4..56.\n' \
   "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS"
 
@@ -296,6 +312,18 @@ TRAIN_ARGS=(
   --minimality-audit-points 512
   --oscillation-amplitude 0.3
   --proposal-knot-assignment-weight 1.0
+  --proposal-multiscale-recall-weight 0.25
+  --keep-dice-weight 0.5
+  --keep-cdf-weight 0.25
+  --parameter-gap-weight 0.05
+  --parameter-bias-weight 0.1
+  --fine-teacher-weight 0.5
+  --fine-teacher-ranking-weight 0.25
+  --fine-teacher-temperature 0.5
+  --keep-fuzzy-negative-radius 0.01
+  --keep-fuzzy-negative-floor 0.1
+  --proposal-parameter-warp-gradient-scale 0
+  --joint-parameter-warp-gradient-scale 0.1
   --one-shot-selection-policy mass_topk
   --initial-keep-fraction 0.5357142857142857
   --joint-supervision synthetic_ground_truth
@@ -315,6 +343,7 @@ TRAIN_ARGS=(
   --real-manifest "$UJI_MANIFEST"
   --real-manifest "$NATURAL_EARTH_MANIFEST"
   --real-manifest "$USGS_MANIFEST"
+  --real-manifest "$INDUSTRIAL_OFFSET_MANIFEST"
   --resample-train-each-epoch
   --num-workers "$NUM_WORKERS"
   --torch-num-threads 4
@@ -379,6 +408,7 @@ MANIFEST_ARGS=(
   --manifest "UJI=$UJI_MANIFEST"
   --manifest "NaturalEarth=$NATURAL_EARTH_MANIFEST"
   --manifest "USGS=$USGS_MANIFEST"
+  --manifest "IndustrialOffset=$INDUSTRIAL_OFFSET_MANIFEST"
 )
 BASELINE_ARGS=(
   --max-internal-knots 56

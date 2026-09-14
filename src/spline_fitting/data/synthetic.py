@@ -56,6 +56,17 @@ class SourceKnotMinimalityCertificate:
             return self.full_fit_rms.new_tensor(float("inf"))
         return self.single_deletion_rms.min()
 
+    @property
+    def single_deletion_mse(self) -> torch.Tensor:
+        """Per-source-knot mean squared Euclidean deletion errors.
+
+        ``single_deletion_rmse_batch`` returns RMS Euclidean distance.  The
+        v16 public tolerance and training losses use mean squared Euclidean
+        distance, so expose the squared values explicitly rather than leaving
+        callers to infer the unit from the field name.
+        """
+        return self.single_deletion_rms.square()
+
 
 def build_open_clamped_knot_vector(
     num_control_points: int,
@@ -896,6 +907,13 @@ class SyntheticCubicBSplineDataset(Dataset):
                 certified_internal
             )
             certified_internal_mask[: certified_internal.numel()] = True
+            padded_single_deletion_mse = torch.zeros(
+                self.max_internal_knots,
+                dtype=self.dtype,
+            )
+            padded_single_deletion_mse[: certified_internal.numel()] = (
+                minimality_certificate.single_deletion_mse.to(dtype=self.dtype)
+            )
             result.update(
                 {
                     "clean_points": clean_points,
@@ -905,6 +923,11 @@ class SyntheticCubicBSplineDataset(Dataset):
                     "true_params": sample.parameters.detach().clone(),
                     "true_internal_knots": padded_certified_internal,
                     "true_internal_knot_mask": certified_internal_mask,
+                    # One label per true internal knot.  Values are the mean
+                    # squared Euclidean refit errors after deleting that knot
+                    # from the certified source set; padded slots are zero.
+                    "source_single_deletion_mse": padded_single_deletion_mse,
+                    "source_single_deletion_mask": certified_internal_mask.clone(),
                     "source_internal_knot_count": certified_internal.numel(),
                     "source_minimality_certified": minimality_certificate.certified,
                     "source_full_fit_rms": minimality_certificate.full_fit_rms.to(

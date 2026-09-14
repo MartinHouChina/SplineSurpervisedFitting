@@ -49,7 +49,7 @@ Selector 先产生离散 KeepMask；subset decoder 只用 survivors 重新构造
 
 - Proposal 和 Joint 的 optimizer step 全部来自 certified Synthetic；
 - source K=4..56 作为 exact 监督目标；
-- UJI、Natural Earth、USGS 只用于 validation/test；
+- UJI、Natural Earth、USGS、IndustrialOffset 只用于 validation/test；
 - 正式 Joint 无 online Hard-RMS、ranked-prefix、counterfactual 或 oracle Teacher；
 - 不读写 Teacher cache。
 

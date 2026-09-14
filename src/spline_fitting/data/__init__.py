@@ -16,6 +16,17 @@ from .geospatial_curves import (
     project_lonlat_local_azimuthal,
     spatial_tile_group,
 )
+from .industrial_offsets import (
+    INDUSTRIAL_OFFSET_DATASET_NAME,
+    INDUSTRIAL_OFFSET_PREPROCESSING_VERSION,
+    INDUSTRIAL_PROFILE_FAMILIES,
+    IndustrialOffsetPreparationResult,
+    OffsetCurveError,
+    closed_polyline_self_intersects,
+    generate_industrial_profile,
+    offset_closed_polyline,
+    prepare_industrial_offset_curves,
+)
 from .point_cloud_io import (
     load_ordered_point_cloud,
     normalize_ordered_point_cloud,
@@ -68,6 +79,15 @@ __all__ = [
     "prepare_geospatial_curves",
     "project_lonlat_local_azimuthal",
     "spatial_tile_group",
+    "INDUSTRIAL_OFFSET_DATASET_NAME",
+    "INDUSTRIAL_OFFSET_PREPROCESSING_VERSION",
+    "INDUSTRIAL_PROFILE_FAMILIES",
+    "IndustrialOffsetPreparationResult",
+    "OffsetCurveError",
+    "closed_polyline_self_intersects",
+    "generate_industrial_profile",
+    "offset_closed_polyline",
+    "prepare_industrial_offset_curves",
     "load_ordered_point_cloud",
     "normalize_ordered_point_cloud",
     "resample_ordered_point_cloud",

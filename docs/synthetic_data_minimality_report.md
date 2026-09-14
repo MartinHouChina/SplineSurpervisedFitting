@@ -6,6 +6,8 @@
 
 当前 v16 只训练通过 source-subset minimality 证书的合成曲线。
 
+认证过程不仅输出一个“通过/不通过”标记，还保留每个 source 真节点被单独删除后的 MSE。该向量为当前细粒度 Keep 监督提供节点级敏感度，不需要再用网络自身的排序在线生成伪标签。
+
 ## 2. 当前生成范围
 
 | 项目 | 值 |
@@ -71,9 +73,11 @@ E(U)\le 0.01,
 
 ## 6. 训练用途与真实数据边界
 
-只有 certified Synthetic 进入 Proposal 和 Joint 的梯度更新。其 `t*、U*、K*` 通过有序一一匹配直接监督候选、KeepMask、count 与 relocation；不生成在线 Teacher。
+只有 certified Synthetic 进入 Proposal 和 Joint 的梯度更新。其 `t*、U*、K*` 通过有序一一匹配直接监督候选、KeepMask、count 与 relocation；逐节点删除 MSE `D*` 通过同一匹配映射到对应候选槽位，监督 critical Keep 与 ranking。这里不生成在线 Teacher，也不读取/写入 Teacher cache。
 
-UJI、Natural Earth 和 USGS 没有上述节点证书，只用于 validation/test。不得为它们伪造 K 或节点标签，也不得把 original-reference 折线送进部署网络。
+`D*` 的误差单位必须显式保持为 mean squared Euclidean。旧的自定义/物化样本若只有逐节点 RMS，数据适配器会在明确字段存在时平方后接入；没有逐节点向量的样本只会得到 invalid 标记，不能在启用 `fine_teacher_weight` 时进入正式训练。该监督复用认证结果，因此 loss forward 的 teacher 额外 spline solve 数为 0；但生成新认证样本本身仍需完成全节点单删审计。
+
+UJI、Natural Earth、USGS 和 IndustrialOffset 没有上述节点证书，只用于 validation/test。不得为它们伪造 K 或节点标签，也不得把 original-reference 折线送进部署网络。
 
 ## 7. 必须报告的审计字段
 
@@ -82,6 +86,7 @@ UJI、Natural Earth 和 USGS 没有上述节点证书，只用于 validation/tes
 - `source_minimality_certified`；
 - `source_full_fit_rms` / `source_full_fit_mse`；
 - `source_min_single_deletion_rms` / `source_min_single_deletion_mse`；
+- `source_single_deletion_mse[Kmax]` / `source_single_deletion_mask[Kmax]`：逐真节点删除误差及有效槽位；
 - `source_minimality_required_rms` / `source_minimality_required_mse`；
 - `source_generation_attempts`；
 - clean points、真参数和 source knots。

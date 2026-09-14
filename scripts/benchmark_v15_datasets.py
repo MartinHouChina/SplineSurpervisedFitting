@@ -57,9 +57,9 @@ LABELS = {
     "ours": "Ours v15 learned",
     "park_dominant_point_2007_adaptation": "Park & Lee 2007 (DOM adaptation)",
     "liang_feature_iki_2017_adaptation": "Liang et al. 2017 (feature-IKI adaptation)",
-    "dung_direct_knot_2017_adaptation": "Dung & Tjahjowidodo 2017 (serial adaptation)",
-    "kang_sparse_2015_adaptation": "Kang 2015 (ADMM adaptation)",
-    "luo_linf_de_2022_adaptation": "Luo et al. 2022 (l-infinity,1 + DE adaptation)",
+    "dung_direct_knot_2017_adaptation": "Dung & Tjahjowidodo 2017 (threshold-safe adaptation)",
+    "kang_sparse_2015_adaptation": "Kang 2015 (threshold-safe ADMM adaptation)",
+    "luo_linf_de_2022_adaptation": "Luo et al. 2022 (threshold-safe l-infinity,1 + DE adaptation)",
     "yeh_feature_cdf_2020": "Yeh 2020 (feature-CDF + K scan)",
     "uniform_gradient_pruning": "Uniform Kmax greedy + gradient",
 }
@@ -72,6 +72,7 @@ DEFAULT_MANIFESTS = {
     "UJI": ROOT / "data/splits/uji_pen_v2.jsonl",
     "NaturalEarth": ROOT / "data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl",
     "USGS": ROOT / "data/processed/usgs_contours/large_scale/manifest.jsonl",
+    "IndustrialOffset": ROOT / "data/processed/industrial_offsets/v1/manifest.jsonl",
 }
 
 
@@ -135,6 +136,17 @@ def parser(*, default_checkpoint: Path | None = None,
     p.add_argument("--luo-de-population", type=int, default=10)
     p.add_argument("--luo-de-iterations", type=int, default=50)
     p.add_argument("--luo-seed", type=int, default=2022)
+    p.add_argument(
+        "--published-feasibility-safeguard",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "For Dung/Kang/Luo, verify the common endpoint-refit MSE after the "
+            "native adaptation and, only on failure, run the disclosed "
+            "capacity-limited residual augmentation. Use --no-published-"
+            "feasibility-safeguard to reproduce the raw adaptation collapse."
+        ),
+    )
     p.add_argument("--network-warmups", type=int, default=3)
     p.add_argument("--network-repeats", type=int, default=10)
     p.add_argument("--end-to-end-repeats", type=int, default=3)
@@ -273,6 +285,11 @@ def published_baseline_kwargs(args, *, degree: int, warmup: bool = False) -> dic
         "luo_de_population": 5 if warmup else args.luo_de_population,
         "luo_de_iterations": 1 if warmup else args.luo_de_iterations,
         "luo_seed": args.luo_seed,
+        "published_feasibility_safeguard": (
+            False
+            if warmup
+            else getattr(args, "published_feasibility_safeguard", True)
+        ),
     }
     return values
 
@@ -560,6 +577,18 @@ def summarize(rows: list[dict]) -> list[dict]:
         count_errors = [
             r["final_k"] - r["canonical_k"] for r in knot_labels
         ]
+        safeguard_rows = [
+            r
+            for r in valid
+            if "comparison_feasibility_safeguard_enabled"
+            in r.get("diagnostics", {})
+        ]
+        native_rows = [
+            r
+            for r in safeguard_rows
+            if r["diagnostics"].get("comparison_feasibility_native_mse")
+            is not None
+        ]
         def mean(field, items=valid):
             return statistics.fmean(r[field] for r in items) if items else None
         result.append({
@@ -592,6 +621,38 @@ def summarize(rows: list[dict]) -> list[dict]:
             ),
             "total_ms_mean": mean("total_ms", values),
             "network_ms_mean": mean("network_ms") if method == "ours" else None,
+            "feasibility_safeguard_used_rate": (
+                statistics.fmean(
+                    bool(
+                        row["diagnostics"].get(
+                            "comparison_feasibility_safeguard_used", False
+                        )
+                    )
+                    for row in safeguard_rows
+                )
+                if safeguard_rows
+                else None
+            ),
+            "native_fit_pass_rate_before_safeguard": (
+                statistics.fmean(
+                    row["diagnostics"]["comparison_feasibility_native_mse"]
+                    <= row["diagnostics"].get(
+                        "mse_tolerance", float("-inf")
+                    )
+                    + 1e-12
+                    for row in native_rows
+                )
+                if native_rows
+                else None
+            ),
+            "native_k_mean_before_safeguard": (
+                statistics.fmean(
+                    row["diagnostics"]["comparison_feasibility_native_k"]
+                    for row in native_rows
+                )
+                if native_rows
+                else None
+            ),
         })
     return result
 

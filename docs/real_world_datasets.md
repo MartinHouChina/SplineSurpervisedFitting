@@ -1,6 +1,6 @@
 # 真实曲线数据集与接入协议
 
-本文列出适合当前“有序点云 → 最少内部节点 B 样条”任务的公开真实数据，并规定许可、指标和数据拆分方式。仓库不再分发原始数据；UJI、Natural Earth 与 USGS 已提供下载/离线解析脚本和统一 manifest，具体命令见 [UJI 接入](uji_pen_integration.md) 与 [Natural Earth/USGS 接入](geospatial_real_world_data.md)。
+本文列出适合当前“有序点云 → 最少内部节点 B 样条”任务的公开真实数据，并规定许可、指标和数据拆分方式。仓库不再分发原始数据；UJI、Natural Earth 与 USGS 已提供下载/离线解析脚本和统一 manifest，具体命令见 [UJI 接入](uji_pen_integration.md) 与 [Natural Earth/USGS 接入](geospatial_real_world_data.md)。另提供 [工业模型等距线](industrial_offset_dataset.md) 生成器；它是 CAD 驱动半合成外部基准，不是真实测量数据。
 
 当前状态必须区分清楚：这三类真实数据已经接入数据层，可以用于外部部署评估；它们仍然没有真实 knot 标签，因此不会自动加入合成数据的 knot 监督训练。若用于无标签微调，只能采用几何拟合或一致性目标。
 
@@ -29,6 +29,7 @@
 | **UJI Pen Characters v2** | 60 位书写者、11640 个字符样本（97 类、每人每类 2 次）；UTF-8 文本逐 stroke 保存有序 `x,y` 点 | CC BY 4.0 | 无 | 真实采样噪声、尖锐转向和跨书写者泛化；官方提供 40/20 writer-disjoint 划分 |
 | **OpenStreetMap** | 道路、步道、河流和海岸线；OSM XML 或 PBF | ODbL；需要署名，衍生数据库受相同许可约束 | 无 | 跨城市泛化、非均匀众包采样和长曲线压力测试 |
 | **Natural Earth** | `1:10m / 1:50m / 1:110m` 多尺度海岸线等；Shapefile、GeoPackage | Public Domain | 无 | 小体量可视化与快速多尺度 smoke test，不宜作为主精度基准 |
+| **IndustrialOffset** | 七类参数化工业轮廓的多档正/负几何偏置线；统一 `.npy + manifest` | 仓库内确定性生成 | 无 | 尖角、凹槽、高曲率和 offset 拓扑压力测试；须标为 CAD 驱动半合成 |
 | **CC3D-PSE** | `50k+` CAD/虚拟扫描对，带 line、circle、spline 参数化锐边标注 | 需机构签署许可后申请，不是直接开放下载 | 有参数化 spline 标注，但仍需检查并 canonical 化 | 后续 scan-to-CAD 鲁棒性测试；不作为第一阶段依赖 |
 
 补充的 UCI Character Trajectories 有 2858 条 `x,y,pressure` 轨迹并采用 CC BY 4.0，但只来自一位书写者，且已经 Gaussian 平滑和微分；跨主体评估优先使用 UJI Pen Characters v2。
@@ -56,6 +57,8 @@
 
 如果“等距线”实际指几何 offset curve，而不是等高线，可以从 ABC 的真实 CAD 轮廓用 Open Cascade 生成精确偏置线；这属于**真实 CAD 驱动的半合成数据**，论文中不能写成实测数据。
 
+仓库当前还提供无需 Open Cascade 的参数化工业型线版本，覆盖椭圆孔、圆角板、胶囊槽、NACA 翼型、凸轮、多叶转子和键槽孔。它适合先验证完整协议；后续若接入 ABC，应把二者分开命名和汇报。
+
 ### P2：UJI、OSM 与 Natural Earth
 
 - UJI 用于跨书写者和噪声泛化；预处理时需按元数据处理 UJI 与 UPV 两个采集点不同的坐标比例（100 与 152 ink units/mm）；
@@ -77,6 +80,7 @@
 | GSHHG | polygon / island / geographic region | 同一海岸线的不同分辨率跨集合出现 |
 | UJI | 优先采用官方 40 train / 20 test 的 writer-disjoint split；验证集再从 40 位训练书写者中按 writer 划分 | 随机拆同一书写者的重复字符 |
 | OSM | city / region | 随机拆同一道路的相邻 way segment |
+| IndustrialOffset | 基准轮廓 family + variant；其全部偏置共享一个 group | 将同一基准轮廓的不同偏置随机拆到不同集合 |
 
 正式结果应固定 split manifest，记录 source ID、group ID、下载版本、文件哈希和预处理版本。
 
@@ -112,7 +116,7 @@ canonical_internal_knots  # 可选，仅完成 canonical 化后提供
 - 标准 B 样条 refit MSE、P95 距离和最大距离；
 - 阈值通过率、部署时间。
 
-### 无节点标签：USGS、GSHHG、UJI、OSM
+### 无节点标签：USGS、GSHHG、UJI、OSM、IndustrialOffset
 
 - 独立高密度参考点上的 MSE；
 - 对称 Chamfer、Hausdorff 或 P95 几何距离；

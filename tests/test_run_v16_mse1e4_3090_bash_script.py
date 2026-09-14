@@ -18,8 +18,8 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
         "set -Eeuo pipefail",
         'RUN_NAME="candidate_selection_v16_mse1e-4_k56_supervised_linux"',
         'SIMPLIFICATION_CONTRACT="synthetic_ground_truth_ordered_keep_and_relocation_v4"',
-        "Checkpoint selection: mean_per_curve_subset_cost_v1; aggregate pass is reporting only.",
-        "Training supervision: certified Synthetic labels only; online Teacher disabled; real data is validation/test only.",
+        "Checkpoint selection: Proposal uses pass -> recall -> knot/parameter error; Joint uses mean_per_curve_subset_cost_v1. No aggregate-pass hard gate.",
+        "Training supervision: certified Synthetic labels + cached per-knot deletion-MSE teacher; online self-Teacher disabled; real data is validation/test only.",
         "EPOCHS=104",
         "PROPOSAL_EPOCHS=40",
         "--min-control-points 8",
@@ -30,11 +30,16 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
         "--proposal-high-k-fraction \"$PROPOSAL_HIGH_K_FRACTION\"",
         "--proposal-high-k-min-knots \"$PROPOSAL_HIGH_K_MIN_KNOTS\"",
         "--proposal-knot-assignment-weight 1.0",
+        "--proposal-multiscale-recall-weight 0.25",
+        "--fine-teacher-weight 0.5",
+        "--parameter-gap-weight 0.05",
         "--joint-supervision synthetic_ground_truth",
         "--synthetic-count-role exact",
         "--no-synthetic-geometry-oracle-teacher",
         "--real-fraction 0",
         "--prepare-real-data",
+        "scripts/prepare_industrial_offsets.py",
+        'IndustrialOffset=$INDUSTRIAL_OFFSET_MANIFEST',
         "--mse-tolerance 1e-4",
         "--initial-keep-fraction 0.5357142857142857",
         "--min-knot-count 4 --max-knot-count 56",
@@ -85,6 +90,7 @@ def test_linux_runner_refuses_unknown_options_and_documents_help() -> None:
     assert "--python PATH" in source
     assert "--proposal-high-k-fraction X" in source
     assert "--proposal-high-k-min-knots N" in source
+    assert "data/processed/industrial_offsets/v1/manifest.jsonl" in source
 
 
 def test_linux_runner_has_valid_bash_syntax_when_bash_is_available() -> None:

@@ -71,6 +71,9 @@ def test_script_encodes_the_requested_training_and_fair_comparison_contract() ->
         '"--knot-min-span", "0.01"',
         '"--mse-tolerance", "1e-4"',
         '"--proposal-knot-assignment-weight", "1.0"',
+        '"--proposal-multiscale-recall-weight", "0.25"',
+        '"--fine-teacher-weight", "0.5"',
+        '"--parameter-gap-weight", "0.05"',
         '"--initial-keep-fraction", "0.5357142857142857"',
         '"--joint-supervision", "synthetic_ground_truth"',
         '"--synthetic-count-role", "exact"',
@@ -83,6 +86,7 @@ def test_script_encodes_the_requested_training_and_fair_comparison_contract() ->
         '"--final-safety-sigma", "0"',
         '"--final-safety-knots", "0"',
         '"--real-fraction", "0"',
+        '"--real-manifest", $IndustrialOffsetManifest',
     )
     for fragment in training_fragments:
         assert fragment in text
@@ -102,6 +106,7 @@ def test_script_encodes_the_requested_training_and_fair_comparison_contract() ->
         '"--liang-dense-knots", "56"',
         '"--network-warmups", "10"',
         '"--reference"',
+        '"--manifest", ("IndustrialOffset=" + $IndustrialOffsetManifest)',
     )
     for fragment in comparison_fragments:
         assert fragment in text
@@ -158,11 +163,16 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
         "simplification_contract": (
             "synthetic_ground_truth_ordered_keep_and_relocation_v4"
         ),
-        "checkpoint_selection": "mean_per_curve_subset_cost_v1",
+        "checkpoint_selection": "joint_mean_per_curve_subset_cost_v1",
+        "proposal_checkpoint_selection": (
+            "qualification_pass_then_recall_then_knot_mae_then_parameter_rmse"
+        ),
         "qualification_contract": (
             "v16_supervised_synthetic_only_pass_rates_report_only_v4"
         ),
-        "aggregate_pass_role": "reporting_reference_only",
+        "aggregate_pass_role": (
+            "proposal_selection_diagnostic_only_not_stage_or_qualification_gate"
+        ),
         "simplification_curriculum": "deterministic_linear_by_joint_epoch",
         "aggregate_pass_feedback": False,
         "mse_tolerance": 1e-4,
@@ -183,6 +193,15 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
         "proposal_high_k_fraction": 0.5,
         "proposal_high_k_min_knots": 40,
         "proposal_knot_assignment_weight": 1.0,
+        "proposal_multiscale_recall_weight": 0.25,
+        "keep_dice_weight": 0.5,
+        "keep_cdf_weight": 0.25,
+        "parameter_gap_weight": 0.05,
+        "parameter_bias_weight": 0.1,
+        "fine_grained_teacher": "certified_source_single_deletion_mse",
+        "fine_teacher_weight": 0.5,
+        "fine_teacher_ranking_weight": 0.25,
+        "fine_teacher_additional_spline_solves_per_batch": 0,
         "batch_size": 64,
         "selection_policy": "mass_topk",
         "initial_keep_fraction": 30 / 56,
@@ -216,6 +235,9 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
     assert "--proposal-high-k-fraction 0.5" in train
     assert "--proposal-high-k-min-knots 40" in train
     assert "--proposal-knot-assignment-weight 1.0" in train
+    assert "--proposal-multiscale-recall-weight 0.25" in train
+    assert "--fine-teacher-weight 0.5" in train
+    assert "industrial_offsets" in train
 
 
 def test_initializer_is_forwarded_as_a_warm_start_without_resume(

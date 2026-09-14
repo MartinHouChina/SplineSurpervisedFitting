@@ -31,6 +31,7 @@ param(
     [int]$EndToEndRepeats = 3,
     [string]$OutputRoot = "",
     [string]$InitCheckpoint = "",
+    [switch]$PrepareRealData,
     [switch]$Diagnostic,
     [switch]$DryRun
 )
@@ -137,7 +138,65 @@ $NaturalEarthManifest = Join-Path $RepositoryRoot (
 $UsgsManifest = Join-Path $RepositoryRoot (
     "data/processed/usgs_contours/large_scale/manifest.jsonl"
 )
-foreach ($Manifest in @($UjiManifest, $NaturalEarthManifest, $UsgsManifest)) {
+$IndustrialOffsetManifest = Join-Path $RepositoryRoot (
+    "data/processed/industrial_offsets/v1/manifest.jsonl"
+)
+
+function Invoke-DataPreparation {
+    param(
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+    Write-Host ""
+    Write-Host ("[$Label] " + $Python + " " + ($Arguments -join " "))
+    if ($DryRun) {
+        return
+    }
+    & $Python @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Data preparation '$Label' failed with exit code $LASTEXITCODE."
+    }
+}
+
+if ($PrepareRealData) {
+    if (-not (Test-Path -LiteralPath $UjiManifest -PathType Leaf)) {
+        Invoke-DataPreparation -Label "prepare_uji" -Arguments @(
+            "scripts/prepare_uji_pen.py", "--download"
+        )
+    }
+    if (-not (Test-Path -LiteralPath $NaturalEarthManifest -PathType Leaf)) {
+        Invoke-DataPreparation -Label "prepare_natural_earth" -Arguments @(
+            "scripts/prepare_natural_earth.py",
+            "--resolution", "10m",
+            "--layer", "coastline",
+            "--reference-points", "768"
+        )
+    }
+    if (-not (Test-Path -LiteralPath $UsgsManifest -PathType Leaf)) {
+        Invoke-DataPreparation -Label "prepare_usgs" -Arguments @(
+            "scripts/prepare_usgs_contours.py",
+            "--bbox-file", "configs/usgs_contour_regions.example.json",
+            "--max-features-per-region", "2000",
+            "--output-dir", "data/processed/usgs_contours/large_scale"
+        )
+    }
+    if (-not (Test-Path -LiteralPath $IndustrialOffsetManifest -PathType Leaf)) {
+        Invoke-DataPreparation -Label "prepare_industrial_offsets" -Arguments @(
+            "scripts/prepare_industrial_offsets.py",
+            "--output-dir", "data/processed/industrial_offsets/v1",
+            "--variants-per-family", "12",
+            "--source-points", "384",
+            "--reference-points", "768"
+        )
+    }
+}
+
+foreach ($Manifest in @(
+    $UjiManifest,
+    $NaturalEarthManifest,
+    $UsgsManifest,
+    $IndustrialOffsetManifest
+)) {
     if (-not $DryRun -and -not (Test-Path -LiteralPath $Manifest -PathType Leaf)) {
         throw "Required real-data manifest does not exist: $Manifest"
     }
@@ -151,9 +210,14 @@ $RunState = [ordered]@{
     checkpoint = [System.IO.Path]::GetFullPath($CheckpointPath)
     requested_profile = [ordered]@{
         simplification_contract = "synthetic_ground_truth_ordered_keep_and_relocation_v4"
-        checkpoint_selection = "mean_per_curve_subset_cost_v1"
+        checkpoint_selection = "joint_mean_per_curve_subset_cost_v1"
+        proposal_checkpoint_selection = (
+            "qualification_pass_then_recall_then_knot_mae_then_parameter_rmse"
+        )
         qualification_contract = "v16_supervised_synthetic_only_pass_rates_report_only_v4"
-        aggregate_pass_role = "reporting_reference_only"
+        aggregate_pass_role = (
+            "proposal_selection_diagnostic_only_not_stage_or_qualification_gate"
+        )
         simplification_curriculum = "deterministic_linear_by_joint_epoch"
         aggregate_pass_feedback = $false
         mse_tolerance = 1e-4
@@ -174,6 +238,15 @@ $RunState = [ordered]@{
         proposal_high_k_fraction = $ProposalHighKFraction
         proposal_high_k_min_knots = $ProposalHighKMinKnots
         proposal_knot_assignment_weight = 1.0
+        proposal_multiscale_recall_weight = 0.25
+        keep_dice_weight = 0.5
+        keep_cdf_weight = 0.25
+        parameter_gap_weight = 0.05
+        parameter_bias_weight = 0.1
+        fine_grained_teacher = "certified_source_single_deletion_mse"
+        fine_teacher_weight = 0.5
+        fine_teacher_ranking_weight = 0.25
+        fine_teacher_additional_spline_solves_per_batch = 0
         batch_size = $BatchSize
         selection_policy = "mass_topk"
         initial_keep_fraction = 0.5357142857142857
@@ -295,6 +368,18 @@ try {
         "--minimality-audit-points", "512",
         "--oscillation-amplitude", "0.3",
         "--proposal-knot-assignment-weight", "1.0",
+        "--proposal-multiscale-recall-weight", "0.25",
+        "--keep-dice-weight", "0.5",
+        "--keep-cdf-weight", "0.25",
+        "--parameter-gap-weight", "0.05",
+        "--parameter-bias-weight", "0.1",
+        "--fine-teacher-weight", "0.5",
+        "--fine-teacher-ranking-weight", "0.25",
+        "--fine-teacher-temperature", "0.5",
+        "--keep-fuzzy-negative-radius", "0.01",
+        "--keep-fuzzy-negative-floor", "0.1",
+        "--proposal-parameter-warp-gradient-scale", "0",
+        "--joint-parameter-warp-gradient-scale", "0.1",
         "--one-shot-selection-policy", "mass_topk",
         "--initial-keep-fraction", "0.5357142857142857",
         "--joint-supervision", "synthetic_ground_truth",
@@ -314,6 +399,7 @@ try {
         "--real-manifest", $UjiManifest,
         "--real-manifest", $NaturalEarthManifest,
         "--real-manifest", $UsgsManifest,
+        "--real-manifest", $IndustrialOffsetManifest,
         "--resample-train-each-epoch",
         "--num-workers", [string]$NumWorkers,
         "--torch-num-threads", "4",
@@ -423,7 +509,8 @@ try {
     $ManifestArguments = @(
         "--manifest", ("UJI=" + $UjiManifest),
         "--manifest", ("NaturalEarth=" + $NaturalEarthManifest),
-        "--manifest", ("USGS=" + $UsgsManifest)
+        "--manifest", ("USGS=" + $UsgsManifest),
+        "--manifest", ("IndustrialOffset=" + $IndustrialOffsetManifest)
     )
 
     $BenchmarkArguments = @(

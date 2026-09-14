@@ -138,6 +138,18 @@ def test_published_method_set_is_exactly_the_requested_six_methods():
         ]
     )
     assert arguments.method_set == "published"
+    assert arguments.published_feasibility_safeguard is True
+
+    raw_arguments = benchmark.parser().parse_args(
+        [
+            "--checkpoint",
+            "checkpoint.pt",
+            "--output-dir",
+            "comparison",
+            "--no-published-feasibility-safeguard",
+        ]
+    )
+    assert raw_arguments.published_feasibility_safeguard is False
 
 
 def test_failures_remain_in_pass_rate_denominator():
@@ -152,6 +164,37 @@ def test_failures_remain_in_pass_rate_denominator():
     assert summary["fit_pass_rate"] == .5
     assert summary["reference_pass_rate"] == .5
     assert summary["mse_mean"] == 1e-6
+
+
+def test_summary_discloses_native_collapse_and_safeguard_usage():
+    rows = []
+    for native_mse, native_k, used in ((4e-4, 2, True), (8e-5, 7, False)):
+        rows.append({
+            "dataset": "NaturalEarth",
+            "method": "kang_sparse_2015_adaptation",
+            "status": "ok",
+            "mse": 9e-5,
+            "reference_mse": None,
+            "fit_pass": True,
+            "reference_pass": None,
+            "final_k": 9,
+            "canonical_k": None,
+            "total_ms": 10.0,
+            "network_ms": None,
+            "diagnostics": {
+                "mse_tolerance": 1e-4,
+                "comparison_feasibility_safeguard_enabled": True,
+                "comparison_feasibility_safeguard_used": used,
+                "comparison_feasibility_native_mse": native_mse,
+                "comparison_feasibility_native_k": native_k,
+            },
+        })
+
+    summary = benchmark.summarize(rows)[0]
+
+    assert summary["feasibility_safeguard_used_rate"] == pytest.approx(0.5)
+    assert summary["native_fit_pass_rate_before_safeguard"] == pytest.approx(0.5)
+    assert summary["native_k_mean_before_safeguard"] == pytest.approx(4.5)
 
 
 def test_synthetic_summary_reports_canonical_count_accuracy():

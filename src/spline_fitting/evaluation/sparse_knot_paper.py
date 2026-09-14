@@ -12,13 +12,15 @@ the constraint is enforced approximately by a monotone penalty/bisection
 search, rather than by CVX as in the paper.
 
 The second stage is an auditable adaptation of Algorithms 4 and 5.  Nearby
-active uniform knots are clustered by their initial spacing.  Each non-singleton
-cluster is represented by its two boundary knots, narrowed with the paper's
-left/right least-squares comparisons, and collapsed to either one or two
-coincident knots using the paper's ``2 E_p < E_d`` test.  This matters for
-complex curves: unconditionally collapsing every active cluster to one simple
-knot removes the repeated-knot branch of Algorithm 4 and can destroy the MSE
-feasibility obtained by the sparse stage.
+active uniform knots are clustered by their initial spacing.  Each clear,
+short cluster is represented by its two boundary knots, narrowed with the
+paper's left/right least-squares comparisons, and collapsed to either one or
+two coincident knots using the paper's ``2 E_p < E_d`` test.  The paper says
+Algorithm 4 is intended only when the active knots form obvious groups; for
+general data it recommends Algorithm 1, and one numerical example skips the
+second stage.  Since this repository does not reproduce Algorithm 1's repeated
+convex solves, a long/non-obvious active run is now retained unchanged rather
+than being incorrectly collapsed to one or two knots.
 The returned curve is always an exact, unregularized standard B-spline refit.
 """
 
@@ -37,15 +39,21 @@ from .knot_diagnostics import build_open_knot_vector
 
 _ADAPTATION_LABEL = (
     "Vector-valued group-L1 ADMM adaptation of Kang et al. (2015) equation "
-    "(12), followed by an Algorithms-4-and-5 active-cluster boundary "
-    "bisection with the single/double-knot test; not the paper's scalar CVX "
-    "implementation."
+    "(12), followed by Algorithms 4-5 only for clear short active clusters; "
+    "long general-data runs retain their active knots because Algorithm 1 is "
+    "not reproduced; not the paper's scalar CVX implementation."
 )
 _RELOCATION_LABEL = (
     "Algorithms 4-5 adaptation: classify adjacent active uniform knots by "
     "spacing, retain each cluster's boundary pair, narrow it by exact "
     "least-squares comparisons, then apply the 2*E_double < E_single "
     "single/double-knot decision."
+)
+_NO_CLEAR_CLUSTER_LABEL = (
+    "Algorithms 4-5 skipped: the active knots do not form clear short groups; "
+    "retain the sparse-stage active vector instead of applying Algorithm 4 "
+    "outside the regime recommended by Kang et al. Algorithm 1 is not "
+    "reproduced by this adaptation."
 )
 _REPAIR_LABEL = (
     "Post-relocation feasibility repair (not in Kang et al.): auditable greedy "
@@ -461,6 +469,21 @@ def _cluster_active_knots(
     return clusters
 
 
+def _algorithm4_clusters_are_clear(
+    clusters: list[torch.Tensor],
+    degree: int,
+) -> bool:
+    """Whether Algorithm 4's one-knot/one-double-knot group model is plausible.
+
+    For a degree-p source knot the sparse theorem motivates a compact run of
+    adjacent active grid knots.  A run longer than ``p+1`` cannot be represented
+    faithfully by Algorithm 4's final single/double-knot branch and is treated
+    as the paper's general-data regime instead of being collapsed wholesale.
+    """
+
+    return not clusters or max(int(cluster.numel()) for cluster in clusters) <= degree + 1
+
+
 def _refit_mse(
     parameters: torch.Tensor,
     points: torch.Tensor,
@@ -795,15 +818,26 @@ def fit_sparse_knots_paper(
     active_knots = initial_knots[active_mask]
     clusters = _cluster_active_knots(active_knots, spacing, cluster_gap_factor)
     relocation_started = time.perf_counter()
-    final_knots, local_refit_count = _relocate_clusters(
-        parameters,
-        points,
-        clusters,
-        degree,
-        initial_spacing=spacing,
-        tolerance=(spacing / 32.0 if relocation_tolerance is None else relocation_tolerance),
-        max_iterations=relocation_max_iterations,
-    )
+    clear_clusters = _algorithm4_clusters_are_clear(clusters, degree)
+    if clear_clusters:
+        final_knots, local_refit_count = _relocate_clusters(
+            parameters,
+            points,
+            clusters,
+            degree,
+            initial_spacing=spacing,
+            tolerance=(
+                spacing / 32.0
+                if relocation_tolerance is None
+                else relocation_tolerance
+            ),
+            max_iterations=relocation_max_iterations,
+        )
+        relocation_method = _RELOCATION_LABEL
+    else:
+        final_knots = active_knots.detach().clone()
+        local_refit_count = 0
+        relocation_method = _NO_CLEAR_CLUSTER_LABEL
     relocation_seconds = time.perf_counter() - relocation_started
     relocated_before_repair = final_knots
     repair_started = time.perf_counter()
@@ -839,7 +873,7 @@ def fit_sparse_knots_paper(
     return SparseKnotPaperResult(
         degree=degree,
         method=_ADAPTATION_LABEL,
-        relocation_method=_RELOCATION_LABEL,
+        relocation_method=relocation_method,
         data_tolerance=tolerance,
         jump_threshold=float(jump_threshold),
         relative_jump_threshold=relative_jump_threshold,

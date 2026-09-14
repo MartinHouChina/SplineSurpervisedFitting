@@ -35,9 +35,9 @@ python scripts/inspect_v16_checkpoint.py `
 
 结构不完整 checkpoint 只能配合 `--allow-unqualified-diagnostic` 排错，输出必须保留诊断水印。
 
-## 3. 六方法、四数据集比较
+## 3. 六方法、五数据集比较
 
-正式集合为 Ours、Park–Lee、Liang、Dung–Tjahjowidodo、Kang、Luo；数据为 Synthetic、UJI、Natural Earth、USGS。所有方法处理同一批配对曲线，使用相同 56 内部节点容量和相同最终 CPU float64 refit。
+正式集合为 Ours、Park–Lee、Liang、Dung–Tjahjowidodo、Kang、Luo；数据为 Synthetic、UJI、Natural Earth、USGS、IndustrialOffset。所有方法处理同一批配对曲线，使用相同 56 内部节点容量和相同最终 CPU float64 refit。IndustrialOffset 是 CAD 驱动半合成外部数据，不参与训练。
 
 ```powershell
 python scripts/benchmark_v16_datasets.py `
@@ -49,6 +49,7 @@ python scripts/benchmark_v16_datasets.py `
   --manifest UJI=data/splits/uji_pen_v2.jsonl `
   --manifest NaturalEarth=data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
   --manifest USGS=data/processed/usgs_contours/large_scale/manifest.jsonl `
+  --manifest IndustrialOffset=data/processed/industrial_offsets/v1/manifest.jsonl `
   --mse-tolerance 1e-4 --max-internal-knots 56 `
   --paper-initial-knots 56 --liang-dense-knots 56 `
   --device cuda
@@ -91,6 +92,7 @@ python scripts/visualize_v16_real_deployments.py `
   --manifest UJI=data/splits/uji_pen_v2.jsonl `
   --manifest NaturalEarth=data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `
   --manifest USGS=data/processed/usgs_contours/large_scale/manifest.jsonl `
+  --manifest IndustrialOffset=data/processed/industrial_offsets/v1/manifest.jsonl `
   --mse-tolerance 1e-4 --device cuda --dpi 300
 ```
 

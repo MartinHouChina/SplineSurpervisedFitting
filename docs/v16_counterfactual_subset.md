@@ -1,6 +1,6 @@
 # v16 有监督候选选择与重定位
 
-> 文件名为历史兼容保留。当前正式 v16 已从在线 counterfactual Teacher 改为 certified Synthetic 的直接监督。
+> 文件名为历史兼容保留。当前正式 v16 已从在线 counterfactual self-teacher 改为 certified Synthetic 的直接监督，并复用最简性认证产生的逐节点删除 MSE 作为静态细粒度标签。
 
 ## 1. 目标
 
@@ -35,15 +35,16 @@ Q[B,M,D]
 
 ## 3. 为什么采用直接监督
 
-旧在线 Teacher 用当前 Selector 排序搜索可行前缀，容易形成“当前错误排序生成自己的标签”的闭环，而且每 batch 需要大量 float64 refit。新协议利用 certified Synthetic 原生拥有的 `t*、U*、K*`：
+旧在线 Teacher 用当前 Selector 排序搜索可行前缀，容易形成“当前错误排序生成自己的标签”的闭环，而且每 batch 需要大量 float64 refit。新协议利用 certified Synthetic 原生拥有的 `t*、U*、K*`，并保存认证阶段对每个真节点的 single-deletion MSE `D*`：
 
 1. 用动态规划求 `U_prop` 到 `U*` 的最小代价有序一一匹配；
 2. 被匹配的候选为正 existence，其余为负；
 3. `K*` 直接监督 adaptive mass 和最终离散节点数；
 4. 标签 mask 条件解码器直接向 `t*、U*` 学习参数与重定位；
-5. 实际部署 mask 同时接受拟合与几何监督，缩小训练/部署差异。
+5. 实际部署 mask 同时接受拟合与几何监督，缩小训练/部署差异；
+6. `D*` 通过同一个有序匹配映射到正候选，用于区分“删除后刚过阈值”和“删除后误差大幅上升”的节点。
 
-这一路径不运行在线 Hard-RMS、prefix sweep、counterfactual mask search 或 oracle Teacher，不使用 Teacher cache。代码中的 `online_teacher` 只保留为历史消融，不能生成当前正式 checkpoint。
+具体地，细粒度风险为 `sigmoid(log(D*/epsilon)/temperature)`，用于加权正候选 Keep 损失和正负 ranking margin。它不会替代二值 Keep 标签，也不会读取当前网络输出生成新的伪标签。该路径不运行在线 Hard-RMS、prefix sweep、counterfactual mask search 或 oracle Teacher，不使用 Teacher cache；loss forward 因此不增加 teacher spline solve。代码中的 `online_teacher` 只保留为历史消融，不能生成当前正式 checkpoint。
 
 ## 4. 两阶段训练
 
@@ -51,15 +52,18 @@ Q[B,M,D]
 
 - 训练参数化与高召回有序候选；
 - 50% 合成 draw 来自 source `K=40..56`；
-- 同时优化 directed coverage 与 ordered one-to-one assignment；
+- 同时优化 directed coverage、ordered one-to-one assignment 与多尺度 recall；
+- 参数头增加 interval log-gap 和整曲线 bias 监督；
 - 到期无条件进入 Joint。
 
 ### Joint（64 epochs）
 
 - 恢复 source `K=4..56` 原抽样分布；
-- 联合训练 KeepMask、count/ranking、参数反馈和 survivor relocation；
+- 联合训练 KeepMask、Dice/CDF、细粒度风险 ranking、count、参数反馈和 survivor relocation；
+- 对未匹配但距离真节点小于 `0.01` 的候选降低负类 BCE 权重，缓和候选槽位身份切换；
+- Joint warp 的跨任务梯度默认按 `0.1` 缩放，使节点位置更新有限地反馈 ParameterHead；
 - 训练数据仍全部为 certified Synthetic；
-- UJI、Natural Earth、USGS 只做留出验证。
+- UJI、Natural Earth、USGS、IndustrialOffset 只做留出验证。
 
 ## 5. 一次性选择
 
@@ -72,14 +76,17 @@ Selector 为每个候选输出 logit，并由曲线级自适应 `beta` 调整整
 正式结论必须来自独立测试：
 
 - Synthetic：按 source K=4..56 分层；
-- UJI Pen、Natural Earth、USGS：留出 test split；
+- UJI Pen、Natural Earth、USGS、IndustrialOffset：留出 test split；
 - 方法：Ours、Park、Liang、Dung、Kang、Luo；
 - 指标：MSE、通过率、最终内部节点数、完整方法时间；Ours 另报 network-only 时间。
 
 一条龙脚本还生成基于输入采样点和 original-reference 点的两张 2×2 汇总图，以及真实曲线六方法案例图。文档不预填尚未测得的性能数字。
+
+训练诊断新增 Proposal `R@.005/.01/.02`、有序 assignment MAE、Keep P/R/F1、critical false-delete rate、single-deletion risk/log-margin、fuzzy-negative fraction、parameter bias MAE 和 parameter gap loss。它们用于拆分候选召回、筛选和参数化误差；最终结论仍以独立 benchmark 的 MSE、通过率、K 和时间为准。
 
 ## 7. 解释边界
 
 - supervised source K 是当前训练目标，但 source-subset 证书不证明自由重定位空间的连续全局最少 K。
 - pass rate 是结果指标；它不控制阶段切换、checkpoint 选择或结构资格。
 - K=56 层没有 proposal 冗余容量，应单独报告其 dense 和 deployment 表现。
+- 新增损失与风险标签只改变训练目标，不会追溯修改旧 checkpoint；必须重新训练并验证后才能声称效果提升。

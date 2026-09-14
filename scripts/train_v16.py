@@ -209,7 +209,33 @@ def parser():
         help=("Ordered one-to-one proposal/ground-truth knot supervision; "
               "kept separate from recall-direction proposal coverage"),
     )
+    p.add_argument(
+        "--proposal-multiscale-recall-weight", type=float, default=0.25,
+        help=("CVaR-aware candidate recall supervision at parameter tolerances "
+              "0.0025, 0.005 and 0.01"),
+    )
     p.add_argument("--selected-knot-position-weight", type=float, default=1.0)
+    p.add_argument("--keep-dice-weight", type=float, default=0.5)
+    p.add_argument("--keep-cdf-weight", type=float, default=0.25)
+    p.add_argument("--parameter-gap-weight", type=float, default=0.05)
+    p.add_argument("--parameter-bias-weight", type=float, default=0.1)
+    p.add_argument(
+        "--fine-teacher-weight", type=float, default=0.5,
+        help=("Use certified per-knot deletion MSE to emphasize critical "
+              "positive Keep slots; adds no online spline solves"),
+    )
+    p.add_argument("--fine-teacher-ranking-weight", type=float, default=0.25)
+    p.add_argument("--fine-teacher-temperature", type=float, default=0.5)
+    p.add_argument("--keep-fuzzy-negative-radius", type=float, default=0.01)
+    p.add_argument("--keep-fuzzy-negative-floor", type=float, default=0.1)
+    p.add_argument(
+        "--proposal-parameter-warp-gradient-scale", type=float, default=0.0,
+        help="Cross-task gradient from proposal knot matching into ParameterHead",
+    )
+    p.add_argument(
+        "--joint-parameter-warp-gradient-scale", type=float, default=0.1,
+        help="Bounded cross-task gradient from relocated knot matching into ParameterHead",
+    )
     p.add_argument("--knot-position-beta", type=float, default=0.01)
     p.add_argument(
         "--one-shot-selection-policy", choices=("threshold", "mass_topk"),
@@ -221,7 +247,14 @@ def parser():
     p.add_argument("--final-safety-sigma", type=float, default=0.05)
     p.add_argument("--final-safety-knots", type=int, default=0)
     p.add_argument("--safety-anneal-epochs", type=int, default=10)
-    p.add_argument("--one-shot-coverage-bins", type=int, default=4)
+    p.add_argument(
+        "--one-shot-coverage-bins",
+        type=int,
+        default=0,
+        help=("Legacy deployment coverage anchors. Direct synthetic KeepMask "
+              "supervision requires zero because forced bin anchors need not "
+              "belong to the exact labelled subset"),
+    )
     p.add_argument("--min-selected-knots", type=int, default=4)
     p.add_argument(
         "--initial-keep-fraction", type=float, default=30 / 56,
@@ -370,7 +403,11 @@ def validate_args(args):
         "supervised_over_count_weight", "complexity_weight",
         "true_parameter_weight", "proposal_knot_coverage_weight",
         "proposal_knot_assignment_weight",
-        "selected_knot_position_weight", "knot_position_beta",
+        "proposal_multiscale_recall_weight",
+        "selected_knot_position_weight", "keep_dice_weight", "keep_cdf_weight",
+        "parameter_gap_weight", "parameter_bias_weight", "fine_teacher_weight",
+        "fine_teacher_ranking_weight", "fine_teacher_temperature",
+        "keep_fuzzy_negative_radius", "knot_position_beta",
         "complexity_max_scale",
     ):
         if not math.isfinite(getattr(args, key)) or getattr(args, key) < 0:
@@ -392,6 +429,18 @@ def validate_args(args):
         raise ValueError("complexity-max-scale must be positive")
     if args.knot_position_beta <= 0:
         raise ValueError("knot-position-beta must be positive")
+    if args.fine_teacher_temperature <= 0:
+        raise ValueError("fine-teacher-temperature must be positive")
+    if args.keep_fuzzy_negative_radius <= 0:
+        raise ValueError("keep-fuzzy-negative-radius must be positive")
+    if not 0 <= args.keep_fuzzy_negative_floor <= 1:
+        raise ValueError("keep-fuzzy-negative-floor must lie in [0,1]")
+    for key in (
+        "proposal_parameter_warp_gradient_scale",
+        "joint_parameter_warp_gradient_scale",
+    ):
+        if not 0 <= getattr(args, key) <= 1:
+            raise ValueError(f"{key} must lie in [0,1]")
     if args.final_safety_sigma > args.one_shot_safety_sigma:
         raise ValueError("final-safety-sigma cannot exceed one-shot-safety-sigma")
     if args.final_safety_knots > args.one_shot_safety_knots:
@@ -422,6 +471,11 @@ def validate_args(args):
             raise ValueError(
                 "synthetic_ground_truth Joint does not use an oracle teacher; "
                 "remove --synthetic-geometry-oracle-teacher"
+            )
+        if args.one_shot_coverage_bins != 0:
+            raise ValueError(
+                "synthetic_ground_truth requires --one-shot-coverage-bins 0; "
+                "forced spatial anchors can conflict with the exact KeepMask label"
             )
         if args.tolerance_factor_min != 1.0 or args.tolerance_factor_max != 1.0:
             raise ValueError(
@@ -613,7 +667,10 @@ def summarize(
         result["synthetic_count_bias"] = synthetic["count_bias"]
     if "knot_match_f1" in synthetic:
         result["synthetic_knot_match_f1"] = synthetic["knot_match_f1"]
+        result["synthetic_knot_match_recall"] = synthetic["knot_match_recall"]
         result["synthetic_knot_matched_mae"] = synthetic["knot_matched_mae"]
+    if "parameter_rmse" in synthetic:
+        result["synthetic_parameter_rmse"] = synthetic["parameter_rmse"]
     # The upper end of a source-count range is also the proposal-capacity
     # boundary in the formal K=4..56 protocol.  An aggregate Synthetic rate can
     # hide a complete failure of that sparse stratum, so retain an explicit
@@ -860,6 +917,42 @@ def checkpoint_rank(metrics, *, simplification_ready=True):
         -float(tail),
         -float(metrics["deployment_mse"]),
         -float(metrics["keep_count"]),
+    )
+
+
+def proposal_checkpoint_rank(metrics):
+    """Feasibility-first Proposal rank led by supervised geometry quality.
+
+    Qualification pass rate protects dense fit feasibility.  Candidate recall,
+    matched-knot error and parameter error then select the Proposal actually
+    useful to Joint. Dense MSE/cost are final tie-breaks because an all-candidate
+    refit can otherwise hide poor candidate geometry.
+    """
+    pass_rate = metrics["qualification_dense_pass_rate"]
+    dense_mse = metrics["dense_mse"]
+    dense_cost = metrics["dense_subset_cost"]
+    recall = metrics.get("synthetic_knot_match_recall", 0.0)
+    matched_mae = metrics.get("synthetic_knot_matched_mae")
+    parameter_rmse = metrics.get("synthetic_parameter_rmse")
+    matched_mae = 1.0 if matched_mae is None else matched_mae
+    parameter_rmse = 1.0 if parameter_rmse is None else parameter_rmse
+    values = (
+        pass_rate,
+        dense_mse,
+        dense_cost,
+        recall,
+        matched_mae,
+        parameter_rmse,
+    )
+    if not all(math.isfinite(float(value)) for value in values):
+        raise ValueError("proposal checkpoint ranking metrics must be finite")
+    return (
+        float(pass_rate),
+        float(recall),
+        -float(matched_mae),
+        -float(parameter_rmse),
+        -float(dense_mse),
+        -float(dense_cost),
     )
 
 
@@ -1270,7 +1363,25 @@ def main(argv=None):
         true_parameter_weight=args.true_parameter_weight,
         proposal_knot_coverage_weight=args.proposal_knot_coverage_weight,
         proposal_knot_assignment_weight=args.proposal_knot_assignment_weight,
+        proposal_multiscale_recall_weight=(
+            args.proposal_multiscale_recall_weight
+        ),
         selected_knot_position_weight=args.selected_knot_position_weight,
+        keep_dice_weight=args.keep_dice_weight,
+        keep_cdf_weight=args.keep_cdf_weight,
+        parameter_gap_weight=args.parameter_gap_weight,
+        parameter_bias_weight=args.parameter_bias_weight,
+        fine_teacher_weight=args.fine_teacher_weight,
+        fine_teacher_ranking_weight=args.fine_teacher_ranking_weight,
+        fine_teacher_temperature=args.fine_teacher_temperature,
+        keep_fuzzy_negative_radius=args.keep_fuzzy_negative_radius,
+        keep_fuzzy_negative_floor=args.keep_fuzzy_negative_floor,
+        proposal_parameter_warp_gradient_scale=(
+            args.proposal_parameter_warp_gradient_scale
+        ),
+        joint_parameter_warp_gradient_scale=(
+            args.joint_parameter_warp_gradient_scale
+        ),
         knot_position_beta=args.knot_position_beta,
     )
     if resume_payload:
@@ -1300,8 +1411,11 @@ def main(argv=None):
         print(
             "Joint supervision: certified synthetic ground truth only; ordered "
             "one-to-one candidate assignment directly labels KeepMask, exact K, "
-            "parameters and survivor relocation. Online prefix/counterfactual "
-            "Teacher is disabled. Real manifests are validation/test only. "
+            "parameters and survivor relocation. Certified per-knot deletion "
+            "MSE provides fine-grained criticality, multi-scale recall and "
+            "log-gap/bias losses refine Proposal/Parameter learning. Online "
+            "prefix/counterfactual Teacher is disabled. Real manifests are "
+            "validation/test only. "
             "Deployment uses one network forward and one final refit.",
             flush=True,
         )
@@ -1414,9 +1528,33 @@ def main(argv=None):
                     raise RuntimeError(
                         "row without parameter/knot labels entered supervised-only training"
                     )
+                if (
+                    (args.fine_teacher_weight > 0
+                     or args.fine_teacher_ranking_weight > 0)
+                    and not bool(batch["target_single_deletion_valid"].all())
+                ):
+                    raise RuntimeError(
+                        "row without certified single-deletion MSE entered "
+                        "fine-teacher training"
+                    )
             points = batch["points"].to(device, non_blocking=device.type == "cuda")
             lower, upper = math.log(args.tolerance_factor_min), math.log(args.tolerance_factor_max)
             tolerance = args.mse_tolerance * (lower + (upper-lower)*torch.rand(points.shape[0], device=device)).exp()
+            target_single_deletion_mse = batch.get("target_single_deletion_mse")
+            if target_single_deletion_mse is not None:
+                target_single_deletion_mse = target_single_deletion_mse.to(
+                    device, non_blocking=device.type == "cuda"
+                )
+            target_single_deletion_mask = batch.get("target_single_deletion_mask")
+            if target_single_deletion_mask is not None:
+                target_single_deletion_mask = target_single_deletion_mask.to(
+                    device, non_blocking=device.type == "cuda"
+                )
+            target_single_deletion_valid = batch.get("target_single_deletion_valid")
+            if target_single_deletion_valid is not None:
+                target_single_deletion_valid = target_single_deletion_valid.to(
+                    device, non_blocking=device.type == "cuda"
+                )
             optimizer.zero_grad(set_to_none=True)
             loss, metrics = objective(
                 model, points, stage=stage, mse_tolerance=tolerance,
@@ -1441,6 +1579,9 @@ def main(argv=None):
                 target_geometry_valid=batch["target_geometry_valid"].to(
                     device, non_blocking=device.type == "cuda"
                 ),
+                target_single_deletion_mse=target_single_deletion_mse,
+                target_single_deletion_mask=target_single_deletion_mask,
+                target_single_deletion_valid=target_single_deletion_valid,
             )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip, error_if_nonfinite=True)
@@ -1493,9 +1634,13 @@ def main(argv=None):
         improved = False
         if stage == "proposal":
             rank = (
-                -measured["dense_subset_cost"],
-                -measured["dense_mse"],
-                measured["qualification_dense_pass_rate"],
+                proposal_checkpoint_rank(measured)
+                if args.joint_supervision == "synthetic_ground_truth"
+                else (
+                    -measured["dense_subset_cost"],
+                    -measured["dense_mse"],
+                    measured["qualification_dense_pass_rate"],
+                )
             )
             if proposal_rank is None or rank > tuple(proposal_rank):
                 proposal_rank, improved = rank, True
@@ -1606,6 +1751,14 @@ def main(argv=None):
             rng_state=torch.get_rng_state(), cuda_rng_state=torch.cuda.get_rng_state_all() if device.type == "cuda" else [],
             loss_config=dict(joint_supervision=args.joint_supervision,
                              online_teacher=args.joint_supervision == "online_teacher",
+                             fine_grained_teacher=(
+                                 "certified_source_single_deletion_mse"
+                                 if args.fine_teacher_weight > 0
+                                 or args.fine_teacher_ranking_weight > 0
+                                 else None
+                             ),
+                             fine_teacher_additional_spline_solves_per_batch=0,
+                             fine_teacher_error_unit="mean_squared_euclidean",
                              ground_truth_keep_assignment=(
                                  "ordered_one_to_one_minimum_l1"
                                  if args.joint_supervision == "synthetic_ground_truth"
@@ -1633,7 +1786,27 @@ def main(argv=None):
                                   "supervised_over_count_weight", "true_parameter_weight",
                                   "proposal_knot_coverage_weight",
                                   "proposal_knot_assignment_weight",
-                                  "selected_knot_position_weight")}))
+                                  "proposal_multiscale_recall_weight",
+                                  "selected_knot_position_weight",
+                                  "keep_dice_weight", "keep_cdf_weight",
+                                  "parameter_gap_weight", "parameter_bias_weight",
+                                  "fine_teacher_weight",
+                                  "fine_teacher_ranking_weight")},
+                             fine_teacher_temperature=(
+                                 objective.fine_teacher_temperature
+                             ),
+                             keep_fuzzy_negative_radius=(
+                                 objective.keep_fuzzy_negative_radius
+                             ),
+                             keep_fuzzy_negative_floor=(
+                                 objective.keep_fuzzy_negative_floor
+                             ),
+                             proposal_parameter_warp_gradient_scale=(
+                                 objective.proposal_parameter_warp_gradient_scale
+                             ),
+                             joint_parameter_warp_gradient_scale=(
+                                 objective.joint_parameter_warp_gradient_scale
+                             )))
         payload["qualification"] = assess_v16_checkpoint(
             payload,
             required_pass_rate=V16_FORMAL_PASS_RATE,
@@ -1662,7 +1835,29 @@ def main(argv=None):
                 "ordered_assignment_MAE="
                 f"{train_metrics['proposal_knot_assignment_mae']:.4e}, "
                 "matched_K="
-                f"{train_metrics['proposal_knot_assignment_count']:.2f}",
+                f"{train_metrics['proposal_knot_assignment_count']:.2f}, "
+                "R@.005/.01/.02="
+                f"{train_metrics['proposal_recall_at_005']:.3f}/"
+                f"{train_metrics['proposal_recall_at_010']:.3f}/"
+                f"{train_metrics['proposal_recall_at_020']:.3f}, "
+                "parameter_bias="
+                f"{train_metrics['parameter_bias_mae']:.3e}",
+                flush=True,
+            )
+        else:
+            print(
+                "  Joint train structure: Keep P/R/F1="
+                f"{train_metrics['keep_mask_precision']:.3f}/"
+                f"{train_metrics['keep_mask_recall']:.3f}/"
+                f"{train_metrics['keep_mask_f1']:.3f}, "
+                "critical_false_delete="
+                f"{train_metrics['critical_false_delete_rate']:.3f}, "
+                "proposal R@.005/.01/.02="
+                f"{train_metrics['proposal_recall_at_005']:.3f}/"
+                f"{train_metrics['proposal_recall_at_010']:.3f}/"
+                f"{train_metrics['proposal_recall_at_020']:.3f}, "
+                "parameter_bias="
+                f"{train_metrics['parameter_bias_mae']:.3e}",
                 flush=True,
             )
         boundary_n = measured["synthetic_boundary_sample_count"]

@@ -601,6 +601,103 @@ def test_supervised_joint_uses_ground_truth_without_online_teacher_and_three_fit
         assert parameter.grad.abs().sum() > 0
 
 
+def test_fine_teacher_uses_cached_single_deletion_mse_without_extra_refits():
+    torch.manual_seed(2027)
+    points = curve_batch()
+    target_params = torch.linspace(0, 1, points.shape[1]).repeat(2, 1)
+    target_knots = torch.tensor([
+        [0.22, 0.69, 0.0],
+        [0.31, 0.76, 0.0],
+    ])
+    target_mask = torch.tensor([
+        [True, True, False],
+        [True, True, False],
+    ])
+    deletion_mse = torch.tensor([
+        [1.2e-4, 4.0e-4, 0.0],
+        [2.0e-4, 8.0e-4, 0.0],
+    ])
+    valid = torch.ones(2, dtype=torch.bool)
+    model = V16CandidateSelectionNetwork(
+        hidden_dim=16,
+        encoder_layers=1,
+        max_internal_knots=6,
+        attention_heads=2,
+        selector_layers=1,
+        min_selected_knots=0,
+        one_shot_selection_policy="mass_topk",
+        one_shot_adaptive_threshold=True,
+    )
+    objective = V16SubsetLoss(
+        mse_tolerance=1e-4,
+        policy_samples=2,
+        joint_supervision="synthetic_ground_truth",
+        ranked_prefix_teacher=False,
+        fine_teacher_weight=1.0,
+        fine_teacher_ranking_weight=0.5,
+        keep_dice_weight=0.5,
+        keep_cdf_weight=0.25,
+        parameter_gap_weight=0.05,
+        parameter_bias_weight=0.1,
+        proposal_multiscale_recall_weight=0.25,
+        complexity_weight=0,
+    )
+    with patch.object(objective, "_fit", wraps=objective._fit) as fitted:
+        loss, metrics = objective(
+            model,
+            points,
+            stage="joint",
+            synthetic_target_count=target_mask.sum(-1),
+            synthetic_target_valid=valid,
+            target_params=target_params,
+            target_internal_knots=target_knots,
+            target_internal_knot_mask=target_mask,
+            target_geometry_valid=valid,
+            target_single_deletion_mse=deletion_mse,
+            target_single_deletion_mask=target_mask,
+            target_single_deletion_valid=valid,
+        )
+    assert fitted.call_count == 3
+    assert metrics["fine_teacher_loss"] > 0
+    assert metrics["fine_teacher_ranking_loss"] > 0
+    assert metrics["fine_teacher_mean_risk"] > 0.5
+    assert 0 <= metrics["critical_false_delete_rate"] <= 1
+    assert 0 <= metrics["keep_mask_f1"] <= 1
+    assert 0 <= metrics["proposal_recall_at_005"] <= 1
+    assert metrics["parameter_gap_loss"] >= 0
+    assert metrics["parameter_bias_loss"] >= 0
+    loss.backward()
+    assert model.keep_head.weight.grad is not None
+    assert model.keep_head.weight.grad.abs().sum() > 0
+
+
+def test_pairwise_ranking_downweights_fuzzy_negative_for_both_losses():
+    positive = torch.tensor([[True, False, False]])
+    confidence = torch.tensor([[1.0, 0.1, 1.0]])
+
+    logits = torch.zeros(1, 3, requires_grad=True)
+    ordinary = V16SubsetLoss._weighted_pairwise_ranking_loss(
+        logits,
+        positive,
+        confidence,
+        margin=1.0,
+    )
+    ordinary_gradient = torch.autograd.grad(ordinary, logits, retain_graph=True)[0]
+    assert ordinary_gradient[0, 1].abs() < ordinary_gradient[0, 2].abs()
+
+    risk = torch.tensor([[0.9, 0.0, 0.0]])
+    fine = V16SubsetLoss._weighted_pairwise_ranking_loss(
+        logits,
+        positive,
+        confidence,
+        margin=1.0,
+        positive_margin=risk,
+        positive_weight=risk.clamp_min(0.5),
+    )
+    fine_gradient = torch.autograd.grad(fine, logits)[0]
+    assert fine_gradient[0, 1].abs() < fine_gradient[0, 2].abs()
+
+
 def test_ordered_assignment_is_one_to_one_and_keeps_coordinate_gradients():
     objective = V16SubsetLoss(policy_samples=2)
     predicted = torch.tensor(

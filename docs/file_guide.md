@@ -19,7 +19,8 @@
 | `scripts/train_v16.py` | certified Synthetic-only 的 40-epoch Proposal + 64-epoch Joint |
 | `scripts/inspect_v16_checkpoint.py` | 检查 supervised v16 结构资格 |
 | `scripts/fit_v16_point_cloud.py` | 用户有序点云的一次性部署 |
-| `scripts/benchmark_v16_datasets.py` | 六方法×Synthetic/UJI/Natural Earth/USGS 对比 |
+| `scripts/benchmark_v16_datasets.py` | 六方法×Synthetic/UJI/Natural Earth/USGS/IndustrialOffset 对比 |
+| `scripts/prepare_industrial_offsets.py` | 生成工业轮廓多档等距线与统一 manifest |
 | `scripts/plot_v16_method_comparison.py` | 从 `comparison.json` 生成 input/reference 两张 2×2 图 |
 | `scripts/visualize_v16_real_deployments.py` | 真实曲线六方法 3×2 案例图 |
 | `scripts/visualize_v16_ours_cases.py` | Ours 单独的结构案例图 |
@@ -34,6 +35,7 @@ data/processed/                   预处理真实曲线
 data/splits/uji_pen_v2.jsonl      UJI 留出清单
 .../natural_earth/.../manifest    Natural Earth 清单
 .../usgs_contours/.../manifest    USGS 清单
+.../industrial_offsets/v1/manifest.jsonl  工业型线等距线外部验证清单
 ```
 
 正式训练只生成 certified Synthetic；真实 manifest 虽传给训练脚本，但仅用于 validation，随后用于 benchmark 和案例图。不要把真实曲线描述为参与了梯度更新。
@@ -70,6 +72,7 @@ python scripts/inspect_v16_checkpoint.py `
 | 文档 | 内容 |
 |---|---|
 | `training_pipeline.md` | 数据、两阶段训练与一条龙 |
+| `v16_fine_grained_supervision.md` | 认证逐节点删除 MSE、多尺度召回、Keep 与参数细化 |
 | `v16_counterfactual_subset.md` | 当前 supervised-only v16 算法；文件名仅历史兼容 |
 | `math_formulation.md` | MSE、匹配、选择、损失和 checkpoint cost |
 | `architecture.md` | 模块与张量流 |

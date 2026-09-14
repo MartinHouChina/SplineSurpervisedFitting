@@ -11,15 +11,18 @@ simplification_contract = synthetic_ground_truth_ordered_keep_and_relocation_v4
 checkpoint_selection = mean_per_curve_subset_cost_v1
 checkpoint_quality = supervised_fit_count_selected
 qualification_contract = v16_supervised_synthetic_only_pass_rates_report_only_v4
+fine_grained_teacher = certified_source_single_deletion_mse
+fine_teacher_error_unit = mean_squared_euclidean
+fine_teacher_additional_spline_solves_per_batch = 0
 ```
 
-同时满足：`real_fraction=0`、`joint_supervision=synthetic_ground_truth`、`synthetic_count_role=exact`、`online_teacher=false`、`ranked_prefix_teacher=false`、Kc=56、source K=4..56、`knot_min_span=0.01`、最终 safety knots=0。
+同时满足：`real_fraction=0`、`joint_supervision=synthetic_ground_truth`、`synthetic_count_role=exact`、`online_teacher=false`、`ranked_prefix_teacher=false`、Kc=56、source K=4..56、`knot_min_span=0.01`、最终 safety knots=0。`fine_teacher_weight` 和 `fine_teacher_ranking_weight` 应为正；这表示启用认证删除敏感度监督，不表示启用 online teacher。
 
 ## 2. 运行前检查
 
 - Python 环境可以导入 PyTorch、NumPy、Matplotlib；
 - CUDA 运行时可识别 RTX 3090；
-- 三个真实 manifest 存在且指向各自留出 split；
+- UJI、Natural Earth、USGS、IndustrialOffset 四个外部 manifest 存在且指向各自留出 split；
 - 新 `RunName` 对应的 checkpoint/log/comparison/figure 路径均不存在；
 - 训练与验证 synthetic seed 范围不重叠；
 - `Kc>=max source K` 且 K56 boundary validation 至少 32 条。
@@ -29,6 +32,14 @@ qualification_contract = v16_supervised_synthetic_only_pass_rates_report_only_v4
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
   -RunName v16_supervised_dryrun -DryRun
+```
+
+Linux 对应检查：
+
+```bash
+bash scripts/run_v16_mse1e-4_3090.sh \
+  --run-name v16_supervised_dryrun_linux \
+  --dry-run
 ```
 
 ## 3. 单元测试
@@ -41,6 +52,10 @@ python -m pytest -q
 
 - ordered one-to-one assignment 在 `Kc>K*` 与 `Kc=K*` 下的行为；
 - supervised Joint 拒绝无标签或真实训练行；
+- certified Synthetic 输出逐节点删除 MSE 和完全一致的有效 mask；
+- 删除 MSE 按有序一一匹配准确搬到正候选槽位，且 RMS/MSE 单位不会混用；
+- 多尺度 Proposal recall、Keep Dice/CDF、fuzzy negative、parameter log-gap/bias 均为有限值并产生预期梯度；
+- warp gradient scale 为 `0` 时阻断对应跨任务梯度，为 `0.1` 时只按比例回传且不改变 forward 值；
 - online Teacher 分支不进入正式 checkpoint 合同；
 - mass-TopK 数量和 selected-only 重定位；
 - checkpoint v4 合同及 pass-rate-report-only 语义；
@@ -60,11 +75,13 @@ python scripts/inspect_v16_checkpoint.py `
 
 - `stage=joint` 且 simplification curriculum 已成熟；
 - synthetic-only、真值监督和无 online Teacher 字段一致；
-- Proposal 高 K 比例 0.5、起点 K=40、有序 assignment 权重大于 0；
+- `fine_grained_teacher` 来源、MSE 单位和额外在线 solve 数正确；
+- Proposal 高 K 比例 0.5、起点 K=40、有序 assignment 与多尺度 recall 权重大于 0；
+- Keep Dice/CDF、fine-teacher、parameter gap/bias 权重大于 0，warp-gradient scale 与运行命令一致；
 - synthetic minimality、K56 boundary audit、容量和 MSE 阈值一致；
 - checkpoint selection/quality 与当前合同一致。
 
-aggregate/worst-source pass、count MAE、节点 F1 和 retained K 均应显示，但只作为实验诊断，不决定结构资格。
+aggregate/worst-source pass、count MAE、节点 F1 和 retained K 均应显示，但只作为实验诊断，不决定结构资格。history 还应包含 Proposal `R@.005/.01/.02`、Keep P/R/F1、`critical_false_delete_rate`、`fine_teacher_mean_risk`、`fine_teacher_mean_log_delete_margin`、`fuzzy_negative_fraction`、`parameter_bias_mae` 和 `parameter_gap_loss`。
 
 ## 5. 一条龙产物检查
 
@@ -76,7 +93,7 @@ aggregate/worst-source pass、count MAE、节点 F1 和 retained K 均应显示�
 | 审计 | `inspect_checkpoint.log` 与 pipeline manifest 状态 |
 | 表格 | `comparison.json`、`summary.csv`、`measurements.csv`、`report.md` |
 | 指标图 | `v16_published_methods_input.png`、`v16_published_methods_reference.png` |
-| 案例图 | UJI/Natural Earth/USGS 的六方法 3×2 PNG 与对应记录 |
+| 案例图 | UJI/Natural Earth/USGS/IndustrialOffset 的六方法 3×2 PNG 与对应记录 |
 
 检查 `comparison.json` 的 fingerprint、checkpoint SHA-256、数据样本 ID 和方法集合一致；图必须从该 JSON 生成，不手工调整数值。
 
@@ -90,6 +107,8 @@ aggregate/worst-source pass、count MAE、节点 F1 和 retained K 均应显示�
 - K=56 boundary 单独报告；
 - 五个论文基线标注 adaptation；
 - 未跑完的格子写 N/A 或明确失败，不做推测补值。
+- Dung/Kang/Luo 的保护后结果必须标注 `threshold-safe adaptation`，并保留保护前坍缩诊断；不能把保护层结果写成作者原始算法结果。
+- 新损失是否提升 recall、筛选准确率、参数偏差或最终通过率，必须比较重训 checkpoint 与固定旧 checkpoint 才能判断；代码存在和单元测试通过不等于性能已经提高。
 
 ## 7. 诊断模式
 

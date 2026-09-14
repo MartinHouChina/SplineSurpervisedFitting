@@ -46,6 +46,7 @@ def test_default_profile_keeps_ninety_percent_as_reporting_reference():
     assert args.one_shot_selection_policy == "mass_topk"
     assert args.one_shot_safety_sigma == pytest.approx(0.25)
     assert args.one_shot_safety_knots == 2
+    assert args.one_shot_coverage_bins == 0
     assert args.final_safety_sigma == pytest.approx(0.05)
     assert args.final_safety_knots == 0
     assert args.safety_anneal_epochs == 10
@@ -65,7 +66,17 @@ def test_default_profile_keeps_ninety_percent_as_reporting_reference():
     assert args.true_parameter_weight == pytest.approx(0.1)
     assert args.proposal_knot_coverage_weight == pytest.approx(1.0)
     assert args.proposal_knot_assignment_weight == pytest.approx(1.0)
+    assert args.proposal_multiscale_recall_weight == pytest.approx(0.25)
     assert args.selected_knot_position_weight == pytest.approx(1.0)
+    assert args.keep_dice_weight == pytest.approx(0.5)
+    assert args.keep_cdf_weight == pytest.approx(0.25)
+    assert args.parameter_gap_weight == pytest.approx(0.05)
+    assert args.parameter_bias_weight == pytest.approx(0.1)
+    assert args.fine_teacher_weight == pytest.approx(0.5)
+    assert args.fine_teacher_ranking_weight == pytest.approx(0.25)
+    assert args.fine_teacher_temperature == pytest.approx(0.5)
+    assert args.proposal_parameter_warp_gradient_scale == 0
+    assert args.joint_parameter_warp_gradient_scale == pytest.approx(0.1)
     assert args.knot_position_beta == pytest.approx(0.01)
     assert args.certified_minimal_source is True
     assert args.minimality_margin == pytest.approx(0.2)
@@ -102,6 +113,19 @@ def test_formal_supervised_profile_rejects_unlabelled_real_training():
         "--synthetic-count-role", "upper_bound",
     ])
     train_v16.validate_args(legacy)
+
+
+def test_formal_supervision_rejects_forced_coverage_anchors_but_legacy_allows_them():
+    formal = train_v16.parser().parse_args(["--one-shot-coverage-bins", "4"])
+    with pytest.raises(ValueError, match="exact KeepMask label"):
+        train_v16.validate_args(formal)
+
+    legacy = train_v16.parser().parse_args([
+        "--joint-supervision", "online_teacher",
+        "--one-shot-coverage-bins", "4",
+    ])
+    train_v16.validate_args(legacy)
+    assert legacy.one_shot_coverage_bins == 4
 
 
 def test_formal_supervised_profile_rejects_conflicting_complexity_reward():
@@ -401,6 +425,9 @@ def test_fixed_epoch_mixture_is_deterministic_and_respects_source_fraction(
         assert torch.count_nonzero(a["target_params"]) == 0
         assert torch.count_nonzero(a["target_internal_knots"]) == 0
         assert not a["target_internal_knot_mask"].any()
+        assert torch.count_nonzero(a["target_single_deletion_mse"]) == 0
+        assert not a["target_single_deletion_mask"].any()
+        assert not bool(a["target_single_deletion_valid"])
         if fraction == 1:
             train_points = [sources[0][1][i]["points"] for i in range(len(sources[0][1]))]
             assert any(torch.equal(a["points"], value) for value in train_points)
@@ -475,6 +502,39 @@ def test_narrow_low_k_targets_are_padded_to_global_capacity():
     )
     assert int(record["target_internal_knot_mask"].sum()) == 2
     assert torch.count_nonzero(record["target_internal_knots"][2:]) == 0
+    # Old/custom certified samples without the new vector remain readable;
+    # only the optional fine-grained deletion label is marked unavailable.
+    assert record["target_single_deletion_mse"].shape == (8,)
+    assert not record["target_single_deletion_mask"].any()
+    assert not bool(record["target_single_deletion_valid"])
+
+
+def test_single_deletion_rms_compatibility_payload_is_squared_and_padded():
+    points = torch.randn(12, 2)
+    sample = {
+        "source_minimality_certified": True,
+        "source_internal_knot_count": 2,
+        "true_params": torch.linspace(0.0, 1.0, 12),
+        "true_internal_knots": torch.tensor([0.25, 0.75]),
+        "true_internal_knot_mask": torch.tensor([True, True]),
+        "source_single_deletion_rms": torch.tensor([0.1, 0.2]),
+    }
+    record = _curve_record(
+        points,
+        "Synthetic",
+        max_internal_knots=4,
+        synthetic_sample=sample,
+        certified=True,
+    )
+    torch.testing.assert_close(
+        record["target_single_deletion_mse"],
+        torch.tensor([0.01, 0.04, 0.0, 0.0]),
+    )
+    torch.testing.assert_close(
+        record["target_single_deletion_mask"],
+        torch.tensor([True, True, False, False]),
+    )
+    assert bool(record["target_single_deletion_valid"])
 
 
 def test_certified_synthetic_minimal_count_targets_collate_with_real_curves(
@@ -508,6 +568,9 @@ def test_certified_synthetic_minimal_count_targets_collate_with_real_curves(
         "target_internal_knots",
         "target_internal_knot_mask",
         "target_geometry_valid",
+        "target_single_deletion_mse",
+        "target_single_deletion_mask",
+        "target_single_deletion_valid",
     }
     assert training_sample["target_internal_knot_count"].dtype == torch.long
     assert training_sample["target_internal_knot_count_valid"].dtype == torch.bool
@@ -522,6 +585,13 @@ def test_certified_synthetic_minimal_count_targets_collate_with_real_curves(
     assert training_sample["target_internal_knot_mask"].shape == (4,)
     assert int(training_sample["target_internal_knot_mask"].sum()) == 4
     assert torch.all(training_sample["target_internal_knots"].diff() > 0)
+    assert training_sample["target_single_deletion_mse"].shape == (4,)
+    torch.testing.assert_close(
+        training_sample["target_single_deletion_mask"],
+        training_sample["target_internal_knot_mask"],
+    )
+    assert bool(training_sample["target_single_deletion_valid"])
+    assert torch.all(training_sample["target_single_deletion_mse"] > 0)
 
     validation = ValidationCurves(
         certified_config,
@@ -547,9 +617,21 @@ def test_certified_synthetic_minimal_count_targets_collate_with_real_curves(
     assert batch["target_params"].shape == (3, 24)
     assert batch["target_internal_knots"].shape == (3, 4)
     assert batch["target_internal_knot_mask"].shape == (3, 4)
+    assert batch["target_single_deletion_mse"].shape == (3, 4)
+    assert batch["target_single_deletion_mask"].shape == (3, 4)
+    torch.testing.assert_close(
+        batch["target_single_deletion_valid"],
+        torch.tensor([True, False, False]),
+    )
+    torch.testing.assert_close(
+        batch["target_single_deletion_mask"][0],
+        batch["target_internal_knot_mask"][0],
+    )
     assert torch.count_nonzero(batch["target_params"][1:]) == 0
     assert torch.count_nonzero(batch["target_internal_knots"][1:]) == 0
     assert not batch["target_internal_knot_mask"][1:].any()
+    assert torch.count_nonzero(batch["target_single_deletion_mse"][1:]) == 0
+    assert not batch["target_single_deletion_mask"][1:].any()
 
 
 def test_validation_is_group_balanced_and_never_uses_test(real_manifest, dataset_config):
@@ -647,6 +729,39 @@ def test_checkpoint_ranking_uses_soft_cost_without_a_ninety_percent_gate():
     ) > train_v16.checkpoint_rank(dominated)
 
 
+def test_proposal_checkpoint_rank_uses_supervised_geometry_after_fit():
+    def metrics(*, mse=1e-6, recall=0.8, matched_mae=0.005, parameter_rmse=0.01):
+        return dict(
+            qualification_dense_pass_rate=0.95,
+            dense_mse=mse,
+            dense_subset_cost=0.98,
+            synthetic_knot_match_recall=recall,
+            synthetic_knot_matched_mae=matched_mae,
+            synthetic_parameter_rmse=parameter_rmse,
+        )
+
+    baseline = metrics()
+    assert train_v16.proposal_checkpoint_rank(
+        metrics(recall=0.9),
+    ) > train_v16.proposal_checkpoint_rank(baseline)
+    assert train_v16.proposal_checkpoint_rank(
+        metrics(matched_mae=0.004),
+    ) > train_v16.proposal_checkpoint_rank(baseline)
+    assert train_v16.proposal_checkpoint_rank(
+        metrics(parameter_rmse=0.009),
+    ) > train_v16.proposal_checkpoint_rank(baseline)
+    lower_pass = metrics(recall=1.0)
+    lower_pass["qualification_dense_pass_rate"] = 0.94
+    assert train_v16.proposal_checkpoint_rank(baseline) > (
+        train_v16.proposal_checkpoint_rank(lower_pass)
+    )
+    # Once qualification pass rate is equal, useful candidate geometry must not
+    # be hidden by a marginally better all-candidate refit.
+    assert train_v16.proposal_checkpoint_rank(
+        metrics(mse=1e-6, recall=1.0),
+    ) > train_v16.proposal_checkpoint_rank(metrics(mse=0.9e-6, recall=0.1))
+
+
 def test_validation_summary_reports_certified_count_and_position_accuracy():
     rows = [
         dict(
@@ -675,6 +790,8 @@ def test_validation_summary_reports_certified_count_and_position_accuracy():
     assert synthetic["knot_match_recall"] == pytest.approx(21 / 24)
     assert synthetic["knot_matched_mae"] == pytest.approx(0.095 / 21)
     assert result["synthetic_count_mae"] == pytest.approx(1.5)
+    assert result["synthetic_knot_match_recall"] == pytest.approx(21 / 24)
+    assert result["synthetic_parameter_rmse"] == pytest.approx(0.015)
 
 
 def test_validation_summary_audits_capacity_boundary_separately():
@@ -820,6 +937,13 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
     ] == pytest.approx(1.0)
     assert original["loss_config"]["joint_supervision"] == "synthetic_ground_truth"
     assert original["loss_config"]["online_teacher"] is False
+    assert original["loss_config"]["fine_grained_teacher"] == (
+        "certified_source_single_deletion_mse"
+    )
+    assert original["loss_config"][
+        "fine_teacher_additional_spline_solves_per_batch"
+    ] == 0
+    assert original["loss_config"]["weights"]["fine_teacher_weight"] > 0
     assert original["loss_config"]["ranked_prefix_teacher"] is False
     assert original["training_config"]["real_fraction"] == 0
     assert original["proposal_ready"]

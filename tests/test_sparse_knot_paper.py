@@ -233,8 +233,8 @@ class SparseKnotPaperTests(unittest.TestCase):
             low.jump_norms > low.effective_jump_threshold,
         )
 
-    def test_numerical_jump_floor_and_post_merge_repair(self) -> None:
-        """Exercise the dense-active-cluster failure seen in comparison runs."""
+    def test_long_active_runs_skip_algorithm4_instead_of_collapsing(self) -> None:
+        """General-data runs must not be forced through the cluster shortcut."""
         sample = generate_cubic_bspline_sample(
             num_points=48,
             min_control_points=8,  # source K = 4
@@ -264,11 +264,14 @@ class SparseKnotPaperTests(unittest.TestCase):
         )
 
         # Tiny ADMM residual jumps make every candidate look active under the
-        # legacy absolute threshold.  The repair must still restore the final
-        # exact-refit bound after that cluster is merged.
+        # legacy absolute threshold.  Kang et al. reserve Algorithm 4 for
+        # obvious compact groups; a length-12 run is retained instead of being
+        # misclassified as one source knot and collapsed to one/two entries.
         self.assertEqual(absolute_only.active_count, 12)
-        self.assertTrue(absolute_only.repair_used)
-        self.assertGreater(absolute_only.repair_refit_count, 1)
+        self.assertFalse(absolute_only.repair_used)
+        self.assertEqual(absolute_only.local_refit_count, 0)
+        self.assertEqual(absolute_only.relocated_internal_knots.numel(), 12)
+        self.assertIn("skipped", absolute_only.relocation_method)
         self.assertTrue(absolute_only.final_threshold_satisfied)
         self.assertEqual(absolute_only.effective_jump_threshold, 1e-7)
         self.assertGreater(relative.effective_jump_threshold, 1e-7)
