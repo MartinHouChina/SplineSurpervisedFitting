@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Native Linux runner for the formal v16 source-K=4..56, Kc=72,
-# MSE=1e-4 experiment.
+# Native Linux runner for v16 fixed-Proposal / offline feasible-subset Teacher.
+# The quick benchmark profile is diagnostic; full is the paper-sized protocol.
 
 set -Eeuo pipefail
 
 PYTHON_BIN="python"
-SIMPLIFICATION_CONTRACT="synthetic_ground_truth_ordered_keep_and_relocation_v4"
-RUN_NAME="candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised_linux"
+SIMPLIFICATION_CONTRACT="fixed_proposal_offline_feasible_subset_v1"
+RUN_NAME="candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1"
 DEVICE="cuda"
 EPOCHS=128
 PROPOSAL_EPOCHS=64
 SELECTOR_WARMUP_EPOCHS=8
 SELECTOR_LR=2e-4
-PROPOSAL_JOINT_LR=1e-5
-PARAMETER_JOINT_LR=5e-5
+PROPOSAL_JOINT_LR=0
+PARAMETER_JOINT_LR=0
 DECODER_JOINT_LR=5e-5
 TRAIN_SIZE=3000
 VAL_SIZE=600
@@ -35,6 +35,13 @@ INIT_CHECKPOINT=""
 PREPARE_REAL_DATA=0
 DIAGNOSTIC=0
 DRY_RUN=0
+BENCHMARK_PROFILE="full"
+SYNTHETIC_SAMPLES_EXPLICIT=0
+REAL_SAMPLES_EXPLICIT=0
+KANG_ITERATIONS_EXPLICIT=0
+LUO_ITERATIONS_EXPLICIT=0
+NETWORK_REPEATS_EXPLICIT=0
+END_TO_END_REPEATS_EXPLICIT=0
 
 usage() {
   cat <<'EOF'
@@ -48,8 +55,8 @@ Main options:
   --proposal-epochs N            Proposal-stage epochs (default: 64)
   --selector-warmup-epochs N     Joint selector/decoder-only warmup (default: 8)
   --selector-lr X                Joint Selector learning rate (default: 2e-4)
-  --proposal-joint-lr X          Joint encoder/candidate LR (default: 1e-5)
-  --parameter-joint-lr X         Joint ParameterHead LR (default: 5e-5)
+  --proposal-joint-lr X          Joint encoder/candidate LR (default: 0; Proposal fixed)
+  --parameter-joint-lr X         Joint ParameterHead LR (default: 0; Proposal fixed)
   --decoder-joint-lr X           Joint selected-decoder LR (default: 5e-5)
   --train-size N                 Training draws per epoch (default: 3000)
   --val-size N                   Synthetic validation curves (default: 600)
@@ -64,11 +71,12 @@ Main options:
   --init-checkpoint PATH         Optional proposal-only warm start
   --no-init-checkpoint           Train all modules from scratch
   --prepare-real-data            Prepare missing UJI, Natural Earth, USGS and industrial-offset data
+  --benchmark-profile quick|full Quick smoke benchmark or full comparison (default: full)
   --diagnostic                   Continue after a structural-integrity audit failure
   --dry-run                      Print every command without executing Python
   -h, --help                     Show this help
 
-Evaluation-size options:
+Evaluation-size options (override the selected profile):
   --synthetic-samples-per-k N    Synthetic cases for each K=4..56
   --real-samples-per-dataset N   Real benchmark cases per dataset
   --visual-samples-per-dataset N Real plotted cases per dataset
@@ -108,24 +116,36 @@ while (($#)); do
     --proposal-high-k-min-knots) need_value "$@"; PROPOSAL_HIGH_K_MIN_KNOTS="$2"; shift 2 ;;
     --batch-size) need_value "$@"; BATCH_SIZE="$2"; shift 2 ;;
     --num-workers) need_value "$@"; NUM_WORKERS="$2"; shift 2 ;;
-    --synthetic-samples-per-k) need_value "$@"; SYNTHETIC_SAMPLES_PER_K="$2"; shift 2 ;;
-    --real-samples-per-dataset) need_value "$@"; REAL_SAMPLES_PER_DATASET="$2"; shift 2 ;;
+    --synthetic-samples-per-k) need_value "$@"; SYNTHETIC_SAMPLES_PER_K="$2"; SYNTHETIC_SAMPLES_EXPLICIT=1; shift 2 ;;
+    --real-samples-per-dataset) need_value "$@"; REAL_SAMPLES_PER_DATASET="$2"; REAL_SAMPLES_EXPLICIT=1; shift 2 ;;
     --visual-samples-per-dataset) need_value "$@"; VISUAL_SAMPLES_PER_DATASET="$2"; shift 2 ;;
-    --kang-admm-iterations) need_value "$@"; KANG_ADMM_ITERATIONS="$2"; shift 2 ;;
+    --kang-admm-iterations) need_value "$@"; KANG_ADMM_ITERATIONS="$2"; KANG_ITERATIONS_EXPLICIT=1; shift 2 ;;
     --luo-de-population) need_value "$@"; LUO_DE_POPULATION="$2"; shift 2 ;;
-    --luo-de-iterations) need_value "$@"; LUO_DE_ITERATIONS="$2"; shift 2 ;;
-    --network-repeats) need_value "$@"; NETWORK_REPEATS="$2"; shift 2 ;;
-    --end-to-end-repeats) need_value "$@"; END_TO_END_REPEATS="$2"; shift 2 ;;
+    --luo-de-iterations) need_value "$@"; LUO_DE_ITERATIONS="$2"; LUO_ITERATIONS_EXPLICIT=1; shift 2 ;;
+    --network-repeats) need_value "$@"; NETWORK_REPEATS="$2"; NETWORK_REPEATS_EXPLICIT=1; shift 2 ;;
+    --end-to-end-repeats) need_value "$@"; END_TO_END_REPEATS="$2"; END_TO_END_REPEATS_EXPLICIT=1; shift 2 ;;
     --output-root) need_value "$@"; OUTPUT_ROOT="$2"; shift 2 ;;
     --init-checkpoint) need_value "$@"; INIT_CHECKPOINT="$2"; shift 2 ;;
     --no-init-checkpoint) INIT_CHECKPOINT=""; shift ;;
     --prepare-real-data) PREPARE_REAL_DATA=1; shift ;;
+    --benchmark-profile) need_value "$@"; BENCHMARK_PROFILE="$2"; shift 2 ;;
     --diagnostic) DIAGNOSTIC=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
 done
+
+[[ "$BENCHMARK_PROFILE" == "quick" || "$BENCHMARK_PROFILE" == "full" ]] || \
+  die "benchmark profile must be quick or full"
+if [[ "$BENCHMARK_PROFILE" == "quick" ]]; then
+  ((SYNTHETIC_SAMPLES_EXPLICIT)) || SYNTHETIC_SAMPLES_PER_K=1
+  ((REAL_SAMPLES_EXPLICIT)) || REAL_SAMPLES_PER_DATASET=5
+  ((KANG_ITERATIONS_EXPLICIT)) || KANG_ADMM_ITERATIONS=300
+  ((LUO_ITERATIONS_EXPLICIT)) || LUO_DE_ITERATIONS=30
+  ((NETWORK_REPEATS_EXPLICIT)) || NETWORK_REPEATS=30
+  ((END_TO_END_REPEATS_EXPLICIT)) || END_TO_END_REPEATS=1
+fi
 
 positive_integer() {
   local name="$1" value="$2"
@@ -143,6 +163,12 @@ positive_number() {
     die "$name must be a finite positive number"
   mantissa="${value%%[eE]*}"
   [[ "$mantissa" =~ [1-9] ]] || die "$name must be greater than zero"
+}
+
+nonnegative_number() {
+  local name="$1" value="$2"
+  [[ "$value" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$ ]] || \
+    die "$name must be a finite non-negative number"
 }
 
 for item in \
@@ -166,8 +192,8 @@ done
 nonnegative_integer "NUM_WORKERS" "$NUM_WORKERS"
 nonnegative_integer "SELECTOR_WARMUP_EPOCHS" "$SELECTOR_WARMUP_EPOCHS"
 positive_number "SELECTOR_LR" "$SELECTOR_LR"
-positive_number "PROPOSAL_JOINT_LR" "$PROPOSAL_JOINT_LR"
-positive_number "PARAMETER_JOINT_LR" "$PARAMETER_JOINT_LR"
+nonnegative_number "PROPOSAL_JOINT_LR" "$PROPOSAL_JOINT_LR"
+nonnegative_number "PARAMETER_JOINT_LR" "$PARAMETER_JOINT_LR"
 positive_number "DECODER_JOINT_LR" "$DECODER_JOINT_LR"
 ((PROPOSAL_EPOCHS < EPOCHS)) || die "proposal epochs must be smaller than total epochs"
 ((SELECTOR_WARMUP_EPOCHS < EPOCHS - PROPOSAL_EPOCHS)) || \
@@ -209,10 +235,11 @@ LAST_PATH="$CHECKPOINT_DIRECTORY/$RUN_NAME.last.pt"
 PROPOSAL_PATH="$CHECKPOINT_DIRECTORY/$RUN_NAME.proposal.pt"
 PROPOSAL_FINAL_PATH="$CHECKPOINT_DIRECTORY/$RUN_NAME.proposal.final.pt"
 HISTORY_PATH="$CHECKPOINT_DIRECTORY/$RUN_NAME.history.json"
+TEACHER_DIRECTORY="$OUTPUT_ROOT/teachers/$RUN_NAME"
 
 for owned in \
   "$CHECKPOINT_PATH" "$LAST_PATH" "$PROPOSAL_PATH" "$PROPOSAL_FINAL_PATH" "$HISTORY_PATH" \
-  "$LOG_DIRECTORY" "$COMPARISON_ROOT" "$FIGURE_ROOT"; do
+  "$LOG_DIRECTORY" "$COMPARISON_ROOT" "$FIGURE_ROOT" "$TEACHER_DIRECTORY"; do
   [[ ! -e "$owned" ]] || die "refusing to overwrite existing run artifact: $owned"
 done
 
@@ -288,7 +315,9 @@ if ((DRY_RUN == 0)); then
   fi
 fi
 
-mkdir -p -- "$CHECKPOINT_DIRECTORY" "$LOG_DIRECTORY"
+if ((DRY_RUN == 0)); then
+  mkdir -p -- "$CHECKPOINT_DIRECTORY" "$LOG_DIRECTORY"
+fi
 CURRENT_PHASE="initialization"
 trap 'code=$?; printf "\nPipeline failed during %s (exit %d). Logs: %s\n" "$CURRENT_PHASE" "$code" "$LOG_DIRECTORY" >&2; exit "$code"' ERR
 
@@ -313,12 +342,15 @@ run_logged() {
 printf 'Fresh v16 Linux profile: MSE=1e-4, Kc=72, source K=4..56, train/val=%s/%s, batch=%s.\n' \
   "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
 printf 'Simplification contract: %s\n' "$SIMPLIFICATION_CONTRACT"
-printf 'Checkpoint selection: Proposal uses dense subset cost -> worst/aggregate pass -> knot/parameter error -> F1/recall; Joint uses mean_per_curve_subset_cost_v1. No aggregate-pass hard gate.\n'
-printf 'Training supervision: certified Synthetic labels + cached per-knot deletion-MSE teacher; online self-Teacher disabled; real data is validation/test only.\n'
+printf 'Checkpoint selection is empirical: inspect the trained Proposal, feasible Teacher and one-shot deployment separately; no pass rate is assumed achieved.\n'
+printf 'Training supervision: certified Synthetic geometry labels plus an offline feasible-subset Teacher on a fixed Proposal frame; real data is validation/test only.\n'
+printf 'Joint samples are fixed across epochs so teacher cache labels remain sample-aligned. Teacher cache: %s\n' "$TEACHER_DIRECTORY"
+printf 'Benchmark profile=%s: synthetic=%s per K, real=%s per dataset. Quick results are diagnostic, not publication estimates.\n' \
+  "$BENCHMARK_PROFILE" "$SYNTHETIC_SAMPLES_PER_K" "$REAL_SAMPLES_PER_DATASET"
 printf 'Proposal synthetic high-K share=%s at K>=%s; Joint restores K=4..56.\n' \
   "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS"
 printf 'Candidate redundancy: 72 proposal slots for at most 56 labelled source knots (16-slot margin).\n'
-printf 'Joint optimization: %s selector/decoder-only warmup epochs; grouped LR selector=%s, proposal=%s, parameter=%s, decoder=%s.\n' \
+printf 'Joint optimization: fixed Proposal/encoder/ParameterHead; %s selector/decoder warmup epochs; grouped LR selector=%s, proposal=%s, parameter=%s, decoder=%s.\n' \
   "$SELECTOR_WARMUP_EPOCHS" "$SELECTOR_LR" "$PROPOSAL_JOINT_LR" \
   "$PARAMETER_JOINT_LR" "$DECODER_JOINT_LR"
 
@@ -367,8 +399,9 @@ TRAIN_ARGS=(
   --joint-parameter-warp-gradient-scale 0.1
   --one-shot-selection-policy mass_topk
   --initial-keep-fraction 0.4166666666666667
-  --joint-supervision synthetic_ground_truth
-  --synthetic-count-role exact
+  --joint-supervision offline_feasible_teacher
+  --feasible-teacher-cache-dir "$TEACHER_DIRECTORY"
+  --synthetic-count-role reference_only
   --no-synthetic-geometry-oracle-teacher
   --one-shot-coverage-bins 0
   --min-selected-knots 4
@@ -385,7 +418,7 @@ TRAIN_ARGS=(
   --real-manifest "$NATURAL_EARTH_MANIFEST"
   --real-manifest "$USGS_MANIFEST"
   --real-manifest "$INDUSTRIAL_OFFSET_MANIFEST"
-  --resample-train-each-epoch
+  --no-resample-train-each-epoch
   --num-workers "$NUM_WORKERS"
   --torch-num-threads 4
   --device "$DEVICE"
@@ -424,17 +457,28 @@ if ((CHECKPOINT_INTEGRITY_OK == 0 && DIAGNOSTIC == 0)); then
   die "checkpoint failed structural-integrity audit; benchmark and figures were not produced"
 fi
 
+PASS_REFERENCE_OK=0
+if ((DRY_RUN == 0 && CHECKPOINT_INTEGRITY_OK == 1)); then
+  PASS_REFERENCE_OK="$("$PYTHON_BIN" -c '
+import sys, torch
+checkpoint = torch.load(sys.argv[1], map_location="cpu", weights_only=True)
+print(1 if checkpoint.get("qualification", {}).get("pass_rate_reference_met") is True else 0)
+' "$CHECKPOINT_PATH")"
+fi
+
 if ((DRY_RUN)); then
   CHECKPOINT_HASH="0000000000000000000000000000000000000000000000000000000000000000"
 else
   CHECKPOINT_HASH="$(sha256sum -- "$CHECKPOINT_PATH" | awk '{print $1}')"
 fi
-if ((DIAGNOSTIC || CHECKPOINT_INTEGRITY_OK == 0)); then
+if ((DIAGNOSTIC || CHECKPOINT_INTEGRITY_OK == 0 || PASS_REFERENCE_OK == 0)) || [[ "$BENCHMARK_PROFILE" == "quick" ]]; then
   TAG="diagnostic_${CHECKPOINT_HASH:0:12}"
   DIAGNOSTIC_ARGS=(--allow-unqualified-diagnostic)
+  FORCE_DIAGNOSTIC_ARGS=(--force-diagnostic)
 else
   TAG="formal_${CHECKPOINT_HASH:0:12}"
   DIAGNOSTIC_ARGS=()
+  FORCE_DIAGNOSTIC_ARGS=()
 fi
 
 COMPARISON_DIRECTORY="$COMPARISON_ROOT/$TAG"
@@ -442,7 +486,9 @@ METRIC_FIGURE_DIRECTORY="$FIGURE_ROOT/$TAG/four_metrics"
 REAL_FIGURE_DIRECTORY="$FIGURE_ROOT/$TAG/six_method_real_cases"
 for directory in "$COMPARISON_DIRECTORY" "$METRIC_FIGURE_DIRECTORY" "$REAL_FIGURE_DIRECTORY"; do
   [[ ! -e "$directory" ]] || die "refusing to overwrite evaluation output: $directory"
-  mkdir -p -- "$directory"
+  if ((DRY_RUN == 0)); then
+    mkdir -p -- "$directory"
+  fi
 done
 
 MANIFEST_ARGS=(
@@ -467,11 +513,12 @@ BASELINE_ARGS=(
   --luo-de-iterations "$LUO_DE_ITERATIONS"
 )
 
-run_logged benchmark_six_methods \
+run_logged benchmark_six_methods_plus_verified \
   "$PYTHON_BIN" scripts/benchmark_v16_datasets.py \
   --checkpoint "$CHECKPOINT_PATH" \
   --output-dir "$COMPARISON_DIRECTORY" \
   --method-set published \
+  --include-verified-ours \
   --samples-per-knot-count "$SYNTHETIC_SAMPLES_PER_K" \
   --min-knot-count 4 --max-knot-count 56 \
   --real-samples-per-dataset "$REAL_SAMPLES_PER_DATASET" \
@@ -480,7 +527,7 @@ run_logged benchmark_six_methods \
   --network-warmups 10 --network-repeats "$NETWORK_REPEATS" \
   --end-to-end-repeats "$END_TO_END_REPEATS" \
   --torch-num-threads 4 --device "$DEVICE" \
-  "${DIAGNOSTIC_ARGS[@]}"
+  "${DIAGNOSTIC_ARGS[@]}" "${FORCE_DIAGNOSTIC_ARGS[@]}"
 
 run_logged plot_four_metrics \
   "$PYTHON_BIN" scripts/plot_v16_method_comparison.py \
@@ -499,12 +546,13 @@ run_logged visualize_six_method_real_cases \
   --network-warmups 10 --network-repeats "$NETWORK_REPEATS" \
   --end-to-end-repeats "$END_TO_END_REPEATS" \
   --torch-num-threads 4 --device "$DEVICE" --dpi 300 \
-  "${DIAGNOSTIC_ARGS[@]}"
+  "${DIAGNOSTIC_ARGS[@]}" "${FORCE_DIAGNOSTIC_ARGS[@]}"
 
 CURRENT_PHASE="completed"
 trap - ERR
 printf '\nv16 Linux pipeline completed.\n'
 printf '  checkpoint: %s\n' "$CHECKPOINT_PATH"
+printf '  teacher:    %s\n' "$TEACHER_DIRECTORY"
 printf '  diagnostic: %s\n' "$([[ ${#DIAGNOSTIC_ARGS[@]} -gt 0 ]] && printf true || printf false)"
 printf '  comparison: %s\n' "$COMPARISON_DIRECTORY"
 printf '  figures:    %s\n' "$FIGURE_ROOT/$TAG"

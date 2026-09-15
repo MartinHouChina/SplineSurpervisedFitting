@@ -1,4 +1,6 @@
-# v16 supervised-only 训练流程
+# v16 历史 supervised-only 训练流程
+
+> 此页保留上一次 `synthetic_ground_truth` Joint 协议的具体参数，**不再是当前 3090 一条龙训练方案**。当前固定 Proposal + 离线可行子集教师流程请见 [v16 可行子集教师工作流](v16_feasible_teacher_workflow.md)。旧方案把源节点 `K*` 直接用作预测候选/参数域中的 Keep 与 count 标签；服务器结果表明标签掩码在该域上并不总能满足 `MSE<=1e-4`，因此以下命令不能与新结果混用。
 
 本文描述当前正式协议，不描述 v8–v15 的 Teacher-cache 训练。当前协议保留合成最简性证书给出的逐节点删除 MSE 作为细粒度监督，但不恢复在线 self-teacher、subset search 或 Teacher cache。
 

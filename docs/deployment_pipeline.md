@@ -1,5 +1,7 @@
 # v16 部署与评测流程
 
+> 本页描述原始 `ours_one_shot` 的一次前向/一次 refit 评测接口，下面的 checkpoint 路径仍是旧 supervised-only 示例。当前 fixed-Proposal/离线可行子集教师训练与 `ours_verified_repair` 的独立计时、命名规则请先看 [当前 v16 工作流](v16_feasible_teacher_workflow.md)。一次性预测不保证每条曲线自动满足 MSE 阈值；核验/修复若启用必须作为另一方法单独报告。
+
 ## 1. 单条曲线部署
 
 输入是沿曲线顺序排列的 2D/3D 点。处理顺序为：

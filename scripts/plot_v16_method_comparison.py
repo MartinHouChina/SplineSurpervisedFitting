@@ -70,7 +70,7 @@ def validate_v16_benchmark(
 ) -> None:
     """Reject stale, partial, relabelled, or hand-assembled comparison reports."""
     metadata = report["metadata"]
-    if model_version(metadata) != "v16":
+    if model_version(metadata) not in {"v16", "v16-feasible-teacher"}:
         raise ValueError("The publication plot requires a native v16 benchmark report")
     if metadata.get("diagnostic_not_final") and not allow_unqualified_diagnostic:
         raise ValueError(
@@ -295,7 +295,7 @@ def render_comparison(
             fig.text(
                 0.5,
                 0.5,
-                "DIAGNOSTIC NOT FINAL — UNQUALIFIED CHECKPOINT",
+                "DIAGNOSTIC NOT FINAL — QUICK OR UNQUALIFIED RUN",
                 ha="center",
                 va="center",
                 rotation=24,

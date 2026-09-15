@@ -48,9 +48,13 @@ V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION = (
 V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION = (
     "candidate_selection_supervised_bspline_v16"
 )
+V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION = (
+    "candidate_selection_feasible_teacher_bspline_v16"
+)
 V16_OBJECTIVE_VERSIONS = (
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
     V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
+    V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
 )
 V16_ADAPTIVE_SELECTION_REVISION = (
     "v16_decoupled_keep_count_kc72_mass_topk"
@@ -61,6 +65,7 @@ V16_CERTIFIED_SYNTHETIC_CONTRACT = (
 V16_SIMPLIFICATION_CONTRACT = (
     "synthetic_ground_truth_ordered_keep_and_relocation_v4"
 )
+V16_FEASIBLE_TEACHER_CONTRACT = "fixed_proposal_offline_feasible_subset_v1"
 V16_CHECKPOINT_SELECTION_CONTRACT = "mean_per_curve_subset_cost_v1"
 V16_JOINT_CHECKPOINT_QUALITY = "supervised_fit_count_selected"
 V16_MINIMALITY_MARGIN = 0.2
@@ -264,8 +269,15 @@ def assess_v16_checkpoint(
         checkpoint.get("stage") == "joint" and configured_target_met
     )
     reasons: list[str] = []
-    if checkpoint.get("objective_version") != V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION:
-        reasons.append("objective_version is not supervised v16")
+    feasible_teacher_mode = (
+        checkpoint.get("objective_version")
+        == V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION
+    )
+    if checkpoint.get("objective_version") not in {
+        V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
+        V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
+    }:
+        reasons.append("objective_version is not labelled v16")
     architecture_revision = checkpoint.get("architecture_revision")
     selection_policy = model_config.get(
         "one_shot_selection_policy",
@@ -317,8 +329,14 @@ def assess_v16_checkpoint(
     if adaptive_threshold is not True:
         reasons.append("formal v16 adaptive keep threshold is not enabled")
     simplification_contract = checkpoint.get("simplification_contract")
-    if simplification_contract != V16_SIMPLIFICATION_CONTRACT:
+    expected_simplification_contract = (
+        V16_FEASIBLE_TEACHER_CONTRACT
+        if feasible_teacher_mode else V16_SIMPLIFICATION_CONTRACT
+    )
+    if simplification_contract != expected_simplification_contract:
         reasons.append(
+            "checkpoint simplification contract does not match Joint objective"
+            if feasible_teacher_mode else
             "checkpoint is not the synthetic-ground-truth ordered KeepMask "
             "and relocation revision"
         )
@@ -517,15 +535,27 @@ def assess_v16_checkpoint(
             "formal simplification supervision is inactive: "
             + ", ".join(inactive_weights)
         )
-    if joint_supervision != "synthetic_ground_truth":
-        reasons.append("Joint supervision is not direct synthetic ground truth")
+    expected_joint_supervision = (
+        "offline_feasible_teacher" if feasible_teacher_mode
+        else "synthetic_ground_truth"
+    )
+    if joint_supervision != expected_joint_supervision:
+        reasons.append(
+            "Joint supervision does not match labelled v16 objective"
+            if feasible_teacher_mode else
+            "Joint supervision is not direct synthetic ground truth"
+        )
     if loss_config.get("ranked_prefix_teacher") is not False:
         reasons.append("online ranked-prefix teacher must be disabled")
     if loss_config.get("online_teacher") is not False:
         reasons.append("online self-teacher must be disabled")
     if fine_grained_teacher is not None:
-        if fine_grained_teacher != "certified_source_single_deletion_mse":
-            reasons.append("fine-grained teacher provenance is not certified source deletion MSE")
+        expected_fine_teacher = (
+            "frozen_proposal_feasible_subset_risk"
+            if feasible_teacher_mode else "certified_source_single_deletion_mse"
+        )
+        if fine_grained_teacher != expected_fine_teacher:
+            reasons.append("fine-grained teacher provenance does not match objective")
         if fine_teacher_error_unit != "mean_squared_euclidean":
             reasons.append("fine-grained teacher does not use MSE units")
         if fine_teacher_extra_solves != 0:
@@ -534,8 +564,36 @@ def assess_v16_checkpoint(
             value = _finite_checkpoint_float(loss_weights.get(name))
             if value is None or value <= 0:
                 reasons.append(f"fine-grained teacher weight is inactive: {name}")
-    if synthetic_count_role != "exact":
-        reasons.append("certified synthetic knot count must be an exact label")
+    expected_count_role = "reference_only" if feasible_teacher_mode else "exact"
+    if synthetic_count_role != expected_count_role:
+        reasons.append(
+            "source knot-count role does not match Joint target"
+            if feasible_teacher_mode else
+            "certified synthetic knot count must be an exact label"
+        )
+    if feasible_teacher_mode:
+        if training.get("resample_train_each_epoch") is not False:
+            reasons.append("offline Teacher Joint samples were not fixed")
+        for name in ("tolerance_factor_min", "tolerance_factor_max"):
+            if _finite_checkpoint_float(training.get(name)) != 1.0:
+                reasons.append(f"offline Teacher requires {name}=1")
+        offline_teacher = checkpoint.get("offline_feasible_teacher")
+        if not isinstance(offline_teacher, Mapping):
+            reasons.append("fixed Proposal offline feasible Teacher provenance is missing")
+        else:
+            if offline_teacher.get("greedy_not_globally_minimal") is not True:
+                reasons.append("offline greedy Teacher minimality limitation is not recorded")
+            for name in ("proposal_fingerprint", "dataset_fingerprint", "cache_path"):
+                if not isinstance(offline_teacher.get(name), str) or not offline_teacher[name]:
+                    reasons.append(f"offline Teacher {name} is missing")
+            feasible_fraction = _finite_checkpoint_float(
+                offline_teacher.get("numerical_pass_fraction")
+            )
+            if feasible_fraction is None or not 0 <= feasible_fraction <= 1:
+                reasons.append("offline Teacher numerical pass fraction is invalid")
+        for name in ("proposal_joint_lr", "parameter_joint_lr"):
+            if _finite_checkpoint_float(training.get(name)) != 0.0:
+                reasons.append(f"fixed Proposal Teacher requires {name}=0")
     if checkpoint.get("stage") != "joint":
         reasons.append("checkpoint is not from the joint stage")
     if checkpoint.get("checkpoint_selection") != V16_CHECKPOINT_SELECTION_CONTRACT:
@@ -556,7 +614,9 @@ def assess_v16_checkpoint(
     return {
         "schema_version": 6,
         "qualification_contract": (
-            "v16_supervised_synthetic_only_pass_rates_report_only_v4"
+            "v16_fixed_proposal_offline_feasible_teacher_v1"
+            if feasible_teacher_mode
+            else "v16_supervised_synthetic_only_pass_rates_report_only_v4"
         ),
         "required_reporting_pass_rate": required,
         "pass_rate_reference_only": True,

@@ -1,24 +1,24 @@
 # Self-Supervised Spline Fitting（当前 v16 主线）
 
-本仓库当前主线是 **v16 supervised-only**：从有序点云一次性预测三次开放 B 样条的参数化、候选内部节点、KeepMask 和存活节点位置，再做一次标准 B 样条最小二乘 refit。
+本仓库当前 3090 试验主线是 **v16 fixed-Proposal + offline feasible-subset Teacher**：从有序点云一次性预测三次开放 B 样条的参数化、候选内部节点、KeepMask 和存活节点位置，再做一次标准 B 样条最小二乘 refit。新训练协议旨在纠正旧 Joint 把真源节点数直接当可行部署节点数所造成的阈值失效；效果须重训后实测。
 
-> 这里的 supervised-only 指训练协议。正式训练只使用带真参数、真内部节点、真节点数和逐节点删除 MSE 的认证合成曲线；UJI Pen、Natural Earth、USGS 和工业型线等距线只用于留出验证与测试，不参与梯度更新。逐节点删除 MSE 来自合成最简性认证，是固定的细粒度监督标签，不是在线自监督伪标签。
+> 训练只使用带真参数、真内部节点、真节点数和逐节点删除 MSE 的认证合成曲线；UJI Pen、Natural Earth、USGS 和工业型线等距线只用于留出验证与测试，不参与梯度更新。冻结 Proposal 后，在**预测候选/参数域**上离线搜索可行子集并缓存标签；这是训练时教师，不在网络部署时间内。
 
 ## 当前实验合同
 
 | 项目 | 当前设置 |
 |---|---|
-| objective | `candidate_selection_supervised_bspline_v16` |
-| architecture | `v16_supervised_ordered_assignment_mass_topk` |
-| simplification | `synthetic_ground_truth_ordered_keep_and_relocation_v4` |
+| objective | `candidate_selection_feasible_teacher_bspline_v16` |
+| architecture | `v16_decoupled_keep_count_kc72_mass_topk` |
+| simplification | `fixed_proposal_offline_feasible_subset_v1` |
 | 训练数据 | certified Synthetic only |
 | 真实数据 | validation/test only |
-| Teacher | 禁用 online prefix/counterfactual self-teacher；启用 certificate-derived single-deletion MSE 监督 |
+| Teacher | 固定 Proposal 后离线搜索预测候选域的可行 KeepMask/K；认证 source 删除 MSE 仍是辅助监督 |
 | 合成 source K | 4–56 个内部节点（8–60 个控制顶点） |
 | 网络容量 | `Kc=72` 个内部候选，对 source 最大 `K=56` 保留 16 个冗余槽位；全保留时完整三次节点向量为 80 项 |
 | 主阈值 | `MSE <= 1e-4`，其中 MSE 不开方、不除以坐标维数 |
 | 训练长度 | Proposal 64 + Joint 64 = 128 epochs |
-| 部署 | 1 次网络 forward + 1 次 mass-TopK + 1 次标准 refit |
+| 原始部署 | `ours_one_shot`：1 次网络 forward + 1 次 mass-TopK + 1 次标准 refit；核验/修复如启用须单独计时命名 |
 
 ## 数据流
 
@@ -34,11 +34,11 @@
   -> 曲线、控制顶点、内部节点向量、MSE
 ```
 
-Proposal 阶段用真参数、真节点、有序一一匹配和多尺度 recall 损失监督候选位置。当前 `Kc=72` 且 `K*<=56`，因此最大复杂度样本仍有 16 个冗余候选可供筛选和重定位，不再要求 56 个候选逐一精确复刻 56 个真节点。Joint 阶段由同一匹配直接产生 existence/KeepMask 标签，并用真 K、真参数和真节点位置监督计数、排序及重定位；Keep 概率还接受 Dice、沿候选顺序的 CDF 和邻近真节点的模糊负例约束。最简性认证保存的逐节点 single-deletion MSE 用于区分关键正候选，并细化 Keep 与 ranking 强度。参数头增加相邻参数间隔的 log-gap 和整曲线有符号 bias 监督，Joint 的节点位置损失以受限梯度回传给参数头。
+Proposal 阶段用真参数、真节点、有序一一匹配和多尺度 recall 监督候选位置。`Kc=72` 对最大源 `K*=56` 保留 16 个冗余槽位。冻结 Proposal 后，针对固定合成 Joint 样本在**该 Proposal 预测的参数和候选域**中离线搜索 `MSE<=1e-4` 的删除方案；Joint 学习缓存的可行 KeepMask/K，真源标签继续监督几何与参数。真 `K*` 不再强迫与预测域中的可行节点数相等。
 
-Joint 开始后的前 8 代只更新 Selector 和 selected-only decoder，先把 Keep 排序、数量与存活节点重定位接上已经训练好的 Proposal；随后再以分组学习率联合微调：Selector `2e-4`、GeometryEncoder/CandidateHead `1e-5`、ParameterHead `5e-5`、selected-only decoder `5e-5`。这避免 Joint 刚开始时随机 Selector 以同一学习率拖坏 Proposal。
+Joint 固定 GeometryEncoder、ParameterHead、CandidateKnotHead（Joint 学习率均为 `0`），只更新 Selector/Count 校准与 selected-only decoder；前 8 代仍保留 Selector/decoder warmup 课程。若让 Proposal 在缓存生成后继续漂移，离线教师的槽位标签就会失配，不能把该训练称为固定 Proposal 协议。
 
-正式路径仍不运行在线 Hard-RMS、ranked-prefix、oracle 或反事实 subset-search Teacher，也不生成 Teacher cache。细粒度删除标签在合成样本认证时计算，loss forward 不增加在线样条求解；部署仍是一次 forward、一次 mass-TopK 和一次 refit，计时口径不变。`Kc` 从 56 增至 72 会增加一定网络计算量，必须由新的实测 latency 报告，不能沿用旧值。
+离线教师缓存只属于固定训练样本、Proposal 权重和阈值；旧缓存/旧 Joint checkpoint 不能直接复用。原始部署仍是一次 forward、一次 mass-TopK、一次 refit；这一支的 MSE 不能保证每例过阈值。批量评测用 `--include-verified-ours` 添加单独的 `ours_verified` 数值核验/修复行，报告完整时间、额外 refit 和节点数，不与原始 `ours` 行混写。四指标图仍画原六方法，修复数据在汇总表和逐例记录中。`Kc=72` 的 latency 必须重新测量。
 
 ## 一条龙运行
 
@@ -57,10 +57,11 @@ data/processed/industrial_offsets/v1/manifest.jsonl
 bash scripts/run_v16_mse1e-4_3090.sh \
   --prepare-real-data \
   --device cuda \
-  --run-name candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised_linux
+  --benchmark-profile quick \
+  --run-name candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1
 ```
 
-在 Windows/RTX 3090 上运行：
+下面 Windows PowerShell 入口仍是旧 supervised-only 对照，**不等同于新的离线可行教师协议**：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
@@ -69,11 +70,13 @@ powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
   -PrepareRealData
 ```
 
-只检查命令和路径：
+在 Linux 上只检查新一条龙命令和路径，不执行训练/评测：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
-  -RunName v16_supervised_dryrun -DryRun
+```bash
+bash scripts/run_v16_mse1e-4_3090.sh \
+  --benchmark-profile quick \
+  --run-name v16_feasible_teacher_dryrun \
+  --dry-run
 ```
 
 脚本按顺序生成：
@@ -86,13 +89,13 @@ powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
 
 输出数据不会被作图脚本修改、缩放或替换。未实际运行完成前，文档不预设任何 MSE、通过率、节点数或速度结论。
 
-这批监督项改变了训练目标；旧 checkpoint 不会自动获得改进。必须重新训练，再用独立 Synthetic 与四个外部数据集验证 Proposal `R@.005/.01/.02`、Keep P/R/F1、关键节点误删率、参数偏差以及最终 MSE/通过率/节点数。
+新教师改变训练目标；旧 checkpoint 不会自动获得改进。必须重新训练，再用独立 Synthetic 与四个外部数据集验证教师掩码可行率、网络一次性 MSE/通过率/K、Proposal `R@.005/.01/.02`、Keep P/R/F1 和参数偏差。`quick` 只作跑通诊断，不能作为论文估计。
 
 ## 单条点云部署
 
 ```powershell
 python scripts/fit_v16_point_cloud.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1.pt `
   --point-cloud path/to/ordered_points.csv `
   --output-dir outputs/fits/my_curve `
   --mse-tolerance 1e-4 `
@@ -111,7 +114,8 @@ python scripts/fit_v16_point_cloud.py `
 
 ## 文档入口
 
-- [训练流程](docs/training_pipeline.md)
+- [当前 v16 可行教师工作流与 Linux 指令](docs/v16_feasible_teacher_workflow.md)
+- [旧 supervised-only 训练流程](docs/training_pipeline.md)
 - [细粒度合成教师与新增监督](docs/v16_fine_grained_supervision.md)
 - [工业型线等距线数据集](docs/industrial_offset_dataset.md)
 - [v16 算法](docs/v16_counterfactual_subset.md)

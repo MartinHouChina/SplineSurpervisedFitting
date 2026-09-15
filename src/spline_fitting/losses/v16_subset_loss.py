@@ -1,13 +1,10 @@
-"""Supervised and legacy-online objectives for v16 candidate selection.
+"""v16 supervised and historical online candidate-selection objectives.
 
-The formal path uses certified synthetic parameters and knots as direct labels:
-an ordered one-to-one assignment supplies the KeepMask target, the labelled knot
-count supervises adaptive mass-TopK, and the labelled subset supervises survivor
-relocation.  A cached per-source-knot deletion MSE from the same minimality
-certificate can additionally weight critical slots without any online solve.
-The historical online counterfactual path remains available only for explicit
-legacy ablations.
-Deployment always selects once and performs one final standard B-spline refit.
+The fixed-Proposal offline-feasible mode uses synthetic truth to supervise
+Proposal geometry, then numerically verified candidate-frame subsets to
+supervise Joint KeepMask, count and survivor relocation. The former direct
+source-knot mask and historical online counterfactual modes remain ablations.
+Raw deployment always selects once and performs one final B-spline refit.
 """
 
 from __future__ import annotations
@@ -228,14 +225,16 @@ class V16SubsetLoss(nn.Module):
             or teacher_low_count_sweep < 0
         ):
             raise ValueError("teacher_low_count_sweep must be a non-negative integer")
-        if synthetic_count_role not in {"exact", "upper_bound"}:
+        if synthetic_count_role not in {"exact", "upper_bound", "reference_only"}:
             raise ValueError(
-                "synthetic_count_role must be 'exact' or 'upper_bound'"
+                "synthetic_count_role must be exact, upper_bound or reference_only"
             )
-        if joint_supervision not in {"synthetic_ground_truth", "online_teacher"}:
+        if joint_supervision not in {
+            "synthetic_ground_truth", "offline_feasible_teacher", "online_teacher"
+        }:
             raise ValueError(
-                "joint_supervision must be 'synthetic_ground_truth' or "
-                "'online_teacher'"
+                "joint_supervision must be synthetic_ground_truth, "
+                "offline_feasible_teacher or online_teacher"
             )
         if not isinstance(synthetic_geometry_oracle_teacher, bool):
             raise ValueError("synthetic_geometry_oracle_teacher must be boolean")
@@ -1326,13 +1325,18 @@ class V16SubsetLoss(nn.Module):
         proposal_parameter_bias_mae,
         geometry_single_deletion_mse,
         fine_teacher_available,
+        feasible_teacher_mask=None,
+        feasible_teacher_knots=None,
+        feasible_teacher_knot_mask=None,
+        feasible_teacher_count=None,
+        feasible_teacher_mse=None,
+        feasible_teacher_pass=None,
+        feasible_teacher_risk=None,
     ):
-        """Train Joint directly from certified synthetic knot labels.
+        """Train Joint from source labels or fixed-Proposal offline subsets.
 
-        The discrete label is the minimum-cost monotone one-to-one assignment
-        between the ordered proposal candidates and the certified source knots.
-        No fitted subset is searched to create this target: Joint uses exactly
-        one dense fit, one deployed-mask fit and one labelled-mask fit.
+        The latter target is already cached: every training step performs only
+        one dense, one deployed-mask and one labelled-mask differentiable fit.
         """
         batch = points.shape[0]
         if supervised_counts is None:
@@ -1372,25 +1376,71 @@ class V16SubsetLoss(nn.Module):
                 or not torch.isfinite(value).all()
             ):
                 raise ValueError(f"{name} must be finite floating-point [B,K]")
-        target_mask = self._ordered_ground_truth_candidate_mask(
-            supervised_proposals,
-            geometry_knots,
-            geometry_mask,
-            geometry_valid,
-        )
-        if not torch.equal(target_mask.sum(-1), labelled_counts):
-            raise RuntimeError("ordered ground-truth assignment lost labelled knots")
+        offline_feasible = self.joint_supervision == "offline_feasible_teacher"
+        if offline_feasible:
+            if (
+                not isinstance(feasible_teacher_mask, torch.Tensor)
+                or feasible_teacher_mask.shape != proposals.shape
+                or feasible_teacher_mask.dtype != torch.bool
+                or feasible_teacher_mask.device != points.device
+            ):
+                raise ValueError("feasible teacher mask must be boolean [B,Kc] on device")
+            target_mask = feasible_teacher_mask
+            if (
+                not isinstance(feasible_teacher_count, torch.Tensor)
+                or feasible_teacher_count.shape != (batch,)
+                or not torch.equal(
+                    target_mask.sum(-1).long(), feasible_teacher_count.long()
+                )
+            ):
+                raise ValueError("feasible teacher count must match its mask")
+            if (
+                not isinstance(feasible_teacher_knots, torch.Tensor)
+                or feasible_teacher_knots.shape != proposals.shape
+                or not isinstance(feasible_teacher_knot_mask, torch.Tensor)
+                or feasible_teacher_knot_mask.shape != proposals.shape
+                or feasible_teacher_knot_mask.dtype != torch.bool
+                or not torch.equal(
+                    feasible_teacher_knot_mask.sum(-1), target_mask.sum(-1)
+                )
+            ):
+                raise ValueError("feasible teacher packed knots/mask disagree")
+            if (
+                not isinstance(feasible_teacher_mse, torch.Tensor)
+                or feasible_teacher_mse.shape != (batch,)
+                or not torch.isfinite(feasible_teacher_mse).all()
+                or not isinstance(feasible_teacher_pass, torch.Tensor)
+                or feasible_teacher_pass.shape != (batch,)
+                or feasible_teacher_pass.dtype != torch.bool
+            ):
+                raise ValueError("feasible teacher MSE/pass diagnostics are missing")
+            if (
+                not isinstance(feasible_teacher_risk, torch.Tensor)
+                or feasible_teacher_risk.shape != proposals.shape
+                or not torch.isfinite(feasible_teacher_risk).all()
+            ):
+                raise ValueError("feasible teacher slot risk must be finite [B,Kc]")
+        else:
+            target_mask = self._ordered_ground_truth_candidate_mask(
+                supervised_proposals, geometry_knots, geometry_mask, geometry_valid,
+            )
+            if not torch.equal(target_mask.sum(-1), labelled_counts):
+                raise RuntimeError("ordered ground-truth assignment lost labelled knots")
 
         fine_teacher_active = (
             self.fine_teacher_weight > 0
             or self.fine_teacher_ranking_weight > 0
         )
-        if fine_teacher_active and not fine_teacher_available:
+        if fine_teacher_active and not fine_teacher_available and not offline_feasible:
             raise ValueError(
                 "fine-grained teacher weights require synthetic "
                 "target_single_deletion_mse labels"
             )
-        if fine_teacher_available:
+        if offline_feasible:
+            teacher_delete_mse = torch.zeros_like(proposals)
+            teacher_log_margin = torch.zeros_like(proposals)
+            teacher_risk = feasible_teacher_risk.to(proposals.dtype).clamp(0.0, 1.0)
+        elif fine_teacher_available:
             teacher_delete_mse, teacher_value_valid = (
                 self._ordered_ground_truth_candidate_values(
                     supervised_proposals,
@@ -1454,7 +1504,7 @@ class V16SubsetLoss(nn.Module):
         deployment_output, deployment_mse = decode(deployment_mask)
         labelled_output, labelled_mse = decode(target_mask)
         deployment_count = deployment_mask.sum(-1).to(dense_mse.dtype)
-        target_count = labelled_counts.to(
+        target_count = target_mask.sum(-1).to(
             device=points.device, dtype=context["keep_logits"].dtype
         )
 
@@ -1466,15 +1516,18 @@ class V16SubsetLoss(nn.Module):
         )
         positive_count = target_mask.sum(-1).clamp_min(1)
         negative_mask = ~target_mask
-        distances_to_true = (
-            supervised_proposals.unsqueeze(-1) - geometry_knots.unsqueeze(1)
-        ).abs().masked_fill(~geometry_mask.unsqueeze(1), 1.0)
-        nearest_true = distances_to_true.amin(-1)
-        negative_confidence = (
-            self.keep_fuzzy_negative_floor
-            + (1.0 - self.keep_fuzzy_negative_floor)
-            * (nearest_true / self.keep_fuzzy_negative_radius).clamp(0.0, 1.0)
-        )
+        if offline_feasible:
+            negative_confidence = torch.ones_like(proposals)
+        else:
+            distances_to_true = (
+                supervised_proposals.unsqueeze(-1) - geometry_knots.unsqueeze(1)
+            ).abs().masked_fill(~geometry_mask.unsqueeze(1), 1.0)
+            nearest_true = distances_to_true.amin(-1)
+            negative_confidence = (
+                self.keep_fuzzy_negative_floor
+                + (1.0 - self.keep_fuzzy_negative_floor)
+                * (nearest_true / self.keep_fuzzy_negative_radius).clamp(0.0, 1.0)
+            )
         if not fine_teacher_active:
             negative_confidence = torch.ones_like(negative_confidence)
         negative_weight = negative_mask.to(element_loss.dtype) * negative_confidence
@@ -1556,6 +1609,15 @@ class V16SubsetLoss(nn.Module):
         ).mean()
 
         def supervised_geometry(output, mask):
+            if offline_feasible:
+                # The numerical teacher's knots are in the frozen Proposal
+                # parameter frame, not the certified source knot frame.
+                return self._selected_knot_loss(
+                    output["internal_knots"], mask,
+                    feasible_teacher_knots,
+                    feasible_teacher_knot_mask,
+                    geometry_valid,
+                )
             warped = output["internal_knots"].clone()
             warped[geometry_valid] = self._warp_knots_to_target_parameterization(
                 output["internal_knots"][geometry_valid],
@@ -1575,34 +1637,46 @@ class V16SubsetLoss(nn.Module):
 
         deployed_position = supervised_geometry(deployment_output, deployment_mask)
         labelled_position = supervised_geometry(labelled_output, target_mask)
-        deployed_coverage = self._directed_knot_loss(
-            self._warp_knots_to_target_parameterization(
-                deployment_output["internal_knots"],
-                self._scale_gradient(
-                    deployment_output["params"],
-                    self.joint_parameter_warp_gradient_scale,
+        if offline_feasible:
+            deployed_coverage = self._directed_knot_loss(
+                deployment_output["internal_knots"], deployment_mask,
+                feasible_teacher_knots, feasible_teacher_knot_mask,
+                geometry_valid,
+            )
+            labelled_coverage = self._directed_knot_loss(
+                labelled_output["internal_knots"], target_mask,
+                feasible_teacher_knots, feasible_teacher_knot_mask,
+                geometry_valid,
+            )
+        else:
+            deployed_coverage = self._directed_knot_loss(
+                self._warp_knots_to_target_parameterization(
+                    deployment_output["internal_knots"],
+                    self._scale_gradient(
+                        deployment_output["params"],
+                        self.joint_parameter_warp_gradient_scale,
+                    ),
+                    geometry_params,
                 ),
-                geometry_params,
-            ),
-            deployment_mask,
-            geometry_knots,
-            geometry_mask,
-            geometry_valid,
-        )
-        labelled_coverage = self._directed_knot_loss(
-            self._warp_knots_to_target_parameterization(
-                labelled_output["internal_knots"],
-                self._scale_gradient(
-                    labelled_output["params"],
-                    self.joint_parameter_warp_gradient_scale,
+                deployment_mask,
+                geometry_knots,
+                geometry_mask,
+                geometry_valid,
+            )
+            labelled_coverage = self._directed_knot_loss(
+                self._warp_knots_to_target_parameterization(
+                    labelled_output["internal_knots"],
+                    self._scale_gradient(
+                        labelled_output["params"],
+                        self.joint_parameter_warp_gradient_scale,
+                    ),
+                    geometry_params,
                 ),
-                geometry_params,
-            ),
-            target_mask,
-            geometry_knots,
-            geometry_mask,
-            geometry_valid,
-        )
+                target_mask,
+                geometry_knots,
+                geometry_mask,
+                geometry_valid,
+            )
         # One-to-one matching locates individual survivors; directed coverage
         # additionally penalizes any labelled knot left unmatched when the
         # deployed count is too small.  This is direct ground-truth geometry
@@ -1792,6 +1866,16 @@ class V16SubsetLoss(nn.Module):
             "subset_best_pass_rate": (labelled_mse <= tolerance).double().mean(),
             "supervised_target_mse": labelled_mse.mean(),
             "supervised_target_pass_rate": (labelled_mse <= tolerance).double().mean(),
+            "offline_teacher_numerical_mse": (
+                feasible_teacher_mse.double().mean() if offline_feasible else zero
+            ),
+            "offline_teacher_numerical_pass_rate": (
+                feasible_teacher_pass.double().mean() if offline_feasible else zero
+            ),
+            "offline_teacher_source_count_gap": (
+                (target_count - labelled_counts.to(target_count.dtype)).abs().mean()
+                if offline_feasible else zero
+            ),
             "prefix_teacher_feasible_fraction": zero,
             "prefix_teacher_fallback_fraction": zero,
             "prefix_teacher_search_evaluations": zero,
@@ -1809,6 +1893,10 @@ class V16SubsetLoss(nn.Module):
         target_internal_knots=None, target_internal_knot_mask=None,
         target_geometry_valid=None, target_single_deletion_mse=None,
         target_single_deletion_mask=None, target_single_deletion_valid=None,
+        feasible_teacher_mask=None, feasible_teacher_knots=None,
+        feasible_teacher_knot_mask=None, feasible_teacher_count=None,
+        feasible_teacher_mse=None, feasible_teacher_pass=None,
+        feasible_teacher_risk=None,
     ):
         if stage not in ("proposal", "joint"):
             raise ValueError("stage must be 'proposal' or 'joint'")
@@ -2021,7 +2109,9 @@ class V16SubsetLoss(nn.Module):
             true_parameter_loss = proposal_true_parameter_loss
             true_parameter_mae = proposal_true_parameter_mae
         else:
-            if self.joint_supervision == "synthetic_ground_truth":
+            if self.joint_supervision in {
+                "synthetic_ground_truth", "offline_feasible_teacher"
+            }:
                 return self._supervised_joint_forward(
                     model=model,
                     context=context,
@@ -2054,6 +2144,13 @@ class V16SubsetLoss(nn.Module):
                     proposal_parameter_bias_mae=proposal_parameter_bias_mae,
                     geometry_single_deletion_mse=geometry_single_deletion_mse,
                     fine_teacher_available=fine_teacher_available,
+                    feasible_teacher_mask=feasible_teacher_mask,
+                    feasible_teacher_knots=feasible_teacher_knots,
+                    feasible_teacher_knot_mask=feasible_teacher_knot_mask,
+                    feasible_teacher_count=feasible_teacher_count,
+                    feasible_teacher_mse=feasible_teacher_mse,
+                    feasible_teacher_pass=feasible_teacher_pass,
+                    feasible_teacher_risk=feasible_teacher_risk,
                 )
             logits = context["keep_logits"]
             if logits.shape != proposals.shape or logits.device != points.device:

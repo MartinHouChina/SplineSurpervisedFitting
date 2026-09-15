@@ -287,12 +287,44 @@ def test_version_gate_rejects_v15_as_v16_and_unknown_objectives():
     v16 = benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION
     assert benchmark.benchmark_version(v15, expected_objective=v15) == "v15"
     assert benchmark.benchmark_version(v16, expected_objective=v16) == "v16"
+    assert benchmark.benchmark_version(
+        benchmark.V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
+        expected_objective=(
+            v16, benchmark.V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
+        ),
+    ) == "v16-feasible-teacher"
     with pytest.raises(ValueError, match="requires"):
         benchmark.benchmark_version(v15, expected_objective=v16)
     with pytest.raises(ValueError, match="requires"):
         benchmark.benchmark_version("invented", expected_objective=v16)
     with pytest.raises(ValueError, match="Unsupported"):
         benchmark.benchmark_version("invented", expected_objective="invented")
+
+
+def test_verified_ours_benchmark_keeps_raw_and_repair_diagnostics_separate():
+    from spline_fitting.models.v16_network import V16CandidateSelectionNetwork
+
+    model = V16CandidateSelectionNetwork(
+        hidden_dim=16, encoder_layers=1, max_internal_knots=6,
+        attention_heads=2, selector_layers=1, min_selected_knots=0,
+    ).eval()
+    t = torch.linspace(0, 1, 32)
+    points = torch.stack([t, 0.2 * torch.sin(4 * t)], -1)
+    args = SimpleNamespace(
+        mse_tolerance=1e-4, network_warmups=0,
+        network_repeats=1, end_to_end_repeats=1,
+    )
+    fit, params, total_ms, network_ms, diagnostic = benchmark.measure_ours_verified(
+        model, points, torch.device("cpu"), args,
+        objective_version=benchmark.V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
+    )
+    assert fit.internal_knots.numel() == diagnostic["verified_k"]
+    assert diagnostic["raw_one_shot_k"] >= 0
+    assert diagnostic["method_labels"] == [
+        "ours_one_shot", "ours_mse_verified_numerical_repair"
+    ]
+    assert total_ms >= 0 and network_ms >= 0
+    assert params.shape == (32,)
 
 
 def test_missing_checkpoint_is_reported_before_torch_load(tmp_path, capsys):
@@ -411,13 +443,16 @@ def test_v16_wrapper_uses_explicit_objective_and_dedicated_paths(monkeypatch):
     monkeypatch.setattr(wrapper, "shared_main", capture)
     wrapper.main(["--skip-real"])
     assert called["argv"] == ["--skip-real", "--max-knot-count", "56"]
-    assert called["expected_objective"] == benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION
+    assert called["expected_objective"] == (
+        benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
+        benchmark.V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
+    )
     assert (
         called["default_checkpoint"].name
-        == "candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt"
+        == "candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1.pt"
     )
     assert called["default_output_dir"].name == (
-        "v16_mse1e-4_sourcek56_kc72_supervised"
+        "v16_mse1e-4_sourcek56_kc72_feasible_teacher"
     )
 
     called.clear()

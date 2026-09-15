@@ -1137,3 +1137,52 @@ def test_invalid_policy_samples_and_costs():
         bernoulli_subset_policy_loss(logits, masks, torch.full((2, 1), float("nan")))
     with pytest.raises(ValueError, match="positive integer"):
         subset_cost(torch.zeros(1), torch.zeros(1), torch.ones(1), 1.5)
+
+
+def test_offline_feasible_joint_uses_verified_subset_not_source_count():
+    torch.manual_seed(81)
+    points = curve_batch()[:1]
+    params = torch.linspace(0, 1, points.shape[1]).unsqueeze(0)
+    source_knots = torch.tensor([[0.2, 0.6, 0.8]])
+    source_mask = torch.tensor([[True, True, True]])
+    model = V16CandidateSelectionNetwork(
+        hidden_dim=16, encoder_layers=1, max_internal_knots=6,
+        attention_heads=2, selector_layers=1, min_selected_knots=0,
+        one_shot_selection_policy="mass_topk",
+        one_shot_adaptive_threshold=True,
+    )
+    objective = V16SubsetLoss(
+        mse_tolerance=1e-4, policy_samples=2,
+        joint_supervision="offline_feasible_teacher",
+        ranked_prefix_teacher=False, synthetic_count_role="upper_bound",
+        fine_teacher_weight=0.5, fine_teacher_ranking_weight=0.25,
+        complexity_weight=0,
+    )
+    teacher_slot_mask = torch.tensor([[False, True, False, False, True, False]])
+    teacher_knots = torch.tensor([[0.25, 0.68, 0.0, 0.0, 0.0, 0.0]])
+    teacher_knot_mask = torch.tensor([[True, True, False, False, False, False]])
+    teacher_risk = torch.tensor([[0.0, 0.8, 0.0, 0.0, 0.7, 0.0]])
+    with patch.object(objective, "_fit", wraps=objective._fit) as fitted:
+        loss, metrics = objective(
+            model, points, stage="joint",
+            synthetic_target_count=torch.tensor([3]),
+            synthetic_target_valid=torch.tensor([True]),
+            target_params=params,
+            target_internal_knots=source_knots,
+            target_internal_knot_mask=source_mask,
+            target_geometry_valid=torch.tensor([True]),
+            feasible_teacher_mask=teacher_slot_mask,
+            feasible_teacher_knots=teacher_knots,
+            feasible_teacher_knot_mask=teacher_knot_mask,
+            feasible_teacher_count=torch.tensor([2]),
+            feasible_teacher_mse=torch.tensor([9e-5]),
+            feasible_teacher_pass=torch.tensor([True]),
+            feasible_teacher_risk=teacher_risk,
+        )
+    assert fitted.call_count == 3
+    assert metrics["offline_teacher_numerical_pass_rate"] == 1
+    assert metrics["subset_best_count"] == pytest.approx(2)
+    assert metrics["offline_teacher_source_count_gap"] == pytest.approx(1)
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert model.keep_head.weight.grad is not None

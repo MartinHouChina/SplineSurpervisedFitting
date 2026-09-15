@@ -16,16 +16,16 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
     required = (
         "#!/usr/bin/env bash",
         "set -Eeuo pipefail",
-        'RUN_NAME="candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised_linux"',
-        'SIMPLIFICATION_CONTRACT="synthetic_ground_truth_ordered_keep_and_relocation_v4"',
-        "Checkpoint selection: Proposal uses dense subset cost -> worst/aggregate pass -> knot/parameter error -> F1/recall; Joint uses mean_per_curve_subset_cost_v1. No aggregate-pass hard gate.",
-        "Training supervision: certified Synthetic labels + cached per-knot deletion-MSE teacher; online self-Teacher disabled; real data is validation/test only.",
+        'RUN_NAME="candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1"',
+        'SIMPLIFICATION_CONTRACT="fixed_proposal_offline_feasible_subset_v1"',
+        "Checkpoint selection is empirical",
+        "offline feasible-subset Teacher on a fixed Proposal frame",
         "EPOCHS=128",
         "PROPOSAL_EPOCHS=64",
         "SELECTOR_WARMUP_EPOCHS=8",
         "SELECTOR_LR=2e-4",
-        "PROPOSAL_JOINT_LR=1e-5",
-        "PARAMETER_JOINT_LR=5e-5",
+        "PROPOSAL_JOINT_LR=0",
+        "PARAMETER_JOINT_LR=0",
         "DECODER_JOINT_LR=5e-5",
         "--min-control-points 8",
         "--max-control-points 60",
@@ -43,8 +43,10 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
         '--proposal-joint-lr "$PROPOSAL_JOINT_LR"',
         '--parameter-joint-lr "$PARAMETER_JOINT_LR"',
         '--decoder-joint-lr "$DECODER_JOINT_LR"',
-        "--joint-supervision synthetic_ground_truth",
-        "--synthetic-count-role exact",
+        "--joint-supervision offline_feasible_teacher",
+        '--feasible-teacher-cache-dir "$TEACHER_DIRECTORY"',
+        "--synthetic-count-role reference_only",
+        "--no-resample-train-each-epoch",
         "--no-synthetic-geometry-oracle-teacher",
         "--real-fraction 0",
         "--prepare-real-data",
@@ -62,6 +64,9 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
         "scripts/visualize_v16_real_deployments.py",
         'PROPOSAL_FINAL_PATH="$CHECKPOINT_DIRECTORY/$RUN_NAME.proposal.final.pt"',
         '"$PROPOSAL_FINAL_PATH"',
+        'TEACHER_DIRECTORY="$OUTPUT_ROOT/teachers/$RUN_NAME"',
+        '"$TEACHER_DIRECTORY"',
+        '--benchmark-profile quick|full',
     )
     for fragment in required:
         assert fragment in source
@@ -99,6 +104,7 @@ def test_linux_runner_refuses_unknown_options_and_documents_help() -> None:
     assert "rerun with --prepare-real-data" in source
     assert "--diagnostic" in source
     assert "--dry-run" in source
+    assert "--benchmark-profile" in source
     assert "--python PATH" in source
     assert "--proposal-high-k-fraction X" in source
     assert "--proposal-high-k-min-knots N" in source

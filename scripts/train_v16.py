@@ -1,8 +1,7 @@
-"""Train v16 Proposal and Joint stages from certified synthetic labels.
+"""Train v16 Proposal and Joint stages from labelled synthetic curves.
 
-Real curves are loaded only for held-out validation.  The formal Joint stage
-uses ordered ground-truth knot assignment and never runs an online subset-search
-teacher; the legacy online objective remains an explicit ablation only.
+The optional offline-feasible Joint target is searched once on a frozen
+Proposal candidate/parameter frame. Real curves are held-out validation only.
 """
 from __future__ import annotations
 
@@ -24,7 +23,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch.nn import functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -34,6 +33,8 @@ from spline_fitting.checkpointing import (
     V16_CERTIFIED_SYNTHETIC_CONTRACT,
     V16_CHECKPOINT_SELECTION_CONTRACT,
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+    V16_FEASIBLE_TEACHER_CONTRACT,
+    V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
     V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
     V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
     V16_FORMAL_PASS_RATE,
@@ -52,9 +53,27 @@ from spline_fitting.evaluation.knot_diagnostics import (
 )
 from spline_fitting.losses.v16_subset_loss import V16SubsetLoss, subset_cost
 from spline_fitting.models.v16_network import V16CandidateSelectionNetwork
+from spline_fitting.training.v16_feasible_teacher import (
+    build_or_load_v16_feasible_teacher_cache,
+)
 
 
 V16_CHECKPOINT_SELECTION = V16_CHECKPOINT_SELECTION_CONTRACT
+
+
+class IndexedTrainingDataset(Dataset):
+    """Attach the stable row id used by offline numerical teacher labels."""
+
+    def __init__(self, source: Dataset) -> None:
+        self.source = source
+
+    def __len__(self) -> int:
+        return len(self.source)
+
+    def __getitem__(self, index: int):
+        row = dict(self.source[index])
+        row["feasible_teacher_index"] = index
+        return row
 
 
 def parser():
@@ -168,18 +187,22 @@ def parser():
               "during training; 0 disables the simple-curve sweep"),
     )
     p.add_argument(
-        "--synthetic-count-role", choices=("exact", "upper_bound"),
+        "--synthetic-count-role", choices=("exact", "upper_bound", "reference_only"),
         default="exact",
         help=("Treat certified source K as an upper bound when survivor knots "
               "may relocate; 'exact' preserves the historical v16 ablation"),
     )
     p.add_argument(
         "--joint-supervision",
-        choices=("synthetic_ground_truth", "online_teacher"),
+        choices=("synthetic_ground_truth", "offline_feasible_teacher", "online_teacher"),
         default="synthetic_ground_truth",
         help=("Formal mode directly supervises KeepMask, count and relocation "
               "from certified synthetic labels. online_teacher is a legacy "
               "ablation and permits mixed real-data training."),
+    )
+    p.add_argument(
+        "--feasible-teacher-cache-dir", type=Path,
+        help="Required with offline_feasible_teacher; fixed Proposal labels are cached here",
     )
     p.add_argument(
         "--synthetic-geometry-oracle-teacher",
@@ -426,8 +449,7 @@ def validate_args(args):
         )
     for key in (
         "mse_tolerance", "knot_match_tolerance", "lr", "joint_lr",
-        "selector_lr", "proposal_joint_lr", "parameter_joint_lr",
-        "decoder_joint_lr",
+        "selector_lr", "decoder_joint_lr",
         "grad_clip", "tolerance_factor_min", "tolerance_factor_max",
     ):
         if not math.isfinite(getattr(args, key)) or getattr(args, key) <= 0:
@@ -444,7 +466,7 @@ def validate_args(args):
         "parameter_gap_weight", "parameter_bias_weight", "fine_teacher_weight",
         "fine_teacher_ranking_weight", "fine_teacher_temperature",
         "keep_fuzzy_negative_radius", "knot_position_beta",
-        "complexity_max_scale",
+        "complexity_max_scale", "proposal_joint_lr", "parameter_joint_lr",
     ):
         if not math.isfinite(getattr(args, key)) or getattr(args, key) < 0:
             raise ValueError(f"{key} must be finite and nonnegative")
@@ -489,17 +511,17 @@ def validate_args(args):
     ):
         if not math.isfinite(getattr(args, key)) or not 0 <= getattr(args, key) <= 1:
             raise ValueError(f"{key} must lie in [0,1]")
-    if args.joint_supervision == "synthetic_ground_truth":
+    if args.joint_supervision in {"synthetic_ground_truth", "offline_feasible_teacher"}:
         if args.real_fraction != 0.0:
             raise ValueError(
-                "synthetic_ground_truth Joint requires --real-fraction 0; "
+                "labelled Joint requires --real-fraction 0; "
                 "real manifests are validation/test data only"
             )
         if not args.certified_minimal_source:
             raise ValueError(
-                "synthetic_ground_truth Joint requires --certified-minimal-source"
+                "labelled Joint requires --certified-minimal-source"
             )
-        if args.synthetic_count_role != "exact":
+        if args.joint_supervision == "synthetic_ground_truth" and args.synthetic_count_role != "exact":
             raise ValueError(
                 "synthetic_ground_truth Joint requires --synthetic-count-role exact"
             )
@@ -520,9 +542,31 @@ def validate_args(args):
             )
         if args.complexity_weight != 0.0:
             raise ValueError(
-                "synthetic_ground_truth uses the exact labelled knot count; "
-                "set --complexity-weight 0 to avoid a conflicting objective"
+                ("synthetic_ground_truth uses the exact labelled knot count; "
+                 if args.joint_supervision == "synthetic_ground_truth"
+                 else "offline feasible Teacher supervises its own knot count; ")
+                + "set --complexity-weight 0 to avoid a conflicting objective"
             )
+    if args.joint_supervision == "offline_feasible_teacher":
+        if args.feasible_teacher_cache_dir is None:
+            raise ValueError("offline_feasible_teacher requires --feasible-teacher-cache-dir")
+        if args.resample_train_each_epoch:
+            raise ValueError(
+                "offline teacher labels require fixed training samples; "
+                "set --no-resample-train-each-epoch"
+            )
+        if args.synthetic_count_role != "reference_only":
+            raise ValueError(
+                "source K is diagnostic, not a teacher upper bound; "
+                "set --synthetic-count-role reference_only"
+            )
+        if args.proposal_joint_lr != 0 or args.parameter_joint_lr != 0:
+            raise ValueError(
+                "fixed Proposal Teacher requires --proposal-joint-lr 0 "
+                "and --parameter-joint-lr 0"
+            )
+    elif args.feasible_teacher_cache_dir is not None:
+        raise ValueError("--feasible-teacher-cache-dir requires offline_feasible_teacher")
     if args.tolerance_factor_min > args.tolerance_factor_max:
         raise ValueError("tolerance-factor-min must be <= tolerance-factor-max")
     if not math.isfinite(args.relocation_blend) or not 0 <= args.relocation_blend <= 1:
@@ -606,11 +650,15 @@ def joint_training_phase(args, epoch):
     return "joint_finetune"
 
 
-def configure_joint_trainability(model, *, selector_warmup):
+def configure_joint_trainability(model, *, selector_warmup, fixed_proposal=False):
     """Freeze proposal geometry only during the stable-label selector warmup."""
     groups, grouped_names = joint_parameter_groups(model)
     for group_name, parameters in groups.items():
-        trainable = not selector_warmup or group_name in {"selector", "decoder"}
+        trainable = (
+            group_name in {"selector", "decoder"}
+            if fixed_proposal else
+            not selector_warmup or group_name in {"selector", "decoder"}
+        )
         for parameter in parameters:
             parameter.requires_grad_(trainable)
     return {
@@ -1385,10 +1433,15 @@ def main(argv=None):
         validate_args(args)
     except ValueError as error:
         p.error(str(error))
-    run_objective_version = (
-        V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION
-        if args.joint_supervision == "synthetic_ground_truth"
-        else V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION
+    run_objective_version = {
+        "synthetic_ground_truth": V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
+        "offline_feasible_teacher": V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
+        "online_teacher": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+    }[args.joint_supervision]
+    run_simplification_contract = (
+        V16_FEASIBLE_TEACHER_CONTRACT
+        if args.joint_supervision == "offline_feasible_teacher"
+        else V16_SIMPLIFICATION_CONTRACT
     )
     output = args.output.resolve()
     last_path = output.with_name(output.stem + ".last.pt")
@@ -1465,7 +1518,7 @@ def main(argv=None):
                 "resume checkpoint uses an older v16 selection revision; "
                 "start a new run or use --init-checkpoint for proposal transfer"
             )
-        if resume_payload.get("simplification_contract") != V16_SIMPLIFICATION_CONTRACT:
+        if resume_payload.get("simplification_contract") != run_simplification_contract:
             p.error(
                 "resume checkpoint uses an older simplification contract; "
                 "start a new run or use --init-checkpoint"
@@ -1578,7 +1631,7 @@ def main(argv=None):
                 rank_key="best_proposal_rank",
                 objective_version=run_objective_version,
                 architecture_revision=V16_ADAPTIVE_SELECTION_REVISION,
-                simplification_contract=V16_SIMPLIFICATION_CONTRACT,
+                simplification_contract=run_simplification_contract,
                 expected_output=output,
             )
             if (
@@ -1592,7 +1645,7 @@ def main(argv=None):
                     rank_key="best_joint_rank",
                     objective_version=run_objective_version,
                     architecture_revision=V16_ADAPTIVE_SELECTION_REVISION,
-                    simplification_contract=V16_SIMPLIFICATION_CONTRACT,
+                    simplification_contract=run_simplification_contract,
                     expected_output=output,
                 )
                 if best_rank is None or committed_joint_rank > tuple(best_rank):
@@ -1626,7 +1679,7 @@ def main(argv=None):
                 atomic_save(resume_payload, proposal_final_path)
     elif args.init_checkpoint:
         source_checkpoint = torch.load(args.init_checkpoint, map_location="cpu", weights_only=True)
-        if args.joint_supervision == "synthetic_ground_truth":
+        if args.joint_supervision in {"synthetic_ground_truth", "offline_feasible_teacher"}:
             source_training = source_checkpoint.get("training_config", {})
             source_real_fraction = source_training.get("real_fraction")
             if (
@@ -1670,6 +1723,7 @@ def main(argv=None):
             selector_warmup = resumed_phase == "selector_warmup"
             configure_joint_trainability(
                 model, selector_warmup=selector_warmup,
+                fixed_proposal=args.joint_supervision == "offline_feasible_teacher",
             )
             optimizer = build_joint_optimizer(
                 model, args, selector_warmup=selector_warmup,
@@ -1779,6 +1833,17 @@ def main(argv=None):
             "Deployment uses one network forward and one final refit.",
             flush=True,
         )
+    elif args.joint_supervision == "offline_feasible_teacher":
+        print(
+            "Joint supervision: certified synthetic geometry labels plus "
+            "one offline Hard-RMS feasible-subset Teacher on the frozen "
+            "Proposal parameter/candidate frame. Source K is a reference only. "
+            "The Teacher mask/count/risk supervise Selector and subset decoder; "
+            "no subset search runs in Joint steps. Proposal and ParameterHead "
+            "remain frozen for cache validity. Raw deployment is one-shot; "
+            "MSE verification/repair is a separate numerical method.",
+            flush=True,
+        )
     else:
         print(
             "LEGACY Joint supervision: online ranked-prefix/counterfactual "
@@ -1793,7 +1858,7 @@ def main(argv=None):
         "a logarithmic MSE penalty. Aggregate pass rates and the explicit "
         f"K={args.max_control_points - 4} boundary audit "
         f"(n={min(args.synthetic_boundary_val_size, args.val_size)}) are "
-        "reported but never gate training. Formal supervised Joint performs "
+        "reported but never gate training. Labelled Joint performs "
         "only dense, deployed-mask and labelled-mask fits per batch.",
         flush=True,
     )
@@ -1817,6 +1882,7 @@ def main(argv=None):
         f"{args.max_control_points - 4} distribution.",
         flush=True,
     )
+    feasible_teacher_cache = None
     for epoch in range(start_epoch, args.epochs + 1):
         stage = "proposal" if epoch <= args.proposal_epochs else "joint"
         training_phase = joint_training_phase(args, epoch)
@@ -1873,6 +1939,7 @@ def main(argv=None):
             else:
                 configure_joint_trainability(
                     model, selector_warmup=selector_warmup,
+                    fixed_proposal=args.joint_supervision == "offline_feasible_teacher",
                 )
                 optimizer = build_joint_optimizer(
                     model, args, selector_warmup=selector_warmup,
@@ -1891,6 +1958,7 @@ def main(argv=None):
             selector_warmup = training_phase == "selector_warmup"
             configure_joint_trainability(
                 model, selector_warmup=selector_warmup,
+                fixed_proposal=args.joint_supervision == "offline_feasible_teacher",
             )
             set_joint_optimizer_learning_rates(
                 optimizer, args, selector_warmup=selector_warmup,
@@ -1901,11 +1969,12 @@ def main(argv=None):
                 parameter.requires_grad_(True)
         current_learning_rates = optimizer_learning_rates(optimizer)
         training_sources = (
-            () if args.joint_supervision == "synthetic_ground_truth" else sources
+            () if args.joint_supervision in {"synthetic_ground_truth", "offline_feasible_teacher"}
+            else sources
         )
         training_real_fraction = (
             0.0
-            if args.joint_supervision == "synthetic_ground_truth"
+            if args.joint_supervision in {"synthetic_ground_truth", "offline_feasible_teacher"}
             else args.real_fraction
         )
         train_data = MixedTrainingCurves(
@@ -1921,6 +1990,42 @@ def main(argv=None):
             ),
             synthetic_high_k_min_knots=args.proposal_high_k_min_knots,
         )
+        if stage == "joint" and args.joint_supervision == "offline_feasible_teacher":
+            if feasible_teacher_cache is None:
+                teacher_initializer_path = proposal_path
+                if not teacher_initializer_path.exists():
+                    teacher_initializer_path = proposal_final_path
+                if not teacher_initializer_path.exists():
+                    p.error("offline feasible Teacher requires the fixed Proposal artifact")
+                teacher_initializer = torch.load(
+                    teacher_initializer_path, map_location="cpu", weights_only=True,
+                )
+                teacher_proposal_model, _, _ = build_model_from_checkpoint(
+                    teacher_initializer
+                )
+                teacher_proposal_model.to(device)
+                teacher_proposal_model.eval()
+                cache_path = args.feasible_teacher_cache_dir / "train.pt"
+                print(
+                    "Building/checking fixed-Proposal feasible-subset labels at "
+                    f"{cache_path}; this is offline work, not Joint per-step search.",
+                    flush=True,
+                )
+                feasible_teacher_cache = build_or_load_v16_feasible_teacher_cache(
+                    teacher_proposal_model, train_data, cache_path,
+                    mse_tolerance=args.mse_tolerance,
+                    device=device, batch_size=args.batch_size,
+                    smoothness_weight=0.0, control_ridge=0.0,
+                    progress=lambda done, total: progress(
+                        done, total, "offline feasible Teacher", every=args.batch_size * 10,
+                    ),
+                )
+                del teacher_proposal_model
+                if device.type == "cuda":
+                    torch.cuda.empty_cache()
+        if stage == "joint" and feasible_teacher_cache is not None:
+            feasible_teacher_cache.assert_proposal_unchanged(model)
+            train_data = IndexedTrainingDataset(train_data)
         loader_generator = torch.Generator().manual_seed(args.seed + epoch)
         train_loader = DataLoader(
             train_data, batch_size=args.batch_size, shuffle=True,
@@ -1930,7 +2035,7 @@ def main(argv=None):
         started = time.perf_counter()
         total, samples = defaultdict(float), 0
         for step, batch in enumerate(train_loader, 1):
-            if args.joint_supervision == "synthetic_ground_truth":
+            if args.joint_supervision in {"synthetic_ground_truth", "offline_feasible_teacher"}:
                 if not bool(batch["target_internal_knot_count_valid"].all()):
                     raise RuntimeError(
                         "unlabelled row entered supervised-only training"
@@ -1967,6 +2072,13 @@ def main(argv=None):
                     device, non_blocking=device.type == "cuda"
                 )
             optimizer.zero_grad(set_to_none=True)
+            feasible_labels = (
+                feasible_teacher_cache.labels_for_indices(
+                    batch["feasible_teacher_index"], device=device,
+                )
+                if stage == "joint" and feasible_teacher_cache is not None
+                else {}
+            )
             loss, metrics = objective(
                 model, points, stage=stage, mse_tolerance=tolerance,
                 complexity_scale=(
@@ -1993,6 +2105,13 @@ def main(argv=None):
                 target_single_deletion_mse=target_single_deletion_mse,
                 target_single_deletion_mask=target_single_deletion_mask,
                 target_single_deletion_valid=target_single_deletion_valid,
+                feasible_teacher_mask=feasible_labels.get("teacher_retained_mask"),
+                feasible_teacher_knots=feasible_labels.get("teacher_internal_knots"),
+                feasible_teacher_knot_mask=feasible_labels.get("teacher_internal_knot_mask"),
+                feasible_teacher_count=feasible_labels.get("teacher_count"),
+                feasible_teacher_mse=feasible_labels.get("teacher_fit_mse"),
+                feasible_teacher_pass=feasible_labels.get("teacher_threshold_satisfied"),
+                feasible_teacher_risk=feasible_labels.get("teacher_soft_keep_risk"),
             )
             loss.backward()
             if optimizer_regime == "joint_named_groups":
@@ -2005,6 +2124,11 @@ def main(argv=None):
                 )
                 gradient_norms = {"global": float(global_norm)}
             optimizer.step()
+            if (
+                feasible_teacher_cache is not None
+                and step == len(train_loader)
+            ):
+                feasible_teacher_cache.assert_proposal_unchanged(model)
             size = len(points)
             samples += size
             for key, value in metrics.items():
@@ -2014,6 +2138,7 @@ def main(argv=None):
             subset_label = (
                 "denseK" if stage == "proposal" else
                 "targetK" if args.joint_supervision == "synthetic_ground_truth"
+                else "feasibleK" if args.joint_supervision == "offline_feasible_teacher"
                 else "teacherK"
             )
             lr_display = "/".join(
@@ -2069,7 +2194,7 @@ def main(argv=None):
         if stage == "proposal":
             rank = (
                 proposal_checkpoint_rank(measured)
-                if args.joint_supervision == "synthetic_ground_truth"
+                if args.joint_supervision in {"synthetic_ground_truth", "offline_feasible_teacher"}
                 else (
                     -measured["dense_subset_cost"],
                     -measured["dense_mse"],
@@ -2153,7 +2278,30 @@ def main(argv=None):
                 if args.one_shot_selection_policy == "mass_topk"
                 else "v16_adaptive_beta_threshold_ablation"
             ),
-            simplification_contract=V16_SIMPLIFICATION_CONTRACT,
+            simplification_contract=run_simplification_contract,
+            offline_feasible_teacher=(
+                dict(
+                    cache_path=str(feasible_teacher_cache.path),
+                    loaded_from_cache=feasible_teacher_cache.loaded,
+                    sample_count=feasible_teacher_cache.sample_count,
+                    candidate_count=feasible_teacher_cache.candidate_count,
+                    numerical_pass_fraction=feasible_teacher_cache.feasible_fraction,
+                    proposal_fingerprint=(
+                        feasible_teacher_cache.batch.config.proposal_fingerprint
+                    ),
+                    dataset_fingerprint=(
+                        feasible_teacher_cache.batch.config.dataset_fingerprint
+                    ),
+                    rms_tolerance=(
+                        feasible_teacher_cache.batch.config.error_tolerance
+                    ),
+                    smoothness_weight=(
+                        feasible_teacher_cache.batch.config.smoothness_weight
+                    ),
+                    greedy_not_globally_minimal=True,
+                )
+                if feasible_teacher_cache is not None else None
+            ),
             simplification_ready=simplification_is_ready(
                 args,
                 epoch=epoch,
@@ -2202,7 +2350,11 @@ def main(argv=None):
             loss_config=dict(joint_supervision=args.joint_supervision,
                              online_teacher=args.joint_supervision == "online_teacher",
                              fine_grained_teacher=(
-                                 "certified_source_single_deletion_mse"
+                                 (
+                                     "frozen_proposal_feasible_subset_risk"
+                                     if args.joint_supervision == "offline_feasible_teacher"
+                                     else "certified_source_single_deletion_mse"
+                                 )
                                  if args.fine_teacher_weight > 0
                                  or args.fine_teacher_ranking_weight > 0
                                  else None
@@ -2210,7 +2362,9 @@ def main(argv=None):
                              fine_teacher_additional_spline_solves_per_batch=0,
                              fine_teacher_error_unit="mean_squared_euclidean",
                              ground_truth_keep_assignment=(
-                                 "ordered_one_to_one_minimum_l1"
+                                 "offline_hard_rms_feasible_slot_mask"
+                                 if args.joint_supervision == "offline_feasible_teacher"
+                                 else "ordered_one_to_one_minimum_l1"
                                  if args.joint_supervision == "synthetic_ground_truth"
                                  else None
                              ),
@@ -2349,6 +2503,21 @@ def main(argv=None):
                 f"{count_calibration_detail}{fine_risk_detail}",
                 flush=True,
             )
+            if args.joint_supervision == "offline_feasible_teacher":
+                print(
+                    "  Feasibility chain: numerical Teacher pass/MSE="
+                    f"{train_metrics['offline_teacher_numerical_pass_rate']:.1%}/"
+                    f"{train_metrics['offline_teacher_numerical_mse']:.3e}, "
+                    "student teacher-mask pass/MSE="
+                    f"{train_metrics['supervised_target_pass_rate']:.1%}/"
+                    f"{train_metrics['supervised_target_mse']:.3e}, "
+                    "student one-shot pass/MSE="
+                    f"{train_metrics['deployment_pass_rate']:.1%}/"
+                    f"{train_metrics['deployment_mse']:.3e}, "
+                    "teacher-source |K gap|="
+                    f"{train_metrics['offline_teacher_source_count_gap']:.2f}",
+                    flush=True,
+                )
         boundary_n = measured["synthetic_boundary_sample_count"]
         if boundary_n:
             print(

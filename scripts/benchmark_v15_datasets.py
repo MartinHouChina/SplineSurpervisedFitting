@@ -30,6 +30,7 @@ from spline_fitting.checkpointing import (
     build_model_from_checkpoint,
     V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+    V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
     V16_OBJECTIVE_VERSIONS,
     V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
 )
@@ -43,6 +44,9 @@ from spline_fitting.evaluation.published_baselines import (
     run_published_baseline,
 )
 from spline_fitting.evaluation.timing import measure_synchronized_wall_time
+from spline_fitting.evaluation.v16_verified_deployment import (
+    verify_v16_one_shot_subset,
+)
 from compare_knot_methods import _select_indices
 from visualize_batch_comparison import _dataset_config_from_checkpoint
 
@@ -57,6 +61,7 @@ PUBLISHED_METHODS = (
 )
 LABELS = {
     "ours": "Ours v15 learned",
+    "ours_verified": "Ours v16 + disclosed numerical MSE repair",
     "park_dominant_point_2007_adaptation": "Park & Lee 2007 (DOM adaptation)",
     "liang_feature_iki_2017_adaptation": "Liang et al. 2017 (feature-IKI adaptation)",
     "dung_direct_knot_2017_adaptation": "Dung & Tjahjowidodo 2017 (threshold-safe adaptation)",
@@ -69,6 +74,7 @@ OBJECTIVE_LABELS = {
     V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION: "v15",
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION: "v16-legacy",
     V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION: "v16",
+    V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION: "v16-feasible-teacher",
 }
 DEFAULT_MANIFESTS = {
     "UJI": ROOT / "data/splits/uji_pen_v2.jsonl",
@@ -100,6 +106,10 @@ def parser(*, default_checkpoint: Path | None = None,
             "'published' evaluates Ours, Park, Liang, Dung, Kang and Luo; "
             "'all' additionally evaluates Yeh and uniform greedy"
         ),
+    )
+    p.add_argument(
+        "--include-verified-ours", action="store_true",
+        help="Add a separate v16 MSE-verified numerical repair row; raw Ours stays unchanged",
     )
     p.add_argument("--manifest", action="append", default=[], metavar="NAME=PATH")
     p.add_argument("--skip-synthetic", action="store_true")
@@ -165,6 +175,10 @@ def parser(*, default_checkpoint: Path | None = None,
         "--allow-unqualified-diagnostic", action="store_true",
         help=("Permit a proposal-stage or target-not-met v16 checkpoint for visibly "
               "marked troubleshooting only"),
+    )
+    p.add_argument(
+        "--force-diagnostic", action="store_true",
+        help="Watermark quick or empirical-reference-failing runs even if structurally valid",
     )
     p.add_argument("--resume", action="store_true", help="Reuse completed rows only when the experiment fingerprint matches.")
     return p
@@ -492,14 +506,18 @@ def reference_mse(fit, parameters: torch.Tensor, case: dict) -> float | None:
     return float((fit.evaluate(reference_params) - case["reference"]).square().sum(-1).mean())
 
 
-def benchmark_version(objective_version: str, *, expected_objective: str) -> str:
+def benchmark_version(objective_version: str, *, expected_objective: str | tuple[str, ...]) -> str:
     """Reject mislabeled/unknown checkpoints instead of changing architecture."""
-    if expected_objective not in OBJECTIVE_LABELS:
+    expected = (
+        (expected_objective,) if isinstance(expected_objective, str)
+        else expected_objective
+    )
+    if not expected or any(value not in OBJECTIVE_LABELS for value in expected):
         raise ValueError(f"Unsupported benchmark objective: {expected_objective}")
-    if objective_version != expected_objective:
+    if objective_version not in expected:
         raise ValueError(
-            f"This {OBJECTIVE_LABELS[expected_objective]} experiment requires "
-            f"objective_version={expected_objective!r}; got {objective_version!r}"
+            f"This experiment requires objective_version in {expected!r}; "
+            f"got {objective_version!r}"
         )
     return OBJECTIVE_LABELS[objective_version]
 
@@ -509,7 +527,10 @@ def validate_checkpoint_for_benchmark(
     allow_unqualified_diagnostic: bool,
 ) -> tuple[dict | None, bool]:
     """Return the v16 qualification audit and diagnostic-watermark state."""
-    if checkpoint.get("objective_version") != V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION:
+    if checkpoint.get("objective_version") not in {
+        V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
+        V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
+    }:
         return None, False
     qualification = assess_v16_checkpoint(
         checkpoint,
@@ -587,6 +608,48 @@ def measure_ours(model, points, device, args, *,
             else None
         ),
     }
+
+
+def measure_ours_verified(model, points, device, args, *, objective_version):
+    if objective_version != V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION:
+        raise ValueError("verified Ours is supported only for feasible-teacher v16")
+
+    def forward():
+        with torch.inference_mode():
+            return deployment_forward(
+                model, points.unsqueeze(0).to(device),
+                objective_version=objective_version,
+                mse_tolerance=args.mse_tolerance,
+            )
+
+    network = measure_synchronized_wall_time(
+        forward, synchronization_device=device,
+        warmup_repeats=args.network_warmups,
+        timing_repeats=args.network_repeats,
+    )
+
+    def deploy():
+        output = forward()
+        comparison = verify_v16_one_shot_subset(
+            output, points, mse_tolerance=args.mse_tolerance,
+            network_only_ms=network.latency.p50_ms,
+            degree=model.degree, min_internal_knots=model.min_selected_knots,
+            smoothness_weight=0.0, compact=False,
+        )
+        return comparison.verified_fit, comparison.verified_parameters, comparison
+
+    full = measure_synchronized_wall_time(
+        deploy, synchronization_device=device,
+        warmup_repeats=1, timing_repeats=args.end_to_end_repeats,
+    )
+    fit, params, comparison = full.result
+    diagnostics = comparison.diagnostics()
+    diagnostics.update(
+        network_latency=network.latency.as_dict(),
+        end_to_end_latency=full.latency.as_dict(),
+        postprocessing="explicit_numerical_mse_verification_and_add_back",
+    )
+    return fit, params, full.latency.p50_ms, network.latency.p50_ms, diagnostics
 
 
 def measure_numerical_baseline(method, points, args, *, degree):
@@ -767,7 +830,7 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
     if metadata.get("diagnostic_not_final"):
         reasons = metadata.get("checkpoint_qualification", {}).get("reasons", [])
         lines[2:2] = [
-            "**DIAGNOSTIC NOT FINAL — UNQUALIFIED CHECKPOINT**",
+            "**DIAGNOSTIC NOT FINAL — QUICK OR UNQUALIFIED RUN**",
             "",
             "资格检查：" + ("；".join(reasons) if reasons else "未通过正式资格检查。"),
             "",
@@ -883,10 +946,15 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
         )
     except ValueError as error:
         p.error(str(error))
+    diagnostic = diagnostic or args.force_diagnostic
     if diagnostic:
         print(
-            "DIAGNOSTIC NOT FINAL — unqualified v16 checkpoint: "
-            + "; ".join(qualification["reasons"]),
+            "DIAGNOSTIC NOT FINAL — "
+            + (
+                "; ".join(qualification["reasons"])
+                if qualification and qualification["reasons"]
+                else "quick sampling or empirical pass reference not met"
+            ),
             flush=True,
         )
     model, model_config, _ = build_model_from_checkpoint(checkpoint)
@@ -935,7 +1003,14 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                 "network_tolerance_conditioned": objective_version in V16_OBJECTIVE_VERSIONS,
                 "knot_capacities": capacities,
                 "num_points": int(cases[0]["points"].shape[0]),
-                "timing_protocol": "global numerical-backend warmup; every method uses the configured repeated complete-run median per curve; Ours additionally reports a separately warmed network-only median; dataset summary averages per-curve medians",
+                "timing_protocol": (
+                    "global numerical-backend warmup; every method uses repeated "
+                    "complete-run median per curve; raw Ours and Ours+verified "
+                    "also report separately warmed network-only median; "
+                    "Ours+verified complete time includes exact MSE checks and "
+                    "numerical add-back/refits; dataset summary averages "
+                    "per-curve medians"
+                ),
                 "mse_tolerance": args.mse_tolerance, "configuration": config, "hardware": hardware,
                 "datasets": provenance, "code_sha256": {str(p.relative_to(ROOT)): sha256_file(p) for p in code_paths},
                 "sample_content_sha256": [hashlib.sha256(c["points"].numpy().tobytes() + (c["reference"].numpy().tobytes() if c["reference"] is not None else b"")).hexdigest() for c in cases]}
@@ -955,6 +1030,10 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
     else:
         metadata_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
     methods = PUBLISHED_METHODS if args.method_set == "published" else METHODS
+    if args.include_verified_ours:
+        if objective_version != V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION:
+            p.error("--include-verified-ours requires feasible-teacher v16")
+        methods = (methods[0], "ours_verified", *methods[1:])
     done = {(r["dataset"], r["sample_id"], r["method"]) for r in rows}
     expected = {(c["dataset"], c["sample_id"], m) for c in cases for m in methods}
     if len(done) != len(rows) or not done.issubset(expected):
@@ -963,7 +1042,9 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
         print("Warming numerical solvers (excluded from timing)...", flush=True)
         t = torch.linspace(0, 1, 32, dtype=torch.float64)
         warm_points = torch.stack((t, t.square()), dim=-1)
-        for method in methods[1:]:
+        for method in methods:
+            if method in {"ours", "ours_verified"}:
+                continue
             run_published_baseline(
                 method,
                 warm_points,
@@ -985,6 +1066,11 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                 try:
                     if method == "ours":
                         fit, params, total_ms, network_ms, diagnostics = measure_ours(
+                            model, case["points"], device, args,
+                            objective_version=objective_version,
+                        )
+                    elif method == "ours_verified":
+                        fit, params, total_ms, network_ms, diagnostics = measure_ours_verified(
                             model, case["points"], device, args,
                             objective_version=objective_version,
                         )

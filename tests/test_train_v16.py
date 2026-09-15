@@ -97,6 +97,37 @@ def test_default_profile_keeps_ninety_percent_as_reporting_reference():
     )
 
 
+def test_offline_feasible_teacher_requires_fixed_samples_and_proposal():
+    profile = [
+        "--joint-supervision", "offline_feasible_teacher",
+        "--feasible-teacher-cache-dir", "outputs/teachers/unit",
+        "--synthetic-count-role", "reference_only",
+        "--no-resample-train-each-epoch",
+        "--proposal-joint-lr", "0",
+        "--parameter-joint-lr", "0",
+    ]
+    args = train_v16.parser().parse_args(profile)
+    train_v16.validate_args(args)
+    model = V16CandidateSelectionNetwork(
+        hidden_dim=16, encoder_layers=1, max_internal_knots=6,
+        attention_heads=2, selector_layers=1,
+    )
+    train_v16.configure_joint_trainability(
+        model, selector_warmup=False, fixed_proposal=True,
+    )
+    groups, _ = train_v16.joint_parameter_groups(model)
+    assert all(not value.requires_grad for value in groups["proposal"])
+    assert all(not value.requires_grad for value in groups["parameter"])
+    assert all(value.requires_grad for value in groups["selector"])
+    assert all(value.requires_grad for value in groups["decoder"])
+    assert train_v16._configured_joint_learning_rates(
+        args, selector_warmup=False,
+    )["proposal"] == 0
+    bad = train_v16.parser().parse_args(profile + ["--parameter-joint-lr", "5e-5"])
+    with pytest.raises(ValueError, match="fixed Proposal Teacher"):
+        train_v16.validate_args(bad)
+
+
 def test_uncertified_synthetic_ablation_disables_canonical_certificate():
     args = train_v16.parser().parse_args([
         "--joint-supervision", "online_teacher",
@@ -997,6 +1028,32 @@ def training_command(output, *, tolerance="0.001", proposal_target="0"):
             "--mse-tolerance", tolerance, "--proposal-pass-target", proposal_target,
             "--torch-num-threads", "1", "--device", "cpu", "--log-every-batches", "100",
             "--output", str(output)]
+
+
+def test_tiny_offline_feasible_teacher_joint_builds_stable_cache(tmp_path):
+    output = tmp_path / "tiny_feasible_v16.pt"
+    cache_dir = tmp_path / "teacher"
+    command = training_command(output) + [
+        "--joint-supervision", "offline_feasible_teacher",
+        "--feasible-teacher-cache-dir", str(cache_dir),
+        "--synthetic-count-role", "reference_only",
+        "--no-resample-train-each-epoch",
+        "--proposal-joint-lr", "0",
+        "--parameter-joint-lr", "0",
+        "--selector-warmup-epochs", "0",
+    ]
+    assert train_v16.main(command) == 0
+    payload = torch.load(
+        tmp_path / "tiny_feasible_v16.last.pt",
+        map_location="cpu", weights_only=True,
+    )
+    assert payload["offline_feasible_teacher"]["sample_count"] == 4
+    assert payload["offline_feasible_teacher"]["greedy_not_globally_minimal"]
+    assert payload["loss_config"]["synthetic_count_role"] == "reference_only"
+    assert payload["training_config"]["proposal_joint_lr"] == 0
+    assert payload["training_config"]["parameter_joint_lr"] == 0
+    assert "offline_teacher_numerical_pass_rate" in payload["history"][1]["train"]
+    assert (cache_dir / "train.pt").is_file()
 
 
 def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(

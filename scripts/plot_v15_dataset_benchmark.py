@@ -54,6 +54,7 @@ def model_version(metadata: dict) -> str:
         "candidate_pruning_deployment_aligned_feedback_v15": "v15",
         "candidate_selection_counterfactual_bspline_v16": "v16",
         "candidate_selection_supervised_bspline_v16": "v16",
+        "candidate_selection_feasible_teacher_bspline_v16": "v16-feasible-teacher",
     }
     objective = metadata.get("objective_version")
     if objective in versions:

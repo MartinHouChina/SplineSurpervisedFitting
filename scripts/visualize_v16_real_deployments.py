@@ -41,6 +41,7 @@ from benchmark_v15_datasets import (  # noqa: E402
     resolve_comparison_capacities,
 )
 from spline_fitting.checkpointing import (  # noqa: E402
+    V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
     V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
     V16_FORMAL_PASS_RATE,
     assess_v16_checkpoint,
@@ -66,14 +67,14 @@ def parser() -> argparse.ArgumentParser:
         "--checkpoint", type=Path,
         default=Path(
             "outputs/checkpoints/"
-            "candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt"
+            "candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1.pt"
         ),
     )
     result.add_argument(
         "--output-dir", type=Path,
         default=Path(
             "outputs/figures/"
-            "candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised/"
+            "candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1/"
             "six_method_cases"
         ),
     )
@@ -141,6 +142,10 @@ def parser() -> argparse.ArgumentParser:
         ),
     )
     result.add_argument(
+        "--force-diagnostic", action="store_true",
+        help="Watermark quick or empirically insufficient runs even when structurally valid",
+    )
+    result.add_argument(
         "--allow-proposal-diagnostic", action="store_true",
         dest="allow_unqualified_diagnostic", help=argparse.SUPPRESS,
     )
@@ -157,10 +162,14 @@ def validate_checkpoint_for_visualization(
 ) -> bool:
     """Return whether results require an unqualified-checkpoint watermark."""
     objective = checkpoint.get("objective_version")
-    if objective != V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION:
+    if objective not in {
+        V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
+        V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
+    }:
         raise ValueError(
-            "visualize_v16_real_deployments.py requires objective_version="
-            f"{V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION!r}; got {objective!r}"
+            "visualize_v16_real_deployments.py requires objective_version "
+            "in the labelled v16 set; "
+            f"got {objective!r}"
         )
     qualification = assess_v16_checkpoint(
         checkpoint,
@@ -445,7 +454,7 @@ def plot_ours_case(
     )
     if diagnostic:
         figure.text(
-            0.5, 0.5, "DIAGNOSTIC NOT FINAL - UNQUALIFIED CHECKPOINT",
+            0.5, 0.5, "DIAGNOSTIC NOT FINAL - QUICK OR UNQUALIFIED RUN",
             ha="center", va="center", rotation=24, fontsize=30,
             color="crimson", alpha=0.22, weight="bold", zorder=100,
         )
@@ -500,7 +509,7 @@ def plot_ours_overview(
     figure.tight_layout(rect=(0.0, 0.075, 1.0, 0.96))
     if diagnostic:
         figure.text(
-            0.5, 0.5, "DIAGNOSTIC NOT FINAL - UNQUALIFIED CHECKPOINT",
+            0.5, 0.5, "DIAGNOSTIC NOT FINAL - QUICK OR UNQUALIFIED RUN",
             ha="center", va="center", rotation=24, fontsize=32,
             color="crimson", alpha=0.22, weight="bold", zorder=100,
         )
@@ -590,7 +599,7 @@ def plot_case(path: Path, *, case: dict, results: list[dict],
         )
     if diagnostic:
         figure.text(
-            0.5, 0.5, "DIAGNOSTIC NOT FINAL — UNQUALIFIED CHECKPOINT",
+            0.5, 0.5, "DIAGNOSTIC NOT FINAL — QUICK OR UNQUALIFIED RUN",
             ha="center", va="center", rotation=24, fontsize=32,
             color="crimson", alpha=0.22, weight="bold", zorder=100,
         )
@@ -628,6 +637,7 @@ def run(args: argparse.Namespace) -> dict:
         allow_unqualified_diagnostic=args.allow_unqualified_diagnostic,
         required_mse_tolerance=args.mse_tolerance,
     )
+    diagnostic = diagnostic or args.force_diagnostic
     qualification = assess_v16_checkpoint(
         checkpoint,
         required_pass_rate=V16_FORMAL_PASS_RATE,

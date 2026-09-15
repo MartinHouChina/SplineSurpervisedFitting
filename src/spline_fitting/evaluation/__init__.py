@@ -73,6 +73,10 @@ from .verified_knot_repair import (
     VerifiedKnotRepairResult,
     verified_confidence_repair,
 )
+from .v16_verified_deployment import (
+    V16VerifiedDeploymentComparison,
+    verify_v16_one_shot_subset,
+)
 
 __all__ = [
     "BSplineLeastSquaresFit",
@@ -100,6 +104,7 @@ __all__ = [
     "SparseKnotPaperResult",
     "PublishedBaselineResult",
     "VerifiedKnotRepairResult",
+    "V16VerifiedDeploymentComparison",
     "activity_statistics",
     "build_open_knot_vector",
     "certify_reference_mse",
@@ -131,5 +136,6 @@ __all__ = [
     "second_difference_matrix",
     "simplify_polyline_to_mse",
     "verified_confidence_repair",
+    "verify_v16_one_shot_subset",
     "warp_internal_knots_to_parameterization",
 ]

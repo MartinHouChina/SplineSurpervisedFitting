@@ -20,6 +20,8 @@ from spline_fitting.checkpointing import (
     V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
     V16_FORMAL_PASS_RATE,
     V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS,
+    V16_FEASIBLE_TEACHER_CONTRACT,
+    V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
     V16_JOINT_CHECKPOINT_QUALITY,
     V16_SIMPLIFICATION_CONTRACT,
     V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
@@ -155,6 +157,35 @@ def test_v16_formal_qualification_checks_metrics_and_configured_target():
     assert result["proposal_epochs"] == 64
     assert result["selector_warmup_epochs"] == 8
     assert result["training_phase"] == "joint_finetune"
+
+
+def test_v16_feasible_teacher_audit_requires_frozen_proposal_provenance():
+    metadata = qualified_v16_metadata(observed=0.14)
+    metadata["objective_version"] = V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION
+    metadata["simplification_contract"] = V16_FEASIBLE_TEACHER_CONTRACT
+    metadata["training_config"].update(
+        proposal_joint_lr=0.0, parameter_joint_lr=0.0,
+        resample_train_each_epoch=False,
+        tolerance_factor_min=1.0, tolerance_factor_max=1.0,
+    )
+    metadata["loss_config"].update(
+        joint_supervision="offline_feasible_teacher",
+        synthetic_count_role="reference_only",
+    )
+    metadata["offline_feasible_teacher"] = {
+        "cache_path": "outputs/teachers/new/train.pt",
+        "proposal_fingerprint": "proposal-sha256",
+        "dataset_fingerprint": "data-sha256",
+        "numerical_pass_fraction": 0.998,
+        "greedy_not_globally_minimal": True,
+    }
+    audited = assess_v16_checkpoint(metadata)
+    assert audited["formal_reporting_eligible"]
+    assert not audited["pass_rate_reference_met"]
+    metadata["training_config"]["parameter_joint_lr"] = 5e-5
+    rejected = assess_v16_checkpoint(metadata)
+    assert not rejected["formal_reporting_eligible"]
+    assert any("parameter_joint_lr" in reason for reason in rejected["reasons"])
 
 
 @pytest.mark.parametrize(

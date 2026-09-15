@@ -71,6 +71,15 @@ def report() -> dict:
 def test_formal_validation_rejects_relabelled_partial_or_tampered_reports(report) -> None:
     plotting.validate_v16_benchmark(report)
 
+    feasible_teacher = copy.deepcopy(report)
+    feasible_teacher["metadata"]["objective_version"] = (
+        "candidate_selection_feasible_teacher_bspline_v16"
+    )
+    feasible_teacher["metadata"]["fingerprint"] = plotting._metadata_fingerprint(
+        feasible_teacher["metadata"]
+    )
+    plotting.validate_v16_benchmark(feasible_teacher)
+
     v15 = copy.deepcopy(report)
     v15["metadata"]["objective_version"] = (
         "candidate_pruning_deployment_aligned_feedback_v15"
