@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 
@@ -145,6 +147,63 @@ class BSplineInferenceTests(unittest.TestCase):
         self.assertIsNotNone(result.solver_rank)
         self.assertGreater(result.solver_rank, 2)
         self.assertLess(float(result.fit_mse), 1e-20)
+
+    def test_cuda_rank_deficient_refit_uses_rank_aware_fallback(self) -> None:
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA is unavailable")
+        parameters = torch.linspace(0.0, 1.0, 192, dtype=self.dtype)
+        supported = torch.tensor([0.25, 0.5, 0.75], dtype=self.dtype)
+        points = self._sample_curve(parameters, supported)
+        unsupported = torch.linspace(2e-4, 4e-3, 12, dtype=self.dtype)
+        knots = torch.sort(torch.cat([unsupported, supported])).values
+        reference = refit_bspline_control_points(
+            parameters, points, knots, smoothness_weight=0.0,
+        )
+        direct = refit_bspline_control_points(
+            parameters.cuda(), points.cuda(), knots.cuda(),
+            smoothness_weight=0.0,
+        )
+        self.assertTrue(bool(torch.isfinite(direct.control_points).all()))
+        torch.testing.assert_close(
+            direct.reconstructed_points.cpu(), reference.reconstructed_points,
+            atol=1e-9, rtol=1e-9,
+        )
+
+        original_lstsq = torch.linalg.lstsq
+
+        for failure_mode in ("rank_error", "nonfinite", "explosive"):
+            with self.subTest(failure_mode=failure_mode):
+                def fail_on_cuda(design, target, **kwargs):
+                    if design.is_cuda:
+                        if failure_mode == "rank_error":
+                            raise torch.linalg.LinAlgError(
+                                "simulated CUDA rank failure"
+                            )
+                        coefficient = (
+                            float("nan") if failure_mode == "nonfinite" else 1e200
+                        )
+                        return SimpleNamespace(
+                            solution=torch.full(
+                                (design.shape[-1], target.shape[-1]),
+                                coefficient, device=design.device,
+                                dtype=design.dtype,
+                            ),
+                            rank=torch.empty(0, device=design.device),
+                        )
+                    return original_lstsq(design, target, **kwargs)
+
+                with patch.object(torch.linalg, "lstsq", side_effect=fail_on_cuda):
+                    result = refit_bspline_control_points(
+                        parameters.cuda(), points.cuda(), knots.cuda(),
+                        smoothness_weight=0.0,
+                    )
+                self.assertTrue(bool(torch.isfinite(result.control_points).all()))
+                self.assertLess(float(result.fit_mse), 1e-20)
+                torch.testing.assert_close(
+                    result.reconstructed_points.cpu(),
+                    reference.reconstructed_points,
+                    atol=1e-9, rtol=1e-9,
+                )
 
     def test_soft_probability_is_rejected_as_a_hard_gate(self) -> None:
         with self.assertRaisesRegex(ValueError, "model.eval"):

@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 
@@ -13,8 +15,13 @@ from spline_fitting.evaluation.bspline_inference import (  # noqa: E402
     refit_bspline_control_points,
 )
 from spline_fitting.spline.bspline_deletion_teacher import (  # noqa: E402
+    _rank_aware_batched_lstsq,
     single_knot_deletion_mse_batch,
     single_knot_deletion_rmse_batch,
+)
+from spline_fitting.training.one_shot_teacher import (  # noqa: E402
+    OneShotTeacherConfig,
+    build_one_shot_teacher_batch,
 )
 
 
@@ -201,6 +208,163 @@ class BSplineDeletionTeacherTests(unittest.TestCase):
                 torch.zeros(1, 8, 2),
                 torch.empty(1, 0),
             )
+
+    def test_rank_deficient_cpu_batch_matches_standard_svd_refit(self) -> None:
+        parameters = torch.linspace(0.0, 1.0, 64, dtype=self.dtype)[None, :]
+        points = torch.stack(
+            [parameters[0], torch.sin(3.1 * torch.pi * parameters[0])], dim=-1
+        )[None, :, :]
+        knots = torch.full((1, 8), 0.5, dtype=self.dtype)
+        actual = single_knot_deletion_mse_batch(
+            parameters,
+            points,
+            knots,
+            smoothness_weight=0.0,
+            control_ridge=0.0,
+        )
+        retained = knots[0, 1:]
+        expected = refit_bspline_control_points(
+            parameters[0],
+            points[0],
+            retained,
+            smoothness_weight=0.0,
+            control_ridge=0.0,
+        ).fit_rmse.square()
+        self.assertTrue(bool(torch.isfinite(actual).all()))
+        torch.testing.assert_close(
+            actual, expected.expand_as(actual), rtol=2e-10, atol=2e-12
+        )
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required")
+    def test_k72_rank_deficient_cuda_deletions_match_cpu_svd_refits(self) -> None:
+        """Dense candidate proposals may contain unsupported basis columns."""
+        device = torch.device("cuda:0")
+        parameters = torch.linspace(
+            0.0, 1.0, 192, dtype=self.dtype, device=device
+        ).expand(2, -1)
+        points = torch.stack(
+            [
+                parameters,
+                0.2 * parameters + torch.sin(5.3 * torch.pi * parameters),
+            ],
+            dim=-1,
+        )
+        generator = torch.Generator(device=device).manual_seed(915)
+        knots = torch.rand(
+            2, 72, dtype=self.dtype, device=device, generator=generator
+        ).sort(dim=-1).values.clamp(1e-4, 1.0 - 1e-4)
+
+        actual = single_knot_deletion_mse_batch(
+            parameters,
+            points,
+            knots,
+            smoothness_weight=0.0,
+            control_ridge=0.0,
+        )
+        self.assertEqual(actual.shape, (2, 72))
+        self.assertTrue(bool(torch.isfinite(actual).all()))
+
+        for curve_index, deletion_index in ((0, 0), (0, 35), (1, 71)):
+            retained = torch.cat(
+                [
+                    knots[curve_index, :deletion_index],
+                    knots[curve_index, deletion_index + 1 :],
+                ]
+            ).cpu()
+            expected = refit_bspline_control_points(
+                parameters[curve_index].cpu(),
+                points[curve_index].cpu(),
+                retained,
+                smoothness_weight=0.0,
+                control_ridge=0.0,
+            ).fit_rmse.square()
+            torch.testing.assert_close(
+                actual[curve_index, deletion_index].cpu(),
+                expected,
+                rtol=2e-8,
+                atol=1e-12,
+            )
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required")
+    def test_k72_offline_teacher_completes_one_greedy_round(self) -> None:
+        """Exercise deletion, scalar refit and final leave-one-out together."""
+        device = torch.device("cuda:0")
+        parameters = torch.linspace(
+            0.0, 1.0, 192, dtype=self.dtype, device=device,
+        )[None, :]
+        points = torch.stack(
+            [parameters, torch.sin(5.3 * torch.pi * parameters)], dim=-1,
+        )
+        generator = torch.Generator(device=device).manual_seed(915)
+        knots = torch.rand(
+            1, 72, dtype=self.dtype, device=device, generator=generator,
+        ).sort(dim=-1).values.clamp(1e-4, 1.0 - 1e-4)
+        teacher = build_one_shot_teacher_batch(
+            parameters, points, knots,
+            sample_indices=[0],
+            config=OneShotTeacherConfig(
+                error_tolerance=10.0,
+                min_internal_knots=71,
+                smoothness_weight=0.0,
+                control_ridge=0.0,
+            ),
+        )
+        self.assertEqual(int(teacher.teacher_count[0]), 71)
+        self.assertTrue(bool(teacher.teacher_threshold_satisfied[0]))
+        self.assertTrue(bool(torch.isfinite(teacher.teacher_fit_mse).all()))
+        self.assertTrue(bool(torch.isfinite(teacher.teacher_soft_keep_risk).all()))
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required")
+    def test_nonfinite_cuda_qr_solution_retries_only_affected_state(self) -> None:
+        device = torch.device("cuda:0")
+        generator = torch.Generator(device=device).manual_seed(361)
+        design = torch.randn(
+            2, 3, 12, 5, dtype=self.dtype, device=device, generator=generator
+        )
+        target = torch.randn(
+            2, 3, 12, 2, dtype=self.dtype, device=device, generator=generator
+        )
+        expected = torch.linalg.lstsq(
+            design.cpu(), target.cpu(), driver="gelsd"
+        ).solution.to(device)
+        original_lstsq = torch.linalg.lstsq
+
+        def nonfinite_cuda_lstsq(a, b, **kwargs):
+            result = original_lstsq(a, b, **kwargs)
+            if a.device.type == "cuda":
+                solution = result.solution.clone()
+                solution[0, 1] = float("nan")
+                return SimpleNamespace(solution=solution)
+            return result
+
+        with patch.object(torch.linalg, "lstsq", side_effect=nonfinite_cuda_lstsq):
+            actual = _rank_aware_batched_lstsq(design, target, rcond=None)
+
+        self.assertTrue(bool(torch.isfinite(actual).all()))
+        torch.testing.assert_close(actual, expected, rtol=2e-10, atol=2e-12)
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required")
+    def test_finite_explosive_cuda_coefficients_retry_invalid_mse(self) -> None:
+        parameters, points, knots = self._inputs()
+        expected = single_knot_deletion_mse_batch(parameters, points, knots)
+        parameters = parameters.cuda()
+        points = points.cuda()
+        knots = knots.cuda()
+        original_lstsq = torch.linalg.lstsq
+
+        def explosive_cuda_lstsq(a, b, **kwargs):
+            result = original_lstsq(a, b, **kwargs)
+            if a.device.type == "cuda":
+                return SimpleNamespace(
+                    solution=torch.full_like(result.solution, 1e200)
+                )
+            return result
+
+        with patch.object(torch.linalg, "lstsq", side_effect=explosive_cuda_lstsq):
+            actual = single_knot_deletion_mse_batch(parameters, points, knots)
+
+        self.assertTrue(bool(torch.isfinite(actual).all()))
+        torch.testing.assert_close(actual.cpu(), expected, rtol=2e-10, atol=2e-12)
 
 
 if __name__ == "__main__":

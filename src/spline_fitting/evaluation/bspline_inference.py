@@ -139,8 +139,9 @@ def refit_bspline_control_points(
     On CPU, PyTorch's SVD least-squares driver (``gelsd``) is used.  The
     deployment matrix can be rank deficient when several learned knots fall
     before the first interior sample; ``gelsd`` still returns the minimum-norm
-    least-squares solution in that case.  Other devices use their supported
-    ``torch.linalg.lstsq`` backend.  This is deliberately more stable than
+    least-squares solution in that case. CUDA first uses its supported QR
+    backend; rank errors or non-finite solutions/statistics are retried with CPU ``gelsd``
+    and moved back to the original device. This is deliberately more stable than
     solving ``(B.T @ B) P = B.T @ Q``.
     """
     _validate_non_negative("smoothness_weight", smoothness_weight)
@@ -233,37 +234,95 @@ def refit_bspline_control_points(
         # endpoint line.  The SVD driver reliably preserves the supported
         # column space and exposes the actual numerical rank.
         lstsq_kwargs["driver"] = "gelsd"
-    solution = torch.linalg.lstsq(
-        augmented_design,
-        augmented_target,
-        **lstsq_kwargs,
-    )
+    try:
+        solution = torch.linalg.lstsq(
+            augmented_design,
+            augmented_target,
+            **lstsq_kwargs,
+        )
+        if (
+            augmented_design.device.type == "cuda"
+            and not bool(torch.isfinite(solution.solution).all())
+        ):
+            raise torch.linalg.LinAlgError(
+                "CUDA least-squares returned non-finite control points"
+            )
+    except torch.linalg.LinAlgError:
+        if augmented_design.device.type != "cuda":
+            raise
+        # CUDA's GELs backend assumes full column rank.  Repeated or tightly
+        # clustered predicted knots can create unsupported basis columns;
+        # the rank-aware CPU SVD driver preserves the supported spline space.
+        cpu_solution = torch.linalg.lstsq(
+            augmented_design.cpu(),
+            augmented_target.cpu(),
+            rcond=rcond,
+            driver="gelsd",
+        )
+        solved_controls = cpu_solution.solution.to(augmented_design.device)
+        solver_rank_tensor = cpu_solution.rank
+    else:
+        solved_controls = solution.solution
+        solver_rank_tensor = solution.rank
     if fixed_control_points is None:
-        control_points = solution.solution
+        control_points = solved_controls
     else:
         control_points = torch.cat(
             [
                 fixed_control_points[:1],
-                solution.solution,
+                solved_controls,
                 fixed_control_points[1:],
             ],
             dim=0,
         )
     reconstructed = basis @ control_points
+    data_squared_error = (reconstructed - points).pow(2).sum()
+    smoothness_squared = (difference @ control_points).pow(2).sum()
+    control_squared = control_points.pow(2).sum()
+    if augmented_design.device.type == "cuda" and not bool(
+        torch.isfinite(torch.stack(
+            [data_squared_error, smoothness_squared, control_squared]
+        )).all()
+    ):
+        # Finite but explosive CUDA coefficients may overflow when squared,
+        # even if the spline's reconstructed data error remains finite.
+        cpu_solution = torch.linalg.lstsq(
+            augmented_design.cpu(),
+            augmented_target.cpu(),
+            rcond=rcond,
+            driver="gelsd",
+        )
+        solved_controls = cpu_solution.solution.to(augmented_design.device)
+        solver_rank_tensor = cpu_solution.rank
+        control_points = (
+            solved_controls
+            if fixed_control_points is None
+            else torch.cat(
+                [fixed_control_points[:1], solved_controls,
+                 fixed_control_points[1:]], dim=0,
+            )
+        )
+        reconstructed = basis @ control_points
+        data_squared_error = (reconstructed - points).pow(2).sum()
+        smoothness_squared = (difference @ control_points).pow(2).sum()
+        control_squared = control_points.pow(2).sum()
+    if not bool(torch.isfinite(torch.stack(
+        [data_squared_error, smoothness_squared, control_squared]
+    )).all()):
+        raise RuntimeError("standard B-spline refit produced non-finite statistics")
     statistics = point_fit_statistics(
         reconstructed.unsqueeze(0),
         points.unsqueeze(0),
     )
 
-    data_squared_error = (reconstructed - points).pow(2).sum()
-    smoothness_squared = (difference @ control_points).pow(2).sum()
-    control_squared = control_points.pow(2).sum()
     augmented_objective = (
         data_squared_error
         + smoothness_weight * smoothness_squared
         + control_ridge * control_squared
     )
-    solver_rank = int(solution.rank.item()) if solution.rank.numel() == 1 else None
+    solver_rank = (
+        int(solver_rank_tensor.item()) if solver_rank_tensor.numel() == 1 else None
+    )
     if solver_rank is not None and fixed_control_points is not None:
         # The two fixed endpoint constraints contribute two independent rows to
         # the effective full-control system.

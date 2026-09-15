@@ -157,6 +157,101 @@ def _second_difference_matrix(
     return difference
 
 
+def _is_cuda_rank_error(error: RuntimeError) -> bool:
+    message = str(error).lower()
+    return "torch.linalg.lstsq" in message and (
+        "full rank" in message or "rank deficient" in message
+    )
+
+
+def _cpu_svd_lstsq(
+    design: torch.Tensor,
+    target: torch.Tensor,
+    *,
+    rcond: float | None,
+    output_device: torch.device,
+) -> torch.Tensor:
+    """Use the same rank-aware solver as the standard B-spline refit."""
+    return torch.linalg.lstsq(
+        design.to(device="cpu"),
+        target.to(device="cpu"),
+        rcond=rcond,
+        driver="gelsd",
+    ).solution.to(device=output_device)
+
+
+def _replace_nonfinite_cuda_solutions(
+    design: torch.Tensor,
+    target: torch.Tensor,
+    solution: torch.Tensor,
+    *,
+    rcond: float | None,
+) -> torch.Tensor:
+    """Retry only the states whose CUDA QR solution is not finite."""
+    bad = ~torch.isfinite(solution).all(dim=(-2, -1))
+    if not bool(bad.any()):
+        return solution
+    repaired = solution.clone()
+    repaired[bad] = _cpu_svd_lstsq(
+        design[bad], target[bad], rcond=rcond, output_device=design.device
+    )
+    return repaired
+
+
+def _rank_aware_batched_lstsq(
+    design: torch.Tensor,
+    target: torch.Tensor,
+    *,
+    rcond: float | None,
+) -> torch.Tensor:
+    """Keep CUDA QR fast for full-rank states; use CPU SVD on singular states.
+
+    CUDA ``lstsq`` supports only the full-rank QR driver. Dense knot proposals
+    can leave B-spline columns entirely unobserved, so a single singular
+    deletion state otherwise aborts the whole batch. The fallback works one
+    source curve at a time to avoid moving unrelated states to the CPU.
+    """
+    if design.device.type == "cpu":
+        return _cpu_svd_lstsq(
+            design, target, rcond=rcond, output_device=design.device
+        )
+
+    try:
+        solution = torch.linalg.lstsq(design, target, rcond=rcond).solution
+    except RuntimeError as error:
+        if not _is_cuda_rank_error(error):
+            raise
+    else:
+        return _replace_nonfinite_cuda_solutions(
+            design, target, solution, rcond=rcond
+        )
+
+    # A failed [B, K] call does not identify all singular states. Retry K
+    # deletion states per source curve; only curves whose QR call fails move to
+    # CPU SVD. In the common all-full-rank case there is just one GPU solve.
+    curve_solutions = []
+    for curve_design, curve_target in zip(design.unbind(0), target.unbind(0)):
+        try:
+            curve_solution = torch.linalg.lstsq(
+                curve_design, curve_target, rcond=rcond
+            ).solution
+        except RuntimeError as error:
+            if not _is_cuda_rank_error(error):
+                raise
+            curve_solution = _cpu_svd_lstsq(
+                curve_design,
+                curve_target,
+                rcond=rcond,
+                output_device=design.device,
+            )
+        else:
+            curve_solution = _replace_nonfinite_cuda_solutions(
+                curve_design, curve_target, curve_solution, rcond=rcond
+            )
+        curve_solutions.append(curve_solution)
+    return torch.stack(curve_solutions, dim=0)
+
+
 @torch.no_grad()
 def single_knot_deletion_mse_batch(
     parameters: torch.Tensor,
@@ -175,7 +270,8 @@ def single_knot_deletion_mse_batch(
     squared Euclidean error obtained by physically deleting knot ``j`` and
     refitting a standard open-clamped B-spline to curve ``b``.  All ``B*K`` deletion
     states are evaluated together: Cox--de Boor basis construction and the
-    augmented least-squares solve are both batched.
+    augmented least-squares solve are batched when the design has full rank.
+    Singular CUDA states are retried with a rank-aware CPU SVD solver.
 
     The objective and numerical conventions intentionally match
     :func:`spline_fitting.evaluation.refit_bspline_control_points`, including
@@ -275,14 +371,9 @@ def single_knot_deletion_mse_batch(
 
     augmented_design = torch.cat(design_blocks, dim=-2)
     augmented_target = torch.cat(target_blocks, dim=-2)
-    lstsq_kwargs: dict[str, object] = {"rcond": rcond}
-    if augmented_design.device.type == "cpu":
-        lstsq_kwargs["driver"] = "gelsy"
-    solution = torch.linalg.lstsq(
-        augmented_design,
-        augmented_target,
-        **lstsq_kwargs,
-    ).solution
+    solution = _rank_aware_batched_lstsq(
+        augmented_design, augmented_target, rcond=rcond
+    )
 
     if fixed_control_points is None:
         control_points = solution
@@ -296,7 +387,37 @@ def single_knot_deletion_mse_batch(
             dim=-2,
         )
     reconstructed = basis @ control_points
-    return (reconstructed - target).pow(2).sum(dim=-1).mean(dim=-1)
+    mse = (reconstructed - target).pow(2).sum(dim=-1).mean(dim=-1)
+    if augmented_design.device.type == "cuda" and not bool(torch.isfinite(mse).all()):
+        # A CUDA QR call can also return finite but explosive coefficients,
+        # producing an invalid reconstructed error without raising. Retry the
+        # affected deletion states with the rank-aware deployment solver.
+        bad = ~torch.isfinite(mse)
+        robust_solution = _cpu_svd_lstsq(
+            augmented_design[bad],
+            augmented_target[bad],
+            rcond=rcond,
+            output_device=augmented_design.device,
+        )
+        if fixed_control_points is None:
+            robust_controls = robust_solution
+        else:
+            robust_controls = torch.cat(
+                [
+                    fixed_control_points[bad, :1, :],
+                    robust_solution,
+                    fixed_control_points[bad, 1:, :],
+                ],
+                dim=-2,
+            )
+        robust_reconstruction = basis[bad] @ robust_controls
+        mse = mse.clone()
+        mse[bad] = (
+            (robust_reconstruction - target[bad]).pow(2).sum(dim=-1).mean(dim=-1)
+        )
+    if not bool(torch.isfinite(mse).all()):
+        raise RuntimeError("one-knot deletion refit produced non-finite MSE")
+    return mse
 
 
 @torch.no_grad()
