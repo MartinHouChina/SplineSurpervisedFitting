@@ -26,6 +26,8 @@
 
 离线缓存要求 Joint 样本身份不变。一条龙脚本固定训练样本并使用 `--no-resample-train-each-epoch`；不要把旧的在线重采样指令与该缓存混用。缓存搜索发生在训练阶段，**不计入**一次性部署网络耗时。
 
+离线教师采用独立的 `--feasible-teacher-batch-size 8`，Joint 优化器仍使用 Batch=64。此设置只限制每次数值求解的显存，不改变教师标签；Kc=72 的贪心搜索仍可能耗时数小时。当前缓存只在全部样本完成后发布，搜索中断不会留下可续算的部分缓存。
+
 ## 部署与方法命名
 
 原始网络部署仍是一次前向、一次最终标准 B 样条 refit，记作 `ours_one_shot`。它能报告工程阈值通过率，但仅靠预测概率和 `TopK` **不能数学保证**每条曲线都满足阈值。
@@ -45,6 +47,18 @@ bash scripts/run_v16_mse1e-4_3090.sh \
   --benchmark-profile quick \
   --run-name candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1
 ```
+
+若 Proposal 已完成、离线教师构建阶段中断，先同步最新代码到服务器，并确认同名 `.last.pt` 和 `.proposal.pt` 存在。保持原 `run-name` 续跑；不要改名重训，也不要重新准备已有数据：
+
+```bash
+bash scripts/run_v16_mse1e-4_3090.sh \
+  --resume-run \
+  --device cuda \
+  --benchmark-profile quick \
+  --run-name candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1
+```
+
+`--resume-run` 从 `.last.pt` 的下一代继续，保留原 best Proposal 和输出路径，不截断旧日志；原训练配置与真实数据 manifest 指纹必须匹配。`--feasible-teacher-batch-size` 是仅影响缓存构建显存的运行参数，允许在续跑时改变；其它训练参数不能随意变更。
 
 批量评测额外传入 `--include-verified-ours`，报告中会出现单独的
 `ours_verified` 数值修复行；原 `ours` 行始终是未修复的一次性结果。

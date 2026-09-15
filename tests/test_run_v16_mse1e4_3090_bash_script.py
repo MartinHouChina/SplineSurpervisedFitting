@@ -83,7 +83,10 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
     assert source.index("scripts/plot_v16_method_comparison.py") < source.index(
         "scripts/visualize_v16_real_deployments.py"
     )
-    assert "--resume" not in source
+    assert '--resume "$LAST_PATH"' in source
+    assert '--feasible-teacher-batch-size "$FEASIBLE_TEACHER_BATCH_SIZE"' in source
+    assert '[[ -f "$LAST_PATH" ]]' in source
+    assert 'TRAIN_PHASE=train_resume' in source
     assert "--overwrite" not in source
     assert "--proposal-pass-target" not in source
     assert "--deployment-pass-target" not in source
@@ -105,6 +108,8 @@ def test_linux_runner_refuses_unknown_options_and_documents_help() -> None:
     assert "--diagnostic" in source
     assert "--dry-run" in source
     assert "--benchmark-profile" in source
+    assert "--resume-run" in source
+    assert "--feasible-teacher-batch-size" in source
     assert "--python PATH" in source
     assert "--proposal-high-k-fraction X" in source
     assert "--proposal-high-k-min-knots N" in source
@@ -124,3 +129,43 @@ def test_linux_runner_has_valid_bash_syntax_when_bash_is_available() -> None:
         check=False,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_linux_runner_resume_dry_run_requires_last_and_keeps_run_name(
+    request: pytest.FixtureRequest,
+) -> None:
+    bash = shutil.which("bash")
+    if bash is None or not Path(bash).as_posix().startswith("/"):
+        pytest.skip("native /bin/bash is unavailable on this platform")
+    tmp_path = request.getfixturevalue("tmp_path")
+    run_name = "resume_smoke"
+    output_root = tmp_path / "outputs"
+    checkpoint_dir = output_root / "checkpoints"
+    checkpoint_dir.mkdir(parents=True)
+    command = [
+        bash, str(SCRIPT), "--dry-run", "--benchmark-profile", "quick",
+        "--device", "cpu", "--output-root", str(output_root),
+        "--run-name", run_name, "--resume-run",
+    ]
+    missing = subprocess.run(
+        command, cwd=ROOT, capture_output=True, text=True,
+        timeout=10, check=False,
+    )
+    assert missing.returncode != 0
+    assert "requires the existing last checkpoint" in missing.stderr
+
+    last = checkpoint_dir / f"{run_name}.last.pt"
+    proposal = checkpoint_dir / f"{run_name}.proposal.pt"
+    last.write_bytes(b"dry-run placeholder")
+    proposal.write_bytes(b"dry-run placeholder")
+    resumed = subprocess.run(
+        command, cwd=ROOT, capture_output=True, text=True,
+        timeout=10, check=False,
+    )
+    assert resumed.returncode == 0, resumed.stdout + resumed.stderr
+    assert "[train_resume]" in resumed.stdout
+    assert "--resume" in resumed.stdout
+    assert str(last) in resumed.stdout
+    assert str(checkpoint_dir / f"{run_name}.pt") in resumed.stdout
+    assert "[train_fresh]" not in resumed.stdout
+    assert "--init-checkpoint" not in resumed.stdout

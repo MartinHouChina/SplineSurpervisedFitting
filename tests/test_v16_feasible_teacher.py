@@ -11,6 +11,7 @@ from torch.utils.data import Dataset
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from spline_fitting.training.v16_feasible_teacher import (
+    _devices_equivalent,
     build_or_load_v16_feasible_teacher_cache,
 )
 
@@ -145,3 +146,44 @@ def test_feasible_teacher_is_synthetic_only_and_index_checked(tmp_path):
 
     with pytest.raises(ValueError, match="synthetic-only"):
         _cache(model, _RealRow(), tmp_path / "real.pt")
+
+
+@pytest.mark.parametrize(
+    ("current_index", "actual", "requested", "expected"),
+    [
+        (0, "cuda:0", "cuda", True),
+        (0, "cuda", "cuda:0", True),
+        (0, "cuda:1", "cuda", False),
+        (1, "cuda:1", "cuda", True),
+        (1, "cuda:0", "cuda", False),
+        (0, "cpu", "cuda", False),
+    ],
+)
+def test_device_alias_uses_current_cuda_index_without_gpu(
+    monkeypatch, current_index, actual, requested, expected,
+):
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: current_index)
+    assert _devices_equivalent(
+        torch.device(actual), torch.device(requested),
+    ) is expected
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_feasible_teacher_accepts_unindexed_cuda_alias_for_cuda_zero(tmp_path):
+    """The Linux CLI's ``cuda`` device must match a model placed on ``cuda:0``."""
+    previous_device = torch.cuda.current_device()
+    try:
+        torch.cuda.set_device(0)
+        model = _FixedProposal().to(torch.device("cuda:0"))
+        cache = build_or_load_v16_feasible_teacher_cache(
+            model,
+            _FixedSynthetic(),
+            tmp_path / "cuda_teacher.pt",
+            mse_tolerance=1e-4,
+            device=torch.device("cuda"),
+            batch_size=1,
+        )
+        assert cache.sample_count == 2
+        assert cache.batch.teacher_retained_mask.device.type == "cpu"
+    finally:
+        torch.cuda.set_device(previous_device)

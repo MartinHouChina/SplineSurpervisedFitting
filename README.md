@@ -61,6 +61,18 @@ bash scripts/run_v16_mse1e-4_3090.sh \
   --run-name candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1
 ```
 
+Proposal 完成后若教师阶段中断，同步新代码并确认同名 `.last.pt`、`.proposal.pt` 仍在，使用原名字继续运行：
+
+```bash
+bash scripts/run_v16_mse1e-4_3090.sh \
+  --resume-run \
+  --device cuda \
+  --benchmark-profile quick \
+  --run-name candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1
+```
+
+离线教师默认 Batch=8，与 Joint Batch=64 分开；缓存构建可能很久，且当前仅在完整构建后保存。[续跑与产物说明](docs/v16_feasible_teacher_workflow.md)。
+
 下面 Windows PowerShell 入口仍是旧 supervised-only 对照，**不等同于新的离线可行教师协议**：
 
 ```powershell

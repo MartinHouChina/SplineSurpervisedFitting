@@ -38,6 +38,7 @@ def test_default_profile_keeps_ninety_percent_as_reporting_reference():
     assert (args.train_size, args.val_size, args.real_val_size) == (2400, 500, 100)
     assert args.synthetic_boundary_val_size == 32
     assert args.batch_size == 16
+    assert args.feasible_teacher_batch_size == 8
     assert args.proposal_high_k_fraction == pytest.approx(0.5)
     assert args.proposal_high_k_min_knots == 40
     assert (args.min_control_points, args.max_control_points) == (8, 60)
@@ -1053,6 +1054,53 @@ def test_tiny_offline_feasible_teacher_joint_builds_stable_cache(tmp_path):
     assert payload["training_config"]["proposal_joint_lr"] == 0
     assert payload["training_config"]["parameter_joint_lr"] == 0
     assert "offline_teacher_numerical_pass_rate" in payload["history"][1]["train"]
+    assert (cache_dir / "train.pt").is_file()
+
+
+def test_proposal_resume_after_teacher_failure_preserves_initializer_and_batch_option(
+    tmp_path, monkeypatch,
+):
+    output = tmp_path / "teacher_resume.pt"
+    cache_dir = tmp_path / "teacher"
+    command = training_command(output) + [
+        "--joint-supervision", "offline_feasible_teacher",
+        "--feasible-teacher-cache-dir", str(cache_dir),
+        "--synthetic-count-role", "reference_only",
+        "--no-resample-train-each-epoch",
+        "--proposal-joint-lr", "0",
+        "--parameter-joint-lr", "0",
+        "--selector-warmup-epochs", "0",
+    ]
+    original_builder = train_v16.build_or_load_v16_feasible_teacher_cache
+
+    def fail_once(*args, **kwargs):
+        raise RuntimeError("simulated post-Proposal Teacher failure")
+
+    monkeypatch.setattr(
+        train_v16, "build_or_load_v16_feasible_teacher_cache", fail_once,
+    )
+    with pytest.raises(RuntimeError, match="post-Proposal Teacher failure"):
+        train_v16.main(command)
+    last_path = tmp_path / "teacher_resume.last.pt"
+    proposal_path = tmp_path / "teacher_resume.proposal.pt"
+    last = torch.load(last_path, map_location="cpu", weights_only=True)
+    assert last["epoch"] == 1 and last["stage"] == "proposal"
+    assert proposal_path.is_file()
+    assert not (cache_dir / "train.pt").exists()
+
+    monkeypatch.setattr(
+        train_v16, "build_or_load_v16_feasible_teacher_cache", original_builder,
+    )
+    resumed_command = command + [
+        "--feasible-teacher-batch-size", "1",
+        "--resume", str(last_path),
+    ]
+    assert train_v16.main(resumed_command) == 0
+    resumed = torch.load(last_path, map_location="cpu", weights_only=True)
+    assert resumed["epoch"] == 2 and resumed["stage"] == "joint"
+    assert resumed["history"][0] == last["history"][0]
+    assert resumed["proposal_initializer_epoch"] == 1
+    assert Path(resumed["proposal_initializer_path"]) == proposal_path
     assert (cache_dir / "train.pt").is_file()
 
 

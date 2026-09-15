@@ -30,6 +30,21 @@ from .one_shot_teacher import (
 _PROPOSAL_PREFIXES = ("encoder.", "parameter_head.", "candidate_head.")
 
 
+def _devices_equivalent(actual: torch.device, requested: torch.device) -> bool:
+    """Compare effective devices, including bare `cuda` = current CUDA index."""
+    if actual.type != requested.type:
+        return False
+    if actual.type != "cuda":
+        return actual == requested
+    actual_index = (
+        torch.cuda.current_device() if actual.index is None else actual.index
+    )
+    requested_index = (
+        torch.cuda.current_device() if requested.index is None else requested.index
+    )
+    return actual_index == requested_index
+
+
 def _proposal_fingerprint(model: torch.nn.Module) -> str:
     """Hash only weights that determine proposal parameters and knots.
 
@@ -218,12 +233,17 @@ def build_or_load_v16_feasible_teacher_cache(
             ) from exc
         return V16FeasibleTeacherCache(cached, destination, loaded=True)
 
-    target_device = torch.device(device)
+    requested_device = torch.device(device)
     model_device = next(model.parameters()).device
-    if model_device != target_device:
+    if not _devices_equivalent(model_device, requested_device):
         raise ValueError(
-            f"proposal model is on {model_device}, expected {target_device}"
+            f"proposal model is on {model_device}, expected {requested_device}"
         )
+    target_device = (
+        torch.device("cuda", torch.cuda.current_device())
+        if requested_device.type == "cuda" and requested_device.index is None
+        else requested_device
+    )
     model_dtype = next(model.parameters()).dtype
     was_training = model.training
     model.eval()

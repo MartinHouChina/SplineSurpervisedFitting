@@ -205,6 +205,10 @@ def parser():
         help="Required with offline_feasible_teacher; fixed Proposal labels are cached here",
     )
     p.add_argument(
+        "--feasible-teacher-batch-size", type=int, default=8,
+        help="Offline numerical Teacher batch; independent of Joint optimizer batch size",
+    )
+    p.add_argument(
         "--synthetic-geometry-oracle-teacher",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -372,7 +376,8 @@ def validate_args(args):
         args.candidate_knots = V16_FORMAL_CANDIDATE_INTERNAL_KNOTS
     if not 1 <= args.proposal_epochs < args.epochs:
         raise ValueError("require 1 <= proposal-epochs < epochs")
-    for key in ("train_size", "val_size", "real_val_size", "batch_size", "hidden_dim",
+    for key in ("train_size", "val_size", "real_val_size", "batch_size",
+                "feasible_teacher_batch_size", "hidden_dim",
                 "encoder_layers", "attention_heads", "selector_layers", "torch_num_threads", "log_every_batches"):
         if getattr(args, key) < 1:
             raise ValueError(f"{key} must be positive")
@@ -1538,6 +1543,7 @@ def main(argv=None):
                 "for proposal-only transfer"
             )
         ignored = {"epochs", "resume", "init_checkpoint", "output", "device", "num_workers",
+                   "feasible_teacher_batch_size",
                    "torch_num_threads", "log_every_batches", "initial_keep_fraction"}
         previous_config = dict(resume_payload["training_config"])
         legacy_named_groups_missing = "selector_warmup_epochs" not in previous_config
@@ -2014,10 +2020,11 @@ def main(argv=None):
                 feasible_teacher_cache = build_or_load_v16_feasible_teacher_cache(
                     teacher_proposal_model, train_data, cache_path,
                     mse_tolerance=args.mse_tolerance,
-                    device=device, batch_size=args.batch_size,
+                    device=device, batch_size=args.feasible_teacher_batch_size,
                     smoothness_weight=0.0, control_ridge=0.0,
                     progress=lambda done, total: progress(
-                        done, total, "offline feasible Teacher", every=args.batch_size * 10,
+                        done, total, "offline feasible Teacher",
+                        every=args.feasible_teacher_batch_size,
                     ),
                 )
                 del teacher_proposal_model

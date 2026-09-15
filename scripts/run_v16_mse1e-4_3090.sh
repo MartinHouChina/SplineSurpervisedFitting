@@ -21,6 +21,7 @@ REAL_VAL_SIZE=100
 PROPOSAL_HIGH_K_FRACTION=0.50
 PROPOSAL_HIGH_K_MIN_KNOTS=40
 BATCH_SIZE=64
+FEASIBLE_TEACHER_BATCH_SIZE=8
 NUM_WORKERS=4
 SYNTHETIC_SAMPLES_PER_K=5
 REAL_SAMPLES_PER_DATASET=20
@@ -32,6 +33,7 @@ NETWORK_REPEATS=100
 END_TO_END_REPEATS=3
 OUTPUT_ROOT=""
 INIT_CHECKPOINT=""
+RESUME_RUN=0
 PREPARE_REAL_DATA=0
 DIAGNOSTIC=0
 DRY_RUN=0
@@ -70,6 +72,9 @@ Main options:
   --output-root PATH             Output root (default: repository outputs/)
   --init-checkpoint PATH         Optional proposal-only warm start
   --no-init-checkpoint           Train all modules from scratch
+  --resume-run                   Continue this run from its existing .last.pt
+                                  (keeps the original --output and Proposal)
+  --feasible-teacher-batch-size N Numerical Teacher build batch (default: 8)
   --prepare-real-data            Prepare missing UJI, Natural Earth, USGS and industrial-offset data
   --benchmark-profile quick|full Quick smoke benchmark or full comparison (default: full)
   --diagnostic                   Continue after a structural-integrity audit failure
@@ -127,6 +132,8 @@ while (($#)); do
     --output-root) need_value "$@"; OUTPUT_ROOT="$2"; shift 2 ;;
     --init-checkpoint) need_value "$@"; INIT_CHECKPOINT="$2"; shift 2 ;;
     --no-init-checkpoint) INIT_CHECKPOINT=""; shift ;;
+    --resume-run) RESUME_RUN=1; shift ;;
+    --feasible-teacher-batch-size) need_value "$@"; FEASIBLE_TEACHER_BATCH_SIZE="$2"; shift 2 ;;
     --prepare-real-data) PREPARE_REAL_DATA=1; shift ;;
     --benchmark-profile) need_value "$@"; BENCHMARK_PROFILE="$2"; shift 2 ;;
     --diagnostic) DIAGNOSTIC=1; shift ;;
@@ -179,6 +186,7 @@ for item in \
   "REAL_VAL_SIZE:$REAL_VAL_SIZE" \
   "PROPOSAL_HIGH_K_MIN_KNOTS:$PROPOSAL_HIGH_K_MIN_KNOTS" \
   "BATCH_SIZE:$BATCH_SIZE" \
+  "FEASIBLE_TEACHER_BATCH_SIZE:$FEASIBLE_TEACHER_BATCH_SIZE" \
   "SYNTHETIC_SAMPLES_PER_K:$SYNTHETIC_SAMPLES_PER_K" \
   "REAL_SAMPLES_PER_DATASET:$REAL_SAMPLES_PER_DATASET" \
   "VISUAL_SAMPLES_PER_DATASET:$VISUAL_SAMPLES_PER_DATASET" \
@@ -206,6 +214,9 @@ positive_number "DECODER_JOINT_LR" "$DECODER_JOINT_LR"
   die "proposal high-K fraction must lie in [0,1]"
 ((PROPOSAL_HIGH_K_MIN_KNOTS >= 4 && PROPOSAL_HIGH_K_MIN_KNOTS <= 56)) || \
   die "proposal high-K minimum must lie inside source K=4..56"
+if ((RESUME_RUN)) && [[ -n "$INIT_CHECKPOINT" ]]; then
+  die "--resume-run cannot be combined with --init-checkpoint"
+fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
@@ -237,11 +248,16 @@ PROPOSAL_FINAL_PATH="$CHECKPOINT_DIRECTORY/$RUN_NAME.proposal.final.pt"
 HISTORY_PATH="$CHECKPOINT_DIRECTORY/$RUN_NAME.history.json"
 TEACHER_DIRECTORY="$OUTPUT_ROOT/teachers/$RUN_NAME"
 
-for owned in \
-  "$CHECKPOINT_PATH" "$LAST_PATH" "$PROPOSAL_PATH" "$PROPOSAL_FINAL_PATH" "$HISTORY_PATH" \
-  "$LOG_DIRECTORY" "$COMPARISON_ROOT" "$FIGURE_ROOT" "$TEACHER_DIRECTORY"; do
-  [[ ! -e "$owned" ]] || die "refusing to overwrite existing run artifact: $owned"
-done
+if ((RESUME_RUN)); then
+  [[ -f "$LAST_PATH" ]] || die "--resume-run requires the existing last checkpoint: $LAST_PATH"
+  [[ -f "$PROPOSAL_PATH" ]] || die "--resume-run requires the existing best Proposal: $PROPOSAL_PATH"
+else
+  for owned in \
+    "$CHECKPOINT_PATH" "$LAST_PATH" "$PROPOSAL_PATH" "$PROPOSAL_FINAL_PATH" "$HISTORY_PATH" \
+    "$LOG_DIRECTORY" "$COMPARISON_ROOT" "$FIGURE_ROOT" "$TEACHER_DIRECTORY"; do
+    [[ ! -e "$owned" ]] || die "refusing to overwrite existing run artifact: $owned"
+  done
+fi
 
 UJI_MANIFEST="$REPOSITORY_ROOT/data/splits/uji_pen_v2.jsonl"
 NATURAL_EARTH_MANIFEST="$REPOSITORY_ROOT/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl"
@@ -325,6 +341,11 @@ run_logged() {
   local phase="$1"
   shift
   local log_path="$LOG_DIRECTORY/$phase.log"
+  if [[ -e "$log_path" ]]; then
+    # A resumed attempt must not truncate logs from a previous attempt.
+    log_path="$LOG_DIRECTORY/${phase}_$(date -u +%Y%m%dT%H%M%S)_$$.log"
+    [[ ! -e "$log_path" ]] || die "refusing to overwrite existing log: $log_path"
+  fi
   CURRENT_PHASE="$phase"
   printf '\n[%s]' "$phase"
   printf ' %q' "$@"
@@ -339,7 +360,8 @@ run_logged() {
   return "$status"
 }
 
-printf 'Fresh v16 Linux profile: MSE=1e-4, Kc=72, source K=4..56, train/val=%s/%s, batch=%s.\n' \
+printf '%s v16 Linux profile: MSE=1e-4, Kc=72, source K=4..56, train/val=%s/%s, batch=%s.\n' \
+  "$([[ $RESUME_RUN -eq 1 ]] && printf Resume || printf Fresh)" \
   "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
 printf 'Simplification contract: %s\n' "$SIMPLIFICATION_CONTRACT"
 printf 'Checkpoint selection is empirical: inspect the trained Proposal, feasible Teacher and one-shot deployment separately; no pass rate is assumed achieved.\n'
@@ -370,6 +392,7 @@ TRAIN_ARGS=(
   --proposal-high-k-fraction "$PROPOSAL_HIGH_K_FRACTION"
   --proposal-high-k-min-knots "$PROPOSAL_HIGH_K_MIN_KNOTS"
   --batch-size "$BATCH_SIZE"
+  --feasible-teacher-batch-size "$FEASIBLE_TEACHER_BATCH_SIZE"
   --num-points 192
   --min-control-points 8
   --max-control-points 60
@@ -424,7 +447,12 @@ TRAIN_ARGS=(
   --device "$DEVICE"
   --output "$CHECKPOINT_PATH"
 )
-if [[ -n "$INIT_CHECKPOINT" ]]; then
+TRAIN_PHASE=train_fresh
+if ((RESUME_RUN)); then
+  printf 'Resuming the existing training run: %s\n' "$LAST_PATH"
+  TRAIN_ARGS+=(--resume "$LAST_PATH")
+  TRAIN_PHASE=train_resume
+elif [[ -n "$INIT_CHECKPOINT" ]]; then
   if [[ "$INIT_CHECKPOINT" != /* ]]; then
     INIT_CHECKPOINT="$REPOSITORY_ROOT/$INIT_CHECKPOINT"
   fi
@@ -437,7 +465,7 @@ if [[ -n "$INIT_CHECKPOINT" ]]; then
       "$INIT_CHECKPOINT" >&2
   fi
 fi
-run_logged train_fresh "${TRAIN_ARGS[@]}"
+run_logged "$TRAIN_PHASE" "${TRAIN_ARGS[@]}"
 
 if ((DRY_RUN == 0)); then
   [[ -f "$CHECKPOINT_PATH" ]] || die "training completed without best checkpoint: $CHECKPOINT_PATH"
