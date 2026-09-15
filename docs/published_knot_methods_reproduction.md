@@ -19,7 +19,7 @@
 
 1. 六方法处理完全相同的配对曲线与相同归一化输入。
 2. Synthetic 按 source `K=4..56` 分层；外部数据来自 UJI、Natural Earth、USGS、IndustrialOffset 的留出 test split。IndustrialOffset 必须标为 CAD 驱动半合成。
-3. 最大内部节点容量统一为 56；三次开放完整节点向量全容量为 64 项。
+3. Synthetic source 与五个数值基线的最大内部节点数为 56；Ours 使用 `Kc=72` 的过完备 Proposal（16 个冗余槽，全保留节点向量为 80 项）。两者不是“相同候选容量”，因此报告必须同时列出 Proposal 容量与实际 final K，且不得截去 Ours 中偶发的 `final K>56`。
 4. 最终结果统一用端点约束、无平滑、无 ridge 的 CPU float64 标准 B 样条 refit。
 5. 公共误差为 `MSE=mean_i ||C(t_i)-Q_i||²`，阈值固定 `1e-4`。
 6. final K 是最终 refit 实际使用的内部节点数。
@@ -39,7 +39,7 @@ Ours 的 checkpoint 只由 certified Synthetic 训练；UJI、Natural Earth、US
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
-  -RunName candidate_selection_v16_mse1e-4_k56_supervised `
+  -RunName candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised `
   -Device cuda
 ```
 
@@ -47,7 +47,7 @@ powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
 
 ```powershell
 python scripts/benchmark_v16_datasets.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_supervised.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt `
   --output-dir outputs/comparisons/v16_supervised_six_methods `
   --method-set published `
   --samples-per-knot-count 5 --min-knot-count 4 --max-knot-count 56 `

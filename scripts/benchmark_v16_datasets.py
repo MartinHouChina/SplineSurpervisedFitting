@@ -34,10 +34,10 @@ def main(argv=None):
         expected_objective=V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
         default_checkpoint=Path(
             "outputs/checkpoints/"
-            "candidate_selection_v16_mse1e-4_k56_supervised.pt"
+            "candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt"
         ),
         default_output_dir=Path(
-            "outputs/comparisons/v16_mse1e-4_k56_supervised"
+            "outputs/comparisons/v16_mse1e-4_sourcek56_kc72_supervised"
         ),
     )
 

@@ -50,9 +50,14 @@ def test_script_encodes_the_requested_training_and_fair_comparison_contract() ->
 
     training_fragments = (
         '"synthetic_ground_truth_ordered_keep_and_relocation_v4"',
-        '[string]$RunName = "candidate_selection_v16_mse1e-4_k56_supervised"',
+        '[string]$RunName = "candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised"',
         '[int]$Epochs = 128',
         '[int]$ProposalEpochs = 64',
+        '[int]$SelectorWarmupEpochs = 8',
+        '[double]$SelectorLr = 2e-4',
+        '[double]$ProposalJointLr = 1e-5',
+        '[double]$ParameterJointLr = 5e-5',
+        '[double]$DecoderJointLr = 5e-5',
         '[int]$TrainSize = 3000',
         '[int]$ValSize = 600',
         '[int]$RealValSize = 100',
@@ -67,14 +72,19 @@ def test_script_encodes_the_requested_training_and_fair_comparison_contract() ->
         '"--proposal-high-k-min-knots", [string]$ProposalHighKMinKnots',
         '"--min-control-points", "8"',
         '"--max-control-points", "60"',
-        '"--candidate-knots", "56"',
+        '"--candidate-knots", "72"',
         '"--knot-min-span", "0.01"',
         '"--mse-tolerance", "1e-4"',
         '"--proposal-knot-assignment-weight", "1.0"',
         '"--proposal-multiscale-recall-weight", "0.25"',
         '"--fine-teacher-weight", "0.5"',
         '"--parameter-gap-weight", "0.05"',
-        '"--initial-keep-fraction", "0.5357142857142857"',
+        '"--selector-warmup-epochs", [string]$SelectorWarmupEpochs',
+        '"--selector-lr", ([string]::Format(',
+        '"--proposal-joint-lr", ([string]::Format(',
+        '"--parameter-joint-lr", ([string]::Format(',
+        '"--decoder-joint-lr", ([string]::Format(',
+        '"--initial-keep-fraction", "0.4166666666666667"',
         '"--joint-supervision", "synthetic_ground_truth"',
         '"--synthetic-count-role", "exact"',
         '"--no-synthetic-geometry-oracle-teacher"',
@@ -87,6 +97,7 @@ def test_script_encodes_the_requested_training_and_fair_comparison_contract() ->
         '"--final-safety-knots", "0"',
         '"--real-fraction", "0"',
         '"--real-manifest", $IndustrialOffsetManifest',
+        '(Join-Path $CheckpointDirectory ($RunName + ".proposal.final.pt"))',
     )
     for fragment in training_fragments:
         assert fragment in text
@@ -165,7 +176,7 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
         ),
         "checkpoint_selection": "joint_mean_per_curve_subset_cost_v1",
         "proposal_checkpoint_selection": (
-            "qualification_pass_then_recall_then_knot_mae_then_parameter_rmse"
+            "dense_subset_cost_then_worst_aggregate_pass_then_knot_parameter_f1_recall"
         ),
         "qualification_contract": (
             "v16_supervised_synthetic_only_pass_rates_report_only_v4"
@@ -176,14 +187,20 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
         "simplification_curriculum": "deterministic_linear_by_joint_epoch",
         "aggregate_pass_feedback": False,
         "mse_tolerance": 1e-4,
-        "candidate_internal_knots": 56,
-        "full_cubic_knot_vector_size_at_all_keep": 64,
+        "candidate_internal_knots": 72,
+        "candidate_redundancy_over_source_max": 16,
+        "full_cubic_knot_vector_size_at_all_keep": 80,
         "source_internal_knots": "4..56",
         "source_control_points": "8..60",
         "knot_min_span": 0.01,
         "points": 192,
         "epochs": 128,
         "proposal_epochs": 64,
+        "selector_warmup_epochs": 8,
+        "selector_lr": 2e-4,
+        "proposal_joint_lr": 1e-5,
+        "parameter_joint_lr": 5e-5,
+        "decoder_joint_lr": 5e-5,
         "train_size": 3000,
         "validation_size": 600,
         "synthetic_boundary_validation_size": 32,
@@ -204,7 +221,7 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
         "fine_teacher_additional_spline_solves_per_batch": 0,
         "batch_size": 64,
         "selection_policy": "mass_topk",
-        "initial_keep_fraction": 30 / 56,
+        "initial_keep_fraction": 30 / 72,
         "joint_supervision": "synthetic_ground_truth",
         "online_teacher": False,
         "synthetic_count_role": "exact",
@@ -237,6 +254,11 @@ def test_default_initializer_is_proposal_only_and_missing_file_is_explicit(
     assert "--proposal-knot-assignment-weight 1.0" in train
     assert "--proposal-multiscale-recall-weight 0.25" in train
     assert "--fine-teacher-weight 0.5" in train
+    assert "--selector-warmup-epochs 8" in train
+    assert "--selector-lr 0.0002" in train
+    assert "--proposal-joint-lr 1E-05" in train
+    assert "--parameter-joint-lr 5E-05" in train
+    assert "--decoder-joint-lr 5E-05" in train
     assert "industrial_offsets" in train
 
 
@@ -273,6 +295,8 @@ def test_diagnostic_dry_run_is_isolated_and_marks_all_consumers(
         "12",
         "-ProposalEpochs",
         "4",
+        "-SelectorWarmupEpochs",
+        "2",
         "-TrainSize",
         "256",
         "-ValSize",
@@ -296,6 +320,7 @@ def test_diagnostic_dry_run_is_isolated_and_marks_all_consumers(
     training = manifest["phases"]["train_fresh"]["command"]
     assert "--epochs 12" in training
     assert "--proposal-epochs 4" in training
+    assert "--selector-warmup-epochs 2" in training
     assert "--train-size 256" in training
     assert "--val-size 64" in training
     assert "--real-val-size 16" in training

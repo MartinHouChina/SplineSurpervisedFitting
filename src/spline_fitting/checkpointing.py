@@ -52,7 +52,9 @@ V16_OBJECTIVE_VERSIONS = (
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
     V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
 )
-V16_ADAPTIVE_SELECTION_REVISION = "v16_supervised_ordered_assignment_mass_topk"
+V16_ADAPTIVE_SELECTION_REVISION = (
+    "v16_decoupled_keep_count_kc72_mass_topk"
+)
 V16_CERTIFIED_SYNTHETIC_CONTRACT = (
     "source_subset_threshold_minimal_k4_56_span001_v2"
 )
@@ -72,6 +74,12 @@ V16_FORMAL_SYNTHETIC_KNOT_F1_MIN = 0.60
 V16_FORMAL_SYNTHETIC_MATCHED_MAE_MAX = 0.005
 V16_FORMAL_SYNTHETIC_MIN_INTERNAL_KNOTS = 4
 V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS = 56
+# Proposal capacity is deliberately larger than the most complex labelled
+# source.  With Kc == source Kmax, the K=56 stratum has no dispensable slot:
+# every proposal must both reproduce a true knot and remain available to the
+# selector.  Sixteen extra slots restore the intended generate-then-simplify
+# contract without changing the certified source range.
+V16_FORMAL_CANDIDATE_INTERNAL_KNOTS = 72
 V16_FORMAL_SYNTHETIC_MIN_CONTROL_POINTS = 8
 V16_FORMAL_SYNTHETIC_MAX_CONTROL_POINTS = 60
 V16_FORMAL_SYNTHETIC_KNOT_MIN_SPAN = 0.01
@@ -190,6 +198,12 @@ def assess_v16_checkpoint(
     candidate_capacity = _finite_checkpoint_float(
         model_config.get("max_internal_knots")
     )
+    checkpoint_epoch = _checkpoint_int(checkpoint.get("epoch"))
+    proposal_epochs = _checkpoint_int(training.get("proposal_epochs"))
+    selector_warmup_epochs = _checkpoint_int(
+        training.get("selector_warmup_epochs")
+    )
+    training_phase = checkpoint.get("training_phase")
     synthetic_min_control_points = _checkpoint_int(
         dataset_config.get("min_control_points")
     )
@@ -265,6 +279,39 @@ def assess_v16_checkpoint(
         reasons.append(
             "checkpoint is not the current v16 adaptive-beta mass-TopK revision"
         )
+    else:
+        # Do not trust the serialized ``simplification_ready`` flag by itself.
+        # A long selector warmup can outlast the safety/complexity ramps, so a
+        # warmup-only checkpoint may otherwise look mature despite never having
+        # updated Proposal or ParameterHead in Joint training.
+        if checkpoint_epoch is None or checkpoint_epoch < 1:
+            reasons.append("current v16 checkpoint epoch is missing or invalid")
+        if proposal_epochs is None or proposal_epochs < 1:
+            reasons.append(
+                "current v16 proposal_epochs is missing or invalid"
+            )
+        if selector_warmup_epochs is None or selector_warmup_epochs < 0:
+            reasons.append(
+                "current v16 selector_warmup_epochs is missing or invalid"
+            )
+        if training_phase != "joint_finetune":
+            reasons.append(
+                "current v16 formal checkpoint training_phase is not "
+                "joint_finetune"
+            )
+        if (
+            checkpoint_epoch is not None
+            and checkpoint_epoch >= 1
+            and proposal_epochs is not None
+            and proposal_epochs >= 1
+            and selector_warmup_epochs is not None
+            and selector_warmup_epochs >= 0
+            and checkpoint_epoch <= proposal_epochs + selector_warmup_epochs
+        ):
+            reasons.append(
+                "current v16 checkpoint epoch does not exceed Proposal plus "
+                "selector-warmup epochs"
+            )
     if selection_policy != "mass_topk":
         reasons.append("formal v16 selection policy is not mass_topk")
     if adaptive_threshold is not True:
@@ -387,12 +434,13 @@ def assess_v16_checkpoint(
         )
     if candidate_capacity is None or not math.isclose(
         candidate_capacity,
-        V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS,
+        V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
         rel_tol=0.0,
         abs_tol=0.0,
     ):
         reasons.append(
-            "formal v16 candidate-knot capacity must equal 56 internal knots"
+            "formal v16 candidate-knot capacity must equal "
+            f"{V16_FORMAL_CANDIDATE_INTERNAL_KNOTS} internal knots"
         )
     # Retained K, all-keep behavior and knot/count accuracy are empirical
     # benchmark results.  Keep them in the report below without gating access
@@ -550,6 +598,13 @@ def assess_v16_checkpoint(
         "recorded_mse_tolerance": recorded_tolerance,
         "recorded_knot_match_tolerance": recorded_match_tolerance,
         "candidate_knot_capacity": candidate_capacity,
+        "checkpoint_epoch": checkpoint_epoch,
+        "proposal_epochs": proposal_epochs,
+        "selector_warmup_epochs": selector_warmup_epochs,
+        "training_phase": training_phase,
+        "formal_candidate_knot_capacity": (
+            V16_FORMAL_CANDIDATE_INTERNAL_KNOTS
+        ),
         "formal_proposal_high_k_fraction": (
             V16_FORMAL_PROPOSAL_HIGH_K_FRACTION
         ),

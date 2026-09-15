@@ -192,6 +192,10 @@ class V16CandidateSelectionNetwork(nn.Module):
         nn.init.zeros_(self.parameter_update[-1].bias)
         nn.init.zeros_(self.relocation_update.weight)
         nn.init.zeros_(self.relocation_update.bias)
+        # The v16 trainer now requests 0.03 so fresh formal runs start outside
+        # the saturated identity region.  The model constructor still honors
+        # an explicit zero for ablations and exact config round-trips; finite
+        # logits require the usual 1e-6 numerical clamp.
         clipped_blend = min(max(relocation_blend, 1e-6), 1 - 1e-6)
         self.relocation_blend_logit = nn.Parameter(torch.tensor(
             math.log(clipped_blend / (1 - clipped_blend))
@@ -277,8 +281,17 @@ class V16CandidateSelectionNetwork(nn.Module):
             centered_importance = raw_importance - raw_importance.mean(
                 dim=-1, keepdim=True
             )
+            # Count calibration owns the curve-level threshold head, but must
+            # not reshape the shared candidate representation (and therefore
+            # the within-curve importance ordering) through the head's input
+            # branch.  The detached features still evolve under geometry and
+            # structure supervision; only count gradients stop here.
             threshold_context = self.adaptive_threshold_norm(
-                tokens.mean(dim=1) + global_features + tolerance_features
+                (
+                    tokens.mean(dim=1)
+                    + global_features
+                    + tolerance_features
+                ).detach()
             )
             adaptive_threshold = self.adaptive_threshold_head(
                 threshold_context
@@ -288,12 +301,48 @@ class V16CandidateSelectionNetwork(nn.Module):
             adaptive_threshold = raw_importance.new_zeros(raw_importance.shape[0])
         logits = centered_importance - adaptive_threshold.unsqueeze(-1)
         probabilities = logits.sigmoid()
-        uncertainty = (
-            probabilities.mul(1.0 - probabilities).sum(dim=-1).clamp_min(0.0).sqrt()
+        # Expose two numerically identical views with deliberately disjoint
+        # gradients.  Relative existence/ranking supervision must shape only
+        # candidate importance, while the curve-level beta is calibrated only
+        # by the deployed cardinality objective.  Conversely, count
+        # calibration must not change the within-curve ordering.  Deployment
+        # continues to use ``logits``/``probabilities`` with both live paths.
+        structure_logits = (
+            centered_importance - adaptive_threshold.detach().unsqueeze(-1)
         )
+        structure_probabilities = structure_logits.sigmoid()
+        count_logits = (
+            centered_importance.detach() - adaptive_threshold.unsqueeze(-1)
+        )
+        count_probabilities = count_logits.sigmoid()
+        # ``sqrt`` has an infinite derivative at exactly zero. Sigmoid can
+        # round to literal 0/1 for a saturated beta, making the former
+        # ``sqrt(sum(p(1-p)))`` contaminate the whole backward pass with NaNs.
+        # Use a linear continuation below epsilon so the forward uncertainty
+        # remains exactly zero for a deterministic mask. This preserves the
+        # deployed ceil/Top-K count at the boundary while keeping derivatives
+        # finite.
+        uncertainty_floor = torch.finfo(probabilities.dtype).eps
+        uncertainty_floor_root = math.sqrt(uncertainty_floor)
+
+        def stable_uncertainty(values: torch.Tensor) -> torch.Tensor:
+            variance = values.mul(1.0 - values).sum(dim=-1).clamp_min(0.0)
+            return torch.where(
+                variance >= uncertainty_floor,
+                variance.clamp_min(uncertainty_floor).sqrt(),
+                variance / uncertainty_floor_root,
+            )
+
+        uncertainty = stable_uncertainty(probabilities)
         requested_count_score = (
             probabilities.sum(dim=-1)
             + self.one_shot_safety_sigma * uncertainty
+            + self.one_shot_safety_knots
+        )
+        count_uncertainty = stable_uncertainty(count_probabilities)
+        count_requested_score = (
+            count_probabilities.sum(dim=-1)
+            + self.one_shot_safety_sigma * count_uncertainty
             + self.one_shot_safety_knots
         )
         return dict(
@@ -304,6 +353,11 @@ class V16CandidateSelectionNetwork(nn.Module):
             adaptive_keep_threshold=adaptive_threshold,
             adaptive_keep_logit_threshold=adaptive_threshold,
             keep_logits=logits, keep_probabilities=probabilities,
+            structure_keep_logits=structure_logits,
+            structure_keep_probabilities=structure_probabilities,
+            count_calibration_keep_logits=count_logits,
+            count_calibration_keep_probabilities=count_probabilities,
+            count_calibration_requested_count_score=count_requested_score,
             one_shot_probability_mass=probabilities.sum(dim=-1),
             one_shot_selection_uncertainty=uncertainty,
             one_shot_requested_count_score=requested_count_score,

@@ -66,13 +66,14 @@ def parser() -> argparse.ArgumentParser:
         "--checkpoint", type=Path,
         default=Path(
             "outputs/checkpoints/"
-            "candidate_selection_v16_mse1e-4_k56_supervised.pt"
+            "candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt"
         ),
     )
     result.add_argument(
         "--output-dir", type=Path,
         default=Path(
-            "outputs/figures/candidate_selection_v16_mse1e-4_k56_supervised/"
+            "outputs/figures/"
+            "candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised/"
             "six_method_cases"
         ),
     )

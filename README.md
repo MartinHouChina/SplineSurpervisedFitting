@@ -15,7 +15,7 @@
 | 真实数据 | validation/test only |
 | Teacher | 禁用 online prefix/counterfactual self-teacher；启用 certificate-derived single-deletion MSE 监督 |
 | 合成 source K | 4–56 个内部节点（8–60 个控制顶点） |
-| 网络容量 | `Kc=56` 个内部候选；全保留时完整三次节点向量为 64 项 |
+| 网络容量 | `Kc=72` 个内部候选，对 source 最大 `K=56` 保留 16 个冗余槽位；全保留时完整三次节点向量为 80 项 |
 | 主阈值 | `MSE <= 1e-4`，其中 MSE 不开方、不除以坐标维数 |
 | 训练长度 | Proposal 64 + Joint 64 = 128 epochs |
 | 部署 | 1 次网络 forward + 1 次 mass-TopK + 1 次标准 refit |
@@ -34,9 +34,11 @@
   -> 曲线、控制顶点、内部节点向量、MSE
 ```
 
-Proposal 阶段用真参数、真节点、有序一一匹配和多尺度 recall 损失监督候选位置。Joint 阶段由同一匹配直接产生 existence/KeepMask 标签，并用真 K、真参数和真节点位置监督计数、排序及重定位；Keep 概率还接受 Dice、沿候选顺序的 CDF 和邻近真节点的模糊负例约束。最简性认证保存的逐节点 single-deletion MSE 用于区分关键正候选，并细化 Keep 与 ranking 强度。参数头增加相邻参数间隔的 log-gap 和整曲线有符号 bias 监督，Joint 的节点位置损失以受限梯度回传给参数头。
+Proposal 阶段用真参数、真节点、有序一一匹配和多尺度 recall 损失监督候选位置。当前 `Kc=72` 且 `K*<=56`，因此最大复杂度样本仍有 16 个冗余候选可供筛选和重定位，不再要求 56 个候选逐一精确复刻 56 个真节点。Joint 阶段由同一匹配直接产生 existence/KeepMask 标签，并用真 K、真参数和真节点位置监督计数、排序及重定位；Keep 概率还接受 Dice、沿候选顺序的 CDF 和邻近真节点的模糊负例约束。最简性认证保存的逐节点 single-deletion MSE 用于区分关键正候选，并细化 Keep 与 ranking 强度。参数头增加相邻参数间隔的 log-gap 和整曲线有符号 bias 监督，Joint 的节点位置损失以受限梯度回传给参数头。
 
-正式路径仍不运行在线 Hard-RMS、ranked-prefix、oracle 或反事实 subset-search Teacher，也不生成 Teacher cache。细粒度删除标签在合成样本认证时计算，loss forward 不增加在线样条求解；部署结构与时间不变。
+Joint 开始后的前 8 代只更新 Selector 和 selected-only decoder，先把 Keep 排序、数量与存活节点重定位接上已经训练好的 Proposal；随后再以分组学习率联合微调：Selector `2e-4`、GeometryEncoder/CandidateHead `1e-5`、ParameterHead `5e-5`、selected-only decoder `5e-5`。这避免 Joint 刚开始时随机 Selector 以同一学习率拖坏 Proposal。
+
+正式路径仍不运行在线 Hard-RMS、ranked-prefix、oracle 或反事实 subset-search Teacher，也不生成 Teacher cache。细粒度删除标签在合成样本认证时计算，loss forward 不增加在线样条求解；部署仍是一次 forward、一次 mass-TopK 和一次 refit，计时口径不变。`Kc` 从 56 增至 72 会增加一定网络计算量，必须由新的实测 latency 报告，不能沿用旧值。
 
 ## 一条龙运行
 
@@ -55,14 +57,14 @@ data/processed/industrial_offsets/v1/manifest.jsonl
 bash scripts/run_v16_mse1e-4_3090.sh \
   --prepare-real-data \
   --device cuda \
-  --run-name candidate_selection_v16_mse1e-4_k56_supervised_linux
+  --run-name candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised_linux
 ```
 
 在 Windows/RTX 3090 上运行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
-  -RunName candidate_selection_v16_mse1e-4_k56_supervised `
+  -RunName candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised `
   -Device cuda `
   -PrepareRealData
 ```
@@ -90,7 +92,7 @@ powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
 
 ```powershell
 python scripts/fit_v16_point_cloud.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_supervised.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt `
   --point-cloud path/to/ordered_points.csv `
   --output-dir outputs/fits/my_curve `
   --mse-tolerance 1e-4 `
@@ -101,7 +103,7 @@ python scripts/fit_v16_point_cloud.py `
 
 ## 结果解释边界
 
-- 数据集通过率不再作为 Proposal→Joint、停止训练或 benchmark 资格的硬门槛；但 Proposal checkpoint 会先按验证通过率守住拟合可行性，再比较候选召回和位置/参数误差。
+- 数据集通过率不再作为 Proposal→Joint、停止训练或 benchmark 资格的硬门槛；Proposal checkpoint 先比较连续的 dense subset cost，再比较最差来源/总体通过率、位置与参数误差、F1/recall，避免 K=56 boundary 全为零时由宽容差 recall 的微小抖动选回早期模型。
 - 单曲线 `MSE<=1e-4` 仍是该曲线是否满足工程阈值的判据。
 - 合成 source K 是认证生成表示的精确监督标签；该认证只证明固定参数化、原 source 节点子集内的阈值最简性，不等于连续自由重定位下的全局最少节点证明。
 - 五个论文对照是按公开描述实现的 adaptation，不是作者代码的逐行复刻。

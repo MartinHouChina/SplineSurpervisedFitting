@@ -1,8 +1,8 @@
-# Kang 与 Luo 在 MSE=1e-4 下的统一复查
+# Kang 与 Luo 在 MSE=1e-4 下的历史 Kc=56 实现复查
 
 ## 1. 复查口径
 
-本记录只用于核查实现和解释失效阶段。当前公平协议为 `Kc=56`；正式统计仍须
+本记录只用于核查历史实现和解释失效阶段，不代表当前正式容量协议。当前正式协议为 Ours `Kc=72`，Synthetic source 与数值基线最大内部节点数为 56；正式统计仍须
 运行完整的六方法 benchmark。
 
 Ours 使用 `synthetic_ground_truth_ordered_keep_and_relocation_v4` 简化合同和
@@ -80,9 +80,9 @@ seed 为 20260908。下表是旧 source K=4..24、旧 K64 内部候选配置留�
 - 每种方法使用相同曲线、参数维数、阈值和最终 refit；
 - Dung/Kang/Luo 默认启用上述显式公共阈值保护层；正式名称必须标注 `threshold-safe adaptation`，不得写成作者原始实现；
 - 同时报告 MSE、通过率、最终内部节点数和完整方法时间。
-- 当前 `source K=56` 与方法容量 56 同时到达边界，没有冗余候选余量；必须
-  单独报告该层 dense/deployment 通过率，失败仍留在分母中；该统计不构成
-  checkpoint 或 benchmark 的资格门槛。
+- 对五个数值基线，`source K=56` 与其方法容量 56 同时到达边界；Ours 则使用
+  `Kc=72`，仍有 16 个 Proposal 冗余槽位。所有方法都必须单独报告 K=56 层结果，
+  失败仍留在分母中；该统计不构成 checkpoint 或 benchmark 的资格门槛。
 
 完整运行入口见 [训练与评测流程](training_pipeline.md)；实现位于
 [Kang 适配](../src/spline_fitting/evaluation/sparse_knot_paper.py) 和

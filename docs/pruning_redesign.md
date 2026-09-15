@@ -39,11 +39,15 @@ Deployment:
 
 Proposal 回答“候选空间是否覆盖真节点”，Selector 回答“这条曲线应保留哪些候选”。分开后可以分别诊断 candidate recall 与 deployment selection；Joint 又通过共同的 ordered target 和 selected-only decoder把两者耦合，避免完全独立优化。
 
-`Kc=56` 是并行候选容量，所有候选在矩阵运算中一次处理；最终 K 由曲线自适应 probability mass 决定。它不是 CountHead 分类，也不是逐次预测。
+当前 source `K=4..56`，而 `Kc=72` 是并行候选容量：所有候选在矩阵运算中一次处理，最大 source K 仍有 16 个冗余槽位，全保留三次开放节点向量共 80 项。最终 K 由曲线自适应 probability mass 决定。它不是 CountHead 分类，也不是逐次预测。
 
 ## 4. 删除与移动如何联动
 
 Selector 先产生离散 KeepMask；subset decoder 只用 survivors 重新构造集合上下文，包括邻距、相对 rank 和存活数量，并只对 survivor 施加位置残差。Joint 同时训练实际部署 mask 和标签 mask 的节点位置及拟合误差，因此删除改变邻接关系后，剩余节点可以重新分布，而不是照搬 proposal 横坐标。
+
+Joint 开始时先运行 8 个 Selector warmup epoch：冻结 Encoder、ParameterHead 与 CandidateKnotHead，只让 Selector 和 subset decoder 接上稳定的 Proposal。随后以 Selector `2e-4`、Proposal 主干 `1e-5`、ParameterHead `5e-5`、decoder `5e-5` 分组微调。重定位 blend 从可学习的 `0.03` 初始化，避免近零 sigmoid 饱和导致“名义上有 relocation、实际上节点不动”。
+
+Keep 排序和节点数量也不再争用同一梯度：existence/ranking/Dice/CDF/fine-teacher 通过 `importance-stopgrad(beta)` 只塑造候选相对顺序；count/over-count 通过 `stopgrad(importance)-beta` 只校准曲线级数量。部署仍使用完整的 `importance-beta`，数值行为不变。
 
 ## 5. 当前数据边界
 
@@ -75,4 +79,4 @@ v16_supervised_ordered_assignment_mass_topk
 synthetic_ground_truth_ordered_keep_and_relocation_v4
 ```
 
-旧 checkpoint 不能直接 resume 为当前实验。若训练入口明确允许，可只迁移形状兼容的 encoder、ParameterHead 和 CandidateKnotHead 权重；Selector、subset decoder、optimizer 和合同元数据必须重新训练并重新审计。
+`<run>.proposal.pt` 是供 Joint 加载的最佳 Proposal，不保证来自 Proposal 最后一代，也不能直接作为正式部署结果；`<run>.pt` 是最佳成熟 Joint；`<run>.last.pt` 是最新 optimizer/RNG/课程状态，只用于恢复。旧 checkpoint 不能直接 resume 为当前实验。若训练入口明确允许，可只迁移形状兼容的 encoder、ParameterHead 和 CandidateKnotHead 权重；从旧 Kc 扩展到 72 时 query rank 需要插值，Selector、subset decoder、optimizer 和合同元数据必须重新训练并重新审计。

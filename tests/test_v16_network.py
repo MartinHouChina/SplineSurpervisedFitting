@@ -165,6 +165,108 @@ def test_adaptive_beta_is_curve_level_and_centers_raw_importance(points):
     )
 
 
+def test_structure_and_count_gradient_views_are_decoupled(points):
+    model = V16CandidateSelectionNetwork(
+        hidden_dim=16,
+        encoder_layers=1,
+        max_internal_knots=6,
+        attention_heads=2,
+        selector_layers=1,
+        one_shot_selection_policy="mass_topk",
+        one_shot_adaptive_threshold=True,
+    )
+    context = model.encode_candidates(points)
+    torch.testing.assert_close(
+        context["structure_keep_logits"], context["keep_logits"]
+    )
+    torch.testing.assert_close(
+        context["structure_keep_probabilities"], context["keep_probabilities"]
+    )
+    torch.testing.assert_close(
+        context["count_calibration_keep_logits"], context["keep_logits"]
+    )
+    torch.testing.assert_close(
+        context["count_calibration_requested_count_score"],
+        context["one_shot_requested_count_score"],
+    )
+
+    rank_weights = torch.arange(1, 7, dtype=points.dtype).unsqueeze(0)
+    structure_loss = (context["structure_keep_logits"] * rank_weights).sum()
+    structure_keep_gradient, structure_beta_gradient = torch.autograd.grad(
+        structure_loss,
+        (model.keep_head.weight, model.adaptive_threshold_head[-1].bias),
+        retain_graph=True,
+        allow_unused=True,
+    )
+    assert structure_keep_gradient is not None
+    assert structure_keep_gradient.abs().sum() > 0
+    assert structure_beta_gradient is None
+
+    count_loss = context["count_calibration_requested_count_score"].sum()
+    count_keep_gradient, count_beta_gradient = torch.autograd.grad(
+        count_loss,
+        (model.keep_head.weight, model.adaptive_threshold_head[-1].bias),
+        retain_graph=True,
+        allow_unused=True,
+    )
+    assert count_keep_gradient is None
+    assert count_beta_gradient is not None
+    assert count_beta_gradient.abs().sum() > 0
+    count_shared_gradient = torch.autograd.grad(
+        count_loss,
+        model.selection_blocks[0].feed_forward[0].weight,
+        allow_unused=True,
+    )[0]
+    assert count_shared_gradient is None
+
+
+@pytest.mark.parametrize("threshold_bias, expected_probability", [
+    (100.0, 0.0),
+    (-100.0, 1.0),
+])
+def test_saturated_count_uncertainty_has_only_finite_gradients(
+    points, threshold_bias, expected_probability,
+):
+    model = V16CandidateSelectionNetwork(
+        hidden_dim=16,
+        encoder_layers=1,
+        max_internal_knots=6,
+        attention_heads=2,
+        selector_layers=1,
+        one_shot_selection_policy="mass_topk",
+        one_shot_adaptive_threshold=True,
+        one_shot_safety_sigma=0.2,
+    )
+    with torch.no_grad():
+        model.adaptive_threshold_head[-1].weight.zero_()
+        model.adaptive_threshold_head[-1].bias.fill_(threshold_bias)
+    context = model.encode_candidates(points)
+    assert torch.all(
+        context["count_calibration_keep_probabilities"]
+        == expected_probability
+    )
+    expected_score = expected_probability * model.max_internal_knots
+    torch.testing.assert_close(
+        context["count_calibration_requested_count_score"],
+        torch.full_like(
+            context["count_calibration_requested_count_score"], expected_score,
+        ),
+    )
+    torch.testing.assert_close(
+        context["count_calibration_requested_count_score"],
+        context["one_shot_requested_count_score"],
+    )
+    count_loss = context["count_calibration_requested_count_score"].sum()
+    count_loss.backward()
+    gradients = [
+        parameter.grad
+        for parameter in model.parameters()
+        if parameter.grad is not None
+    ]
+    assert gradients
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
+
+
 def test_initial_keep_fraction_controls_untrained_adaptive_beta_prior():
     model = V16CandidateSelectionNetwork(
         hidden_dim=16, encoder_layers=1, max_internal_knots=6,
@@ -178,6 +280,24 @@ def test_initial_keep_fraction_controls_untrained_adaptive_beta_prior():
         model.adaptive_threshold_head[-1].bias.detach()[0], expected_beta,
     )
     assert model.get_config()["initial_keep_fraction"] == pytest.approx(0.22)
+
+
+def test_explicit_zero_relocation_blend_round_trips_without_changing_semantics():
+    model = V16CandidateSelectionNetwork(
+        hidden_dim=16,
+        encoder_layers=1,
+        max_internal_knots=6,
+        attention_heads=2,
+        selector_layers=1,
+        relocation_blend=0.0,
+    )
+    assert model.get_config()["relocation_blend"] == 0.0
+    assert model.relocation_blend_logit.sigmoid().item() == pytest.approx(1e-6)
+
+    historical = model.state_dict()
+    restored = V16CandidateSelectionNetwork(**model.get_config())
+    restored.load_state_dict(historical, strict=True)
+    assert restored.relocation_blend_logit.sigmoid().item() == pytest.approx(1e-6)
 
 
 def test_runtime_selection_safety_is_validated_and_serialized():

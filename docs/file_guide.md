@@ -44,26 +44,26 @@ data/splits/uji_pen_v2.jsonl      UJI 留出清单
 
 ```text
 outputs/
-  checkpoints/    .pt、.proposal.pt、.last.pt、.history.json
+  checkpoints/    .pt、.proposal.pt、.proposal.final.pt、.last.pt、.history.json
   logs/<run>/      各阶段日志；PowerShell 入口另含 pipeline_manifest.json
   comparisons/     comparison.json、summary.csv、measurements.csv、report.md
   figures/         两张2×2指标图与真实案例图
   fits/            单点云部署结果
 ```
 
-主 `.pt` 是最佳成熟 Joint；`.proposal.pt` 只保存候选生成阶段；`.last.pt` 用于完全一致的训练恢复。训练或评测进行中不要移动这些文件。
+主 `.pt` 是最佳成熟 Joint；`.proposal.pt` 是验证最佳 Proposal 初始化；`.proposal.final.pt` 是 Proposal 阶段末审计状态；`.last.pt` 用于完全一致的训练恢复。训练或评测进行中不要移动这些文件。
 
 当前正式命名建议：
 
 ```text
-candidate_selection_v16_mse1e-4_k56_supervised
+candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised
 ```
 
 文件名不能证明模型合格，应执行：
 
 ```powershell
 python scripts/inspect_v16_checkpoint.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_supervised.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt `
   --mse-tolerance 1e-4
 ```
 

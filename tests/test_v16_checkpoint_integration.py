@@ -17,7 +17,9 @@ from spline_fitting.checkpointing import (
     V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
     V16_ADAPTIVE_SELECTION_REVISION,
     V16_CERTIFIED_SYNTHETIC_CONTRACT,
+    V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
     V16_FORMAL_PASS_RATE,
+    V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS,
     V16_JOINT_CHECKPOINT_QUALITY,
     V16_SIMPLIFICATION_CONTRACT,
     V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
@@ -65,10 +67,14 @@ def qualified_v16_metadata(*, target=0.90, observed=0.92):
             "one_shot_adaptive_threshold": True,
             "one_shot_safety_sigma": 0.05,
             "one_shot_safety_knots": 0,
-            "max_internal_knots": 56,
+            "max_internal_knots": V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
         },
         "stage": "joint",
+        "epoch": 73,
+        "training_phase": "joint_finetune",
         "training_config": {
+            "proposal_epochs": 64,
+            "selector_warmup_epochs": 8,
             "real_fraction": 0.0,
             "proposal_pass_target": target,
             "deployment_pass_target": target,
@@ -136,6 +142,60 @@ def test_v16_formal_qualification_checks_metrics_and_configured_target():
     assert result["configured_proposal_high_k_fraction"] == pytest.approx(0.5)
     assert result["configured_proposal_high_k_min_knots"] == 40
     assert result["proposal_knot_assignment_weight"] == pytest.approx(1.0)
+    assert result["candidate_knot_capacity"] == (
+        V16_FORMAL_CANDIDATE_INTERNAL_KNOTS
+    )
+    assert result["formal_candidate_knot_capacity"] == (
+        V16_FORMAL_CANDIDATE_INTERNAL_KNOTS
+    )
+    assert result["formal_synthetic_max_internal_knots"] == (
+        V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS
+    )
+    assert result["checkpoint_epoch"] == 73
+    assert result["proposal_epochs"] == 64
+    assert result["selector_warmup_epochs"] == 8
+    assert result["training_phase"] == "joint_finetune"
+
+
+@pytest.mark.parametrize(
+    "mutation,reason",
+    [
+        (
+            lambda checkpoint: checkpoint.pop("epoch"),
+            "checkpoint epoch is missing or invalid",
+        ),
+        (
+            lambda checkpoint: checkpoint["training_config"].pop(
+                "proposal_epochs"
+            ),
+            "proposal_epochs is missing or invalid",
+        ),
+        (
+            lambda checkpoint: checkpoint["training_config"].pop(
+                "selector_warmup_epochs"
+            ),
+            "selector_warmup_epochs is missing or invalid",
+        ),
+        (
+            lambda checkpoint: checkpoint.update(
+                training_phase="selector_warmup"
+            ),
+            "training_phase is not joint_finetune",
+        ),
+        (
+            lambda checkpoint: checkpoint.update(epoch=72),
+            "does not exceed Proposal plus selector-warmup epochs",
+        ),
+    ],
+)
+def test_current_v16_formal_qualification_rechecks_joint_finetune_maturity(
+    mutation, reason,
+):
+    checkpoint = qualified_v16_metadata()
+    mutation(checkpoint)
+    result = assess_v16_checkpoint(checkpoint)
+    assert not result["formal_reporting_eligible"]
+    assert any(reason in item for item in result["reasons"])
 
     relaxed = assess_v16_checkpoint(
         qualified_v16_metadata(target=0.85, observed=0.50)
@@ -366,9 +426,9 @@ def test_v16_formal_qualification_checks_minimality_certificate_strength(
         ),
         (
             lambda checkpoint: checkpoint["model_config"].update(
-                max_internal_knots=64
+                max_internal_knots=56
             ),
-            "capacity must equal 56",
+            "capacity must equal 72",
         ),
         (
             lambda checkpoint: checkpoint["validation_metrics"].update(

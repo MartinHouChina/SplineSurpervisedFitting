@@ -16,6 +16,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from spline_fitting.checkpointing import (
     V16_ADAPTIVE_SELECTION_REVISION,
     V16_CERTIFIED_SYNTHETIC_CONTRACT,
+    V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
+    V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS,
     V16_JOINT_CHECKPOINT_QUALITY,
     V16_SIMPLIFICATION_CONTRACT,
 )
@@ -47,10 +49,14 @@ def v16_checkpoint(*, target=0.90, observed=0.92, stage="joint"):
             "one_shot_adaptive_threshold": True,
             "one_shot_safety_sigma": 0.05,
             "one_shot_safety_knots": 0,
-            "max_internal_knots": 56,
+            "max_internal_knots": V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
         },
         "stage": stage,
+        "epoch": 73 if stage == "joint" else 64,
+        "training_phase": "joint_finetune" if stage == "joint" else "proposal",
         "training_config": {
+            "proposal_epochs": 64,
+            "selector_warmup_epochs": 8,
             "real_fraction": 0.0,
             "proposal_pass_target": target,
             "deployment_pass_target": target,
@@ -408,9 +414,11 @@ def test_v16_wrapper_uses_explicit_objective_and_dedicated_paths(monkeypatch):
     assert called["expected_objective"] == benchmark.V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION
     assert (
         called["default_checkpoint"].name
-        == "candidate_selection_v16_mse1e-4_k56_supervised.pt"
+        == "candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt"
     )
-    assert called["default_output_dir"].name == "v16_mse1e-4_k56_supervised"
+    assert called["default_output_dir"].name == (
+        "v16_mse1e-4_sourcek56_kc72_supervised"
+    )
 
     called.clear()
     wrapper.main(["--max-knot-count=12"])
@@ -467,6 +475,49 @@ def test_comparison_caps_keep_v15_defaults_and_match_v16_checkpoint(v16, expecte
     assert caps["equal_initial_capacity"] is v16
 
 
+def test_formal_v16_separates_kc72_from_source_and_baseline_kmax56():
+    args = SimpleNamespace(
+        max_internal_knots=None,
+        paper_initial_knots=None,
+        liang_dense_knots=None,
+    )
+    caps = benchmark.resolve_comparison_capacities(args, v16_checkpoint())
+    assert args.max_internal_knots == V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS
+    assert args.paper_initial_knots == V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS
+    assert caps["network_candidates"] == V16_FORMAL_CANDIDATE_INTERNAL_KNOTS
+    assert caps["source_max_internal_knots"] == (
+        V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS
+    )
+    assert caps["network_candidate_overhead_vs_source"] == 16
+    assert caps["greedy_initial_and_yeh_max"] == 56
+    assert caps["kang_dense_initial"] == 56
+    assert caps["liang_dense_initial"] == 56
+    assert not caps["equal_initial_capacity"]
+    assert caps["numerical_caps_match_source_max"]
+    assert caps["formal_overcomplete_candidate_contract"]
+    assert caps["main_comparison_capacity_valid"]
+    assert caps["capacity_contract"] == (
+        "formal_v16_kc72_source_and_baselines_kmax56"
+    )
+    assert caps["network_full_knot_vector_size_at_all_keep"] == 80
+    assert caps["numerical_full_knot_vector_cap"] == 64
+
+    all_kc_args = SimpleNamespace(
+        max_internal_knots=72,
+        paper_initial_knots=72,
+        liang_dense_knots=72,
+    )
+    all_kc_caps = benchmark.resolve_comparison_capacities(
+        all_kc_args, v16_checkpoint(),
+    )
+    assert all_kc_caps["equal_initial_capacity"]
+    assert not all_kc_caps["numerical_caps_match_source_max"]
+    assert not all_kc_caps["main_comparison_capacity_valid"]
+    assert all_kc_caps["capacity_contract"] == (
+        "explicit_unequal_capacity_ablation"
+    )
+
+
 def test_explicit_numerical_capacities_are_retained_and_disclosed():
     args = SimpleNamespace(
         max_internal_knots=28, paper_initial_knots=40,
@@ -477,10 +528,16 @@ def test_explicit_numerical_capacities_are_retained_and_disclosed():
     caps = benchmark.resolve_comparison_capacities(args, checkpoint)
     assert caps == {
         "network_candidates": 64,
+        "source_max_internal_knots": 64,
+        "network_candidate_overhead_vs_source": 0,
         "greedy_initial_and_yeh_max": 28,
         "kang_dense_initial": 40,
         "liang_dense_initial": 40,
         "equal_initial_capacity": False,
+        "numerical_caps_match_source_max": False,
+        "formal_overcomplete_candidate_contract": False,
+        "main_comparison_capacity_valid": False,
+        "capacity_contract": "explicit_unequal_capacity_ablation",
         "degree": 3,
         "clamped_endpoint_entries": 8,
         "network_full_knot_vector_size_at_all_keep": 72,

@@ -14,6 +14,7 @@ import inspect_v16_checkpoint as entry
 from spline_fitting.checkpointing import (
     V16_ADAPTIVE_SELECTION_REVISION,
     V16_CERTIFIED_SYNTHETIC_CONTRACT,
+    V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
     V16_JOINT_CHECKPOINT_QUALITY,
     V16_SIMPLIFICATION_CONTRACT,
     V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
@@ -42,13 +43,16 @@ def _checkpoint(*, configured: float = 0.90, observed: float = 0.92) -> dict:
         "model_config": {
             "one_shot_selection_policy": "mass_topk",
             "one_shot_adaptive_threshold": True,
-            "max_internal_knots": 56,
+            "max_internal_knots": V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
             "one_shot_safety_sigma": 0.05,
             "one_shot_safety_knots": 0,
         },
         "stage": "joint",
         "epoch": 73,
+        "training_phase": "joint_finetune",
         "training_config": {
+            "proposal_epochs": 64,
+            "selector_warmup_epochs": 8,
             "real_fraction": 0.0,
             "proposal_pass_target": configured,
             "deployment_pass_target": configured,
@@ -131,6 +135,8 @@ def test_inspector_reports_metrics_and_returns_qualification_status(tmp_path, ca
     assert "certified minimal source: True" in output
     assert "source control-point range: 8..60" in output
     assert "source internal-knot range: K=4..56" in output
+    assert "internal candidate capacity: 72" in output
+    assert "full knot-vector size at all-keep: 80" in output
     assert "knot min span: 0.01" in output
     assert "high-K synthetic allocation: 50.000%" in output
     assert "high-K stratum begins at internal K: 40" in output

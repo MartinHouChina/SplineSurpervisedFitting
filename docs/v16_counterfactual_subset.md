@@ -31,7 +31,7 @@ Q[B,M,D]
   -> standard cubic B-spline refit × 1
 ```
 
-`Kc=56` 是内部候选容量，不是预测节点数；三次开放节点向量还包含四个 0 和四个 1，因此全保留长度为 64。
+source 内部节点为 `K=4..56`，而 `Kc=72` 是候选容量，不是预测节点数；最大 source K 仍有 16 个冗余候选。三次开放节点向量还包含四个 0 和四个 1，因此全保留长度为 80。
 
 ## 3. 为什么采用直接监督
 
@@ -44,7 +44,7 @@ Q[B,M,D]
 5. 实际部署 mask 同时接受拟合与几何监督，缩小训练/部署差异；
 6. `D*` 通过同一个有序匹配映射到正候选，用于区分“删除后刚过阈值”和“删除后误差大幅上升”的节点。
 
-具体地，细粒度风险为 `sigmoid(log(D*/epsilon)/temperature)`，用于加权正候选 Keep 损失和正负 ranking margin。它不会替代二值 Keep 标签，也不会读取当前网络输出生成新的伪标签。该路径不运行在线 Hard-RMS、prefix sweep、counterfactual mask search 或 oracle Teacher，不使用 Teacher cache；loss forward 因此不增加 teacher spline solve。代码中的 `online_teacher` 只保留为历史消融，不能生成当前正式 checkpoint。
+具体地，先在每条曲线的有效真节点内对 `log(D*/epsilon)` 求 tie-aware midrank，再映射成 `0.25..1` 的相对风险，用于加权正候选 Keep 损失和正负 ranking margin。相同删除误差共享等级；这避免认证节点的绝对 margin 普遍较大时所有风险经 sigmoid 一起饱和。它不会替代二值 Keep 标签，也不会读取当前网络输出生成新的伪标签。该路径不运行在线 Hard-RMS、prefix sweep、counterfactual mask search 或 oracle Teacher，不使用 Teacher cache；loss forward 因此不增加 teacher spline solve。代码中的 `online_teacher` 只保留为历史消融，不能生成当前正式 checkpoint。
 
 ## 4. 两阶段训练
 
@@ -59,15 +59,20 @@ Q[B,M,D]
 ### Joint（64 epochs）
 
 - 恢复 source `K=4..56` 原抽样分布；
+- 前 8 epochs 为 Selector warmup：冻结 Encoder、ParameterHead 和 CandidateKnotHead，只训练 Selector 与 subset decoder；随后按 Selector `2e-4`、Proposal 主干 `1e-5`、ParameterHead `5e-5`、decoder `5e-5` 分组联合微调；
 - 联合训练 KeepMask、Dice/CDF、细粒度风险 ranking、count、参数反馈和 survivor relocation；
+- Keep/existence/ranking 仅更新候选 importance，count/over-count 仅更新自适应 `beta`；部署仍使用两路都有效的同一个 `importance-beta`；
 - 对未匹配但距离真节点小于 `0.01` 的候选降低负类 BCE 权重，缓和候选槽位身份切换；
 - Joint warp 的跨任务梯度默认按 `0.1` 缩放，使节点位置更新有限地反馈 ParameterHead；
+- survivor relocation 的可学习 blend 从 `0.03` 初始化，避免近零 sigmoid 饱和；
 - 训练数据仍全部为 certified Synthetic；
 - UJI、Natural Earth、USGS、IndustrialOffset 只做留出验证。
 
 ## 5. 一次性选择
 
 Selector 为每个候选输出 logit，并由曲线级自适应 `beta` 调整整体概率质量。部署计数由 probability mass 产生，然后一次性取最高分的 K 个候选；不是固定 `p>=0.5`，也不是逐节点删减。选定集合进入 selected-only decoder，所有 survivor 彼此交互后得到有序、受界的最终位置。
+
+训练时使用两个数值相同但梯度解耦的 logit 视图：structure view 对 `beta` stop-gradient，count view 对候选 importance stop-gradient。这使节点相对排序和总数校准不再相互抵消，但不改变部署前向值。
 
 部署不读取真节点、真 K 或真参数；这些标签只存在于合成训练阶段。
 
@@ -87,6 +92,7 @@ Selector 为每个候选输出 logit，并由曲线级自适应 `beta` 调整整
 ## 7. 解释边界
 
 - supervised source K 是当前训练目标，但 source-subset 证书不证明自由重定位空间的连续全局最少 K。
-- pass rate 是结果指标；它不控制阶段切换、checkpoint 选择或结构资格。
-- K=56 层没有 proposal 冗余容量，应单独报告其 dense 和 deployment 表现。
+- pass rate 是结果指标和 checkpoint 排序中的辅助量，但不构成 Proposal→Joint 阶段门槛或结构资格硬门槛。
+- K=56 层已有 16 个 proposal 冗余槽位，仍应作为最高 source 复杂度单独报告 dense 和 deployment 表现。
+- `.proposal.pt` 保存供 Joint 使用的最佳 Proposal，不等同于 Proposal 最后一代，也不能部署；正式评测使用最佳成熟 Joint `.pt`，`.last.pt` 只用于恢复。
 - 新增损失与风险标签只改变训练目标，不会追溯修改旧 checkpoint；必须重新训练并验证后才能声称效果提升。

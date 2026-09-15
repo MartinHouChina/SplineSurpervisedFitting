@@ -15,7 +15,7 @@
 
 ```powershell
 python scripts/fit_v16_point_cloud.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_supervised.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt `
   --point-cloud data/my_curve.csv `
   --output-dir outputs/fits/my_curve `
   --mse-tolerance 1e-4 --device cuda
@@ -27,22 +27,22 @@ python scripts/fit_v16_point_cloud.py `
 
 ```powershell
 python scripts/inspect_v16_checkpoint.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_supervised.pt `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt `
   --mse-tolerance 1e-4
 ```
 
-正式 checkpoint 应满足 supervised objective、K56 数据/容量、synthetic-only training、direct ground-truth Joint、无 online Teacher、成熟 Joint、mass-TopK 和最终 safety 合同。通过率、最终 K 与节点匹配精度是报告量，不是结构资格门槛。
+正式 checkpoint 应满足 supervised objective、source K=4..56、候选 `Kc=72`、synthetic-only training、direct ground-truth Joint、无 online Teacher、成熟 Joint、mass-TopK 和最终 safety 合同。通过率、最终 K 与节点匹配精度是报告量，不是结构资格门槛。
 
 结构不完整 checkpoint 只能配合 `--allow-unqualified-diagnostic` 排错，输出必须保留诊断水印。
 
 ## 3. 六方法、五数据集比较
 
-正式集合为 Ours、Park–Lee、Liang、Dung–Tjahjowidodo、Kang、Luo；数据为 Synthetic、UJI、Natural Earth、USGS、IndustrialOffset。所有方法处理同一批配对曲线，使用相同 56 内部节点容量和相同最终 CPU float64 refit。IndustrialOffset 是 CAD 驱动半合成外部数据，不参与训练。
+正式集合为 Ours、Park–Lee、Liang、Dung–Tjahjowidodo、Kang、Luo；数据为 Synthetic、UJI、Natural Earth、USGS、IndustrialOffset。所有方法处理同一批配对曲线并使用相同最终 CPU float64 refit。数值基线的最大内部节点数与 source 上限均为 56；Ours 使用 72 个过完备 Proposal 槽位并报告实际 final K，这不是“相同候选容量”，必须在表中披露。IndustrialOffset 是 CAD 驱动半合成外部数据，不参与训练。
 
 ```powershell
 python scripts/benchmark_v16_datasets.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_supervised.pt `
-  --output-dir outputs/comparisons/v16_supervised_six_methods `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt `
+  --output-dir outputs/comparisons/v16_sourcek56_kc72_six_methods `
   --method-set published `
   --samples-per-knot-count 5 --min-knot-count 4 --max-knot-count 56 `
   --real-samples-per-dataset 20 `
@@ -70,8 +70,8 @@ Ours 另报 `network_ms`，但不能用它替代公平主表中的完整方法�
 
 ```powershell
 python scripts/plot_v16_method_comparison.py `
-  --input outputs/comparisons/v16_supervised_six_methods/comparison.json `
-  --output-dir outputs/figures/v16_supervised_six_methods/four_metrics `
+  --input outputs/comparisons/v16_sourcek56_kc72_six_methods/comparison.json `
+  --output-dir outputs/figures/v16_sourcek56_kc72_six_methods/four_metrics `
   --method-set published --reference --dpi 300
 ```
 
@@ -86,8 +86,8 @@ python scripts/plot_v16_method_comparison.py `
 
 ```powershell
 python scripts/visualize_v16_real_deployments.py `
-  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_supervised.pt `
-  --output-dir outputs/figures/v16_supervised_six_methods/real_cases `
+  --checkpoint outputs/checkpoints/candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt `
+  --output-dir outputs/figures/v16_sourcek56_kc72_six_methods/real_cases `
   --real-samples-per-dataset 2 `
   --manifest UJI=data/splits/uji_pen_v2.jsonl `
   --manifest NaturalEarth=data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl `

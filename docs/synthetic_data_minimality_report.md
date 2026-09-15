@@ -15,7 +15,7 @@
 | 曲线 | 三次开放 B 样条 |
 | source 内部节点 K | 4–56 |
 | source 控制顶点 | 8–60 |
-| 网络候选 Kc | 56 |
+| 网络候选 Kc | 72（比最大 source K 多 16 个冗余槽位；全保留节点向量共 80 项） |
 | 每条网络输入点 | 192 |
 | 最简性审计点 | 512 个干净均匀参数点 |
 | `knot_min_span` | 0.01 |
@@ -91,7 +91,7 @@ UJI、Natural Earth、USGS 和 IndustrialOffset 没有上述节点证书，只�
 - `source_generation_attempts`；
 - clean points、真参数和 source knots。
 
-正式验证还应单列 K=56 边界样本数、dense pass 和 deployment pass。该层 `Kc=K*`，没有冗余候选，因此它检验的是容量边界，不应与低 K 简化能力混为一谈。
+正式验证还应单列 K=56 边界样本数、dense pass 和 deployment pass。该层仍有 `Kc-K*=16` 个冗余候选；它检验的是最大 source 复杂度下的召回与简化能力，不是“无冗余”的容量边界，不应与低 K 简化能力混为一谈。
 
 ## 8. 尚未覆盖的更强命题
 

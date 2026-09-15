@@ -1,6 +1,6 @@
 # 文档索引
 
-当前正式主线是 supervised-only v16：`Kc=56`，certified Synthetic source `K=4..56`，`MSE<=1e-4`。训练只使用带真参数、真节点、真 K 和逐节点删除 MSE 的认证合成曲线；UJI、Natural Earth、USGS 与 IndustrialOffset 仅用于 validation/test。Joint 通过有序一一匹配直接监督 KeepMask、计数与存活节点重定位，并用最简性证书的 single-deletion MSE 细化关键节点权重。在线 prefix/counterfactual self-teacher 仍禁用。
+当前正式主线是 supervised-only v16：certified Synthetic source `K=4..56`，并行候选容量 `Kc=72`，因此最大 source K 仍有 16 个冗余槽位；全保留时三次开放节点向量共 80 项。工程阈值为 `MSE<=1e-4`。训练只使用带真参数、真节点、真 K 和逐节点删除 MSE 的认证合成曲线；UJI、Natural Earth、USGS 与 IndustrialOffset 仅用于 validation/test。Joint 通过有序一一匹配直接监督 KeepMask、计数与存活节点重定位：Keep 排序与计数校准使用数值相同但梯度解耦的 logits，前 8 个 Joint epoch 是只训练 Selector/decoder 的 Selector warmup，重定位 blend 从可学习的 `0.03` 初始化。在线 prefix/counterfactual self-teacher 仍禁用。
 
 工业型线等距线外部验证集的生成、几何有效性规则与运行命令见 [工业模型等距线数据集](industrial_offset_dataset.md)。它是 CAD 驱动半合成数据，不参与训练。
 
@@ -22,6 +22,6 @@
 
 一条龙入口为 [`run_v16_mse1e-4_3090.ps1`](../scripts/run_v16_mse1e-4_3090.ps1)。成功运行后应得到 checkpoint、六方法×五数据集表、input/reference 两张 2×2 图和外部数据六方法案例图。文档仅说明协议与预期产物，不代表这些结果已经在当前机器上生成。
 
-`archive/` 只保存历史版本说明。旧 counterfactual/Teacher、K64/K96 或其他阈值实验不得与当前 supervised K56 主结果混写。
+`archive/` 只保存历史版本说明。旧 counterfactual/Teacher、K64/K96、Kc56 或其他阈值实验不得与当前 supervised source-K56/Kc72 主结果混写。`.proposal.pt` 只保存供 Joint 初始化的最佳 Proposal；正式部署使用最佳成熟 Joint `.pt`，而 `.last.pt` 仅表示最新状态并用于恢复，三者不能互换。
 
 补充说明：[Dung/Kang/Luo 坍缩诊断与公共 MSE 可行性保护层](published_baseline_collapse_safeguard.md)。正式表格必须把保护后的实现标注为 `threshold-safe adaptation`，并保留原生阶段失败诊断。

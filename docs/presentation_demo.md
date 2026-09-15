@@ -34,21 +34,21 @@
 ordered points
  -> GeometryEncoder
  -> ParameterHead
- -> Kc=56 ordered candidates
+ -> Kc=72 ordered candidates
  -> interactive Selector + adaptive beta
  -> one mass-TopK KeepMask
  -> survivor-conditioned parameter/knot relocation
  -> one standard B-spline refit
 ```
 
-三次开放样条全保留时完整节点向量为 `4 zeros + 56 internal + 4 ones = 64` 项。
+source 为 `K=4..56`，但候选容量为 `Kc=72`；最大 source K 仍有 16 个冗余候选。三次开放样条全保留时完整节点向量为 `4 zeros + 72 internal + 4 ones = 80` 项。
 
 ## 第 5 页：Proposal 监督
 
 前 64 epochs 学参数和候选。真节点对候选进行最小代价有序一一匹配：
 
-- Kc 大于真 K：只匹配真 K 个互异候选；
-- Kc 等于真 K：严格逐序位匹配；
+- 当前 Kc 始终大于真 K：只匹配真 K 个互异候选；
+- K=56 的最大复杂度样本仍保留 16 个候选余量；
 - coverage 保召回，assignment 防止多对一坍缩；
 - 50% Proposal 合成样本来自 K≥40，强化复杂曲线。
 
@@ -56,7 +56,9 @@ Proposal 到期无条件进入 Joint，pass rate 不参与阶段门控。
 
 ## 第 6 页：Joint 监督
 
-有序匹配直接产生 target KeepMask，真 K 监督概率质量和节点数，真参数/真节点监督两条 subset 解码路径的参数反馈与 survivor relocation。损失还包含多尺度 Proposal recall、Keep Dice/CDF、认证 single-deletion MSE 风险、参数 log-gap/bias 和模糊负例降权。
+Joint 前 8 epochs 是 Selector warmup：先冻结 Proposal 主干，只训练 Selector 和 subset decoder；随后采用分组学习率联合微调。有序匹配直接产生 target KeepMask，真 K 监督概率质量和节点数，真参数/真节点监督两条 subset 解码路径的参数反馈与 survivor relocation。Keep 排序损失只更新候选 importance，count/over-count 只更新曲线级 `beta`，两者前向数值与部署 logit 相同但梯度解耦。重定位 blend 从可学习的 `0.03` 初始化。
+
+损失还包含多尺度 Proposal recall、Keep Dice/CDF、认证 single-deletion MSE 的曲线内相对分位风险、参数 log-gap/bias 和模糊负例降权。相对风险范围为 `0.25..1`，避免所有认证节点同时饱和到 1。
 
 正式 Joint 无在线 Hard-RMS、prefix/counterfactual/oracle Teacher，无 Teacher cache。真实数据不进入 loss。
 
@@ -70,7 +72,7 @@ Proposal 到期无条件进入 Joint，pass rate 不参与阶段门控。
 
 主表固定六种方法：Ours、Park & Lee、Liang et al.、Dung & Tjahjowidodo、Kang et al.、Luo et al.。五种公开方法均标注 adaptation。
 
-统一条件：相同配对曲线、相同最大 56 内部节点、相同 MSE 定义与 `1e-4` 阈值、相同最终 CPU float64 refit、失败样本保留在通过率分母。
+统一条件：相同配对曲线、相同 source K=4..56 分层、相同 MSE 定义与 `1e-4` 阈值、相同最终 CPU float64 refit、失败样本保留在通过率分母。Ours 的 72 是 Proposal 候选容量而不是真实标签数；必须报告实际 final K，若出现 `final K>56` 也不能截掉或隐藏。论文基线仍按实验配置中的最大 56 个内部节点运行，因此不能把“候选容量相同”作为公平性表述。
 
 ## 第 9 页：必须展示的结果
 
@@ -89,13 +91,14 @@ Proposal 到期无条件进入 Joint，pass rate 不参与阶段门控。
 - 认证合成标签消除了在线 Teacher 的自举偏差；逐节点删除 MSE 在数据认证时生成，loss forward 不再做 teacher 搜索；
 - 真实数据只用于泛化评估；
 - source-subset 最简性不等于连续全局最优；
-- K=56 是无候选冗余的容量边界，必须单独报告。
+- K=56 是最复杂 source 分层但已有 16 个候选冗余，仍须单独报告 dense/deployment 结果；
+- `.proposal.pt` 只负责初始化 Joint，展示与部署使用最佳成熟 Joint `.pt`；`.last.pt` 仅用于恢复。
 
 ## 演示命令
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
-  -RunName candidate_selection_v16_mse1e-4_k56_supervised `
+  -RunName candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised `
   -Device cuda
 ```
 

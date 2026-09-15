@@ -9,11 +9,16 @@
 [CmdletBinding()]
 param(
     [string]$Python = "python",
-    [string]$RunName = "candidate_selection_v16_mse1e-4_k56_supervised",
+    [string]$RunName = "candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised",
     [ValidateSet("auto", "cpu", "cuda")]
     [string]$Device = "cuda",
     [int]$Epochs = 128,
     [int]$ProposalEpochs = 64,
+    [int]$SelectorWarmupEpochs = 8,
+    [double]$SelectorLr = 2e-4,
+    [double]$ProposalJointLr = 1e-5,
+    [double]$ParameterJointLr = 5e-5,
+    [double]$DecoderJointLr = 5e-5,
     [int]$TrainSize = 3000,
     [int]$ValSize = 600,
     [int]$RealValSize = 100,
@@ -69,6 +74,23 @@ foreach ($Entry in @{
 if ($ProposalEpochs -ge $Epochs) {
     throw "ProposalEpochs must be smaller than Epochs."
 }
+if ($SelectorWarmupEpochs -lt 0 -or $SelectorWarmupEpochs -ge ($Epochs - $ProposalEpochs)) {
+    throw "SelectorWarmupEpochs must be non-negative and smaller than the Joint epoch budget."
+}
+foreach ($Entry in @{
+    SelectorLr = $SelectorLr
+    ProposalJointLr = $ProposalJointLr
+    ParameterJointLr = $ParameterJointLr
+    DecoderJointLr = $DecoderJointLr
+}.GetEnumerator()) {
+    if (
+        [double]::IsNaN($Entry.Value) -or
+        [double]::IsInfinity($Entry.Value) -or
+        $Entry.Value -le 0.0
+    ) {
+        throw "$($Entry.Key) must be finite and positive."
+    }
+}
 if ($NumWorkers -lt 0) {
     throw "NumWorkers must be non-negative."
 }
@@ -109,6 +131,7 @@ $CheckpointFamily = @(
     $CheckpointPath,
     (Join-Path $CheckpointDirectory ($RunName + ".last.pt")),
     (Join-Path $CheckpointDirectory ($RunName + ".proposal.pt")),
+    (Join-Path $CheckpointDirectory ($RunName + ".proposal.final.pt")),
     (Join-Path $CheckpointDirectory ($RunName + ".history.json"))
 )
 
@@ -212,7 +235,7 @@ $RunState = [ordered]@{
         simplification_contract = "synthetic_ground_truth_ordered_keep_and_relocation_v4"
         checkpoint_selection = "joint_mean_per_curve_subset_cost_v1"
         proposal_checkpoint_selection = (
-            "qualification_pass_then_recall_then_knot_mae_then_parameter_rmse"
+            "dense_subset_cost_then_worst_aggregate_pass_then_knot_parameter_f1_recall"
         )
         qualification_contract = "v16_supervised_synthetic_only_pass_rates_report_only_v4"
         aggregate_pass_role = (
@@ -221,14 +244,20 @@ $RunState = [ordered]@{
         simplification_curriculum = "deterministic_linear_by_joint_epoch"
         aggregate_pass_feedback = $false
         mse_tolerance = 1e-4
-        candidate_internal_knots = 56
-        full_cubic_knot_vector_size_at_all_keep = 64
+        candidate_internal_knots = 72
+        candidate_redundancy_over_source_max = 16
+        full_cubic_knot_vector_size_at_all_keep = 80
         source_internal_knots = "4..56"
         source_control_points = "8..60"
         knot_min_span = 0.01
         points = 192
         epochs = $Epochs
         proposal_epochs = $ProposalEpochs
+        selector_warmup_epochs = $SelectorWarmupEpochs
+        selector_lr = $SelectorLr
+        proposal_joint_lr = $ProposalJointLr
+        parameter_joint_lr = $ParameterJointLr
+        decoder_joint_lr = $DecoderJointLr
         train_size = $TrainSize
         validation_size = $ValSize
         synthetic_boundary_validation_size = [Math]::Min(32, $ValSize)
@@ -249,7 +278,7 @@ $RunState = [ordered]@{
         fine_teacher_additional_spline_solves_per_batch = 0
         batch_size = $BatchSize
         selection_policy = "mass_topk"
-        initial_keep_fraction = 0.5357142857142857
+        initial_keep_fraction = 0.4166666666666667
         joint_supervision = "synthetic_ground_truth"
         online_teacher = $false
         synthetic_count_role = "exact"
@@ -321,8 +350,8 @@ function Invoke-LoggedPython {
 try {
     Save-RunState
     Write-Host (
-        "Fresh v16 RTX 3090 profile: MSE=1e-4, Kc=56 internal " +
-        "(64-entry full cubic knot vector), source K=4..56, " +
+        "Fresh v16 RTX 3090 profile: MSE=1e-4, Kc=72 internal " +
+        "(80-entry full cubic knot vector), source K=4..56, " +
         "train/val=$TrainSize/$ValSize, batch=$BatchSize."
     )
     Write-Host (
@@ -339,11 +368,33 @@ try {
         " from K>=$ProposalHighKMinKnots and monotone one-to-one knot " +
         "assignment; Joint restores the original K=4..56 distribution."
     )
+    Write-Host (
+        "Candidate redundancy is explicit: 72 proposal slots for at most 56 " +
+        "labelled source knots (16-slot margin)."
+    )
+    Write-Host (
+        "Joint optimization uses $SelectorWarmupEpochs selector/decoder-only " +
+        "warmup epochs and grouped LR selector=$SelectorLr, proposal=" +
+        "$ProposalJointLr, parameter=$ParameterJointLr, decoder=$DecoderJointLr."
+    )
 
     $TrainingArguments = @(
         "scripts/train_v16.py",
         "--epochs", [string]$Epochs,
         "--proposal-epochs", [string]$ProposalEpochs,
+        "--selector-warmup-epochs", [string]$SelectorWarmupEpochs,
+        "--selector-lr", ([string]::Format(
+            [Globalization.CultureInfo]::InvariantCulture, "{0:R}", $SelectorLr
+        )),
+        "--proposal-joint-lr", ([string]::Format(
+            [Globalization.CultureInfo]::InvariantCulture, "{0:R}", $ProposalJointLr
+        )),
+        "--parameter-joint-lr", ([string]::Format(
+            [Globalization.CultureInfo]::InvariantCulture, "{0:R}", $ParameterJointLr
+        )),
+        "--decoder-joint-lr", ([string]::Format(
+            [Globalization.CultureInfo]::InvariantCulture, "{0:R}", $DecoderJointLr
+        )),
         "--train-size", [string]$TrainSize,
         "--val-size", [string]$ValSize,
         "--synthetic-boundary-val-size", "32",
@@ -356,7 +407,7 @@ try {
         "--num-points", "192",
         "--min-control-points", "8",
         "--max-control-points", "60",
-        "--candidate-knots", "56",
+        "--candidate-knots", "72",
         "--knot-min-span", "0.01",
         "--mse-tolerance", "1e-4",
         "--knot-match-tolerance", "0.01",
@@ -381,7 +432,7 @@ try {
         "--proposal-parameter-warp-gradient-scale", "0",
         "--joint-parameter-warp-gradient-scale", "0.1",
         "--one-shot-selection-policy", "mass_topk",
-        "--initial-keep-fraction", "0.5357142857142857",
+        "--initial-keep-fraction", "0.4166666666666667",
         "--joint-supervision", "synthetic_ground_truth",
         "--synthetic-count-role", "exact",
         "--no-synthetic-geometry-oracle-teacher",
@@ -420,7 +471,7 @@ try {
         if (Test-Path -LiteralPath $ResolvedInit -PathType Leaf) {
             Write-Host (
                 "Warm-starting encoder, ParameterHead and CandidateHead only " +
-                "(ordered query ranks adapt to Kc=56) from: " +
+                "(ordered query ranks adapt to Kc=72) from: " +
                 $ResolvedInit
             )
             $TrainingArguments += @("--init-checkpoint", $ResolvedInit)

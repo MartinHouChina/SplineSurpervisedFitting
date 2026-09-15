@@ -23,7 +23,9 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from spline_fitting.checkpointing import (
+    V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
     V16_FORMAL_PASS_RATE,
+    V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS,
     assess_v16_checkpoint,
     build_model_from_checkpoint,
     V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION,
@@ -103,8 +105,11 @@ def parser(*, default_checkpoint: Path | None = None,
     p.add_argument("--skip-synthetic", action="store_true")
     p.add_argument("--skip-real", action="store_true")
     p.add_argument("--mse-tolerance", type=float, default=2.5e-5)
-    p.add_argument("--max-internal-knots", type=int, default=None,
-                   help="Numerical baseline cap; default 28 for v15, checkpoint candidate capacity for v16")
+    p.add_argument(
+        "--max-internal-knots", type=int, default=None,
+        help=("Numerical baseline cap; default 28 for v15. Formal v16 uses "
+              "the labelled source maximum K=56, independently of network Kc=72"),
+    )
     p.add_argument(
         "--full-knot-vector-size", type=int, default=None,
         help=("Set the numerical cap using full open-clamped knot-vector notation. "
@@ -113,12 +118,16 @@ def parser(*, default_checkpoint: Path | None = None,
     )
     p.add_argument(
         "--allow-unequal-capacity", action="store_true",
-        help=("Explicit diagnostic ablation only: allow numerical initial caps "
-              "to differ from the learned checkpoint's internal Kc"),
+        help=("Explicit diagnostic ablation only: permit capacities outside the "
+              "formal Kc=72 / source-and-baseline Kmax=56 contract (or outside "
+              "the historical equal-capacity contract)"),
     )
     p.add_argument("--gradient-steps", type=int, default=12)
-    p.add_argument("--paper-initial-knots", type=int, default=None,
-                   help="Kang dense initial cap; default 40 for v15, checkpoint candidate capacity for v16")
+    p.add_argument(
+        "--paper-initial-knots", type=int, default=None,
+        help=("Kang dense initial cap; default 40 for v15 and the labelled "
+              "source maximum for formal v16"),
+    )
     p.add_argument("--paper-admm-iterations", type=int, default=400)
     p.add_argument("--paper-lambda-bisections", type=int, default=8)
     p.add_argument("--paper-relocation-iterations", type=int, default=8)
@@ -212,11 +221,35 @@ def balanced_indices(records: list[dict], count: int, seed: int) -> list[int]:
 
 
 def resolve_comparison_capacities(args, checkpoint: dict) -> dict:
-    """Retain v15 defaults and pair v16 numerical budgets with its actual model."""
+    """Resolve network, source and numerical capacities without conflating them.
+
+    Formal v16 deliberately has 72 proposal slots for labelled source curves
+    containing at most 56 internal knots.  Numerical baselines therefore retain
+    the shared source maximum; they must not silently grow to Kc merely because
+    Ours uses an overcomplete proposal representation.
+    """
     capacity = int(checkpoint["model_config"]["max_internal_knots"])
     degree = int(checkpoint["model_config"].get("degree", 3))
     endpoint_entries = 2 * (degree + 1)
     v16 = checkpoint.get("objective_version") in V16_OBJECTIVE_VERSIONS
+    dataset_config = checkpoint.get("dataset_config", {})
+    source_max_control_points = dataset_config.get("max_control_points")
+    if (
+        v16
+        and isinstance(source_max_control_points, int)
+        and not isinstance(source_max_control_points, bool)
+    ):
+        source_capacity = source_max_control_points - degree - 1
+    else:
+        source_capacity = capacity
+    if source_capacity < 1:
+        raise ValueError("checkpoint source knot capacity must be positive")
+    formal_overcomplete = bool(
+        v16
+        and capacity == V16_FORMAL_CANDIDATE_INTERNAL_KNOTS
+        and source_capacity == V16_FORMAL_SYNTHETIC_MAX_INTERNAL_KNOTS
+    )
+    v16_numerical_default = source_capacity if formal_overcomplete else capacity
     requested_full = getattr(args, "full_knot_vector_size", None)
     if requested_full is not None:
         if args.max_internal_knots is not None:
@@ -225,9 +258,9 @@ def resolve_comparison_capacities(args, checkpoint: dict) -> dict:
             )
         args.max_internal_knots = requested_full - endpoint_entries
     if args.max_internal_knots is None:
-        args.max_internal_knots = capacity if v16 else 28
+        args.max_internal_knots = v16_numerical_default if v16 else 28
     if args.paper_initial_knots is None:
-        args.paper_initial_knots = capacity if v16 else 40
+        args.paper_initial_knots = v16_numerical_default if v16 else 40
     liang_capacity = (
         args.paper_initial_knots
         if getattr(args, "liang_dense_knots", None) is None
@@ -238,14 +271,39 @@ def resolve_comparison_capacities(args, checkpoint: dict) -> dict:
         liang_capacity,
     ) < 1:
         raise ValueError("all candidate and numerical knot capacities must be positive")
+    equal_initial_capacity = (
+        capacity == args.max_internal_knots
+        == args.paper_initial_knots == liang_capacity
+    )
+    numerical_caps_match_source = (
+        source_capacity == args.max_internal_knots
+        == args.paper_initial_knots == liang_capacity
+    )
+    formal_overcomplete_contract = (
+        formal_overcomplete and numerical_caps_match_source
+    )
     return {
         "network_candidates": capacity,
+        "source_max_internal_knots": source_capacity,
+        "network_candidate_overhead_vs_source": capacity - source_capacity,
         "greedy_initial_and_yeh_max": args.max_internal_knots,
         "kang_dense_initial": args.paper_initial_knots,
         "liang_dense_initial": liang_capacity,
-        "equal_initial_capacity": (
-            capacity == args.max_internal_knots
-            == args.paper_initial_knots == liang_capacity
+        "equal_initial_capacity": equal_initial_capacity,
+        "numerical_caps_match_source_max": numerical_caps_match_source,
+        "formal_overcomplete_candidate_contract": formal_overcomplete_contract,
+        "main_comparison_capacity_valid": (
+            formal_overcomplete_contract
+            if formal_overcomplete else equal_initial_capacity
+        ),
+        "capacity_contract": (
+            "formal_v16_kc72_source_and_baselines_kmax56"
+            if formal_overcomplete_contract
+            else "explicit_unequal_capacity_ablation"
+            if formal_overcomplete
+            else "equal_network_and_numerical_initial_capacity"
+            if equal_initial_capacity
+            else "explicit_unequal_capacity_ablation"
         ),
         "degree": degree,
         "clamped_endpoint_entries": endpoint_entries,
@@ -840,13 +898,14 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
         p.error(str(error))
     if (
         objective_version in V16_OBJECTIVE_VERSIONS
-        and not capacities["equal_initial_capacity"]
+        and not capacities["main_comparison_capacity_valid"]
         and not args.allow_unequal_capacity
     ):
         p.error(
-            "v16 main comparisons require the same internal candidate cap for "
-            "Ours and configurable numerical methods; change all caps to the "
-            "checkpoint Kc or add --allow-unequal-capacity for a disclosed ablation"
+            "v16 capacity contract mismatch: formal Kc=72 comparisons require "
+            "numerical baselines at the common source maximum K=56; other v16 "
+            "checkpoints require equal network/numerical caps. Correct the caps "
+            "or add --allow-unequal-capacity for a disclosed ablation"
         )
     model.to(device).eval()
     print("Preparing fixed paired test samples...", flush=True)

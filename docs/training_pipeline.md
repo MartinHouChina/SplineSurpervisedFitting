@@ -15,7 +15,7 @@
 
 正式参数为 source `K=4..56`、控制顶点 8–60、每条曲线 192 点、`knot_min_span=0.01`、`MSE tolerance=1e-4`。噪声只加到网络观测，标签来自干净源曲线。
 
-`D*_r` 的计算方式是从完整 source 节点集中删除第 `r` 个节点，再用干净审计点和真参数做标准三次 B 样条 refit。它与最简性证书共用同一 CPU float64 结果，单位是 mean squared Euclidean，不是 RMS。`v16_mixed.py` 将该向量与 mask 填充到 `Kc`；真实或未认证样本的该字段无效，不能参与这项监督。
+`D*_r` 的计算方式是从完整 source 节点集中删除第 `r` 个节点，再用干净审计点和真参数做标准三次 B 样条 refit。它与最简性证书共用同一 CPU float64 结果，单位是 mean squared Euclidean，不是 RMS。`v16_mixed.py` 将该向量与 mask 填充到 `Kc=72`；真实或未认证样本的该字段无效，不能参与这项监督。
 
 UJI Pen、Natural Earth、USGS 和 IndustrialOffset manifest 可以传给训练入口，但只建立留出验证集；正式配置必须是 `--real-fraction 0`。外部样本不进入 optimizer step。
 
@@ -32,11 +32,13 @@ UJI Pen、Natural Earth、USGS 和 IndustrialOffset manifest 可以传给训练�
 5. 参数相邻间隔的 log-gap 与整曲线有符号 bias；
 6. 全候选可微 B 样条拟合损失。
 
-当 `Kc>K*` 时，一一匹配只选择 `K*` 个互异且保持顺序的候选；当 `Kc=K*` 时每个候选必须与相同序位的真节点对应。Proposal 的合成抽样有 50% 来自 `K>=40`，其余来自低 K 区间，以加强容量边界召回。
+正式容量为 `Kc=72`、source `K*=4..56`，所以每条样本都满足 `Kc>K*`。一一匹配只选择 `K*` 个互异且保持顺序的候选；即使 `K*=56`，也仍有 16 个冗余槽位用于覆盖位置误差。这与“高 K 样本过采样”是两个不同概念。Proposal 的合成抽样有 50% 来自 `K>=40`，其余来自低 K 区间，以加强容量边界召回。
 
 第 64 个 epoch 后按计划无条件进入 Joint。aggregate pass 不会延长 Proposal 或触发 STOP。
 
 ## 3. Joint 阶段（epoch 65–128）
+
+Joint 的前 8 代是 Selector warmup：冻结 GeometryEncoder、ParameterHead 和 CandidateKnotHead，只训练 Selector 与 selected-only decoder，使 Keep 排序、数量预测和存活节点重定位先适配已经收敛的候选集合。warmup 结束后全部模块解冻，并采用分组学习率：Selector `2e-4`、GeometryEncoder/CandidateKnotHead `1e-5`、ParameterHead `5e-5`、selected-only decoder `5e-5`。各组分别执行同一个 `grad_clip` 上限，避免 Selector 的大梯度经共享特征立即破坏 Proposal。
 
 Joint 恢复 source `K=4..56` 的原始抽样分布，并对每条合成样本执行：
 
@@ -83,21 +85,22 @@ D*                                      -> positive-slot criticality targets
 
 ## 5. 选择与 checkpoint
 
-Proposal checkpoint 仅作为 Joint 初始化，按下列字典序选择：验证拟合通过率、Synthetic 候选召回率、matched-knot MAE、参数 RMSE，最后才是 dense MSE/subset cost。这样先守住可行性，同时避免“56 个候选整体能拟合”掩盖候选位置很差。正式 `synthetic_ground_truth` 模式还强制 `one_shot_coverage_bins=0`，防止固定分箱锚点挤掉有序匹配得到的真节点槽位。
+Proposal checkpoint 仅作为 Joint 初始化，按以下连续字典序选择：dense subset cost、最差来源通过率、总体通过率、matched-knot MAE、参数 RMSE、dense MSE、节点 F1/recall。这样既避免“72 个候选整体能拟合”完全掩盖候选几何，也不会因 K=56 boundary 暂时为零，就让单个宽容差 recall 的微小波动覆盖后期显著更好的拟合和细尺度位置精度。正式 `synthetic_ground_truth` 模式还强制 `one_shot_coverage_bins=0`，防止固定分箱锚点挤掉有序匹配得到的真节点槽位。
 
 成熟 Joint checkpoint 使用 `mean_per_curve_subset_cost_v1` 排名：
 
 - 单曲线可行时，优先较少节点，MSE 只作有界 tie-break；
 - 单曲线不可行时，只按相对阈值的 MSE 惩罚，不奖励少节点；
-- 全数据集 pass rate 不作为阶段切换、停止训练或正式资格的硬门槛；Proposal 选模仍把验证通过率作为首要可行性指标。
+- 全数据集 pass rate 不作为阶段切换、停止训练或正式资格的硬门槛；Proposal 选模将连续 dense subset cost 置于首位，通过率紧随其后。
 
-正式 checkpoint 还必须记录：supervised objective、synthetic-only、`joint_supervision=synthetic_ground_truth`、`online_teacher=false`、有序标签映射、最终 safety 设置、K56 数据/容量合同，以及已经完成的 Joint 课程。启用细粒度监督时还应记录 `fine_grained_teacher=certified_source_single_deletion_mse`、误差单位 `mean_squared_euclidean`、loss-forward 额外 spline solve 数为 `0`，以及所有新增权重和 warp-gradient scale。
+正式 checkpoint 还必须记录：supervised objective、synthetic-only、`joint_supervision=synthetic_ground_truth`、`online_teacher=false`、有序标签映射、最终 safety 设置、source K56/Kc72 冗余容量合同，以及已经完成的 Selector warmup 与 Joint 课程。启用细粒度监督时还应记录 `fine_grained_teacher=certified_source_single_deletion_mse`、误差单位 `mean_squared_euclidean`、loss-forward 额外 spline solve 数为 `0`，以及所有新增权重、分组学习率和 warp-gradient scale。
 
 训练会产生：
 
 ```text
 <run>.pt          最佳成熟 Joint
 <run>.proposal.pt 最佳 Proposal
+<run>.proposal.final.pt Proposal 阶段末状态（审计/排障）
 <run>.last.pt     最新优化器/RNG/训练状态，用于恢复
 <run>.history.json
 ```
@@ -110,16 +113,19 @@ Linux/RTX 3090（缺少真实数据 manifest 时由脚本准备）：
 bash scripts/run_v16_mse1e-4_3090.sh \
   --prepare-real-data \
   --device cuda \
-  --run-name candidate_selection_v16_mse1e-4_k56_supervised_linux
+  --run-name candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised_linux
 ```
 
 Windows/RTX 3090：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
-  -RunName candidate_selection_v16_mse1e-4_k56_supervised `
+  -RunName candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised `
   -Device cuda `
   -Epochs 128 -ProposalEpochs 64 `
+  -SelectorWarmupEpochs 8 `
+  -SelectorLr 2e-4 -ProposalJointLr 1e-5 `
+  -ParameterJointLr 5e-5 -DecoderJointLr 5e-5 `
   -TrainSize 3000 -ValSize 600 -RealValSize 100 `
   -BatchSize 64 -NumWorkers 4
 ```
@@ -131,10 +137,13 @@ powershell -ExecutionPolicy Bypass -File scripts/run_v16_mse1e-4_3090.ps1 `
 ```powershell
 python scripts/train_v16.py `
   --epochs 128 --proposal-epochs 64 `
+  --selector-warmup-epochs 8 `
+  --selector-lr 2e-4 --proposal-joint-lr 1e-5 `
+  --parameter-joint-lr 5e-5 --decoder-joint-lr 5e-5 `
   --train-size 3000 --val-size 600 --synthetic-boundary-val-size 32 `
   --real-val-size 100 --real-fraction 0 `
   --min-control-points 8 --max-control-points 60 `
-  --candidate-knots 56 --num-points 192 --batch-size 64 `
+  --candidate-knots 72 --num-points 192 --batch-size 64 `
   --knot-min-span 0.01 --mse-tolerance 1e-4 `
   --certified-minimal-source --minimality-margin 0.2 `
   --minimality-audit-points 512 `
@@ -152,6 +161,7 @@ python scripts/train_v16.py `
   --synthetic-count-role exact `
   --no-synthetic-geometry-oracle-teacher `
   --one-shot-selection-policy mass_topk `
+  --initial-keep-fraction 0.4166666666666667 `
   --one-shot-coverage-bins 0 --min-selected-knots 4 `
   --one-shot-safety-sigma 0 --one-shot-safety-knots 0 `
   --final-safety-sigma 0 --final-safety-knots 0 `
@@ -161,7 +171,7 @@ python scripts/train_v16.py `
   --real-manifest data/processed/usgs_contours/large_scale/manifest.jsonl `
   --real-manifest data/processed/industrial_offsets/v1/manifest.jsonl `
   --device cuda `
-  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_supervised.pt
+  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt
 ```
 
 Linux 直接训练使用相同参数名，只把 PowerShell 续行符替换为反斜杠。例如新增监督部分为：
@@ -169,9 +179,12 @@ Linux 直接训练使用相同参数名，只把 PowerShell 续行符替换为�
 ```bash
 python scripts/train_v16.py \
   --epochs 128 --proposal-epochs 64 \
+  --selector-warmup-epochs 8 \
+  --selector-lr 2e-4 --proposal-joint-lr 1e-5 \
+  --parameter-joint-lr 5e-5 --decoder-joint-lr 5e-5 \
   --train-size 3000 --val-size 600 --batch-size 64 \
   --min-control-points 8 --max-control-points 60 \
-  --candidate-knots 56 --num-points 192 \
+  --candidate-knots 72 --num-points 192 \
   --knot-min-span 0.01 --mse-tolerance 1e-4 \
   --certified-minimal-source --minimality-margin 0.2 \
   --minimality-audit-points 512 \
@@ -189,6 +202,7 @@ python scripts/train_v16.py \
   --synthetic-count-role exact --real-fraction 0 \
   --no-synthetic-geometry-oracle-teacher \
   --one-shot-selection-policy mass_topk \
+  --initial-keep-fraction 0.4166666666666667 \
   --one-shot-coverage-bins 0 --min-selected-knots 4 \
   --one-shot-safety-sigma 0 --one-shot-safety-knots 0 \
   --final-safety-sigma 0 --final-safety-knots 0 \
@@ -198,7 +212,7 @@ python scripts/train_v16.py \
   --real-manifest data/processed/usgs_contours/large_scale/manifest.jsonl \
   --real-manifest data/processed/industrial_offsets/v1/manifest.jsonl \
   --device cuda \
-  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_supervised.pt
+  --output outputs/checkpoints/candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised.pt
 ```
 
 上面权重是当前 runner 使用的起点，不是已经证实的最优超参数。启用这些项后必须用新 `RunName` 从头训练；旧 `.pt` 仅能按兼容规则初始化 Proposal，不能当作细粒度版本的正式结果。

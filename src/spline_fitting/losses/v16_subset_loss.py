@@ -849,6 +849,70 @@ class V16SubsetLoss(nn.Module):
         return dice.mean(), cdf.mean()
 
     @staticmethod
+    def _relative_teacher_risk(
+        log_delete_margin: torch.Tensor,
+        target_mask: torch.Tensor,
+        *,
+        minimum_risk: float = 0.25,
+        temperature: float = 0.5,
+    ) -> torch.Tensor:
+        """Return a per-curve, tie-aware deletion-importance percentile.
+
+        Certified source knots commonly all have deletion MSE far above the
+        engineering tolerance. Applying a sigmoid to that absolute margin
+        therefore makes every target risk almost one and turns the fine
+        teacher into another uniform positive-class weight. Midrank
+        percentiles retain the ordering *within each curve* while remaining
+        invariant to its absolute error scale. The floor keeps every certified
+        knot protected; the most consequential knot receives unit risk. Equal
+        values share their midrank instead of being separated by an arbitrary
+        stable sort.
+        """
+        if (
+            log_delete_margin.ndim != 2
+            or target_mask.shape != log_delete_margin.shape
+            or target_mask.dtype != torch.bool
+        ):
+            raise ValueError(
+                "teacher margin and target mask must share a boolean [B,K] shape"
+            )
+        if (
+            not log_delete_margin.is_floating_point()
+            or not torch.isfinite(log_delete_margin[target_mask]).all()
+        ):
+            raise ValueError("active teacher margins must be finite floating point")
+        if not math.isfinite(minimum_risk) or not 0 <= minimum_risk < 1:
+            raise ValueError("minimum_risk must lie in [0,1)")
+        if not math.isfinite(temperature) or temperature <= 0:
+            raise ValueError("teacher risk temperature must be finite and positive")
+
+        comparisons = (
+            log_delete_margin.unsqueeze(-1)
+            - log_delete_margin.unsqueeze(-2)
+        )
+        valid_comparison = target_mask.unsqueeze(1)
+        less = ((comparisons > 0) & valid_comparison).sum(-1).to(
+            log_delete_margin.dtype
+        )
+        ties = ((comparisons == 0) & valid_comparison).sum(-1).to(
+            log_delete_margin.dtype
+        )
+        counts = target_mask.sum(-1, keepdim=True)
+        midrank = (less + 0.5 * (ties - 1.0)) / (
+            counts - 1
+        ).clamp_min(1).to(log_delete_margin.dtype)
+        relative = torch.where(
+            counts == 1,
+            torch.ones_like(midrank),
+            midrank,
+        ).clamp(0.0, 1.0)
+        risk = (
+            minimum_risk
+            + (1.0 - minimum_risk) * relative.pow(1.0 / temperature)
+        )
+        return risk * target_mask.to(risk.dtype)
+
+    @staticmethod
     def _weighted_pairwise_ranking_loss(
         logits: torch.Tensor,
         positive_mask: torch.Tensor,
@@ -1292,6 +1356,22 @@ class V16SubsetLoss(nn.Module):
         if not logits.is_floating_point() or not torch.isfinite(logits).all():
             raise ValueError("keep_logits must be finite floating-point values")
         probabilities = logits.sigmoid()
+        structure_logits = context.get("structure_keep_logits", logits)
+        structure_probabilities = context.get(
+            "structure_keep_probabilities", structure_logits.sigmoid()
+        )
+        for name, value in (
+            ("structure_keep_logits", structure_logits),
+            ("structure_keep_probabilities", structure_probabilities),
+        ):
+            if (
+                not isinstance(value, torch.Tensor)
+                or value.shape != logits.shape
+                or value.device != logits.device
+                or not value.is_floating_point()
+                or not torch.isfinite(value).all()
+            ):
+                raise ValueError(f"{name} must be finite floating-point [B,K]")
         target_mask = self._ordered_ground_truth_candidate_mask(
             supervised_proposals,
             geometry_knots,
@@ -1329,9 +1409,11 @@ class V16SubsetLoss(nn.Module):
                 (teacher_delete_mse + epsilon)
                 / tolerance.to(teacher_delete_mse.dtype).unsqueeze(-1)
             )
-            teacher_risk = torch.sigmoid(
-                teacher_log_margin / self.fine_teacher_temperature
-            ) * target_mask.to(teacher_delete_mse.dtype)
+            teacher_risk = self._relative_teacher_risk(
+                teacher_log_margin,
+                target_mask,
+                temperature=self.fine_teacher_temperature,
+            )
         else:
             teacher_delete_mse = torch.zeros_like(proposals)
             teacher_log_margin = torch.zeros_like(proposals)
@@ -1378,7 +1460,9 @@ class V16SubsetLoss(nn.Module):
 
         # Direct supervised existence labels replace online mask distillation.
         element_loss = F.binary_cross_entropy_with_logits(
-            logits, target_mask.to(logits.dtype), reduction="none"
+            structure_logits,
+            target_mask.to(structure_logits.dtype),
+            reduction="none",
         )
         positive_count = target_mask.sum(-1).clamp_min(1)
         negative_mask = ~target_mask
@@ -1410,19 +1494,20 @@ class V16SubsetLoss(nn.Module):
             positive_loss,
         ).mean()
         keep_dice_loss, keep_cdf_loss = self._keep_distribution_losses(
-            probabilities,
+            structure_probabilities,
             target_mask,
             supervised_proposals,
         )
         if fine_teacher_active:
             fine_teacher_loss = (
-                F.softplus(-logits)[target_mask]
-                * teacher_risk[target_mask].to(logits.dtype)
+                F.softplus(-structure_logits)[target_mask]
+                * teacher_risk[target_mask].to(structure_logits.dtype)
             ).mean()
         else:
             fine_teacher_loss = logits.new_zeros(())
         requested_score = context.get(
-            "one_shot_requested_count_score", probabilities.sum(-1)
+            "count_calibration_requested_count_score",
+            context.get("one_shot_requested_count_score", probabilities.sum(-1)),
         )
         if (
             not isinstance(requested_score, torch.Tensor)
@@ -1448,7 +1533,7 @@ class V16SubsetLoss(nn.Module):
 
         pair_mask = target_mask.unsqueeze(-1) & (~target_mask).unsqueeze(-2)
         ranking_loss = self._weighted_pairwise_ranking_loss(
-            logits,
+            structure_logits,
             target_mask,
             negative_confidence,
             margin=self.ranking_margin,
@@ -1456,7 +1541,7 @@ class V16SubsetLoss(nn.Module):
         if fine_teacher_active and bool(pair_mask.any()):
             risk = teacher_risk.to(logits.dtype)
             fine_teacher_ranking_loss = self._weighted_pairwise_ranking_loss(
-                logits,
+                structure_logits,
                 target_mask,
                 negative_confidence,
                 margin=self.ranking_margin,
@@ -1466,8 +1551,8 @@ class V16SubsetLoss(nn.Module):
         else:
             fine_teacher_ranking_loss = logits.new_zeros(())
         entropy = -(
-            probabilities * F.logsigmoid(logits)
-            + (1 - probabilities) * F.logsigmoid(-logits)
+            structure_probabilities * F.logsigmoid(structure_logits)
+            + (1 - structure_probabilities) * F.logsigmoid(-structure_logits)
         ).mean()
 
         def supervised_geometry(output, mask):
@@ -1639,6 +1724,15 @@ class V16SubsetLoss(nn.Module):
                 teacher_risk[target_mask].mean()
                 if bool(target_mask.any()) else zero
             ),
+            "fine_teacher_risk_std": (
+                teacher_risk[target_mask].std(unbiased=False)
+                if bool(target_mask.any()) else zero
+            ),
+            "fine_teacher_risk_range": (
+                teacher_risk[target_mask].amax()
+                - teacher_risk[target_mask].amin()
+                if bool(target_mask.any()) else zero
+            ),
             "fine_teacher_mean_log_delete_margin": (
                 teacher_log_margin[target_mask].mean()
                 if bool(target_mask.any()) else zero
@@ -1653,6 +1747,13 @@ class V16SubsetLoss(nn.Module):
             "structured_count_mae": (
                 requested_score - score_target.to(requested_score.dtype)
             ).abs().mean(),
+            "structured_count_bias": (
+                requested_score - score_target.to(requested_score.dtype)
+            ).mean(),
+            "count_calibration_score": requested_score.mean(),
+            "count_calibration_target": score_target.to(
+                requested_score.dtype
+            ).mean(),
             "supervised_count_loss": count_loss,
             "supervised_over_count_loss": over_count_loss,
             "supervised_count_mae": supervised_count_mae,

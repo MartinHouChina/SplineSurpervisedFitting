@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
-# Native Linux runner for the formal v16 K=4..56, MSE=1e-4 experiment.
+# Native Linux runner for the formal v16 source-K=4..56, Kc=72,
+# MSE=1e-4 experiment.
 
 set -Eeuo pipefail
 
 PYTHON_BIN="python"
 SIMPLIFICATION_CONTRACT="synthetic_ground_truth_ordered_keep_and_relocation_v4"
-RUN_NAME="candidate_selection_v16_mse1e-4_k56_supervised_linux"
+RUN_NAME="candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised_linux"
 DEVICE="cuda"
 EPOCHS=128
 PROPOSAL_EPOCHS=64
+SELECTOR_WARMUP_EPOCHS=8
+SELECTOR_LR=2e-4
+PROPOSAL_JOINT_LR=1e-5
+PARAMETER_JOINT_LR=5e-5
+DECODER_JOINT_LR=5e-5
 TRAIN_SIZE=3000
 VAL_SIZE=600
 REAL_VAL_SIZE=100
@@ -40,6 +46,11 @@ Main options:
   --device auto|cpu|cuda         Training/evaluation device (default: cuda)
   --epochs N                     Total epochs (default: 128)
   --proposal-epochs N            Proposal-stage epochs (default: 64)
+  --selector-warmup-epochs N     Joint selector/decoder-only warmup (default: 8)
+  --selector-lr X                Joint Selector learning rate (default: 2e-4)
+  --proposal-joint-lr X          Joint encoder/candidate LR (default: 1e-5)
+  --parameter-joint-lr X         Joint ParameterHead LR (default: 5e-5)
+  --decoder-joint-lr X           Joint selected-decoder LR (default: 5e-5)
   --train-size N                 Training draws per epoch (default: 3000)
   --val-size N                   Synthetic validation curves (default: 600)
   --real-val-size N              Validation curves per real source (default: 100)
@@ -85,6 +96,11 @@ while (($#)); do
     --device) need_value "$@"; DEVICE="$2"; shift 2 ;;
     --epochs) need_value "$@"; EPOCHS="$2"; shift 2 ;;
     --proposal-epochs) need_value "$@"; PROPOSAL_EPOCHS="$2"; shift 2 ;;
+    --selector-warmup-epochs) need_value "$@"; SELECTOR_WARMUP_EPOCHS="$2"; shift 2 ;;
+    --selector-lr) need_value "$@"; SELECTOR_LR="$2"; shift 2 ;;
+    --proposal-joint-lr) need_value "$@"; PROPOSAL_JOINT_LR="$2"; shift 2 ;;
+    --parameter-joint-lr) need_value "$@"; PARAMETER_JOINT_LR="$2"; shift 2 ;;
+    --decoder-joint-lr) need_value "$@"; DECODER_JOINT_LR="$2"; shift 2 ;;
     --train-size) need_value "$@"; TRAIN_SIZE="$2"; shift 2 ;;
     --val-size) need_value "$@"; VAL_SIZE="$2"; shift 2 ;;
     --real-val-size) need_value "$@"; REAL_VAL_SIZE="$2"; shift 2 ;;
@@ -121,6 +137,14 @@ nonnegative_integer() {
   [[ "$value" =~ ^[0-9]+$ ]] || die "$name must be a non-negative integer"
 }
 
+positive_number() {
+  local name="$1" value="$2" mantissa
+  [[ "$value" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$ ]] || \
+    die "$name must be a finite positive number"
+  mantissa="${value%%[eE]*}"
+  [[ "$mantissa" =~ [1-9] ]] || die "$name must be greater than zero"
+}
+
 for item in \
   "EPOCHS:$EPOCHS" \
   "PROPOSAL_EPOCHS:$PROPOSAL_EPOCHS" \
@@ -140,7 +164,14 @@ for item in \
   positive_integer "${item%%:*}" "${item#*:}"
 done
 nonnegative_integer "NUM_WORKERS" "$NUM_WORKERS"
+nonnegative_integer "SELECTOR_WARMUP_EPOCHS" "$SELECTOR_WARMUP_EPOCHS"
+positive_number "SELECTOR_LR" "$SELECTOR_LR"
+positive_number "PROPOSAL_JOINT_LR" "$PROPOSAL_JOINT_LR"
+positive_number "PARAMETER_JOINT_LR" "$PARAMETER_JOINT_LR"
+positive_number "DECODER_JOINT_LR" "$DECODER_JOINT_LR"
 ((PROPOSAL_EPOCHS < EPOCHS)) || die "proposal epochs must be smaller than total epochs"
+((SELECTOR_WARMUP_EPOCHS < EPOCHS - PROPOSAL_EPOCHS)) || \
+  die "selector warmup must be smaller than the Joint epoch budget"
 ((LUO_DE_POPULATION >= 5)) || die "Luo DE population must be at least 5"
 [[ "$RUN_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "run name contains unsupported characters"
 [[ "$DEVICE" == "auto" || "$DEVICE" == "cpu" || "$DEVICE" == "cuda" ]] || \
@@ -176,10 +207,11 @@ FIGURE_ROOT="$OUTPUT_ROOT/figures/$RUN_NAME"
 CHECKPOINT_PATH="$CHECKPOINT_DIRECTORY/$RUN_NAME.pt"
 LAST_PATH="$CHECKPOINT_DIRECTORY/$RUN_NAME.last.pt"
 PROPOSAL_PATH="$CHECKPOINT_DIRECTORY/$RUN_NAME.proposal.pt"
+PROPOSAL_FINAL_PATH="$CHECKPOINT_DIRECTORY/$RUN_NAME.proposal.final.pt"
 HISTORY_PATH="$CHECKPOINT_DIRECTORY/$RUN_NAME.history.json"
 
 for owned in \
-  "$CHECKPOINT_PATH" "$LAST_PATH" "$PROPOSAL_PATH" "$HISTORY_PATH" \
+  "$CHECKPOINT_PATH" "$LAST_PATH" "$PROPOSAL_PATH" "$PROPOSAL_FINAL_PATH" "$HISTORY_PATH" \
   "$LOG_DIRECTORY" "$COMPARISON_ROOT" "$FIGURE_ROOT"; do
   [[ ! -e "$owned" ]] || die "refusing to overwrite existing run artifact: $owned"
 done
@@ -278,18 +310,27 @@ run_logged() {
   return "$status"
 }
 
-printf 'Fresh v16 Linux profile: MSE=1e-4, Kc=56, source K=4..56, train/val=%s/%s, batch=%s.\n' \
+printf 'Fresh v16 Linux profile: MSE=1e-4, Kc=72, source K=4..56, train/val=%s/%s, batch=%s.\n' \
   "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
 printf 'Simplification contract: %s\n' "$SIMPLIFICATION_CONTRACT"
-printf 'Checkpoint selection: Proposal uses pass -> recall -> knot/parameter error; Joint uses mean_per_curve_subset_cost_v1. No aggregate-pass hard gate.\n'
+printf 'Checkpoint selection: Proposal uses dense subset cost -> worst/aggregate pass -> knot/parameter error -> F1/recall; Joint uses mean_per_curve_subset_cost_v1. No aggregate-pass hard gate.\n'
 printf 'Training supervision: certified Synthetic labels + cached per-knot deletion-MSE teacher; online self-Teacher disabled; real data is validation/test only.\n'
 printf 'Proposal synthetic high-K share=%s at K>=%s; Joint restores K=4..56.\n' \
   "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS"
+printf 'Candidate redundancy: 72 proposal slots for at most 56 labelled source knots (16-slot margin).\n'
+printf 'Joint optimization: %s selector/decoder-only warmup epochs; grouped LR selector=%s, proposal=%s, parameter=%s, decoder=%s.\n' \
+  "$SELECTOR_WARMUP_EPOCHS" "$SELECTOR_LR" "$PROPOSAL_JOINT_LR" \
+  "$PARAMETER_JOINT_LR" "$DECODER_JOINT_LR"
 
 TRAIN_ARGS=(
   "$PYTHON_BIN" scripts/train_v16.py
   --epochs "$EPOCHS"
   --proposal-epochs "$PROPOSAL_EPOCHS"
+  --selector-warmup-epochs "$SELECTOR_WARMUP_EPOCHS"
+  --selector-lr "$SELECTOR_LR"
+  --proposal-joint-lr "$PROPOSAL_JOINT_LR"
+  --parameter-joint-lr "$PARAMETER_JOINT_LR"
+  --decoder-joint-lr "$DECODER_JOINT_LR"
   --train-size "$TRAIN_SIZE"
   --val-size "$VAL_SIZE"
   --synthetic-boundary-val-size 32
@@ -300,7 +341,7 @@ TRAIN_ARGS=(
   --num-points 192
   --min-control-points 8
   --max-control-points 60
-  --candidate-knots 56
+  --candidate-knots 72
   --knot-min-span 0.01
   --mse-tolerance 1e-4
   --knot-match-tolerance 0.01
@@ -325,7 +366,7 @@ TRAIN_ARGS=(
   --proposal-parameter-warp-gradient-scale 0
   --joint-parameter-warp-gradient-scale 0.1
   --one-shot-selection-policy mass_topk
-  --initial-keep-fraction 0.5357142857142857
+  --initial-keep-fraction 0.4166666666666667
   --joint-supervision synthetic_ground_truth
   --synthetic-count-role exact
   --no-synthetic-geometry-oracle-teacher

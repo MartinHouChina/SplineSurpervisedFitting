@@ -16,6 +16,7 @@ import visualize_v16_ours_cases as ours_entry  # noqa: E402
 from spline_fitting.checkpointing import (  # noqa: E402
     V16_ADAPTIVE_SELECTION_REVISION,
     V16_CERTIFIED_SYNTHETIC_CONTRACT,
+    V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
     V16_JOINT_CHECKPOINT_QUALITY,
     V16_SIMPLIFICATION_CONTRACT,
     V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
@@ -46,12 +47,16 @@ def checkpoint(*, stage="joint", quality=V16_JOINT_CHECKPOINT_QUALITY, met=True,
         "model_config": {
             "one_shot_selection_policy": "mass_topk",
             "one_shot_adaptive_threshold": True,
-            "max_internal_knots": 56,
+            "max_internal_knots": V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
             "one_shot_safety_sigma": 0.05,
             "one_shot_safety_knots": 0,
         },
         "stage": stage,
+        "epoch": 73 if stage == "joint" else 64,
+        "training_phase": "joint_finetune" if stage == "joint" else "proposal",
         "training_config": {
+            "proposal_epochs": 64,
+            "selector_warmup_epochs": 8,
             "real_fraction": 0.0,
             "proposal_pass_target": target,
             "deployment_pass_target": target,
@@ -295,5 +300,5 @@ def test_ours_entry_point_supplies_current_checkpoint_and_output_defaults():
     assert str(ours_entry.DEFAULT_CHECKPOINT) in arguments
     assert str(ours_entry.DEFAULT_OUTPUT_DIR) in arguments
     assert ours_entry.DEFAULT_CHECKPOINT.name == (
-        "candidate_selection_v16_mse1e-4_k56_supervised_linux.pt"
+        "candidate_selection_v16_mse1e-4_sourcek56_kc72_supervised_linux.pt"
     )

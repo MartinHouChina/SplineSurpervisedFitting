@@ -41,7 +41,7 @@ def test_default_profile_keeps_ninety_percent_as_reporting_reference():
     assert args.proposal_high_k_fraction == pytest.approx(0.5)
     assert args.proposal_high_k_min_knots == 40
     assert (args.min_control_points, args.max_control_points) == (8, 60)
-    assert args.candidate_knots == 56
+    assert args.candidate_knots == 72
     assert args.knot_min_span == pytest.approx(0.01)
     assert args.one_shot_selection_policy == "mass_topk"
     assert args.one_shot_safety_sigma == pytest.approx(0.25)
@@ -56,7 +56,8 @@ def test_default_profile_keeps_ninety_percent_as_reporting_reference():
     assert args.real_fraction == 0
     assert args.synthetic_count_role == "exact"
     assert args.tolerance_factor_min == args.tolerance_factor_max == 1
-    assert args.initial_keep_fraction == pytest.approx(30 / 56)
+    assert args.initial_keep_fraction == pytest.approx(30 / 72)
+    assert args.relocation_blend == pytest.approx(0.03)
     assert args.synthetic_geometry_oracle_teacher is False
     assert args.oracle_teacher_extra_knots == 2
     assert args.supervised_count_weight == pytest.approx(1.0)
@@ -78,6 +79,11 @@ def test_default_profile_keeps_ninety_percent_as_reporting_reference():
     assert args.proposal_parameter_warp_gradient_scale == 0
     assert args.joint_parameter_warp_gradient_scale == pytest.approx(0.1)
     assert args.knot_position_beta == pytest.approx(0.01)
+    assert args.selector_warmup_epochs == 8
+    assert args.selector_lr == pytest.approx(2e-4)
+    assert args.proposal_joint_lr == pytest.approx(1e-5)
+    assert args.parameter_joint_lr == pytest.approx(5e-5)
+    assert args.decoder_joint_lr == pytest.approx(5e-5)
     assert args.certified_minimal_source is True
     assert args.minimality_margin == pytest.approx(0.2)
     assert args.minimality_audit_points == 512
@@ -729,37 +735,104 @@ def test_checkpoint_ranking_uses_soft_cost_without_a_ninety_percent_gate():
     ) > train_v16.checkpoint_rank(dominated)
 
 
-def test_proposal_checkpoint_rank_uses_supervised_geometry_after_fit():
-    def metrics(*, mse=1e-6, recall=0.8, matched_mae=0.005, parameter_rmse=0.01):
+def test_proposal_checkpoint_rank_uses_dense_cost_and_strict_geometry():
+    def metrics(
+        *, cost=0.98, mse=1e-6, worst_pass=0.0, aggregate_pass=0.8,
+        recall=0.8, f1=0.7, matched_mae=0.005, parameter_rmse=0.01,
+    ):
         return dict(
-            qualification_dense_pass_rate=0.95,
+            # Reproduce the real failure mode: the boundary qualification can
+            # remain zero throughout Proposal and must not expose loose R@.01
+            # as the effective leading checkpoint criterion.
+            qualification_dense_pass_rate=0.0,
+            worst_dense_pass_rate=worst_pass,
+            dense_pass_rate=aggregate_pass,
             dense_mse=mse,
-            dense_subset_cost=0.98,
+            dense_subset_cost=cost,
             synthetic_knot_match_recall=recall,
+            synthetic_knot_match_f1=f1,
             synthetic_knot_matched_mae=matched_mae,
             synthetic_parameter_rmse=parameter_rmse,
         )
 
     baseline = metrics()
+    # Continuous dense feasibility/cost outranks a tempting loose-recall spike.
     assert train_v16.proposal_checkpoint_rank(
-        metrics(recall=0.9),
+        metrics(cost=0.97, recall=0.1),
+    ) > train_v16.proposal_checkpoint_rank(baseline)
+    # At equal continuous cost, source and aggregate feasibility are audited.
+    assert train_v16.proposal_checkpoint_rank(
+        metrics(worst_pass=0.1, recall=0.1),
     ) > train_v16.proposal_checkpoint_rank(baseline)
     assert train_v16.proposal_checkpoint_rank(
-        metrics(matched_mae=0.004),
+        metrics(aggregate_pass=0.9, recall=0.1),
     ) > train_v16.proposal_checkpoint_rank(baseline)
+    # Continuous strict-position errors precede the looser tolerance recall.
     assert train_v16.proposal_checkpoint_rank(
-        metrics(parameter_rmse=0.009),
-    ) > train_v16.proposal_checkpoint_rank(baseline)
-    lower_pass = metrics(recall=1.0)
-    lower_pass["qualification_dense_pass_rate"] = 0.94
-    assert train_v16.proposal_checkpoint_rank(baseline) > (
-        train_v16.proposal_checkpoint_rank(lower_pass)
+        metrics(matched_mae=0.004, recall=0.1),
+    ) > train_v16.proposal_checkpoint_rank(metrics(recall=1.0))
+    assert train_v16.proposal_checkpoint_rank(
+        metrics(parameter_rmse=0.009, recall=0.1),
+    ) > train_v16.proposal_checkpoint_rank(metrics(recall=1.0))
+    assert train_v16.proposal_checkpoint_rank(
+        metrics(mse=0.9e-6, recall=0.1, f1=0.1),
+    ) > train_v16.proposal_checkpoint_rank(metrics(recall=1.0, f1=1.0))
+
+
+def test_joint_parameter_groups_are_complete_disjoint_and_warmup_freezes_geometry():
+    args = train_v16.parser().parse_args([])
+    train_v16.validate_args(args)
+    model = V16CandidateSelectionNetwork(
+        point_dim=2,
+        hidden_dim=16,
+        encoder_layers=1,
+        max_internal_knots=8,
+        attention_heads=4,
+        selector_layers=1,
+        mse_tolerance=1e-3,
     )
-    # Once qualification pass rate is equal, useful candidate geometry must not
-    # be hidden by a marginally better all-candidate refit.
-    assert train_v16.proposal_checkpoint_rank(
-        metrics(mse=1e-6, recall=1.0),
-    ) > train_v16.proposal_checkpoint_rank(metrics(mse=0.9e-6, recall=0.1))
+    groups, names = train_v16.joint_parameter_groups(model)
+    grouped_ids = [id(parameter) for group in groups.values() for parameter in group]
+    assert len(grouped_ids) == len(set(grouped_ids))
+    assert set(grouped_ids) == {id(parameter) for parameter in model.parameters()}
+    assert all(names[name] for name in train_v16.JOINT_PARAMETER_GROUP_NAMES)
+
+    train_v16.configure_joint_trainability(model, selector_warmup=True)
+    assert all(not parameter.requires_grad for parameter in groups["proposal"])
+    assert all(not parameter.requires_grad for parameter in groups["parameter"])
+    assert all(parameter.requires_grad for parameter in groups["selector"])
+    assert all(parameter.requires_grad for parameter in groups["decoder"])
+    optimizer = train_v16.build_joint_optimizer(
+        model, args, selector_warmup=True,
+    )
+    assert train_v16.optimizer_learning_rates(optimizer) == pytest.approx({
+        "proposal": 0.0,
+        "parameter": 0.0,
+        "selector": 2e-4,
+        "decoder": 5e-5,
+    })
+
+    train_v16.configure_joint_trainability(model, selector_warmup=False)
+    train_v16.set_joint_optimizer_learning_rates(
+        optimizer, args, selector_warmup=False,
+    )
+    assert all(parameter.requires_grad for parameter in model.parameters())
+    assert train_v16.optimizer_learning_rates(optimizer) == pytest.approx({
+        "proposal": 1e-5,
+        "parameter": 5e-5,
+        "selector": 2e-4,
+        "decoder": 5e-5,
+    })
+    assert train_v16.joint_training_phase(args, args.proposal_epochs) == "proposal"
+    assert train_v16.joint_training_phase(args, args.proposal_epochs + 1) == (
+        "selector_warmup"
+    )
+    assert train_v16.joint_training_phase(
+        args, args.proposal_epochs + args.selector_warmup_epochs,
+    ) == "selector_warmup"
+    assert train_v16.joint_training_phase(
+        args, args.proposal_epochs + args.selector_warmup_epochs + 1,
+    ) == "joint_finetune"
 
 
 def test_validation_summary_reports_certified_count_and_position_accuracy():
@@ -884,6 +957,18 @@ def test_selection_safety_anneals_conservatively_and_requires_final_state():
         applied_safety_scale=0.0, applied_complexity_scale=4.0,
     )
 
+    # A user-configured warmup may outlast both deterministic ramps.  A fully
+    # annealed selector-only epoch is still not a mature Joint checkpoint.
+    args.selector_warmup_epochs = 12
+    assert not train_v16.simplification_is_ready(
+        args, epoch=74, stage="joint",
+        applied_safety_scale=0.0, applied_complexity_scale=4.0,
+    )
+    assert train_v16.simplification_is_ready(
+        args, epoch=77, stage="joint",
+        applied_safety_scale=0.0, applied_complexity_scale=4.0,
+    )
+
 
 def test_joint_curriculum_is_deterministic_and_independent_of_pass_rate():
     args = train_v16.parser().parse_args([])
@@ -914,7 +999,9 @@ def training_command(output, *, tolerance="0.001", proposal_target="0"):
             "--output", str(output)]
 
 
-def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_path):
+def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(
+    tmp_path, capsys,
+):
     output = tmp_path / "tiny_v16.pt"
     command = training_command(output)
     assert train_v16.main(command) == 0
@@ -947,7 +1034,32 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
     assert original["loss_config"]["ranked_prefix_teacher"] is False
     assert original["training_config"]["real_fraction"] == 0
     assert original["proposal_ready"]
-    assert output.is_file() and (tmp_path / "tiny_v16.proposal.pt").is_file()
+    proposal_best_path = tmp_path / "tiny_v16.proposal.pt"
+    proposal_final_path = tmp_path / "tiny_v16.proposal.final.pt"
+    assert output.is_file() and proposal_best_path.is_file()
+    assert proposal_final_path.is_file()
+    proposal_final = torch.load(
+        proposal_final_path, map_location="cpu", weights_only=True,
+    )
+    assert proposal_final["epoch"] == 1
+    assert proposal_final["stage"] == "proposal"
+    assert original["training_phase"] == "selector_warmup"
+    assert original["optimizer_config"]["regime"] == "joint_named_groups"
+    assert original["optimizer_config"]["gradient_clipping"] == "per_named_group"
+    assert original["optimizer_config"]["learning_rates"] == pytest.approx({
+        "proposal": 0.0,
+        "parameter": 0.0,
+        "selector": 2e-4,
+        "decoder": 5e-5,
+    })
+    assert [
+        group["name"] for group in original["optimizer_state_dict"]["param_groups"]
+    ] == list(train_v16.JOINT_PARAMETER_GROUP_NAMES)
+    assert original["proposal_initializer_epoch"] == 1
+    assert Path(original["proposal_initializer_path"]) == proposal_best_path
+    assert [entry["training_phase"] for entry in original["history"]] == [
+        "proposal", "selector_warmup",
+    ]
     step_before = max(float(state["step"]) for state in original["optimizer_state_dict"]["state"].values())
     resumed_command = deepcopy(command)
     resumed_command[resumed_command.index("--epochs") + 1] = "3"
@@ -975,6 +1087,109 @@ def test_two_stage_tiny_training_and_resume_preserves_history_and_optimizer(tmp_
     assert best["epoch"] in (2, 3)
     assert best["deployment_config"]["network_forwards"] == 1
     assert best["deployment_config"]["final_refits"] == 1
+    report = capsys.readouterr().out
+    assert "count-cal loss=" in report
+    assert "score/target/bias/MAE=" in report
+    assert "fine-risk mean/std/range=" in report
+    assert "fine-loss/rank=" in report
+
+
+def test_joint_initializes_from_validation_best_not_stage_final(
+    tmp_path, monkeypatch,
+):
+    output = tmp_path / "stage_final.pt"
+    command = training_command(output)
+    command[command.index("--epochs") + 1] = "3"
+    command[command.index("--proposal-epochs") + 1] = "2"
+    # Force the validation-best rank to remain at epoch 1 regardless of later
+    # validation; proposal.final.pt still rolls forward for audit, while Joint
+    # uses the protected best initializer.
+    monkeypatch.setattr(
+        train_v16, "proposal_checkpoint_rank", lambda _metrics: (0.0,),
+    )
+    assert train_v16.main(command) == 0
+    proposal_best = torch.load(
+        tmp_path / "stage_final.proposal.pt",
+        map_location="cpu",
+        weights_only=True,
+    )
+    proposal_final = torch.load(
+        tmp_path / "stage_final.proposal.final.pt",
+        map_location="cpu",
+        weights_only=True,
+    )
+    last = torch.load(
+        tmp_path / "stage_final.last.pt", map_location="cpu", weights_only=True,
+    )
+    assert proposal_best["epoch"] == 1
+    assert proposal_final["epoch"] == 2
+    assert last["proposal_initializer_epoch"] == 1
+    assert Path(last["proposal_initializer_path"]) == (
+        tmp_path / "stage_final.proposal.pt"
+    )
+
+
+def test_best_checkpoint_is_committed_before_resume_marker(tmp_path, monkeypatch):
+    """A resumable rank must never point at a best artifact not yet on disk."""
+    output = tmp_path / "transactional.pt"
+    saved_names = []
+    original_atomic_save = train_v16.atomic_save
+
+    def recording_atomic_save(payload, path):
+        saved_names.append((int(payload["epoch"]), Path(path).name))
+        original_atomic_save(payload, path)
+
+    monkeypatch.setattr(train_v16, "atomic_save", recording_atomic_save)
+    assert train_v16.main(training_command(output)) == 0
+
+    assert saved_names == [
+        (1, "transactional.proposal.pt"),
+        (1, "transactional.last.pt"),
+        (1, "transactional.proposal.final.pt"),
+        (2, "transactional.pt"),
+        (2, "transactional.last.pt"),
+    ]
+
+
+def test_legacy_proposal_resume_materializes_final_and_enters_new_warmup(tmp_path):
+    output = tmp_path / "legacy_proposal.pt"
+    command = training_command(output)
+    assert train_v16.main(command) == 0
+    proposal_path = tmp_path / "legacy_proposal.proposal.pt"
+    final_path = tmp_path / "legacy_proposal.proposal.final.pt"
+    last_path = tmp_path / "legacy_proposal.last.pt"
+    legacy = torch.load(proposal_path, map_location="cpu", weights_only=True)
+    for key in (
+        "selector_warmup_epochs",
+        "selector_lr",
+        "proposal_joint_lr",
+        "parameter_joint_lr",
+        "decoder_joint_lr",
+    ):
+        legacy["training_config"].pop(key)
+    legacy.pop("optimizer_config", None)
+    legacy.pop("training_phase", None)
+    torch.save(legacy, last_path)
+    final_path.unlink()
+
+    resumed_command = deepcopy(command)
+    resumed_command.extend(["--resume", str(last_path)])
+    assert train_v16.main(resumed_command) == 0
+    resumed = torch.load(last_path, map_location="cpu", weights_only=True)
+    assert final_path.is_file()
+    assert torch.load(final_path, map_location="cpu", weights_only=True)["epoch"] == 1
+    assert resumed["training_phase"] == "selector_warmup"
+    assert resumed["optimizer_config"]["regime"] == "joint_named_groups"
+    assert resumed["training_config"]["selector_warmup_epochs"] == 8
+
+
+def test_fresh_run_refuses_orphaned_final_proposal_artifact(tmp_path):
+    output = tmp_path / "collision.pt"
+    (tmp_path / "collision.proposal.final.pt").touch()
+    with pytest.raises(SystemExit) as error:
+        train_v16.main(training_command(output))
+    assert error.value.code == 2
+    assert not output.exists()
 
 
 def test_low_proposal_pass_does_not_block_scheduled_joint_stage(tmp_path, capsys):

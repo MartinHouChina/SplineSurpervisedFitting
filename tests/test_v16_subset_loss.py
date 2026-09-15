@@ -660,7 +660,9 @@ def test_fine_teacher_uses_cached_single_deletion_mse_without_extra_refits():
     assert fitted.call_count == 3
     assert metrics["fine_teacher_loss"] > 0
     assert metrics["fine_teacher_ranking_loss"] > 0
-    assert metrics["fine_teacher_mean_risk"] > 0.5
+    assert metrics["fine_teacher_mean_risk"] == pytest.approx(0.625)
+    assert metrics["fine_teacher_risk_std"] == pytest.approx(0.375)
+    assert metrics["fine_teacher_risk_range"] == pytest.approx(0.75)
     assert 0 <= metrics["critical_false_delete_rate"] <= 1
     assert 0 <= metrics["keep_mask_f1"] <= 1
     assert 0 <= metrics["proposal_recall_at_005"] <= 1
@@ -669,6 +671,150 @@ def test_fine_teacher_uses_cached_single_deletion_mse_without_extra_refits():
     loss.backward()
     assert model.keep_head.weight.grad is not None
     assert model.keep_head.weight.grad.abs().sum() > 0
+
+
+def test_relative_teacher_risk_is_per_curve_scaled_and_tie_aware():
+    margins = torch.tensor([
+        [1.0, 2.0, 3.0, 0.0],
+        [1010.0, 1020.0, 1030.0, 0.0],
+        [4.0, 4.0, 4.0, 0.0],
+        [8.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+    ])
+    mask = torch.tensor([
+        [True, True, True, False],
+        [True, True, True, False],
+        [True, True, True, False],
+        [True, False, False, False],
+        [False, False, False, False],
+    ])
+    risk = V16SubsetLoss._relative_teacher_risk(
+        margins, mask, minimum_risk=0.25, temperature=0.5,
+    )
+    torch.testing.assert_close(
+        risk[0, :3], torch.tensor([0.25, 0.4375, 1.0])
+    )
+    torch.testing.assert_close(
+        risk[1, :3], risk[0, :3]
+    )
+    torch.testing.assert_close(
+        risk[2, :3], torch.full((3,), 0.4375)
+    )
+    assert risk[3, 0] == 1.0
+    assert torch.count_nonzero(risk[~mask]) == 0
+    assert torch.isfinite(risk).all()
+
+
+def test_supervised_structure_and_count_losses_use_disjoint_gradient_views():
+    torch.manual_seed(2030)
+    points = curve_batch()
+    target_params = torch.linspace(0, 1, points.shape[1]).repeat(2, 1)
+    target_knots = torch.tensor([
+        [0.22, 0.69, 0.0],
+        [0.31, 0.76, 0.0],
+    ])
+    target_mask = torch.tensor([
+        [True, True, False],
+        [True, True, False],
+    ])
+    deletion_mse = torch.tensor([
+        [1.2e-4, 4.0e-4, 0.0],
+        [2.0e-4, 8.0e-4, 0.0],
+    ])
+    valid = torch.ones(2, dtype=torch.bool)
+
+    def make_model():
+        return V16CandidateSelectionNetwork(
+            hidden_dim=16,
+            encoder_layers=1,
+            max_internal_knots=6,
+            attention_heads=2,
+            selector_layers=1,
+            min_selected_knots=0,
+            initial_keep_fraction=0.5,
+            one_shot_selection_policy="mass_topk",
+            one_shot_adaptive_threshold=True,
+        )
+
+    common = dict(
+        mse_tolerance=1e-4,
+        policy_samples=2,
+        joint_supervision="synthetic_ground_truth",
+        ranked_prefix_teacher=False,
+        synthetic_count_role="exact",
+        fit_weight=0,
+        dense_weight=0,
+        policy_weight=0,
+        entropy_weight=0,
+        complexity_weight=0,
+        true_parameter_weight=0,
+        proposal_knot_coverage_weight=0,
+        proposal_knot_assignment_weight=0,
+        proposal_multiscale_recall_weight=0,
+        selected_knot_position_weight=0,
+        parameter_gap_weight=0,
+        parameter_bias_weight=0,
+    )
+    targets = dict(
+        synthetic_target_count=target_mask.sum(-1),
+        synthetic_target_valid=valid,
+        target_params=target_params,
+        target_internal_knots=target_knots,
+        target_internal_knot_mask=target_mask,
+        target_geometry_valid=valid,
+        target_single_deletion_mse=deletion_mse,
+        target_single_deletion_mask=target_mask,
+        target_single_deletion_valid=valid,
+    )
+
+    structure_model = make_model()
+    structure_objective = V16SubsetLoss(
+        **common,
+        distillation_weight=1,
+        count_weight=0,
+        supervised_count_weight=0,
+        supervised_over_count_weight=0,
+        ranking_weight=1,
+        keep_dice_weight=1,
+        keep_cdf_weight=1,
+        fine_teacher_weight=1,
+        fine_teacher_ranking_weight=1,
+    )
+    structure_loss, _ = structure_objective(
+        structure_model, points, stage="joint", **targets,
+    )
+    structure_loss.backward()
+    assert structure_model.keep_head.weight.grad is not None
+    assert structure_model.keep_head.weight.grad.abs().sum() > 0
+    beta_gradient = structure_model.adaptive_threshold_head[-1].bias.grad
+    assert beta_gradient is None or torch.count_nonzero(beta_gradient) == 0
+
+    count_model = make_model()
+    count_objective = V16SubsetLoss(
+        **common,
+        distillation_weight=0,
+        count_weight=1,
+        supervised_count_weight=0,
+        supervised_over_count_weight=1,
+        ranking_weight=0,
+        keep_dice_weight=0,
+        keep_cdf_weight=0,
+        fine_teacher_weight=0,
+        fine_teacher_ranking_weight=0,
+    )
+    count_loss, _ = count_objective(
+        count_model, points, stage="joint", **targets,
+    )
+    count_loss.backward()
+    count_keep_gradient = count_model.keep_head.weight.grad
+    assert count_keep_gradient is None or torch.count_nonzero(count_keep_gradient) == 0
+    count_beta_gradient = count_model.adaptive_threshold_head[-1].bias.grad
+    assert count_beta_gradient is not None
+    assert count_beta_gradient.abs().sum() > 0
+    shared_gradient = (
+        count_model.selection_blocks[0].feed_forward[0].weight.grad
+    )
+    assert shared_gradient is None or torch.count_nonzero(shared_gradient) == 0
 
 
 def test_pairwise_ranking_downweights_fuzzy_negative_for_both_losses():

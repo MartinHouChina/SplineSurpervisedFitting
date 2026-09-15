@@ -35,6 +35,7 @@ from spline_fitting.checkpointing import (
     V16_CHECKPOINT_SELECTION_CONTRACT,
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
     V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
+    V16_FORMAL_CANDIDATE_INTERNAL_KNOTS,
     V16_FORMAL_PASS_RATE,
     V16_JOINT_CHECKPOINT_QUALITY,
     V16_MINIMALITY_AUDIT_POINTS,
@@ -104,8 +105,8 @@ def parser():
     )
     p.add_argument(
         "--candidate-knots", type=int, default=None,
-        help=("Internal candidate capacity Kc (default: 56 internal knots, "
-              "equivalent to 64 entries in a full cubic clamped knot vector). "
+        help=("Internal candidate capacity Kc (default: 72 internal knots, "
+              "equivalent to 80 entries in a full cubic clamped knot vector). "
               "Changing it requires a new experiment"),
     )
     p.add_argument(
@@ -158,7 +159,7 @@ def parser():
     p.add_argument(
         "--teacher-prefix-search-steps", type=int, default=7,
         help=("Training-only ranked-prefix feasibility search depth; seven "
-              "steps resolve the default Kc=56 count boundary without "
+              "steps resolve the default Kc=72 count boundary without "
               "deployment search"),
     )
     p.add_argument(
@@ -257,14 +258,15 @@ def parser():
     )
     p.add_argument("--min-selected-knots", type=int, default=4)
     p.add_argument(
-        "--initial-keep-fraction", type=float, default=30 / 56,
+        "--initial-keep-fraction", type=float, default=30 / 72,
         help=("Initial selector probability mass as a fraction of Kc; proposal "
-              "training does not update the selector. The default is 30/56, "
+              "training does not update the selector. The default is 30/72, "
               "matching the mean K of the default synthetic K=4..56 range"),
     )
     p.add_argument(
-        "--relocation-blend", type=float, default=0.0,
-        help="Initial uniform-rank relocation blend; zero starts from identity",
+        "--relocation-blend", type=float, default=0.03,
+        help=("Initial uniform-rank relocation blend. A small nonzero value "
+              "keeps survivor relocation trainable from the first Joint step"),
     )
     p.add_argument(
         "--complexity-ramp-epochs", type=int, default=10,
@@ -281,6 +283,37 @@ def parser():
     )
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--joint-lr", type=float, default=5e-5)
+    p.add_argument(
+        "--selector-warmup-epochs",
+        type=int,
+        default=8,
+        help=("First Joint epochs with Encoder, ParameterHead and CandidateHead "
+              "frozen while Selector and subset decoder learn stable labels"),
+    )
+    p.add_argument(
+        "--selector-lr",
+        type=float,
+        default=2e-4,
+        help="Joint learning rate for selection blocks, KeepHead and adaptive beta",
+    )
+    p.add_argument(
+        "--proposal-joint-lr",
+        type=float,
+        default=1e-5,
+        help="Post-warmup Joint learning rate for Encoder and CandidateHead",
+    )
+    p.add_argument(
+        "--parameter-joint-lr",
+        type=float,
+        default=5e-5,
+        help="Post-warmup Joint learning rate for ParameterHead",
+    )
+    p.add_argument(
+        "--decoder-joint-lr",
+        type=float,
+        default=5e-5,
+        help="Joint learning rate for subset parameter/relocation decoder",
+    )
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--grad-clip", type=float, default=1.0)
     p.add_argument("--seed", type=int, default=42)
@@ -313,7 +346,7 @@ def validate_args(args):
         # Cubic open clamping contributes four zeros and four ones.
         args.candidate_knots = args.full_knot_vector_size - 8
     elif args.candidate_knots is None:
-        args.candidate_knots = 56
+        args.candidate_knots = V16_FORMAL_CANDIDATE_INTERNAL_KNOTS
     if not 1 <= args.proposal_epochs < args.epochs:
         raise ValueError("require 1 <= proposal-epochs < epochs")
     for key in ("train_size", "val_size", "real_val_size", "batch_size", "hidden_dim",
@@ -330,6 +363,7 @@ def validate_args(args):
         "safety_anneal_epochs", "teacher_prefix_search_steps",
         "teacher_low_count_sweep", "minimality_max_attempts",
         "oracle_teacher_extra_knots", "synthetic_boundary_val_size",
+        "selector_warmup_epochs",
     ):
         value = getattr(args, key)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -392,6 +426,8 @@ def validate_args(args):
         )
     for key in (
         "mse_tolerance", "knot_match_tolerance", "lr", "joint_lr",
+        "selector_lr", "proposal_joint_lr", "parameter_joint_lr",
+        "decoder_joint_lr",
         "grad_clip", "tolerance_factor_min", "tolerance_factor_max",
     ):
         if not math.isfinite(getattr(args, key)) or getattr(args, key) <= 0:
@@ -512,6 +548,146 @@ def progress(current, total, title, extra="", every=10):
         print(f"{title} [{'=' * filled}{'.' * (24-filled)}] {current}/{total} {extra}", flush=True)
 
 
+JOINT_PARAMETER_GROUP_NAMES = ("proposal", "parameter", "selector", "decoder")
+
+
+def joint_parameter_groups(model):
+    """Partition every v16 parameter exactly once for Joint optimization."""
+    groups = {name: [] for name in JOINT_PARAMETER_GROUP_NAMES}
+    grouped_names = {name: [] for name in JOINT_PARAMETER_GROUP_NAMES}
+    selector_prefixes = (
+        "tolerance_embedding.",
+        "coverage_embedding.",
+        "selection_blocks.",
+        "keep_head.",
+        "adaptive_threshold_norm.",
+        "adaptive_threshold_head.",
+    )
+    decoder_prefixes = (
+        "subset_geometry.",
+        "survivor_attention.",
+        "parameter_attention.",
+        "survivor_norm.",
+        "parameter_norm.",
+        "parameter_update.",
+        "relocation_update.",
+    )
+    for name, parameter in model.named_parameters():
+        if name.startswith(("encoder.", "candidate_head.")):
+            group = "proposal"
+        elif name.startswith("parameter_head."):
+            group = "parameter"
+        elif name.startswith(selector_prefixes):
+            group = "selector"
+        elif name == "relocation_blend_logit" or name.startswith(decoder_prefixes):
+            group = "decoder"
+        else:
+            raise ValueError(f"unclassified v16 Joint parameter: {name}")
+        groups[group].append(parameter)
+        grouped_names[group].append(name)
+    empty = [name for name, values in groups.items() if not values]
+    if empty:
+        raise ValueError(f"empty v16 Joint parameter group(s): {', '.join(empty)}")
+    identifiers = [id(parameter) for values in groups.values() for parameter in values]
+    if len(identifiers) != len(set(identifiers)):
+        raise RuntimeError("v16 Joint parameter groups overlap")
+    if len(identifiers) != sum(1 for _ in model.parameters()):
+        raise RuntimeError("v16 Joint parameter grouping lost model parameters")
+    return groups, grouped_names
+
+
+def joint_training_phase(args, epoch):
+    """Return the explicit optimization phase for one scheduled epoch."""
+    if epoch <= args.proposal_epochs:
+        return "proposal"
+    joint_epoch = epoch - args.proposal_epochs
+    if joint_epoch <= args.selector_warmup_epochs:
+        return "selector_warmup"
+    return "joint_finetune"
+
+
+def configure_joint_trainability(model, *, selector_warmup):
+    """Freeze proposal geometry only during the stable-label selector warmup."""
+    groups, grouped_names = joint_parameter_groups(model)
+    for group_name, parameters in groups.items():
+        trainable = not selector_warmup or group_name in {"selector", "decoder"}
+        for parameter in parameters:
+            parameter.requires_grad_(trainable)
+    return {
+        name: tuple(grouped_names[name])
+        for name in JOINT_PARAMETER_GROUP_NAMES
+    }
+
+
+def _configured_joint_learning_rates(args, *, selector_warmup):
+    return {
+        "proposal": 0.0 if selector_warmup else float(args.proposal_joint_lr),
+        "parameter": 0.0 if selector_warmup else float(args.parameter_joint_lr),
+        "selector": float(args.selector_lr),
+        "decoder": float(args.decoder_joint_lr),
+    }
+
+
+def build_joint_optimizer(model, args, *, selector_warmup):
+    """Build auditable named Joint groups while retaining frozen parameters."""
+    groups, _ = joint_parameter_groups(model)
+    learning_rates = _configured_joint_learning_rates(
+        args, selector_warmup=selector_warmup,
+    )
+    parameter_groups = [
+        {
+            "params": groups[name],
+            "lr": learning_rates[name],
+            "name": name,
+        }
+        for name in JOINT_PARAMETER_GROUP_NAMES
+    ]
+    return torch.optim.AdamW(
+        parameter_groups,
+        lr=args.joint_lr,
+        weight_decay=args.weight_decay,
+    )
+
+
+def set_joint_optimizer_learning_rates(optimizer, args, *, selector_warmup):
+    """Apply warmup/post-warmup LRs without discarding Adam moments."""
+    expected = _configured_joint_learning_rates(
+        args, selector_warmup=selector_warmup,
+    )
+    names = [group.get("name") for group in optimizer.param_groups]
+    if set(names) != set(JOINT_PARAMETER_GROUP_NAMES) or len(names) != len(set(names)):
+        raise ValueError("Joint optimizer does not contain the four named groups")
+    for group in optimizer.param_groups:
+        group["lr"] = expected[group["name"]]
+
+
+def optimizer_learning_rates(optimizer):
+    """Serialize the effective LR of every optimizer group."""
+    result = {}
+    for index, group in enumerate(optimizer.param_groups):
+        name = group.get("name", f"group_{index}")
+        if name in result:
+            raise ValueError(f"duplicate optimizer group name: {name}")
+        result[name] = float(group["lr"])
+    return result
+
+
+def clip_joint_gradients(model, max_norm):
+    """Clip the four Joint tasks independently and return pre-clip norms."""
+    groups, _ = joint_parameter_groups(model)
+    norms = {}
+    for name, parameters in groups.items():
+        active = [parameter for parameter in parameters if parameter.grad is not None]
+        if active:
+            norm = torch.nn.utils.clip_grad_norm_(
+                active, max_norm, error_if_nonfinite=True,
+            )
+            norms[name] = float(norm)
+        else:
+            norms[name] = 0.0
+    return norms
+
+
 def selection_safety(args, scale):
     """Interpolate the deterministic Joint-stage one-shot safety reserve."""
     if not math.isfinite(scale) or not 0 <= scale <= 1:
@@ -527,9 +703,11 @@ def selection_safety(args, scale):
 def simplification_is_ready(
     args, *, epoch, stage, applied_safety_scale, applied_complexity_scale,
 ):
-    """Require the final deployment reserve and mature complexity curriculum."""
+    """Require completed warmup, final reserve and a mature curriculum."""
     return bool(
         stage == "joint"
+        and joint_training_phase(args, epoch) == "joint_finetune"
+        and epoch > args.proposal_epochs + args.selector_warmup_epochs
         and epoch - args.proposal_epochs
         >= max(args.complexity_ramp_epochs, args.safety_anneal_epochs)
         and applied_safety_scale <= 1e-12
@@ -671,10 +849,11 @@ def summarize(
         result["synthetic_knot_matched_mae"] = synthetic["knot_matched_mae"]
     if "parameter_rmse" in synthetic:
         result["synthetic_parameter_rmse"] = synthetic["parameter_rmse"]
-    # The upper end of a source-count range is also the proposal-capacity
-    # boundary in the formal K=4..56 protocol.  An aggregate Synthetic rate can
-    # hide a complete failure of that sparse stratum, so retain an explicit
-    # boundary audit for transparent diagnostics and formal reporting.
+    # The upper end of the source-count range is the hardest labelled stratum
+    # in the formal K=4..56 protocol.  Kc=72 now leaves 16 redundant proposal
+    # slots there, but an aggregate Synthetic rate can still hide a complete
+    # failure on K=56, so retain an explicit boundary audit for diagnostics and
+    # formal reporting.
     boundary_dense = None
     boundary_deployment = None
     if synthetic_boundary_knot_count is not None:
@@ -921,38 +1100,49 @@ def checkpoint_rank(metrics, *, simplification_ready=True):
 
 
 def proposal_checkpoint_rank(metrics):
-    """Feasibility-first Proposal rank led by supervised geometry quality.
+    """Rank Proposal checkpoints without a saturated boundary-pass gate.
 
-    Qualification pass rate protects dense fit feasibility.  Candidate recall,
-    matched-knot error and parameter error then select the Proposal actually
-    useful to Joint. Dense MSE/cost are final tie-breaks because an all-candidate
-    refit can otherwise hide poor candidate geometry.
+    ``qualification_dense_pass_rate`` is the minimum of every source and the
+    fixed maximum-K boundary audit.  It can therefore remain exactly zero for
+    an entire Proposal stage, after which the former rank accidentally let a
+    marginal recall@0.01 fluctuation select a much worse dense initializer.
+    Continuous dense subset cost now leads, source/aggregate pass rates protect
+    feasibility, and continuous matched-position error precedes the looser
+    tolerance recall diagnostic.
     """
-    pass_rate = metrics["qualification_dense_pass_rate"]
+    worst_pass_rate = metrics.get(
+        "worst_dense_pass_rate", metrics["qualification_dense_pass_rate"]
+    )
+    aggregate_pass_rate = metrics.get("dense_pass_rate", worst_pass_rate)
     dense_mse = metrics["dense_mse"]
     dense_cost = metrics["dense_subset_cost"]
     recall = metrics.get("synthetic_knot_match_recall", 0.0)
+    knot_f1 = metrics.get("synthetic_knot_match_f1", 0.0)
     matched_mae = metrics.get("synthetic_knot_matched_mae")
     parameter_rmse = metrics.get("synthetic_parameter_rmse")
     matched_mae = 1.0 if matched_mae is None else matched_mae
     parameter_rmse = 1.0 if parameter_rmse is None else parameter_rmse
     values = (
-        pass_rate,
+        worst_pass_rate,
+        aggregate_pass_rate,
         dense_mse,
         dense_cost,
         recall,
+        knot_f1,
         matched_mae,
         parameter_rmse,
     )
     if not all(math.isfinite(float(value)) for value in values):
         raise ValueError("proposal checkpoint ranking metrics must be finite")
     return (
-        float(pass_rate),
-        float(recall),
+        -float(dense_cost),
+        float(worst_pass_rate),
+        float(aggregate_pass_rate),
         -float(matched_mae),
         -float(parameter_rmse),
         -float(dense_mse),
-        -float(dense_cost),
+        float(knot_f1),
+        float(recall),
     )
 
 
@@ -1002,6 +1192,46 @@ def atomic_save(payload, path):
             if attempt == 4:
                 raise
             time.sleep(0.05 * (2**attempt))
+
+
+def saved_checkpoint_rank(
+    path,
+    *,
+    rank_key,
+    objective_version,
+    architecture_revision,
+    simplification_contract,
+    expected_output,
+):
+    """Read and validate a separately committed best-checkpoint rank.
+
+    Best and resume artifacts cannot be replaced as one filesystem
+    transaction. Saving best first prevents ``.last.pt`` from claiming a rank
+    that was never materialized; this reader handles the inverse crash window
+    (best committed, last still one epoch behind) by protecting the newer rank
+    when training resumes.
+    """
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    if payload.get("objective_version") != objective_version:
+        raise ValueError(f"{path.name} objective does not match the resume run")
+    if payload.get("architecture_revision") != architecture_revision:
+        raise ValueError(f"{path.name} architecture revision does not match")
+    if payload.get("simplification_contract") != simplification_contract:
+        raise ValueError(f"{path.name} simplification contract does not match")
+    artifact_output = payload.get("training_config", {}).get("output")
+    if artifact_output is None or Path(artifact_output).resolve() != expected_output:
+        raise ValueError(f"{path.name} belongs to a different output run")
+    rank = payload.get(rank_key)
+    if not isinstance(rank, (tuple, list)) or not rank:
+        raise ValueError(f"{path.name} has no valid {rank_key}")
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        for value in rank
+    ):
+        raise ValueError(f"{path.name} contains a non-finite {rank_key}")
+    return tuple(rank)
 
 
 @dataclass(frozen=True)
@@ -1163,9 +1393,20 @@ def main(argv=None):
     output = args.output.resolve()
     last_path = output.with_name(output.stem + ".last.pt")
     proposal_path = output.with_name(output.stem + ".proposal.pt")
+    proposal_final_path = output.with_name(output.stem + ".proposal.final.pt")
     history_path = output.with_suffix(".history.json")
-    if not args.resume and any(path.exists() for path in (output, last_path, proposal_path, history_path)):
-        p.error("output artifacts already exist; choose a new output or explicitly --resume the .last.pt")
+    artifacts = (
+        output,
+        last_path,
+        proposal_path,
+        proposal_final_path,
+        history_path,
+    )
+    if not args.resume and any(path.exists() for path in artifacts):
+        p.error(
+            "output artifacts already exist; choose a new output or explicitly "
+            "--resume the .last.pt"
+        )
     torch.set_num_threads(args.torch_num_threads)
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -1211,6 +1452,7 @@ def main(argv=None):
     history, start_epoch, best_rank, proposal_rank, proposal_ready = [], 1, None, None, False
     reporting_target_streak = 0
     resume_payload = None
+    legacy_joint_optimizer_contract = False
     if args.resume:
         resume_payload = torch.load(args.resume, map_location="cpu", weights_only=True)
         if resume_payload.get("objective_version") != run_objective_version:
@@ -1245,6 +1487,10 @@ def main(argv=None):
         ignored = {"epochs", "resume", "init_checkpoint", "output", "device", "num_workers",
                    "torch_num_threads", "log_every_batches", "initial_keep_fraction"}
         previous_config = dict(resume_payload["training_config"])
+        legacy_named_groups_missing = "selector_warmup_epochs" not in previous_config
+        legacy_joint_optimizer_contract = (
+            resume_payload.get("stage") == "joint" and legacy_named_groups_missing
+        )
         # A legacy .last.pt must continue with the exact loss that created its
         # optimizer state even though new-run CLI defaults are more aggressive.
         # Perform this migration automatically so unattended/overnight resume
@@ -1256,6 +1502,27 @@ def main(argv=None):
             "oracle_teacher_extra_knots": 2,
             "initial_keep_fraction": 0.95,
         }
+        # A checkpoint already inside the historical one-group Joint optimizer
+        # must preserve that exact layout so Adam moments remain loadable.  A
+        # Proposal-stage checkpoint has no Joint moments yet and may safely enter
+        # the new warmup/grouped-LR schedule using the current CLI values.
+        legacy_joint_lr = float(previous_config.get("joint_lr", args.joint_lr))
+        if legacy_joint_optimizer_contract:
+            legacy_refinement_defaults.update(
+                selector_warmup_epochs=0,
+                selector_lr=legacy_joint_lr,
+                proposal_joint_lr=legacy_joint_lr,
+                parameter_joint_lr=legacy_joint_lr,
+                decoder_joint_lr=legacy_joint_lr,
+            )
+        elif legacy_named_groups_missing:
+            legacy_refinement_defaults.update(
+                selector_warmup_epochs=args.selector_warmup_epochs,
+                selector_lr=args.selector_lr,
+                proposal_joint_lr=args.proposal_joint_lr,
+                parameter_joint_lr=args.parameter_joint_lr,
+                decoder_joint_lr=args.decoder_joint_lr,
+            )
         for key, legacy_value in legacy_refinement_defaults.items():
             if key not in previous_config:
                 previous_config[key] = legacy_value
@@ -1305,6 +1572,58 @@ def main(argv=None):
             p.error("checkpoint already completed the requested epochs")
         if not proposal_path.exists() or (resume_payload.get("stage") == "joint" and not output.exists()):
             p.error("resume requires the saved best proposal and, for joint training, the best model artifact")
+        try:
+            committed_proposal_rank = saved_checkpoint_rank(
+                proposal_path,
+                rank_key="best_proposal_rank",
+                objective_version=run_objective_version,
+                architecture_revision=V16_ADAPTIVE_SELECTION_REVISION,
+                simplification_contract=V16_SIMPLIFICATION_CONTRACT,
+                expected_output=output,
+            )
+            if (
+                proposal_rank is None
+                or committed_proposal_rank > tuple(proposal_rank)
+            ):
+                proposal_rank = committed_proposal_rank
+            if resume_payload.get("stage") == "joint":
+                committed_joint_rank = saved_checkpoint_rank(
+                    output,
+                    rank_key="best_joint_rank",
+                    objective_version=run_objective_version,
+                    architecture_revision=V16_ADAPTIVE_SELECTION_REVISION,
+                    simplification_contract=V16_SIMPLIFICATION_CONTRACT,
+                    expected_output=output,
+                )
+                if best_rank is None or committed_joint_rank > tuple(best_rank):
+                    best_rank = committed_joint_rank
+        except (KeyError, TypeError, ValueError, RuntimeError, OSError) as error:
+            p.error(f"resume best-checkpoint consistency check failed: {error}")
+        if resume_payload.get("stage") == "proposal":
+            # A process can be interrupted after .last.pt is replaced but just
+            # before the independent final-Proposal replacement.  Repair both a
+            # legacy missing artifact and this one-save lag from the authoritative
+            # resume payload; never silently overwrite a genuinely newer final.
+            resume_epoch = int(resume_payload["epoch"])
+            final_epoch = None
+            if proposal_final_path.exists():
+                try:
+                    final_payload = torch.load(
+                        proposal_final_path,
+                        map_location="cpu",
+                        weights_only=True,
+                    )
+                    final_epoch = int(final_payload["epoch"])
+                except (KeyError, TypeError, ValueError, RuntimeError, OSError) as error:
+                    p.error(f"cannot read Proposal final artifact: {error}")
+                if final_epoch > resume_epoch:
+                    p.error(
+                        "Proposal final artifact is newer than the requested "
+                        "resume checkpoint"
+                    )
+            if final_epoch is None or final_epoch < resume_epoch:
+                proposal_final_path.parent.mkdir(parents=True, exist_ok=True)
+                atomic_save(resume_payload, proposal_final_path)
     elif args.init_checkpoint:
         source_checkpoint = torch.load(args.init_checkpoint, map_location="cpu", weights_only=True)
         if args.joint_supervision == "synthetic_ground_truth":
@@ -1337,7 +1656,48 @@ def main(argv=None):
                 flush=True,
             )
     model.to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    proposal_initializer_path_used = None
+    proposal_initializer_epoch = None
+    optimizer_regime = "proposal_single_group"
+    if resume_payload and resume_payload.get("stage") == "joint":
+        saved_optimizer = resume_payload["optimizer_state_dict"]
+        if len(saved_optimizer.get("param_groups", ())) == len(
+            JOINT_PARAMETER_GROUP_NAMES
+        ):
+            resumed_phase = joint_training_phase(
+                args, int(resume_payload["epoch"]),
+            )
+            selector_warmup = resumed_phase == "selector_warmup"
+            configure_joint_trainability(
+                model, selector_warmup=selector_warmup,
+            )
+            optimizer = build_joint_optimizer(
+                model, args, selector_warmup=selector_warmup,
+            )
+            optimizer_regime = "joint_named_groups"
+        else:
+            # Historical Joint checkpoints used one AdamW group.  Preserve its
+            # exact layout so load_state_dict can restore moments losslessly.
+            for parameter in model.parameters():
+                parameter.requires_grad_(True)
+            optimizer = torch.optim.AdamW(
+                model.parameters(),
+                lr=args.joint_lr,
+                weight_decay=args.weight_decay,
+            )
+            optimizer_regime = "legacy_joint_single_group"
+        proposal_initializer_path_used = resume_payload.get(
+            "proposal_initializer_path"
+        )
+        proposal_initializer_epoch = resume_payload.get(
+            "proposal_initializer_epoch"
+        )
+    else:
+        for parameter in model.parameters():
+            parameter.requires_grad_(True)
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=args.lr, weight_decay=args.weight_decay,
+        )
     if resume_payload:
         optimizer.load_state_dict(resume_payload["optimizer_state_dict"])
         torch.set_rng_state(resume_payload["rng_state"])
@@ -1459,6 +1819,7 @@ def main(argv=None):
     )
     for epoch in range(start_epoch, args.epochs + 1):
         stage = "proposal" if epoch <= args.proposal_epochs else "joint"
+        training_phase = joint_training_phase(args, epoch)
         applied_complexity_scale, applied_safety_scale = simplification_schedule(
             args, epoch=epoch, stage=stage,
         )
@@ -1472,23 +1833,73 @@ def main(argv=None):
         safety_sigma, safety_knots = selection_safety(args, applied_safety_scale)
         model.set_selection_safety(sigma=safety_sigma, knots=safety_knots)
         if stage == "joint" and epoch == args.proposal_epochs + 1:
-            if not proposal_path.exists():
-                p.error("missing best proposal checkpoint for the stage transition")
-            best_proposal = torch.load(proposal_path, map_location="cpu", weights_only=True)
-            model.load_state_dict(best_proposal["model_state_dict"], strict=True)
-            proposal_dense_pass = best_proposal["validation_metrics"].get(
-                "qualification_dense_pass_rate",
-                best_proposal["validation_metrics"]["worst_dense_pass_rate"],
+            initializer_path = (
+                proposal_path
+                if proposal_path.exists()
+                else proposal_final_path
             )
-            proposal_ready = epoch >= args.proposal_epochs
+            if not initializer_path.exists():
+                p.error("missing Proposal checkpoint for the stage transition")
+            if initializer_path == proposal_final_path:
+                print(
+                    "WARNING: validation-best proposal.pt is unavailable; "
+                    "falling back to the stage-final Proposal artifact for "
+                    "legacy compatibility.",
+                    flush=True,
+                )
+            proposal_initializer = torch.load(
+                initializer_path, map_location="cpu", weights_only=True,
+            )
+            model.load_state_dict(
+                proposal_initializer["model_state_dict"], strict=True,
+            )
+            proposal_dense_pass = proposal_initializer["validation_metrics"].get(
+                "worst_dense_pass_rate",
+                proposal_initializer["validation_metrics"]["dense_pass_rate"],
+            )
+            proposal_initializer_path_used = str(initializer_path)
+            proposal_initializer_epoch = int(proposal_initializer["epoch"])
+            proposal_ready = True
+            selector_warmup = training_phase == "selector_warmup"
+            if legacy_joint_optimizer_contract:
+                for parameter in model.parameters():
+                    parameter.requires_grad_(True)
+                optimizer = torch.optim.AdamW(
+                    model.parameters(),
+                    lr=args.joint_lr,
+                    weight_decay=args.weight_decay,
+                )
+                optimizer_regime = "legacy_joint_single_group"
+            else:
+                configure_joint_trainability(
+                    model, selector_warmup=selector_warmup,
+                )
+                optimizer = build_joint_optimizer(
+                    model, args, selector_warmup=selector_warmup,
+                )
+                optimizer_regime = "joint_named_groups"
             print(
-                "Proposal schedule complete; loading the lowest-cost dense "
-                f"initializer (pass={proposal_dense_pass:.1%}, reporting "
+                "Proposal schedule complete; loading the validation-ranked "
+                "best dense "
+                f"initializer from epoch {proposal_initializer_epoch} "
+                f"(worst-source pass={proposal_dense_pass:.1%}, reporting "
                 f"reference={args.proposal_pass_target:.1%}). Joint training "
-                "starts unconditionally.",
+                f"starts unconditionally in {training_phase}.",
                 flush=True,
             )
-            optimizer = torch.optim.AdamW(model.parameters(), lr=args.joint_lr, weight_decay=args.weight_decay)
+        elif stage == "joint" and optimizer_regime == "joint_named_groups":
+            selector_warmup = training_phase == "selector_warmup"
+            configure_joint_trainability(
+                model, selector_warmup=selector_warmup,
+            )
+            set_joint_optimizer_learning_rates(
+                optimizer, args, selector_warmup=selector_warmup,
+            )
+        elif stage == "joint":
+            # Legacy one-group resume keeps its historical all-trainable state.
+            for parameter in model.parameters():
+                parameter.requires_grad_(True)
+        current_learning_rates = optimizer_learning_rates(optimizer)
         training_sources = (
             () if args.joint_supervision == "synthetic_ground_truth" else sources
         )
@@ -1584,21 +1995,36 @@ def main(argv=None):
                 target_single_deletion_valid=target_single_deletion_valid,
             )
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip, error_if_nonfinite=True)
+            if optimizer_regime == "joint_named_groups":
+                gradient_norms = clip_joint_gradients(model, args.grad_clip)
+            else:
+                global_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(),
+                    args.grad_clip,
+                    error_if_nonfinite=True,
+                )
+                gradient_norms = {"global": float(global_norm)}
             optimizer.step()
             size = len(points)
             samples += size
             for key, value in metrics.items():
                 total[key] += float(value)*size
+            for group_name, value in gradient_norms.items():
+                total[f"gradient_norm_{group_name}"] += value * size
             subset_label = (
                 "denseK" if stage == "proposal" else
                 "targetK" if args.joint_supervision == "synthetic_ground_truth"
                 else "teacherK"
             )
-            progress(step, len(train_loader), f"Epoch {epoch:03}/{args.epochs} {stage}",
+            lr_display = "/".join(
+                f"{name}:{value:.1e}"
+                for name, value in current_learning_rates.items()
+            )
+            progress(step, len(train_loader),
+                     f"Epoch {epoch:03}/{args.epochs} {training_phase}",
                      f"MSE={metrics['deployment_mse']:.3e} pass={metrics['deployment_pass_rate']:.1%} "
                      f"K={metrics['keep_count']:.1f} {subset_label}={metrics['subset_best_count']:.1f} "
-                     f"countMAE={metrics['supervised_count_mae']:.2f}",
+                     f"countMAE={metrics['supervised_count_mae']:.2f} lr={lr_display}",
                      args.log_every_batches)
         measured = validate(
             model, val_loader, device, args.mse_tolerance,
@@ -1620,6 +2046,14 @@ def main(argv=None):
                 reporting_target_streak = 0
         entry = dict(
             epoch=epoch, stage=stage, train=train_metrics, validation=measured,
+            training_phase=training_phase,
+            optimizer_regime=optimizer_regime,
+            learning_rates=current_learning_rates,
+            gradient_clipping=(
+                "per_named_group"
+                if optimizer_regime == "joint_named_groups"
+                else "global"
+            ),
             applied_complexity_scale=applied_complexity_scale,
             next_complexity_scale=next_complexity_scale,
             applied_selection_safety_scale=applied_safety_scale,
@@ -1669,6 +2103,18 @@ def main(argv=None):
         payload = dict(objective_version=run_objective_version,
             model_config=model.get_config(), model_state_dict={k:v.detach().cpu() for k,v in model.state_dict().items()},
             optimizer_state_dict=optimizer.state_dict(), epoch=epoch, stage=stage,
+            training_phase=training_phase,
+            optimizer_config=dict(
+                regime=optimizer_regime,
+                learning_rates=current_learning_rates,
+                gradient_clipping=(
+                    "per_named_group"
+                    if optimizer_regime == "joint_named_groups"
+                    else "global"
+                ),
+                max_gradient_norm=args.grad_clip,
+                selector_warmup_epochs=args.selector_warmup_epochs,
+            ),
             training_config=current_config, dataset_config=dataset_config, history=history,
             dataset_type=(
                 (
@@ -1691,6 +2137,10 @@ def main(argv=None):
             ),
             validation_metrics=measured, train_metrics=train_metrics,
             best_joint_rank=best_rank, best_proposal_rank=proposal_rank, proposal_ready=proposal_ready,
+            proposal_best_path=str(proposal_path),
+            proposal_final_path=str(proposal_final_path),
+            proposal_initializer_path=proposal_initializer_path_used,
+            proposal_initializer_epoch=proposal_initializer_epoch,
             proposal_ready_role=(
                 "scheduled_stage_complete_with_saved_initializer"
             ),
@@ -1812,11 +2262,27 @@ def main(argv=None):
             required_pass_rate=V16_FORMAL_PASS_RATE,
             required_mse_tolerance=args.mse_tolerance,
         )
-        atomic_save(payload, last_path)
+        # Commit a newly selected best artifact first.  ``.last.pt`` is the
+        # transaction marker: once it advertises the new rank, the matching
+        # best model is guaranteed to exist.  Resume also reconciles the
+        # inverse crash window in which best was written but last was not.
         if improved:
             atomic_save(payload, proposal_path if stage == "proposal" else output)
+        atomic_save(payload, last_path)
+        if stage == "proposal":
+            # This rolling artifact is deliberately independent of the
+            # validation-ranked best Proposal.  It records the latest Proposal
+            # state for audit/recovery; Joint normally loads ``proposal.pt``,
+            # whose corrected continuous rank protects against both an early
+            # loose-recall winner and a late-stage regression.
+            atomic_save(payload, proposal_final_path)
         history_path.write_text(json.dumps(history, indent=2, allow_nan=False), encoding="utf-8")
-        print(f"Epoch {epoch:03} val dense={measured['dense_pass_rate']:.1%} "
+        epoch_lr_display = "/".join(
+            f"{name}:{value:.1e}"
+            for name, value in current_learning_rates.items()
+        )
+        print(f"Epoch {epoch:03} phase={training_phase} lr={epoch_lr_display} "
+              f"val dense={measured['dense_pass_rate']:.1%} "
               f"deployment={measured['deployment_pass_rate']:.1%} worst-source={measured['worst_deployment_pass_rate']:.1%} "
               f"qualification={measured['qualification_deployment_pass_rate']:.1%} "
               f"MSE={measured['deployment_mse']:.3e} K={measured['keep_count']:.2f} "
@@ -1845,6 +2311,28 @@ def main(argv=None):
                 flush=True,
             )
         else:
+            count_calibration_detail = ""
+            if "count_calibration_score" in train_metrics:
+                count_calibration_detail = (
+                    ", count-cal loss="
+                    f"{train_metrics['structured_count_loss']:.3e}, "
+                    "score/target/bias/MAE="
+                    f"{train_metrics['count_calibration_score']:.2f}/"
+                    f"{train_metrics['count_calibration_target']:.2f}/"
+                    f"{train_metrics['structured_count_bias']:+.2f}/"
+                    f"{train_metrics['structured_count_mae']:.2f}"
+                )
+            fine_risk_detail = ""
+            if "fine_teacher_risk_std" in train_metrics:
+                fine_risk_detail = (
+                    ", fine-risk mean/std/range="
+                    f"{train_metrics['fine_teacher_mean_risk']:.3f}/"
+                    f"{train_metrics['fine_teacher_risk_std']:.3f}/"
+                    f"{train_metrics['fine_teacher_risk_range']:.3f}, "
+                    "fine-loss/rank="
+                    f"{train_metrics['fine_teacher_loss']:.3e}/"
+                    f"{train_metrics['fine_teacher_ranking_loss']:.3e}"
+                )
             print(
                 "  Joint train structure: Keep P/R/F1="
                 f"{train_metrics['keep_mask_precision']:.3f}/"
@@ -1857,7 +2345,8 @@ def main(argv=None):
                 f"{train_metrics['proposal_recall_at_010']:.3f}/"
                 f"{train_metrics['proposal_recall_at_020']:.3f}, "
                 "parameter_bias="
-                f"{train_metrics['parameter_bias_mae']:.3e}",
+                f"{train_metrics['parameter_bias_mae']:.3e}"
+                f"{count_calibration_detail}{fine_risk_detail}",
                 flush=True,
             )
         boundary_n = measured["synthetic_boundary_sample_count"]
@@ -1893,7 +2382,8 @@ def main(argv=None):
                   f"{count_detail}{position_detail}", flush=True)
     best = torch.load(output, map_location="cpu", weights_only=True)
     print(f"Saved best v16: {output}; quality={best['checkpoint_quality']}. "
-          f"Last/resume: {last_path}", flush=True)
+          f"Last/resume: {last_path}; Proposal best/final: "
+          f"{proposal_path} / {proposal_final_path}", flush=True)
     return 0
 
 
