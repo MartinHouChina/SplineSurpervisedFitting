@@ -220,6 +220,79 @@ def test_structure_and_count_gradient_views_are_decoupled(points):
     assert count_shared_gradient is None
 
 
+def test_opt_in_count_structure_coupling_trains_keep_ranking_without_changing_deployment(points):
+    kwargs = dict(
+        hidden_dim=16,
+        encoder_layers=1,
+        max_internal_knots=6,
+        attention_heads=2,
+        selector_layers=1,
+        one_shot_selection_policy="mass_topk",
+        one_shot_adaptive_threshold=True,
+    )
+    torch.manual_seed(39)
+    historical = V16CandidateSelectionNetwork(**kwargs)
+    coupled = V16CandidateSelectionNetwork(
+        **kwargs, count_structure_coupling=True
+    )
+    coupled.load_state_dict(historical.state_dict(), strict=True)
+    assert historical.get_config()["count_structure_coupling"] is False
+    assert coupled.get_config()["count_structure_coupling"] is True
+
+    historical_context = historical.encode_candidates(points)
+    context = coupled.encode_candidates(points)
+    for key in (
+        "adaptive_keep_threshold", "keep_logits", "keep_probabilities",
+        "structure_keep_logits", "count_calibration_keep_logits",
+        "count_calibration_requested_count_score",
+    ):
+        torch.testing.assert_close(context[key], historical_context[key])
+    assert torch.equal(
+        coupled.select_mask(context), historical.select_mask(historical_context)
+    )
+
+    structure_loss = context["structure_keep_logits"].square().sum()
+    structure_beta_gradient = torch.autograd.grad(
+        structure_loss, coupled.adaptive_threshold_head[-1].bias,
+        retain_graph=True, allow_unused=True,
+    )[0]
+    assert structure_beta_gradient is None
+
+    count_loss = context["count_calibration_requested_count_score"].sum()
+    count_keep_gradient, count_shared_gradient, count_beta_gradient = torch.autograd.grad(
+        count_loss,
+        (
+            coupled.keep_head.weight,
+            coupled.selection_blocks[0].feed_forward[0].weight,
+            coupled.adaptive_threshold_head[-1].bias,
+        ),
+        allow_unused=True,
+    )
+    for gradient in (
+        count_keep_gradient, count_shared_gradient, count_beta_gradient
+    ):
+        assert gradient is not None
+        assert torch.isfinite(gradient).all()
+        assert gradient.abs().sum() > 0
+
+    reloaded = V16CandidateSelectionNetwork(**coupled.get_config())
+    reloaded.load_state_dict(coupled.state_dict(), strict=True)
+    assert reloaded.count_structure_coupling is True
+    restored = V16CandidateSelectionNetwork(**historical.get_config())
+    restored.load_state_dict(historical.state_dict(), strict=True)
+    assert restored.count_structure_coupling is False
+    legacy_config = historical.get_config()
+    legacy_config.pop("count_structure_coupling")
+    legacy_restored = V16CandidateSelectionNetwork(**legacy_config)
+    legacy_restored.load_state_dict(historical.state_dict(), strict=True)
+    assert legacy_restored.count_structure_coupling is False
+
+
+def test_count_structure_coupling_requires_boolean():
+    with pytest.raises(ValueError, match="count_structure_coupling"):
+        V16CandidateSelectionNetwork(count_structure_coupling=1)
+
+
 @pytest.mark.parametrize("threshold_bias, expected_probability", [
     (100.0, 0.0),
     (-100.0, 1.0),

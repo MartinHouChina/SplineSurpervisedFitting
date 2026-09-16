@@ -1,12 +1,22 @@
 # Self-Supervised Spline Fitting（当前 v16 主线）
 
-本仓库当前 3090 试验主线是 **v16 fixed-Proposal + offline feasible-subset Teacher**：从有序点云一次性预测三次开放 B 样条的参数化、候选内部节点、KeepMask 和存活节点位置，再做一次标准 B 样条最小二乘 refit。新训练协议旨在纠正旧 Joint 把真源节点数直接当可行部署节点数所造成的阈值失效；效果须重训后实测。
+本仓库当前 3090 试验主线是 **v16 fixed-Proposal + offline feasible-subset Teacher**：从有序点云一次性预测三次开放 B 样条的参数化、候选内部节点、KeepMask 和存活节点位置，再做一次标准 B 样条最小二乘 refit。已拉取的 `Kc=72` 结果显示，数值修复虽能压低 MSE，却常把节点数推高；现在推荐先跑可选的 `Kc=56` 快速诊断档，验证 Count/Keep 与教师机制，而不是直接投入另一轮大规模训练。新档效果须重训后实测。
 
 > 训练只使用带真参数、真内部节点、真节点数和逐节点删除 MSE 的认证合成曲线；UJI Pen、Natural Earth、USGS 和工业型线等距线只用于留出验证与测试，不参与梯度更新。冻结 Proposal 后，在**预测候选/参数域**上离线搜索可行子集并缓存标签；这是训练时教师，不在网络部署时间内。
 
-## 当前实验合同
+推荐的 Linux/3090 快速诊断入口如下；它训练源 `K=4..44`、候选 `Kc=56`、Proposal 48 + Joint 24 epoch、训练/验证 1500/300、Batch 64，测试仍覆盖源 `K=4..56`，其中 K=45..56 明确为训练范围外压力测试。它启用真节点锚定的离线教师和 Count–Keep 梯度耦合；旧默认行为与检查点仍保留。详细协议见 [Kc56 快速诊断说明](docs/v16_kc56_fast_pilot.md)。
 
-| 项目 | 当前设置 |
+```bash
+bash scripts/run_v16_mse1e-4_3090.sh \
+  --pilot-kc56 \
+  --prepare-real-data \
+  --device cuda \
+  --run-name candidate_selection_v16_mse1e-4_pilot_sourcek44_kc56_linux_r1
+```
+
+## 原 Kc72 大规模实验合同（保留用于对照）
+
+| 项目 | 原设置 |
 |---|---|
 | objective | `candidate_selection_feasible_teacher_bspline_v16` |
 | architecture | `v16_decoupled_keep_count_kc72_mass_topk` |
@@ -40,7 +50,7 @@ Joint 固定 GeometryEncoder、ParameterHead、CandidateKnotHead（Joint 学习�
 
 离线教师缓存只属于固定训练样本、Proposal 权重和阈值；旧缓存/旧 Joint checkpoint 不能直接复用。原始部署仍是一次 forward、一次 mass-TopK、一次 refit；这一支的 MSE 不能保证每例过阈值。批量评测用 `--include-verified-ours` 添加单独的 `ours_verified` 数值核验/修复行，报告完整时间、额外 refit 和节点数，不与原始 `ours` 行混写。四指标图仍画原六方法，修复数据在汇总表和逐例记录中。`Kc=72` 的 latency 必须重新测量。
 
-## 一条龙运行
+## 原 Kc72 一条龙运行（历史复测）
 
 先准备四个外部数据 manifest；训练不会使用其样本更新权重，但验证和最终比较需要它们：
 

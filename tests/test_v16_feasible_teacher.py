@@ -12,8 +12,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from spline_fitting.training.v16_feasible_teacher import (
     _devices_equivalent,
+    _ordered_anchor_slots,
     build_or_load_v16_feasible_teacher_cache,
 )
+from spline_fitting.data.synthetic import bspline_basis_matrix
+from spline_fitting.evaluation.knot_diagnostics import build_open_knot_vector
 
 
 @pytest.fixture(autouse=True)
@@ -146,6 +149,174 @@ def test_feasible_teacher_is_synthetic_only_and_index_checked(tmp_path):
 
     with pytest.raises(ValueError, match="synthetic-only"):
         _cache(model, _RealRow(), tmp_path / "real.pt")
+
+
+class _CertifiedSynthetic(Dataset):
+    def __init__(self) -> None:
+        self.params = torch.linspace(0.0, 1.0, 28)
+        self.true_knots = torch.tensor([0.4, 0.7])
+        basis = bspline_basis_matrix(
+            self.params,
+            build_open_knot_vector(self.true_knots, degree=3),
+            degree=3,
+            num_control_points=6,
+        )
+        controls = torch.tensor([
+            [0.0, 0.0], [0.1, 0.3], [0.3, -0.4],
+            [0.7, 0.5], [0.9, -0.2], [1.0, 0.0],
+        ])
+        self.points = basis @ controls
+
+    def __len__(self) -> int:
+        return 1
+
+    def __getitem__(self, index: int) -> dict:
+        if index:
+            raise IndexError(index)
+        return {
+            "points": self.points,
+            "source": "Synthetic",
+            "target_geometry_valid": torch.tensor(True),
+            "target_params": self.params,
+            "target_internal_knots": torch.tensor([0.4, 0.7, 0.0, 0.0, 0.0]),
+            "target_internal_knot_mask": torch.tensor([True, True, False, False, False]),
+        }
+
+
+class _CertifiedProposal(_FixedProposal):
+    max_internal_knots = 5
+
+    def encode_candidates(self, points: torch.Tensor, mse_tolerance=None) -> dict:
+        batch, count, _ = points.shape
+        parameters = torch.linspace(
+            0.0, 1.0, count, dtype=points.dtype, device=points.device,
+        ).expand(batch, -1)
+        knots = torch.tensor(
+            [0.2, 0.4, 0.6, 0.7, 0.8], dtype=points.dtype, device=points.device,
+        ).expand(batch, -1)
+        shift = self.candidate_head.weight.flatten()[0] * 0.01
+        return {
+            "proposal_params": parameters,
+            "proposal_internal_knots": knots + shift,
+        }
+
+
+def test_ordered_anchor_slots_do_not_reuse_one_candidate():
+    slots = _ordered_anchor_slots(
+        torch.tensor([0.2, 0.4, 0.6, 0.8]),
+        torch.tensor([0.39, 0.41]),
+        max_distance=0.21,
+    )
+    assert slots is not None
+    assert len(slots) == 2
+    assert slots == sorted(set(slots))
+    assert _ordered_anchor_slots(
+        torch.tensor([0.2, 0.4, 0.6, 0.8]),
+        torch.tensor([0.39, 0.41]),
+        max_distance=0.02,
+    ) is None
+
+
+def test_anchor_first_cache_keeps_exact_source_slots_and_rejects_old_strategy(tmp_path):
+    model = _CertifiedProposal()
+    dataset = _CertifiedSynthetic()
+    path = tmp_path / "anchor.pt"
+    options = dict(
+        mse_tolerance=1e-8,
+        device="cpu",
+        batch_size=1,
+        teacher_strategy="synthetic_anchor_first",
+        anchor_match_tolerance=0.02,
+    )
+    anchor = build_or_load_v16_feasible_teacher_cache(model, dataset, path, **options)
+    assert anchor.teacher_strategy == "synthetic_anchor_first"
+    assert not anchor.loaded
+    assert anchor.batch.teacher_count.tolist() == [2]
+    assert anchor.batch.teacher_retained_mask.tolist() == [[False, True, False, True, False]]
+    assert anchor.feasible_fraction == 1.0
+    assert float(anchor.batch.teacher_fit_mse[0]) <= 1e-8
+    assert torch.equal(
+        anchor.batch.teacher_deletion_order,
+        torch.full((1, 5), -1, dtype=torch.long),
+    )
+    assert build_or_load_v16_feasible_teacher_cache(
+        model, dataset, path, **options,
+    ).loaded
+    with pytest.raises(ValueError, match="does not match frozen Proposal"):
+        build_or_load_v16_feasible_teacher_cache(
+            model, dataset, path,
+            mse_tolerance=1e-8, device="cpu", batch_size=1,
+            teacher_strategy="full_greedy",
+        )
+    # A changed certified label must not silently reuse the old anchor cache.
+    class _Changed(_CertifiedSynthetic):
+        def __getitem__(self, index):
+            result = super().__getitem__(index)
+            result["target_internal_knots"][0] = 0.41
+            return result
+    with pytest.raises(ValueError, match="does not match frozen Proposal"):
+        build_or_load_v16_feasible_teacher_cache(model, _Changed(), path, **options)
+
+
+def test_anchor_first_rejects_uncertified_rows(tmp_path):
+    with pytest.raises(ValueError, match="requires certified synthetic"):
+        build_or_load_v16_feasible_teacher_cache(
+            _FixedProposal(), _FixedSynthetic(), tmp_path / "uncertified.pt",
+            mse_tolerance=1e-4, device="cpu",
+            teacher_strategy="synthetic_anchor_first",
+        )
+
+
+def test_anchor_first_unmatched_anchor_falls_back_or_fails_explicitly(tmp_path):
+    class _MissingAnchorProposal(_CertifiedProposal):
+        def encode_candidates(self, points, mse_tolerance=None):
+            output = super().encode_candidates(points, mse_tolerance)
+            output["proposal_internal_knots"] = torch.tensor(
+                [0.1, 0.2, 0.3, 0.5, 0.9],
+                device=points.device, dtype=points.dtype,
+            ).expand(points.shape[0], -1)
+            return output
+
+    model = _MissingAnchorProposal()
+    dataset = _CertifiedSynthetic()
+    options = dict(
+        mse_tolerance=1e-4, device="cpu", batch_size=1,
+        teacher_strategy="synthetic_anchor_first",
+        anchor_match_tolerance=0.01,
+    )
+    fallback = build_or_load_v16_feasible_teacher_cache(
+        model, dataset, tmp_path / "fallback.pt",
+        anchor_fallback_to_greedy=True, **options,
+    )
+    assert fallback.batch.teacher_count.item() >= 0
+    assert bool(fallback.batch.teacher_threshold_satisfied.item()) == (
+        float(fallback.batch.teacher_fit_mse.item()) <= 1e-4
+    )
+    with pytest.raises(ValueError, match="cannot uniquely match"):
+        build_or_load_v16_feasible_teacher_cache(
+            model, dataset, tmp_path / "no_fallback.pt",
+            anchor_fallback_to_greedy=False, **options,
+        )
+
+
+def test_anchor_first_adds_back_until_threshold_or_all_candidates(tmp_path):
+    model = _CertifiedProposal()
+    with torch.no_grad():
+        model.candidate_head.weight.fill_(1.5)
+    # The source anchors shift by 0.015 in the proposal frame. A stringent
+    # threshold forces a fitted add-back rather than accepting source count.
+    cache = build_or_load_v16_feasible_teacher_cache(
+        model, _CertifiedSynthetic(), tmp_path / "addback.pt",
+        mse_tolerance=1e-12, device="cpu", batch_size=1,
+        teacher_strategy="synthetic_anchor_first",
+        anchor_match_tolerance=0.02,
+        anchor_fallback_to_greedy=False,
+    )
+    assert cache.batch.teacher_count.item() > 2
+    assert cache.batch.teacher_count.item() <= 5
+    assert bool(cache.batch.teacher_threshold_satisfied.item()) == (
+        float(cache.batch.teacher_fit_rms.item()) <= 1e-6
+    )
 
 
 @pytest.mark.parametrize(

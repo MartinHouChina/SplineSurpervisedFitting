@@ -94,6 +94,15 @@ def parser(*, default_checkpoint: Path | None = None,
     p.add_argument("--samples-per-knot-count", type=int, default=1)
     p.add_argument("--min-knot-count", type=int, default=4)
     p.add_argument("--max-knot-count", type=int, default=20)
+    p.add_argument(
+        "--synthetic-test-max-control-points", type=int, default=None,
+        help=(
+            "Diagnostic test-only synthetic generator maximum; does not alter "
+            "training data or checkpoint. For cubic curves, 60 control points "
+            "permits source K=56 stress cases even if training ended at K=44. "
+            "The override and the train/test range difference are recorded."
+        ),
+    )
     p.add_argument("--scan-size", type=int, default=4096)
     p.add_argument("--seed", type=int, default=20000)
     p.add_argument("--selection-seed", type=int, default=20260908)
@@ -401,6 +410,12 @@ def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict
     cases, provenance = [], []
     config = _dataset_config_from_checkpoint(checkpoint, model_config)
     if not args.skip_synthetic:
+        training_max_control_points = config.get("max_control_points")
+        test_capacity_override = getattr(
+            args, "synthetic_test_max_control_points", None,
+        )
+        if test_capacity_override is not None:
+            config["max_control_points"] = test_capacity_override
         train_config = checkpoint.get("training_config", {})
         if args.seed in (train_config.get("train_seed"), train_config.get("val_seed")):
             raise ValueError("Synthetic test seed overlaps the checkpoint train/validation seed")
@@ -443,9 +458,15 @@ def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict
                 "canonical_k": canonical_k,
                 "reference_grid": None,
             })
-        provenance.append({"dataset": "Synthetic", "config": config, "seed": args.seed,
-                           "selected_indices": indices, "selected_count": len(indices),
-                           "excluded_training_seed_ranges": excluded_ranges})
+        provenance.append({
+            "dataset": "Synthetic", "config": config, "seed": args.seed,
+            "selected_indices": indices, "selected_count": len(indices),
+            "excluded_training_seed_ranges": excluded_ranges,
+            "training_max_control_points": training_max_control_points,
+            "test_max_control_points": config.get("max_control_points"),
+            "test_only_capacity_override": test_capacity_override is not None,
+            "test_internal_knot_count_range": [args.min_knot_count, args.max_knot_count],
+        })
     if args.skip_real:
         return cases, provenance
     manifests = dict(DEFAULT_MANIFESTS)
@@ -899,6 +920,13 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
     p = parser(default_checkpoint=default_checkpoint,
                default_output_dir=default_output_dir)
     args = p.parse_args(argv)
+    if args.synthetic_test_max_control_points is not None:
+        if args.synthetic_test_max_control_points < 8:
+            p.error("--synthetic-test-max-control-points must be at least 8")
+        if args.synthetic_test_max_control_points - 4 < args.max_knot_count:
+            p.error("synthetic test generator cannot reach --max-knot-count")
+        if args.synthetic_test_max_control_points > 192:
+            p.error("synthetic test maximum control points must not exceed 192 samples")
     if not math.isfinite(args.mse_tolerance) or args.mse_tolerance <= 0:
         p.error("--mse-tolerance must be finite and positive")
     for name in (
@@ -946,7 +974,9 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
         )
     except ValueError as error:
         p.error(str(error))
-    diagnostic = diagnostic or args.force_diagnostic
+    diagnostic = diagnostic or args.force_diagnostic or (
+        args.synthetic_test_max_control_points is not None
+    )
     if diagnostic:
         print(
             "DIAGNOSTIC NOT FINAL — "

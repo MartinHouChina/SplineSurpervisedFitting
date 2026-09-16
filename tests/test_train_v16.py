@@ -39,6 +39,10 @@ def test_default_profile_keeps_ninety_percent_as_reporting_reference():
     assert args.synthetic_boundary_val_size == 32
     assert args.batch_size == 16
     assert args.feasible_teacher_batch_size == 8
+    assert args.feasible_teacher_strategy == "full_greedy"
+    assert args.feasible_teacher_anchor_match_tolerance == pytest.approx(0.02)
+    assert args.feasible_teacher_anchor_fallback_to_greedy is True
+    assert args.count_structure_coupling is False
     assert args.proposal_high_k_fraction == pytest.approx(0.5)
     assert args.proposal_high_k_min_knots == 40
     assert (args.min_control_points, args.max_control_points) == (8, 60)
@@ -127,6 +131,32 @@ def test_offline_feasible_teacher_requires_fixed_samples_and_proposal():
     bad = train_v16.parser().parse_args(profile + ["--parameter-joint-lr", "5e-5"])
     with pytest.raises(ValueError, match="fixed Proposal Teacher"):
         train_v16.validate_args(bad)
+
+
+def test_fast_pilot_teacher_and_count_coupling_flags_are_opt_in():
+    base = [
+        "--joint-supervision", "offline_feasible_teacher",
+        "--feasible-teacher-cache-dir", "outputs/teachers/unit-pilot",
+        "--synthetic-count-role", "reference_only",
+        "--no-resample-train-each-epoch",
+        "--proposal-joint-lr", "0",
+        "--parameter-joint-lr", "0",
+    ]
+    args = train_v16.parser().parse_args(base + [
+        "--feasible-teacher-strategy", "synthetic_anchor_first",
+        "--feasible-teacher-anchor-match-tolerance", "0.015",
+        "--count-structure-coupling",
+    ])
+    train_v16.validate_args(args)
+    assert args.feasible_teacher_strategy == "synthetic_anchor_first"
+    assert args.feasible_teacher_anchor_match_tolerance == pytest.approx(0.015)
+    assert args.count_structure_coupling is True
+
+    non_offline = train_v16.parser().parse_args([
+        "--feasible-teacher-strategy", "synthetic_anchor_first",
+    ])
+    with pytest.raises(ValueError, match="anchor-first strategy requires"):
+        train_v16.validate_args(non_offline)
 
 
 def test_uncertified_synthetic_ablation_disables_canonical_certificate():
@@ -1054,6 +1084,36 @@ def test_tiny_offline_feasible_teacher_joint_builds_stable_cache(tmp_path):
     assert payload["training_config"]["proposal_joint_lr"] == 0
     assert payload["training_config"]["parameter_joint_lr"] == 0
     assert "offline_teacher_numerical_pass_rate" in payload["history"][1]["train"]
+    assert (cache_dir / "train.pt").is_file()
+
+
+def test_tiny_anchor_teacher_and_coupled_count_joint_train_end_to_end(tmp_path):
+    output = tmp_path / "tiny_anchor_coupled_v16.pt"
+    cache_dir = tmp_path / "anchor_teacher"
+    command = training_command(output) + [
+        "--joint-supervision", "offline_feasible_teacher",
+        "--feasible-teacher-cache-dir", str(cache_dir),
+        "--feasible-teacher-strategy", "synthetic_anchor_first",
+        "--feasible-teacher-anchor-match-tolerance", "1",
+        "--count-structure-coupling",
+        "--synthetic-count-role", "reference_only",
+        "--no-resample-train-each-epoch",
+        "--proposal-joint-lr", "0",
+        "--parameter-joint-lr", "0",
+        "--selector-warmup-epochs", "0",
+    ]
+    assert train_v16.main(command) == 0
+    payload = torch.load(
+        tmp_path / "tiny_anchor_coupled_v16.last.pt",
+        map_location="cpu", weights_only=True,
+    )
+    assert payload["model_config"]["count_structure_coupling"] is True
+    assert payload["architecture_revision"] == (
+        "v16_count_structure_coupled_mass_topk_pilot_v1"
+    )
+    assert payload["offline_feasible_teacher"]["strategy"] == "synthetic_anchor_first"
+    assert payload["offline_feasible_teacher"]["teacher_not_globally_minimal"] is True
+    assert payload["offline_feasible_teacher"]["sample_count"] == 4
     assert (cache_dir / "train.pt").is_file()
 
 

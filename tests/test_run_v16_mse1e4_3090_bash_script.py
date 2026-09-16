@@ -28,10 +28,13 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
         "PARAMETER_JOINT_LR=0",
         "DECODER_JOINT_LR=5e-5",
         "--min-control-points 8",
-        "--max-control-points 60",
-        "--candidate-knots 72",
+        "MAX_CONTROL_POINTS=60",
+        "CANDIDATE_KNOTS=72",
+        '--max-control-points "$MAX_CONTROL_POINTS"',
+        '--candidate-knots "$CANDIDATE_KNOTS"',
         "--knot-min-span 0.01",
-        "--synthetic-boundary-val-size 32",
+        "SYNTHETIC_BOUNDARY_VAL_SIZE=32",
+        '--synthetic-boundary-val-size "$SYNTHETIC_BOUNDARY_VAL_SIZE"',
         "--proposal-high-k-fraction \"$PROPOSAL_HIGH_K_FRACTION\"",
         "--proposal-high-k-min-knots \"$PROPOSAL_HIGH_K_MIN_KNOTS\"",
         "--proposal-knot-assignment-weight 1.0",
@@ -113,6 +116,7 @@ def test_linux_runner_refuses_unknown_options_and_documents_help() -> None:
     assert "--python PATH" in source
     assert "--proposal-high-k-fraction X" in source
     assert "--proposal-high-k-min-knots N" in source
+    assert "--pilot-kc56" in source
     assert "data/processed/industrial_offsets/v1/manifest.jsonl" in source
 
 
@@ -169,3 +173,71 @@ def test_linux_runner_resume_dry_run_requires_last_and_keeps_run_name(
     assert str(checkpoint_dir / f"{run_name}.pt") in resumed.stdout
     assert "[train_fresh]" not in resumed.stdout
     assert "--init-checkpoint" not in resumed.stdout
+
+
+def test_linux_pilot_kc56_dry_run_preserves_formal_defaults_and_marks_stress_as_diagnostic() -> None:
+    bash = shutil.which("bash")
+    if bash is None or not Path(bash).as_posix().startswith("/"):
+        pytest.skip("native /bin/bash is unavailable on this platform")
+    pilot = subprocess.run(
+        [
+            bash, str(SCRIPT), "--dry-run", "--pilot-kc56", "--device", "cpu",
+            "--run-name", "pilot_kc56_dry_run",
+        ],
+        cwd=ROOT, capture_output=True, text=True, timeout=10, check=False,
+    )
+    assert pilot.returncode == 0, pilot.stdout + pilot.stderr
+    assert "PILOT profile" in pilot.stdout
+    assert "Kc=56, training source K=4..44" in pilot.stdout
+    assert "K=45..56 out-of-training-range stress cases" in pilot.stdout
+    assert "--candidate-knots 56" in pilot.stdout
+    assert "--max-control-points 48" in pilot.stdout
+    assert "--epochs 72" in pilot.stdout
+    assert "--proposal-epochs 48" in pilot.stdout
+    assert "--train-size 1500" in pilot.stdout
+    assert "--val-size 300" in pilot.stdout
+    assert "--real-val-size 30" in pilot.stdout
+    assert "--feasible-teacher-batch-size 8" in pilot.stdout
+    assert "--feasible-teacher-strategy synthetic_anchor_first" in pilot.stdout
+    assert "--feasible-teacher-anchor-match-tolerance 0.02" in pilot.stdout
+    assert "--count-structure-coupling" in pilot.stdout
+    assert "--max-knot-count 56" in pilot.stdout
+    assert "--synthetic-test-max-control-points 60" in pilot.stdout
+    assert "--force-diagnostic" in pilot.stdout
+    assert "--init-checkpoint" not in pilot.stdout
+
+    formal = subprocess.run(
+        [
+            bash, str(SCRIPT), "--dry-run", "--device", "cpu",
+            "--run-name", "formal_dry_run",
+        ],
+        cwd=ROOT, capture_output=True, text=True, timeout=10, check=False,
+    )
+    assert formal.returncode == 0, formal.stdout + formal.stderr
+    assert "Kc=72, training source K=4..56" in formal.stdout
+    assert "--candidate-knots 72" in formal.stdout
+    assert "--max-control-points 60" in formal.stdout
+    assert "--epochs 128" in formal.stdout
+    assert "--proposal-epochs 64" in formal.stdout
+    assert "--synthetic-test-max-control-points" not in formal.stdout
+    assert "--feasible-teacher-strategy synthetic_anchor_first" not in formal.stdout
+    assert "--count-structure-coupling" not in formal.stdout
+
+
+def test_linux_pilot_kc56_refuses_existing_checkpoint_artifact(tmp_path: Path) -> None:
+    bash = shutil.which("bash")
+    if bash is None or not Path(bash).as_posix().startswith("/"):
+        pytest.skip("native /bin/bash is unavailable on this platform")
+    output_root = tmp_path / "outputs"
+    checkpoint_directory = output_root / "checkpoints"
+    checkpoint_directory.mkdir(parents=True)
+    (checkpoint_directory / "pilot_collision.pt").write_bytes(b"existing user checkpoint")
+    completed = subprocess.run(
+        [
+            bash, str(SCRIPT), "--dry-run", "--pilot-kc56", "--device", "cpu",
+            "--output-root", str(output_root), "--run-name", "pilot_collision",
+        ],
+        cwd=ROOT, capture_output=True, text=True, timeout=10, check=False,
+    )
+    assert completed.returncode != 0
+    assert "refusing to overwrite existing run artifact" in completed.stderr

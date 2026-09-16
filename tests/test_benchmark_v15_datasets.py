@@ -21,6 +21,7 @@ from spline_fitting.checkpointing import (
     V16_JOINT_CHECKPOINT_QUALITY,
     V16_SIMPLIFICATION_CONTRACT,
 )
+from visualize_batch_comparison import source_knot_count_from_seed
 spec = importlib.util.spec_from_file_location("benchmark_v15", ROOT / "scripts/benchmark_v15_datasets.py")
 benchmark = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(benchmark)
@@ -156,6 +157,57 @@ def test_published_method_set_is_exactly_the_requested_six_methods():
         ]
     )
     assert raw_arguments.published_feasibility_safeguard is False
+
+
+def test_test_only_synthetic_capacity_override_selects_k45_to_56_and_records_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = benchmark.parser().parse_args(
+        [
+            "--checkpoint", "unused.pt", "--output-dir", "unused_comparison",
+            "--skip-real", "--scan-size", "1024", "--samples-per-knot-count", "1",
+            "--min-knot-count", "45", "--max-knot-count", "56",
+            "--synthetic-test-max-control-points", "60", "--force-diagnostic",
+        ]
+    )
+    checkpoint = {
+        "objective_version": benchmark.V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
+        "dataset_config": {
+            "min_control_points": 8, "max_control_points": 48,
+            "certified_minimal_source": True,
+        },
+        "training_config": {},
+    }
+
+    class FakeDataset:
+        def __init__(self, *, seed, max_control_points, min_control_points, **kwargs):
+            assert max_control_points == 60
+            self.seed = seed
+            self.config = {
+                "min_control_points": min_control_points,
+                "max_control_points": max_control_points,
+            }
+
+        def __getitem__(self, index):
+            source_k = source_knot_count_from_seed(
+                self.config, dataset_seed=self.seed, sample_index=index,
+            )
+            return {
+                "points": torch.zeros(192, 2),
+                "source_internal_knot_count": source_k,
+                "true_internal_knot_mask": torch.ones(source_k, dtype=torch.bool),
+                "source_minimality_certified": True,
+            }
+
+    monkeypatch.setattr(benchmark, "SyntheticCubicBSplineDataset", FakeDataset)
+    cases, provenance = benchmark.prepare_cases(
+        args, checkpoint, {"point_dim": 2},
+    )
+    assert [case["source_k"] for case in cases] == list(range(45, 57))
+    assert provenance[0]["training_max_control_points"] == 48
+    assert provenance[0]["test_max_control_points"] == 60
+    assert provenance[0]["test_only_capacity_override"] is True
+    assert provenance[0]["test_internal_knot_count_range"] == [45, 56]
 
 
 def test_failures_remain_in_pass_rate_denominator():

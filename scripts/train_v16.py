@@ -209,6 +209,27 @@ def parser():
         help="Offline numerical Teacher batch; independent of Joint optimizer batch size",
     )
     p.add_argument(
+        "--feasible-teacher-strategy",
+        choices=("full_greedy", "synthetic_anchor_first"),
+        default="full_greedy",
+        help=("Offline labels: legacy full greedy search or certified synthetic "
+              "knot anchors followed by threshold-safe numerical add-back"),
+    )
+    p.add_argument(
+        "--feasible-teacher-anchor-match-tolerance", type=float, default=0.02,
+        help="Maximum predicted-parameter distance for an anchor/candidate match",
+    )
+    p.add_argument(
+        "--feasible-teacher-anchor-fallback-to-greedy",
+        action=argparse.BooleanOptionalAction, default=True,
+        help="Use full greedy if certified anchors cannot be uniquely matched to candidate slots",
+    )
+    p.add_argument(
+        "--count-structure-coupling",
+        action=argparse.BooleanOptionalAction, default=False,
+        help="Let supervised count calibration update candidate scores as well as beta",
+    )
+    p.add_argument(
         "--synthetic-geometry-oracle-teacher",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -572,6 +593,16 @@ def validate_args(args):
             )
     elif args.feasible_teacher_cache_dir is not None:
         raise ValueError("--feasible-teacher-cache-dir requires offline_feasible_teacher")
+    if (
+        not math.isfinite(args.feasible_teacher_anchor_match_tolerance)
+        or args.feasible_teacher_anchor_match_tolerance <= 0
+    ):
+        raise ValueError("feasible Teacher anchor-match tolerance must be positive")
+    if (
+        args.feasible_teacher_strategy != "full_greedy"
+        and args.joint_supervision != "offline_feasible_teacher"
+    ):
+        raise ValueError("anchor-first strategy requires offline_feasible_teacher")
     if args.tolerance_factor_min > args.tolerance_factor_max:
         raise ValueError("tolerance-factor-min must be <= tolerance-factor-max")
     if not math.isfinite(args.relocation_blend) or not 0 <= args.relocation_blend <= 1:
@@ -1448,6 +1479,14 @@ def main(argv=None):
         if args.joint_supervision == "offline_feasible_teacher"
         else V16_SIMPLIFICATION_CONTRACT
     )
+    run_architecture_revision = (
+        "v16_count_structure_coupled_mass_topk_pilot_v1"
+        if args.one_shot_selection_policy == "mass_topk"
+        and args.count_structure_coupling
+        else V16_ADAPTIVE_SELECTION_REVISION
+        if args.one_shot_selection_policy == "mass_topk"
+        else "v16_adaptive_beta_threshold_ablation"
+    )
     output = args.output.resolve()
     last_path = output.with_name(output.stem + ".last.pt")
     proposal_path = output.with_name(output.stem + ".proposal.pt")
@@ -1506,7 +1545,8 @@ def main(argv=None):
         one_shot_safety_knots=args.one_shot_safety_knots,
         one_shot_coverage_bins=args.one_shot_coverage_bins,
         min_selected_knots=args.min_selected_knots,
-        initial_keep_fraction=args.initial_keep_fraction)
+        initial_keep_fraction=args.initial_keep_fraction,
+        count_structure_coupling=args.count_structure_coupling)
     history, start_epoch, best_rank, proposal_rank, proposal_ready = [], 1, None, None, False
     reporting_target_streak = 0
     resume_payload = None
@@ -1518,7 +1558,7 @@ def main(argv=None):
                 "resume objective does not match --joint-supervision; use "
                 "--init-checkpoint for proposal-only transfer"
             )
-        if resume_payload.get("architecture_revision") != V16_ADAPTIVE_SELECTION_REVISION:
+        if resume_payload.get("architecture_revision") != run_architecture_revision:
             p.error(
                 "resume checkpoint uses an older v16 selection revision; "
                 "start a new run or use --init-checkpoint for proposal transfer"
@@ -1560,6 +1600,10 @@ def main(argv=None):
             "synthetic_geometry_oracle_teacher": False,
             "oracle_teacher_extra_knots": 2,
             "initial_keep_fraction": 0.95,
+            "feasible_teacher_strategy": "full_greedy",
+            "feasible_teacher_anchor_match_tolerance": 0.02,
+            "feasible_teacher_anchor_fallback_to_greedy": True,
+            "count_structure_coupling": False,
         }
         # A checkpoint already inside the historical one-group Joint optimizer
         # must preserve that exact layout so Adam moments remain loadable.  A
@@ -1636,7 +1680,7 @@ def main(argv=None):
                 proposal_path,
                 rank_key="best_proposal_rank",
                 objective_version=run_objective_version,
-                architecture_revision=V16_ADAPTIVE_SELECTION_REVISION,
+                architecture_revision=run_architecture_revision,
                 simplification_contract=run_simplification_contract,
                 expected_output=output,
             )
@@ -1650,7 +1694,7 @@ def main(argv=None):
                     output,
                     rank_key="best_joint_rank",
                     objective_version=run_objective_version,
-                    architecture_revision=V16_ADAPTIVE_SELECTION_REVISION,
+                    architecture_revision=run_architecture_revision,
                     simplification_contract=run_simplification_contract,
                     expected_output=output,
                 )
@@ -2022,6 +2066,9 @@ def main(argv=None):
                     mse_tolerance=args.mse_tolerance,
                     device=device, batch_size=args.feasible_teacher_batch_size,
                     smoothness_weight=0.0, control_ridge=0.0,
+                    teacher_strategy=args.feasible_teacher_strategy,
+                    anchor_match_tolerance=args.feasible_teacher_anchor_match_tolerance,
+                    anchor_fallback_to_greedy=args.feasible_teacher_anchor_fallback_to_greedy,
                     progress=lambda done, total: progress(
                         done, total, "offline feasible Teacher",
                         every=args.feasible_teacher_batch_size,
@@ -2280,11 +2327,7 @@ def main(argv=None):
                 measured["qualification_dense_pass_rate"]
                 >= args.proposal_pass_target
             ),
-            architecture_revision=(
-                V16_ADAPTIVE_SELECTION_REVISION
-                if args.one_shot_selection_policy == "mass_topk"
-                else "v16_adaptive_beta_threshold_ablation"
-            ),
+            architecture_revision=run_architecture_revision,
             simplification_contract=run_simplification_contract,
             offline_feasible_teacher=(
                 dict(
@@ -2305,6 +2348,18 @@ def main(argv=None):
                     smoothness_weight=(
                         feasible_teacher_cache.batch.config.smoothness_weight
                     ),
+                    strategy=feasible_teacher_cache.teacher_strategy,
+                    anchor_match_tolerance=(
+                        args.feasible_teacher_anchor_match_tolerance
+                        if feasible_teacher_cache.teacher_strategy == "synthetic_anchor_first"
+                        else None
+                    ),
+                    anchor_fallback_to_greedy=(
+                        args.feasible_teacher_anchor_fallback_to_greedy
+                        if feasible_teacher_cache.teacher_strategy == "synthetic_anchor_first"
+                        else None
+                    ),
+                    teacher_not_globally_minimal=True,
                     greedy_not_globally_minimal=True,
                 )
                 if feasible_teacher_cache is not None else None

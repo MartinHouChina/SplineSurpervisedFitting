@@ -62,6 +62,7 @@ class V16CandidateSelectionNetwork(nn.Module):
         one_shot_coverage_bins: int = 0,
         min_selected_knots: int = 0,
         initial_keep_fraction: float = 0.95,
+        count_structure_coupling: bool = False,
         structure_mode: str = "candidate_pruning_one_shot",
     ) -> None:
         super().__init__()
@@ -90,6 +91,8 @@ class V16CandidateSelectionNetwork(nn.Module):
             )
         if not isinstance(one_shot_adaptive_threshold, bool):
             raise ValueError("one_shot_adaptive_threshold must be Boolean")
+        if not isinstance(count_structure_coupling, bool):
+            raise ValueError("count_structure_coupling must be Boolean")
         if not math.isfinite(one_shot_safety_sigma) or one_shot_safety_sigma < 0:
             raise ValueError("one_shot_safety_sigma must be finite and non-negative")
         if (
@@ -126,6 +129,7 @@ class V16CandidateSelectionNetwork(nn.Module):
             one_shot_coverage_bins=one_shot_coverage_bins,
             min_selected_knots=min_selected_knots,
             initial_keep_fraction=initial_keep_fraction,
+            count_structure_coupling=count_structure_coupling,
             structure_mode=structure_mode,
         )
         self.point_dim, self.degree, self.hidden_dim = point_dim, degree, hidden_dim
@@ -140,6 +144,7 @@ class V16CandidateSelectionNetwork(nn.Module):
         self.one_shot_coverage_bins = int(one_shot_coverage_bins)
         self.min_selected_knots = int(min_selected_knots)
         self.initial_keep_fraction = float(initial_keep_fraction)
+        self.count_structure_coupling = count_structure_coupling
         self.encoder = GeometryEncoder(point_dim, hidden_dim, encoder_layers)
         self.parameter_head = ParameterHead(
             hidden_dim, min_parameter_gap, "strict", "chord_residual",
@@ -281,18 +286,16 @@ class V16CandidateSelectionNetwork(nn.Module):
             centered_importance = raw_importance - raw_importance.mean(
                 dim=-1, keepdim=True
             )
-            # Count calibration owns the curve-level threshold head, but must
-            # not reshape the shared candidate representation (and therefore
-            # the within-curve importance ordering) through the head's input
-            # branch.  The detached features still evolve under geometry and
-            # structure supervision; only count gradients stop here.
-            threshold_context = self.adaptive_threshold_norm(
-                (
-                    tokens.mean(dim=1)
-                    + global_features
-                    + tolerance_features
-                ).detach()
+            # Historical runs isolate Count from candidate ranking.  The
+            # opt-in coupled mode lets Count train the candidate scores and
+            # shared representation while leaving the deployed forward values
+            # (and the ranking/existence view below) unchanged.
+            threshold_features = (
+                tokens.mean(dim=1) + global_features + tolerance_features
             )
+            if not self.count_structure_coupling:
+                threshold_features = threshold_features.detach()
+            threshold_context = self.adaptive_threshold_norm(threshold_features)
             adaptive_threshold = self.adaptive_threshold_head(
                 threshold_context
             ).squeeze(-1)
@@ -301,19 +304,19 @@ class V16CandidateSelectionNetwork(nn.Module):
             adaptive_threshold = raw_importance.new_zeros(raw_importance.shape[0])
         logits = centered_importance - adaptive_threshold.unsqueeze(-1)
         probabilities = logits.sigmoid()
-        # Expose two numerically identical views with deliberately disjoint
-        # gradients.  Relative existence/ranking supervision must shape only
-        # candidate importance, while the curve-level beta is calibrated only
-        # by the deployed cardinality objective.  Conversely, count
-        # calibration must not change the within-curve ordering.  Deployment
-        # continues to use ``logits``/``probabilities`` with both live paths.
+        # Structure supervision never trains beta, preventing the existence
+        # BCE from double-counting cardinality.  Historical Count calibrates
+        # beta alone; the opt-in mode also updates candidate scores and their
+        # shared representation.  Deployment always uses the same live logits.
         structure_logits = (
             centered_importance - adaptive_threshold.detach().unsqueeze(-1)
         )
         structure_probabilities = structure_logits.sigmoid()
-        count_logits = (
-            centered_importance.detach() - adaptive_threshold.unsqueeze(-1)
+        count_importance = (
+            centered_importance if self.count_structure_coupling
+            else centered_importance.detach()
         )
+        count_logits = count_importance - adaptive_threshold.unsqueeze(-1)
         count_probabilities = count_logits.sigmoid()
         # ``sqrt`` has an infinite derivative at exactly zero. Sigmoid can
         # round to literal 0/1 for a saturated beta, making the former
