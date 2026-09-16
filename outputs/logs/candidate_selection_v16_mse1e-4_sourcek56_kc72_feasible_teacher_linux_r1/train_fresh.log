@@ -1,0 +1,1134 @@
+Checking real manifests and train/val/test group separation...
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl
+  Checking groups/files: 2000/18219
+  Checking groups/files: 4000/18219
+  Checking groups/files: 6000/18219
+  Checking groups/files: 8000/18219
+  Checking groups/files: 10000/18219
+  Checking groups/files: 12000/18219
+  Checking groups/files: 14000/18219
+  Checking groups/files: 16000/18219
+  Checking groups/files: 18000/18219
+  Checking groups/files: 18219/18219
+  Ready uji_pen_characters_v2: train=9670, val=2456 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl
+  Checking groups/files: 2000/3908
+  Checking groups/files: 3908/3908
+  Ready natural_earth_10m_coastline: train=2625, val=750 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl
+  Checking groups/files: 2000/6654
+  Checking groups/files: 4000/6654
+  Checking groups/files: 6000/6654
+  Checking groups/files: 6654/6654
+  Ready usgs_tnm_contours_large_scale: train=4024, val=1210 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/industrial_offsets/v1/manifest.jsonl
+  Checking groups/files: 453/453
+  Ready industrial_model_offset_curves: train=293, val=93 (test excluded from training)
+v16 adaptive mass_topk: cuda, Kc=72 internal (full cubic knot vector at all-keep=80), MSE tolerance=0.0001; 3000 train draws, 993 validation curves; real sources=4
+Synthetic source contract: clean source-subset threshold-minimal certificate at RMS=0.01, margin=20%, audit_points=512
+Joint supervision: certified synthetic geometry labels plus one offline Hard-RMS feasible-subset Teacher on the frozen Proposal parameter/candidate frame. Source K is a reference only. The Teacher mask/count/risk supervise Selector and subset decoder; no subset search runs in Joint steps. Proposal and ParameterHead remain frozen for cache validity. Raw deployment is one-shot; MSE verification/repair is a separate numerical method.
+Checkpoint selection minimizes mean per-curve subset cost: feasible curves trade K against a bounded MSE tie-break; infeasible curves use a logarithmic MSE penalty. Aggregate pass rates and the explicit K=56 boundary audit (n=32) are reported but never gate training. Labelled Joint performs only dense, deployed-mask and labelled-mask fits per batch.
+Proposal-stage synthetic stratification: 50.0% from K>=40; the remainder uses K=4..39. Joint training always uses the original K=4..56 distribution.
+Epoch 001/128 proposal [........................] 1/47 MSE=8.891e-05 pass=64.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 001/128 proposal [=====...................] 10/47 MSE=9.227e-05 pass=54.7% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 001/128 proposal [==========..............] 20/47 MSE=8.331e-05 pass=62.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 001/128 proposal [===============.........] 30/47 MSE=8.588e-05 pass=70.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 001/128 proposal [====================....] 40/47 MSE=5.618e-05 pass=78.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 001/128 proposal [========================] 47/47 MSE=6.289e-05 pass=76.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 001 phase=proposal lr=group_0:2.0e-04 val dense=90.0% deployment=90.0% worst-source=83.8% qualification=0.0% MSE=3.219e-05 K=72.00 mass=29.48 beta=0.37 soft_cost=1.1471 selection_score=-1.1471 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.5378e-03, ordered_assignment_MAE=4.5403e-03, matched_K=34.59, R@.005/.01/.02=0.553/0.989/1.000, parameter_bias=1.132e-02
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=83.8%, deployment=83.8%, MSE=5.077e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.610, param_RMSE=2.831e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=7.302e-07, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=8.756e-06, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=5.182e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=3.543e-07, K=72.00
+Epoch 002/128 proposal [........................] 1/47 MSE=4.323e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 002/128 proposal [=====...................] 10/47 MSE=3.471e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 002/128 proposal [==========..............] 20/47 MSE=4.150e-05 pass=85.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 002/128 proposal [===============.........] 30/47 MSE=3.481e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 002/128 proposal [====================....] 40/47 MSE=4.142e-05 pass=84.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 002/128 proposal [========================] 47/47 MSE=2.698e-05 pass=92.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 002 phase=proposal lr=group_0:2.0e-04 val dense=93.1% deployment=93.1% worst-source=88.7% qualification=0.0% MSE=2.192e-05 K=72.00 mass=29.12 beta=0.39 soft_cost=1.0913 selection_score=-1.0913 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.9087e-03, ordered_assignment_MAE=3.9095e-03, matched_K=34.59, R@.005/.01/.02=0.658/0.999/1.000, parameter_bias=1.024e-02
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=88.7%, deployment=88.7%, MSE=3.286e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.612, param_RMSE=2.512e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.341e-06, K=72.00
+  natural_earth_10m_coastline: dense=99.0%, deployment=99.0%, MSE=1.029e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=6.774e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.190e-06, K=72.00
+Epoch 003/128 proposal [........................] 1/47 MSE=4.016e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 003/128 proposal [=====...................] 10/47 MSE=3.648e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 003/128 proposal [==========..............] 20/47 MSE=3.774e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 003/128 proposal [===============.........] 30/47 MSE=2.778e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 003/128 proposal [====================....] 40/47 MSE=3.517e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 003/128 proposal [========================] 47/47 MSE=2.936e-05 pass=91.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 003 phase=proposal lr=group_0:2.0e-04 val dense=93.1% deployment=93.1% worst-source=88.7% qualification=0.0% MSE=2.116e-05 K=72.00 mass=29.11 beta=0.39 soft_cost=1.0876 selection_score=-1.0876 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7806e-03, ordered_assignment_MAE=3.7811e-03, matched_K=34.59, R@.005/.01/.02=0.681/0.999/1.000, parameter_bias=1.023e-02
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=88.7%, deployment=88.7%, MSE=3.180e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.612, param_RMSE=2.487e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.245e-06, K=72.00
+  natural_earth_10m_coastline: dense=99.0%, deployment=99.0%, MSE=1.000e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=6.225e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=9.825e-07, K=72.00
+Epoch 004/128 proposal [........................] 1/47 MSE=3.960e-05 pass=84.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 004/128 proposal [=====...................] 10/47 MSE=3.409e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 004/128 proposal [==========..............] 20/47 MSE=3.634e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 004/128 proposal [===============.........] 30/47 MSE=3.448e-05 pass=85.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 004/128 proposal [====================....] 40/47 MSE=3.472e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 004/128 proposal [========================] 47/47 MSE=3.175e-05 pass=91.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 004 phase=proposal lr=group_0:2.0e-04 val dense=93.5% deployment=93.5% worst-source=89.3% qualification=0.0% MSE=2.071e-05 K=72.00 mass=29.12 beta=0.39 soft_cost=1.0813 selection_score=-1.0813 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7573e-03, ordered_assignment_MAE=3.7579e-03, matched_K=34.59, R@.005/.01/.02=0.687/1.000/1.000, parameter_bias=1.017e-02
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=89.3%, deployment=89.3%, MSE=3.044e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.402e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.843e-06, K=72.00
+  natural_earth_10m_coastline: dense=99.0%, deployment=99.0%, MSE=1.131e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.643e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.348e-06, K=72.00
+Epoch 005/128 proposal [........................] 1/47 MSE=3.565e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 005/128 proposal [=====...................] 10/47 MSE=3.939e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 005/128 proposal [==========..............] 20/47 MSE=2.769e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 005/128 proposal [===============.........] 30/47 MSE=2.987e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 005/128 proposal [====================....] 40/47 MSE=2.900e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 005/128 proposal [========================] 47/47 MSE=3.611e-05 pass=85.7% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 005 phase=proposal lr=group_0:2.0e-04 val dense=93.6% deployment=93.6% worst-source=89.5% qualification=0.0% MSE=1.992e-05 K=72.00 mass=29.14 beta=0.39 soft_cost=1.0783 selection_score=-1.0783 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7528e-03, ordered_assignment_MAE=3.7533e-03, matched_K=34.59, R@.005/.01/.02=0.688/1.000/1.000, parameter_bias=1.013e-02
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=89.5%, deployment=89.5%, MSE=2.913e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.379e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.791e-06, K=72.00
+  natural_earth_10m_coastline: dense=99.0%, deployment=99.0%, MSE=1.151e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.432e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.370e-06, K=72.00
+Epoch 006/128 proposal [........................] 1/47 MSE=3.527e-05 pass=85.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 006/128 proposal [=====...................] 10/47 MSE=3.359e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 006/128 proposal [==========..............] 20/47 MSE=3.113e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 006/128 proposal [===============.........] 30/47 MSE=3.212e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 006/128 proposal [====================....] 40/47 MSE=4.114e-05 pass=84.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 006/128 proposal [========================] 47/47 MSE=3.472e-05 pass=92.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 006 phase=proposal lr=group_0:2.0e-04 val dense=93.8% deployment=93.8% worst-source=89.8% qualification=0.0% MSE=2.006e-05 K=72.00 mass=29.09 beta=0.39 soft_cost=1.0758 selection_score=-1.0758 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7590e-03, ordered_assignment_MAE=3.7595e-03, matched_K=34.59, R@.005/.01/.02=0.688/0.999/1.000, parameter_bias=1.006e-02
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=89.8%, deployment=89.8%, MSE=2.938e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.349e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.715e-06, K=72.00
+  natural_earth_10m_coastline: dense=99.0%, deployment=99.0%, MSE=1.166e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.462e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.182e-06, K=72.00
+Epoch 007/128 proposal [........................] 1/47 MSE=2.483e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 007/128 proposal [=====...................] 10/47 MSE=4.223e-05 pass=84.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 007/128 proposal [==========..............] 20/47 MSE=3.471e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 007/128 proposal [===============.........] 30/47 MSE=3.830e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 007/128 proposal [====================....] 40/47 MSE=3.841e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 007/128 proposal [========================] 47/47 MSE=2.647e-05 pass=92.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 007 phase=proposal lr=group_0:2.0e-04 val dense=93.5% deployment=93.5% worst-source=89.5% qualification=0.0% MSE=2.040e-05 K=72.00 mass=29.04 beta=0.39 soft_cost=1.0797 selection_score=-1.0797 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7584e-03, ordered_assignment_MAE=3.7589e-03, matched_K=34.59, R@.005/.01/.02=0.688/0.999/1.000, parameter_bias=9.970e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=89.5%, deployment=89.5%, MSE=2.963e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.347e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.901e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.244e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.133e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.443e-06, K=72.00
+Epoch 008/128 proposal [........................] 1/47 MSE=2.086e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 008/128 proposal [=====...................] 10/47 MSE=3.024e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 008/128 proposal [==========..............] 20/47 MSE=3.510e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 008/128 proposal [===============.........] 30/47 MSE=3.285e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 008/128 proposal [====================....] 40/47 MSE=3.597e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 008/128 proposal [========================] 47/47 MSE=3.437e-05 pass=85.7% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 008 phase=proposal lr=group_0:2.0e-04 val dense=93.8% deployment=93.8% worst-source=90.0% qualification=0.0% MSE=1.991e-05 K=72.00 mass=29.01 beta=0.39 soft_cost=1.0756 selection_score=-1.0756 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7638e-03, ordered_assignment_MAE=3.7643e-03, matched_K=34.59, R@.005/.01/.02=0.687/0.999/1.000, parameter_bias=9.932e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.0%, deployment=90.0%, MSE=2.918e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.331e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.558e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.172e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.243e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.231e-06, K=72.00
+Epoch 009/128 proposal [........................] 1/47 MSE=2.433e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 009/128 proposal [=====...................] 10/47 MSE=3.167e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 009/128 proposal [==========..............] 20/47 MSE=2.548e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 009/128 proposal [===============.........] 30/47 MSE=3.098e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 009/128 proposal [====================....] 40/47 MSE=2.954e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 009/128 proposal [========================] 47/47 MSE=2.643e-05 pass=96.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 009 phase=proposal lr=group_0:2.0e-04 val dense=93.7% deployment=93.7% worst-source=89.8% qualification=0.0% MSE=1.973e-05 K=72.00 mass=28.94 beta=0.40 soft_cost=1.0759 selection_score=-1.0759 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7631e-03, ordered_assignment_MAE=3.7635e-03, matched_K=34.59, R@.005/.01/.02=0.686/0.999/1.000, parameter_bias=9.858e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=89.8%, deployment=89.8%, MSE=2.853e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.292e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.826e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.254e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.034e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.470e-06, K=72.00
+Epoch 010/128 proposal [........................] 1/47 MSE=3.761e-05 pass=85.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 010/128 proposal [=====...................] 10/47 MSE=3.025e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 010/128 proposal [==========..............] 20/47 MSE=2.944e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 010/128 proposal [===============.........] 30/47 MSE=3.135e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 010/128 proposal [====================....] 40/47 MSE=3.169e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 010/128 proposal [========================] 47/47 MSE=3.734e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 010 phase=proposal lr=group_0:2.0e-04 val dense=93.8% deployment=93.8% worst-source=90.0% qualification=0.0% MSE=2.026e-05 K=72.00 mass=28.93 beta=0.40 soft_cost=1.0756 selection_score=-1.0756 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7556e-03, ordered_assignment_MAE=3.7561e-03, matched_K=34.59, R@.005/.01/.02=0.688/0.999/1.000, parameter_bias=9.824e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.0%, deployment=90.0%, MSE=2.915e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.273e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.017e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.323e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.553e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.585e-06, K=72.00
+Epoch 011/128 proposal [........................] 1/47 MSE=3.303e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 011/128 proposal [=====...................] 10/47 MSE=3.254e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 011/128 proposal [==========..............] 20/47 MSE=3.415e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 011/128 proposal [===============.........] 30/47 MSE=3.297e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 011/128 proposal [====================....] 40/47 MSE=2.897e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 011/128 proposal [========================] 47/47 MSE=3.039e-05 pass=89.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 011 phase=proposal lr=group_0:2.0e-04 val dense=93.8% deployment=93.8% worst-source=90.0% qualification=0.0% MSE=2.028e-05 K=72.00 mass=29.02 beta=0.39 soft_cost=1.0765 selection_score=-1.0765 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7521e-03, ordered_assignment_MAE=3.7525e-03, matched_K=34.59, R@.005/.01/.02=0.688/0.999/1.000, parameter_bias=9.747e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.0%, deployment=90.0%, MSE=2.928e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.612, param_RMSE=2.282e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.010e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.291e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.345e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.469e-06, K=72.00
+Epoch 012/128 proposal [........................] 1/47 MSE=3.539e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 012/128 proposal [=====...................] 10/47 MSE=3.168e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 012/128 proposal [==========..............] 20/47 MSE=3.450e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 012/128 proposal [===============.........] 30/47 MSE=2.116e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 012/128 proposal [====================....] 40/47 MSE=2.642e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 012/128 proposal [========================] 47/47 MSE=3.527e-05 pass=92.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 012 phase=proposal lr=group_0:2.0e-04 val dense=93.9% deployment=93.9% worst-source=90.2% qualification=0.0% MSE=1.980e-05 K=72.00 mass=29.09 beta=0.39 soft_cost=1.0743 selection_score=-1.0743 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7529e-03, ordered_assignment_MAE=3.7533e-03, matched_K=34.59, R@.005/.01/.02=0.689/0.999/1.000, parameter_bias=9.672e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.2%, deployment=90.2%, MSE=2.902e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.276e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.362e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.196e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.129e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.131e-06, K=72.00
+Epoch 013/128 proposal [........................] 1/47 MSE=3.588e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 013/128 proposal [=====...................] 10/47 MSE=2.802e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 013/128 proposal [==========..............] 20/47 MSE=2.450e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 013/128 proposal [===============.........] 30/47 MSE=2.984e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 013/128 proposal [====================....] 40/47 MSE=3.637e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 013/128 proposal [========================] 47/47 MSE=3.091e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 013 phase=proposal lr=group_0:2.0e-04 val dense=94.1% deployment=94.1% worst-source=90.5% qualification=0.0% MSE=1.964e-05 K=72.00 mass=28.98 beta=0.40 soft_cost=1.0715 selection_score=-1.0715 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7563e-03, ordered_assignment_MAE=3.7569e-03, matched_K=34.59, R@.005/.01/.02=0.689/0.999/1.000, parameter_bias=9.634e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.5%, deployment=90.5%, MSE=2.859e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.260e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.554e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.216e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.576e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.214e-06, K=72.00
+Epoch 014/128 proposal [........................] 1/47 MSE=3.342e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 014/128 proposal [=====...................] 10/47 MSE=3.621e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 014/128 proposal [==========..............] 20/47 MSE=3.418e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 014/128 proposal [===============.........] 30/47 MSE=2.597e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 014/128 proposal [====================....] 40/47 MSE=2.998e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 014/128 proposal [========================] 47/47 MSE=2.610e-05 pass=91.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 014 phase=proposal lr=group_0:2.0e-04 val dense=94.1% deployment=94.1% worst-source=90.5% qualification=0.0% MSE=1.964e-05 K=72.00 mass=29.04 beta=0.39 soft_cost=1.0712 selection_score=-1.0712 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7557e-03, ordered_assignment_MAE=3.7561e-03, matched_K=34.59, R@.005/.01/.02=0.689/0.999/1.000, parameter_bias=9.531e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.5%, deployment=90.5%, MSE=2.836e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.242e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.667e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.272e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.078e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.503e-06, K=72.00
+Epoch 015/128 proposal [........................] 1/47 MSE=2.600e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 015/128 proposal [=====...................] 10/47 MSE=3.181e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 015/128 proposal [==========..............] 20/47 MSE=2.950e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 015/128 proposal [===============.........] 30/47 MSE=3.523e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 015/128 proposal [====================....] 40/47 MSE=2.881e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 015/128 proposal [========================] 47/47 MSE=3.126e-05 pass=91.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 015 phase=proposal lr=group_0:2.0e-04 val dense=94.1% deployment=94.1% worst-source=90.5% qualification=0.0% MSE=1.971e-05 K=72.00 mass=28.98 beta=0.40 soft_cost=1.0714 selection_score=-1.0714 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7526e-03, ordered_assignment_MAE=3.7529e-03, matched_K=34.59, R@.005/.01/.02=0.688/0.999/1.000, parameter_bias=9.478e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.5%, deployment=90.5%, MSE=2.846e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.231e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.566e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.273e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.054e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.727e-06, K=72.00
+Epoch 016/128 proposal [........................] 1/47 MSE=2.957e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 016/128 proposal [=====...................] 10/47 MSE=2.801e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 016/128 proposal [==========..............] 20/47 MSE=3.390e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 016/128 proposal [===============.........] 30/47 MSE=3.386e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 016/128 proposal [====================....] 40/47 MSE=3.495e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 016/128 proposal [========================] 47/47 MSE=3.443e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 016 phase=proposal lr=group_0:2.0e-04 val dense=94.2% deployment=94.2% worst-source=90.7% qualification=0.0% MSE=2.021e-05 K=72.00 mass=29.09 beta=0.39 soft_cost=1.0702 selection_score=-1.0702 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7496e-03, ordered_assignment_MAE=3.7500e-03, matched_K=34.59, R@.005/.01/.02=0.689/1.000/1.000, parameter_bias=9.429e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.7%, deployment=90.7%, MSE=2.923e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.199e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.605e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.294e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.163e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.741e-06, K=72.00
+Epoch 017/128 proposal [........................] 1/47 MSE=3.930e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 017/128 proposal [=====...................] 10/47 MSE=2.613e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 017/128 proposal [==========..............] 20/47 MSE=2.803e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 017/128 proposal [===============.........] 30/47 MSE=2.795e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 017/128 proposal [====================....] 40/47 MSE=2.804e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 017/128 proposal [========================] 47/47 MSE=2.994e-05 pass=94.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 017 phase=proposal lr=group_0:2.0e-04 val dense=94.1% deployment=94.1% worst-source=90.5% qualification=0.0% MSE=1.964e-05 K=72.00 mass=29.14 beta=0.39 soft_cost=1.0713 selection_score=-1.0713 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7538e-03, ordered_assignment_MAE=3.7541e-03, matched_K=34.59, R@.005/.01/.02=0.689/1.000/1.000, parameter_bias=9.347e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.5%, deployment=90.5%, MSE=2.844e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.184e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.244e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.266e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.890e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.681e-06, K=72.00
+Epoch 018/128 proposal [........................] 1/47 MSE=3.362e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 018/128 proposal [=====...................] 10/47 MSE=2.480e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 018/128 proposal [==========..............] 20/47 MSE=3.136e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 018/128 proposal [===============.........] 30/47 MSE=3.916e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 018/128 proposal [====================....] 40/47 MSE=3.895e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 018/128 proposal [========================] 47/47 MSE=2.378e-05 pass=94.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 018 phase=proposal lr=group_0:2.0e-04 val dense=94.1% deployment=94.1% worst-source=90.5% qualification=0.0% MSE=1.997e-05 K=72.00 mass=29.16 beta=0.38 soft_cost=1.0714 selection_score=-1.0714 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7441e-03, ordered_assignment_MAE=3.7445e-03, matched_K=34.59, R@.005/.01/.02=0.690/0.999/1.000, parameter_bias=9.342e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.5%, deployment=90.5%, MSE=2.900e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.176e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.334e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.278e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.790e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.540e-06, K=72.00
+Epoch 019/128 proposal [........................] 1/47 MSE=3.144e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 019/128 proposal [=====...................] 10/47 MSE=2.798e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 019/128 proposal [==========..............] 20/47 MSE=2.832e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 019/128 proposal [===============.........] 30/47 MSE=2.113e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 019/128 proposal [====================....] 40/47 MSE=2.294e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 019/128 proposal [========================] 47/47 MSE=2.806e-05 pass=92.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 019 phase=proposal lr=group_0:2.0e-04 val dense=93.7% deployment=93.7% worst-source=89.8% qualification=0.0% MSE=2.013e-05 K=72.00 mass=29.27 beta=0.38 soft_cost=1.0758 selection_score=-1.0758 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7535e-03, ordered_assignment_MAE=3.7540e-03, matched_K=34.59, R@.005/.01/.02=0.688/1.000/1.000, parameter_bias=9.254e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=89.8%, deployment=89.8%, MSE=2.895e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.163e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.521e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.324e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.523e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.046e-06, K=72.00
+Epoch 020/128 proposal [........................] 1/47 MSE=2.966e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 020/128 proposal [=====...................] 10/47 MSE=2.859e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 020/128 proposal [==========..............] 20/47 MSE=3.005e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 020/128 proposal [===============.........] 30/47 MSE=2.979e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 020/128 proposal [====================....] 40/47 MSE=2.888e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 020/128 proposal [========================] 47/47 MSE=2.762e-05 pass=96.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 020 phase=proposal lr=group_0:2.0e-04 val dense=94.0% deployment=94.0% worst-source=90.3% qualification=0.0% MSE=2.006e-05 K=72.00 mass=29.27 beta=0.38 soft_cost=1.0745 selection_score=-1.0745 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7431e-03, ordered_assignment_MAE=3.7435e-03, matched_K=34.59, R@.005/.01/.02=0.689/1.000/1.000, parameter_bias=9.208e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.3%, deployment=90.3%, MSE=2.920e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.189e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.141e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.257e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.780e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.609e-06, K=72.00
+Epoch 021/128 proposal [........................] 1/47 MSE=3.002e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 021/128 proposal [=====...................] 10/47 MSE=2.585e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 021/128 proposal [==========..............] 20/47 MSE=3.054e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 021/128 proposal [===============.........] 30/47 MSE=2.851e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 021/128 proposal [====================....] 40/47 MSE=2.068e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 021/128 proposal [========================] 47/47 MSE=2.796e-05 pass=94.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 021 phase=proposal lr=group_0:2.0e-04 val dense=93.9% deployment=93.9% worst-source=90.2% qualification=0.0% MSE=1.993e-05 K=72.00 mass=29.26 beta=0.38 soft_cost=1.0732 selection_score=-1.0732 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7494e-03, ordered_assignment_MAE=3.7498e-03, matched_K=34.59, R@.005/.01/.02=0.688/0.999/1.000, parameter_bias=9.168e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.2%, deployment=90.2%, MSE=2.862e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.161e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.529e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.328e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.569e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.922e-06, K=72.00
+Epoch 022/128 proposal [........................] 1/47 MSE=3.177e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 022/128 proposal [=====...................] 10/47 MSE=3.531e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 022/128 proposal [==========..............] 20/47 MSE=3.152e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 022/128 proposal [===============.........] 30/47 MSE=3.196e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 022/128 proposal [====================....] 40/47 MSE=3.618e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 022/128 proposal [========================] 47/47 MSE=2.863e-05 pass=92.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 022 phase=proposal lr=group_0:2.0e-04 val dense=94.1% deployment=94.1% worst-source=90.5% qualification=0.0% MSE=1.981e-05 K=72.00 mass=29.27 beta=0.38 soft_cost=1.0725 selection_score=-1.0725 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7422e-03, ordered_assignment_MAE=3.7425e-03, matched_K=34.59, R@.005/.01/.02=0.689/0.999/1.000, parameter_bias=9.105e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.5%, deployment=90.5%, MSE=2.873e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.156e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.133e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.270e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.855e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.754e-06, K=72.00
+Epoch 023/128 proposal [........................] 1/47 MSE=2.643e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 023/128 proposal [=====...................] 10/47 MSE=3.131e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 023/128 proposal [==========..............] 20/47 MSE=3.113e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 023/128 proposal [===============.........] 30/47 MSE=3.442e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 023/128 proposal [====================....] 40/47 MSE=3.627e-05 pass=85.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 023/128 proposal [========================] 47/47 MSE=2.760e-05 pass=92.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 023 phase=proposal lr=group_0:2.0e-04 val dense=94.0% deployment=94.0% worst-source=90.5% qualification=0.0% MSE=2.023e-05 K=72.00 mass=29.22 beta=0.38 soft_cost=1.0753 selection_score=-1.0753 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7357e-03, ordered_assignment_MAE=3.7359e-03, matched_K=34.59, R@.005/.01/.02=0.692/1.000/1.000, parameter_bias=9.061e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.5%, deployment=90.5%, MSE=2.932e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.157e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.151e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.294e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.176e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.838e-06, K=72.00
+Epoch 024/128 proposal [........................] 1/47 MSE=2.916e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 024/128 proposal [=====...................] 10/47 MSE=3.688e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 024/128 proposal [==========..............] 20/47 MSE=4.179e-05 pass=85.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 024/128 proposal [===============.........] 30/47 MSE=3.057e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 024/128 proposal [====================....] 40/47 MSE=2.926e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 024/128 proposal [========================] 47/47 MSE=2.819e-05 pass=94.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 024 phase=proposal lr=group_0:2.0e-04 val dense=94.0% deployment=94.0% worst-source=90.5% qualification=0.0% MSE=1.958e-05 K=72.00 mass=29.27 beta=0.38 soft_cost=1.0733 selection_score=-1.0733 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7327e-03, ordered_assignment_MAE=3.7330e-03, matched_K=34.59, R@.005/.01/.02=0.692/0.999/1.000, parameter_bias=8.998e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.5%, deployment=90.5%, MSE=2.855e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.172e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.949e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.204e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.544e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.730e-06, K=72.00
+Epoch 025/128 proposal [........................] 1/47 MSE=3.294e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 025/128 proposal [=====...................] 10/47 MSE=3.406e-05 pass=89.1% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 025/128 proposal [==========..............] 20/47 MSE=2.904e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 025/128 proposal [===============.........] 30/47 MSE=3.718e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 025/128 proposal [====================....] 40/47 MSE=2.467e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 025/128 proposal [========================] 47/47 MSE=2.302e-05 pass=96.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 025 phase=proposal lr=group_0:2.0e-04 val dense=93.7% deployment=93.7% worst-source=89.8% qualification=2.2% MSE=2.040e-05 K=72.00 mass=29.41 beta=0.37 soft_cost=1.0794 selection_score=-1.0794 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=2.2%
+  Proposal train geometry: coverage_MAE=3.7331e-03, ordered_assignment_MAE=3.7335e-03, matched_K=34.59, R@.005/.01/.02=0.691/1.000/1.000, parameter_bias=8.986e-03
+  Synthetic K=56: n=46, dense=2.2%, deployment=2.2%
+  Synthetic: dense=89.8%, deployment=89.8%, MSE=2.961e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.149e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.094e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.276e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.378e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.844e-06, K=72.00
+Epoch 026/128 proposal [........................] 1/47 MSE=2.739e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 026/128 proposal [=====...................] 10/47 MSE=2.088e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 026/128 proposal [==========..............] 20/47 MSE=3.127e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 026/128 proposal [===============.........] 30/47 MSE=3.262e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 026/128 proposal [====================....] 40/47 MSE=3.135e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 026/128 proposal [========================] 47/47 MSE=2.426e-05 pass=96.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 026 phase=proposal lr=group_0:2.0e-04 val dense=93.8% deployment=93.8% worst-source=90.2% qualification=0.0% MSE=2.019e-05 K=72.00 mass=29.39 beta=0.37 soft_cost=1.0777 selection_score=-1.0777 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7387e-03, ordered_assignment_MAE=3.7390e-03, matched_K=34.59, R@.005/.01/.02=0.690/1.000/1.000, parameter_bias=8.921e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.2%, deployment=90.2%, MSE=2.922e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.612, param_RMSE=2.144e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.150e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.277e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.264e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.119e-06, K=72.00
+Epoch 027/128 proposal [........................] 1/47 MSE=2.949e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 027/128 proposal [=====...................] 10/47 MSE=3.227e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 027/128 proposal [==========..............] 20/47 MSE=2.463e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 027/128 proposal [===============.........] 30/47 MSE=2.934e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 027/128 proposal [====================....] 40/47 MSE=2.580e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 027/128 proposal [========================] 47/47 MSE=2.750e-05 pass=92.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 027 phase=proposal lr=group_0:2.0e-04 val dense=93.8% deployment=93.8% worst-source=90.0% qualification=0.0% MSE=1.996e-05 K=72.00 mass=29.33 beta=0.37 soft_cost=1.0762 selection_score=-1.0762 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7335e-03, ordered_assignment_MAE=3.7338e-03, matched_K=34.59, R@.005/.01/.02=0.692/0.999/1.000, parameter_bias=8.905e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.0%, deployment=90.0%, MSE=2.883e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.123e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.103e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.280e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.377e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.103e-06, K=72.00
+Epoch 028/128 proposal [........................] 1/47 MSE=2.529e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 028/128 proposal [=====...................] 10/47 MSE=2.968e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 028/128 proposal [==========..............] 20/47 MSE=2.678e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 028/128 proposal [===============.........] 30/47 MSE=2.714e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 028/128 proposal [====================....] 40/47 MSE=2.769e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 028/128 proposal [========================] 47/47 MSE=3.180e-05 pass=98.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 028 phase=proposal lr=group_0:2.0e-04 val dense=93.9% deployment=93.9% worst-source=90.3% qualification=0.0% MSE=1.989e-05 K=72.00 mass=29.34 beta=0.37 soft_cost=1.0749 selection_score=-1.0749 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7346e-03, ordered_assignment_MAE=3.7350e-03, matched_K=34.59, R@.005/.01/.02=0.690/0.999/1.000, parameter_bias=8.805e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.3%, deployment=90.3%, MSE=2.875e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.118e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.083e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.266e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.278e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.098e-06, K=72.00
+Epoch 029/128 proposal [........................] 1/47 MSE=2.271e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 029/128 proposal [=====...................] 10/47 MSE=2.302e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 029/128 proposal [==========..............] 20/47 MSE=2.536e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 029/128 proposal [===============.........] 30/47 MSE=3.182e-05 pass=90.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 029/128 proposal [====================....] 40/47 MSE=3.436e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 029/128 proposal [========================] 47/47 MSE=3.622e-05 pass=94.6% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 029 phase=proposal lr=group_0:2.0e-04 val dense=93.8% deployment=93.8% worst-source=90.0% qualification=0.0% MSE=2.009e-05 K=72.00 mass=29.36 beta=0.37 soft_cost=1.0772 selection_score=-1.0772 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7300e-03, ordered_assignment_MAE=3.7304e-03, matched_K=34.59, R@.005/.01/.02=0.692/1.000/1.000, parameter_bias=8.790e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.0%, deployment=90.0%, MSE=2.925e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.158e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.978e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.231e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.906e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=1.927e-06, K=72.00
+Epoch 030/128 proposal [........................] 1/47 MSE=2.981e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 030/128 proposal [=====...................] 10/47 MSE=2.891e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 030/128 proposal [==========..............] 20/47 MSE=2.764e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 030/128 proposal [===============.........] 30/47 MSE=2.633e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 030/128 proposal [====================....] 40/47 MSE=3.251e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 030/128 proposal [========================] 47/47 MSE=1.955e-05 pass=98.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 030 phase=proposal lr=group_0:2.0e-04 val dense=93.7% deployment=93.7% worst-source=90.0% qualification=0.0% MSE=2.084e-05 K=72.00 mass=29.44 beta=0.37 soft_cost=1.0816 selection_score=-1.0816 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7248e-03, ordered_assignment_MAE=3.7250e-03, matched_K=34.59, R@.005/.01/.02=0.692/1.000/1.000, parameter_bias=8.757e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.0%, deployment=90.0%, MSE=3.049e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.130e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.910e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.234e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.912e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.004e-06, K=72.00
+Epoch 031/128 proposal [........................] 1/47 MSE=2.983e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 031/128 proposal [=====...................] 10/47 MSE=2.522e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 031/128 proposal [==========..............] 20/47 MSE=3.042e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 031/128 proposal [===============.........] 30/47 MSE=2.929e-05 pass=93.8% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 031/128 proposal [====================....] 40/47 MSE=2.412e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 031/128 proposal [========================] 47/47 MSE=4.094e-05 pass=87.5% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 031 phase=proposal lr=group_0:2.0e-04 val dense=93.6% deployment=93.6% worst-source=89.8% qualification=0.0% MSE=2.045e-05 K=72.00 mass=29.44 beta=0.37 soft_cost=1.0798 selection_score=-1.0798 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7171e-03, ordered_assignment_MAE=3.7174e-03, matched_K=34.59, R@.005/.01/.02=0.694/0.999/1.000, parameter_bias=8.678e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=89.8%, deployment=89.8%, MSE=2.989e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.114e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.751e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.217e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.949e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.011e-06, K=72.00
+Epoch 032/128 proposal [........................] 1/47 MSE=2.217e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 032/128 proposal [=====...................] 10/47 MSE=3.139e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 032/128 proposal [==========..............] 20/47 MSE=2.538e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 032/128 proposal [===============.........] 30/47 MSE=2.391e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 032/128 proposal [====================....] 40/47 MSE=2.282e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 032/128 proposal [========================] 47/47 MSE=2.590e-05 pass=98.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 032 phase=proposal lr=group_0:2.0e-04 val dense=93.8% deployment=93.8% worst-source=90.2% qualification=0.0% MSE=2.037e-05 K=72.00 mass=29.58 beta=0.36 soft_cost=1.0762 selection_score=-1.0762 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7144e-03, ordered_assignment_MAE=3.7147e-03, matched_K=34.59, R@.005/.01/.02=0.693/0.999/1.000, parameter_bias=8.634e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.2%, deployment=90.2%, MSE=2.917e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.072e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.316e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.327e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=9.140e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.701e-06, K=72.00
+Epoch 033/128 proposal [........................] 1/47 MSE=3.191e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 033/128 proposal [=====...................] 10/47 MSE=2.876e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 033/128 proposal [==========..............] 20/47 MSE=2.738e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 033/128 proposal [===============.........] 30/47 MSE=2.247e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 033/128 proposal [====================....] 40/47 MSE=2.316e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 033/128 proposal [========================] 47/47 MSE=3.017e-05 pass=96.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 033 phase=proposal lr=group_0:2.0e-04 val dense=93.9% deployment=93.9% worst-source=90.3% qualification=0.0% MSE=1.974e-05 K=72.00 mass=29.51 beta=0.36 soft_cost=1.0747 selection_score=-1.0747 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.7047e-03, ordered_assignment_MAE=3.7049e-03, matched_K=34.59, R@.005/.01/.02=0.696/0.999/1.000, parameter_bias=8.627e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.3%, deployment=90.3%, MSE=2.862e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.111e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.826e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.222e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.080e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.320e-06, K=72.00
+Epoch 034/128 proposal [........................] 1/47 MSE=3.228e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 034/128 proposal [=====...................] 10/47 MSE=2.930e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 034/128 proposal [==========..............] 20/47 MSE=3.157e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 034/128 proposal [===============.........] 30/47 MSE=2.719e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 034/128 proposal [====================....] 40/47 MSE=3.059e-05 pass=95.3% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 034/128 proposal [========================] 47/47 MSE=2.732e-05 pass=92.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 034 phase=proposal lr=group_0:2.0e-04 val dense=93.6% deployment=93.6% worst-source=89.8% qualification=0.0% MSE=2.028e-05 K=72.00 mass=29.48 beta=0.37 soft_cost=1.0790 selection_score=-1.0790 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.6995e-03, ordered_assignment_MAE=3.6998e-03, matched_K=34.59, R@.005/.01/.02=0.698/1.000/1.000, parameter_bias=8.579e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=89.8%, deployment=89.8%, MSE=2.903e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.083e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.230e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.310e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=9.148e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.980e-06, K=72.00
+Epoch 035/128 proposal [........................] 1/47 MSE=2.617e-05 pass=92.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 035/128 proposal [=====...................] 10/47 MSE=2.580e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 035/128 proposal [==========..............] 20/47 MSE=2.944e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 035/128 proposal [===============.........] 30/47 MSE=2.341e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 035/128 proposal [====================....] 40/47 MSE=2.574e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 035/128 proposal [========================] 47/47 MSE=2.418e-05 pass=98.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 035 phase=proposal lr=group_0:2.0e-04 val dense=93.2% deployment=93.2% worst-source=89.2% qualification=0.0% MSE=2.018e-05 K=72.00 mass=29.47 beta=0.37 soft_cost=1.0820 selection_score=-1.0820 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.6887e-03, ordered_assignment_MAE=3.6890e-03, matched_K=34.59, R@.005/.01/.02=0.700/0.999/1.000, parameter_bias=8.532e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=89.2%, deployment=89.2%, MSE=2.920e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.612, param_RMSE=2.077e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.941e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.237e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.429e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.607e-06, K=72.00
+Epoch 036/128 proposal [........................] 1/47 MSE=2.939e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 036/128 proposal [=====...................] 10/47 MSE=2.778e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 036/128 proposal [==========..............] 20/47 MSE=2.778e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 036/128 proposal [===============.........] 30/47 MSE=2.101e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 036/128 proposal [====================....] 40/47 MSE=2.657e-05 pass=96.9% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 036/128 proposal [========================] 47/47 MSE=2.551e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 036 phase=proposal lr=group_0:2.0e-04 val dense=93.9% deployment=93.9% worst-source=90.2% qualification=0.0% MSE=1.994e-05 K=72.00 mass=29.38 beta=0.37 soft_cost=1.0741 selection_score=-1.0741 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.6786e-03, ordered_assignment_MAE=3.6788e-03, matched_K=34.59, R@.005/.01/.02=0.701/1.000/1.000, parameter_bias=8.437e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.2%, deployment=90.2%, MSE=2.860e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.075e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.084e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.306e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.895e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.546e-06, K=72.00
+Epoch 037/128 proposal [........................] 1/47 MSE=1.757e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 037/128 proposal [=====...................] 10/47 MSE=2.647e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 037/128 proposal [==========..............] 20/47 MSE=2.204e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 037/128 proposal [===============.........] 30/47 MSE=2.357e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 037/128 proposal [====================....] 40/47 MSE=2.343e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 037/128 proposal [========================] 47/47 MSE=2.883e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 037 phase=proposal lr=group_0:2.0e-04 val dense=94.0% deployment=94.0% worst-source=90.5% qualification=0.0% MSE=2.008e-05 K=72.00 mass=29.62 beta=0.36 soft_cost=1.0715 selection_score=-1.0715 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.6627e-03, ordered_assignment_MAE=3.6630e-03, matched_K=34.59, R@.005/.01/.02=0.705/0.999/1.000, parameter_bias=8.434e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.5%, deployment=90.5%, MSE=2.849e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.053e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.259e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.375e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=9.690e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.948e-06, K=72.00
+Epoch 038/128 proposal [........................] 1/47 MSE=2.900e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 038/128 proposal [=====...................] 10/47 MSE=2.731e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 038/128 proposal [==========..............] 20/47 MSE=1.953e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 038/128 proposal [===============.........] 30/47 MSE=2.183e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 038/128 proposal [====================....] 40/47 MSE=2.598e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 038/128 proposal [========================] 47/47 MSE=2.820e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 038 phase=proposal lr=group_0:2.0e-04 val dense=93.8% deployment=93.8% worst-source=90.2% qualification=0.0% MSE=1.992e-05 K=72.00 mass=29.49 beta=0.37 soft_cost=1.0746 selection_score=-1.0746 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.6378e-03, ordered_assignment_MAE=3.6380e-03, matched_K=34.59, R@.005/.01/.02=0.709/0.999/1.000, parameter_bias=8.377e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.2%, deployment=90.2%, MSE=2.834e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.083e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.216e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.326e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=9.522e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.950e-06, K=72.00
+Epoch 039/128 proposal [........................] 1/47 MSE=3.069e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 039/128 proposal [=====...................] 10/47 MSE=2.139e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 039/128 proposal [==========..............] 20/47 MSE=3.053e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 039/128 proposal [===============.........] 30/47 MSE=3.006e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 039/128 proposal [====================....] 40/47 MSE=2.414e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 039/128 proposal [========================] 47/47 MSE=2.306e-05 pass=98.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 039 phase=proposal lr=group_0:2.0e-04 val dense=94.1% deployment=94.1% worst-source=90.5% qualification=2.2% MSE=1.999e-05 K=72.00 mass=29.47 beta=0.37 soft_cost=1.0719 selection_score=-1.0719 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=2.2%
+  Proposal train geometry: coverage_MAE=3.6265e-03, ordered_assignment_MAE=3.6267e-03, matched_K=34.59, R@.005/.01/.02=0.713/0.999/1.000, parameter_bias=8.275e-03
+  Synthetic K=56: n=46, dense=2.2%, deployment=2.2%
+  Synthetic: dense=90.5%, deployment=90.5%, MSE=2.874e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.109e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.965e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.280e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=8.844e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=2.671e-06, K=72.00
+Epoch 040/128 proposal [........................] 1/47 MSE=2.656e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 040/128 proposal [=====...................] 10/47 MSE=1.831e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 040/128 proposal [==========..............] 20/47 MSE=2.151e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 040/128 proposal [===============.........] 30/47 MSE=2.289e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 040/128 proposal [====================....] 40/47 MSE=2.624e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 040/128 proposal [========================] 47/47 MSE=2.137e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 040 phase=proposal lr=group_0:2.0e-04 val dense=94.2% deployment=94.2% worst-source=90.8% qualification=0.0% MSE=1.966e-05 K=72.00 mass=29.55 beta=0.36 soft_cost=1.0679 selection_score=-1.0679 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=3.5882e-03, ordered_assignment_MAE=3.5884e-03, matched_K=34.59, R@.005/.01/.02=0.720/0.999/1.000, parameter_bias=8.184e-03
+  Synthetic K=56: n=46, dense=0.0%, deployment=0.0%
+  Synthetic: dense=90.8%, deployment=90.8%, MSE=2.767e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.074e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.351e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.401e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=9.898e-06, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=3.149e-06, K=72.00
+Epoch 041/128 proposal [........................] 1/47 MSE=2.755e-05 pass=98.4% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 041/128 proposal [=====...................] 10/47 MSE=2.664e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 041/128 proposal [==========..............] 20/47 MSE=2.180e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 041/128 proposal [===============.........] 30/47 MSE=2.095e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 041/128 proposal [====================....] 40/47 MSE=2.315e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 041/128 proposal [========================] 47/47 MSE=1.820e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 041 phase=proposal lr=group_0:2.0e-04 val dense=94.3% deployment=94.3% worst-source=91.0% qualification=4.3% MSE=1.904e-05 K=72.00 mass=29.58 beta=0.36 soft_cost=1.0630 selection_score=-1.0630 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=4.3%
+  Proposal train geometry: coverage_MAE=3.5477e-03, ordered_assignment_MAE=3.5479e-03, matched_K=34.59, R@.005/.01/.02=0.728/0.999/1.000, parameter_bias=8.104e-03
+  Synthetic K=56: n=46, dense=4.3%, deployment=4.3%
+  Synthetic: dense=91.0%, deployment=91.0%, MSE=2.648e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.053e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.479e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.413e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.039e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=3.507e-06, K=72.00
+Epoch 042/128 proposal [........................] 1/47 MSE=2.096e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 042/128 proposal [=====...................] 10/47 MSE=2.576e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 042/128 proposal [==========..............] 20/47 MSE=2.940e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 042/128 proposal [===============.........] 30/47 MSE=2.391e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 042/128 proposal [====================....] 40/47 MSE=2.402e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 042/128 proposal [========================] 47/47 MSE=2.322e-05 pass=98.2% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 042 phase=proposal lr=group_0:2.0e-04 val dense=94.8% deployment=94.8% worst-source=91.8% qualification=6.5% MSE=1.805e-05 K=72.00 mass=29.61 beta=0.36 soft_cost=1.0538 selection_score=-1.0538 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=6.5%
+  Proposal train geometry: coverage_MAE=3.5058e-03, ordered_assignment_MAE=3.5060e-03, matched_K=34.59, R@.005/.01/.02=0.737/0.999/1.000, parameter_bias=8.070e-03
+  Synthetic K=56: n=46, dense=6.5%, deployment=6.5%
+  Synthetic: dense=91.8%, deployment=91.8%, MSE=2.479e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.043e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.536e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.405e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.039e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=3.750e-06, K=72.00
+Epoch 043/128 proposal [........................] 1/47 MSE=2.452e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 043/128 proposal [=====...................] 10/47 MSE=2.362e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 043/128 proposal [==========..............] 20/47 MSE=2.135e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 043/128 proposal [===============.........] 30/47 MSE=2.166e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 043/128 proposal [====================....] 40/47 MSE=1.903e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 043/128 proposal [========================] 47/47 MSE=1.845e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 043 phase=proposal lr=group_0:2.0e-04 val dense=95.8% deployment=95.8% worst-source=93.5% qualification=19.6% MSE=1.760e-05 K=72.00 mass=29.71 beta=0.35 soft_cost=1.0408 selection_score=-1.0408 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=19.6%
+  Proposal train geometry: coverage_MAE=3.4637e-03, ordered_assignment_MAE=3.4639e-03, matched_K=34.59, R@.005/.01/.02=0.746/0.999/1.000, parameter_bias=7.946e-03
+  Synthetic K=56: n=46, dense=19.6%, deployment=19.6%
+  Synthetic: dense=93.5%, deployment=93.5%, MSE=2.383e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.024e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.656e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.460e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.089e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=3.859e-06, K=72.00
+Epoch 044/128 proposal [........................] 1/47 MSE=2.525e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 044/128 proposal [=====...................] 10/47 MSE=1.974e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 044/128 proposal [==========..............] 20/47 MSE=1.925e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 044/128 proposal [===============.........] 30/47 MSE=2.104e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 044/128 proposal [====================....] 40/47 MSE=1.839e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 044/128 proposal [========================] 47/47 MSE=2.281e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 044 phase=proposal lr=group_0:2.0e-04 val dense=96.2% deployment=96.2% worst-source=94.2% qualification=23.9% MSE=1.727e-05 K=72.00 mass=29.59 beta=0.36 soft_cost=1.0350 selection_score=-1.0350 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=23.9%
+  Proposal train geometry: coverage_MAE=3.4163e-03, ordered_assignment_MAE=3.4164e-03, matched_K=34.59, R@.005/.01/.02=0.754/0.999/1.000, parameter_bias=7.912e-03
+  Synthetic K=56: n=46, dense=23.9%, deployment=23.9%
+  Synthetic: dense=94.2%, deployment=94.2%, MSE=2.313e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.069e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.763e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.516e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.125e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=3.794e-06, K=72.00
+Epoch 045/128 proposal [........................] 1/47 MSE=1.667e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 045/128 proposal [=====...................] 10/47 MSE=1.760e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 045/128 proposal [==========..............] 20/47 MSE=2.010e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 045/128 proposal [===============.........] 30/47 MSE=2.197e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 045/128 proposal [====================....] 40/47 MSE=1.668e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 045/128 proposal [========================] 47/47 MSE=2.562e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 045 phase=proposal lr=group_0:2.0e-04 val dense=96.1% deployment=96.1% worst-source=94.0% qualification=21.7% MSE=1.743e-05 K=72.00 mass=29.74 beta=0.35 soft_cost=1.0365 selection_score=-1.0365 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=21.7%
+  Proposal train geometry: coverage_MAE=3.3761e-03, ordered_assignment_MAE=3.3763e-03, matched_K=34.59, R@.005/.01/.02=0.762/0.999/1.000, parameter_bias=7.858e-03
+  Synthetic K=56: n=46, dense=21.7%, deployment=21.7%
+  Synthetic: dense=94.0%, deployment=94.0%, MSE=2.325e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.010e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.921e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.528e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.150e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=4.139e-06, K=72.00
+Epoch 046/128 proposal [........................] 1/47 MSE=2.033e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 046/128 proposal [=====...................] 10/47 MSE=1.976e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 046/128 proposal [==========..............] 20/47 MSE=2.122e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 046/128 proposal [===============.........] 30/47 MSE=1.416e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 046/128 proposal [====================....] 40/47 MSE=1.812e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 046/128 proposal [========================] 47/47 MSE=1.721e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 046 phase=proposal lr=group_0:2.0e-04 val dense=96.5% deployment=96.5% worst-source=94.5% qualification=30.4% MSE=1.682e-05 K=72.00 mass=29.63 beta=0.36 soft_cost=1.0305 selection_score=-1.0305 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=30.4%
+  Proposal train geometry: coverage_MAE=3.3398e-03, ordered_assignment_MAE=3.3399e-03, matched_K=34.59, R@.005/.01/.02=0.769/0.999/1.000, parameter_bias=7.751e-03
+  Synthetic K=56: n=46, dense=30.4%, deployment=30.4%
+  Synthetic: dense=94.5%, deployment=94.5%, MSE=2.228e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.055e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.917e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.526e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.146e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=4.004e-06, K=72.00
+Epoch 047/128 proposal [........................] 1/47 MSE=1.840e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 047/128 proposal [=====...................] 10/47 MSE=1.518e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 047/128 proposal [==========..............] 20/47 MSE=1.768e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 047/128 proposal [===============.........] 30/47 MSE=1.890e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 047/128 proposal [====================....] 40/47 MSE=1.705e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 047/128 proposal [========================] 47/47 MSE=1.463e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 047 phase=proposal lr=group_0:2.0e-04 val dense=96.9% deployment=96.9% worst-source=95.2% qualification=39.1% MSE=1.650e-05 K=72.00 mass=29.65 beta=0.36 soft_cost=1.0260 selection_score=-1.0260 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=39.1%
+  Proposal train geometry: coverage_MAE=3.2901e-03, ordered_assignment_MAE=3.2902e-03, matched_K=34.59, R@.005/.01/.02=0.780/0.999/1.000, parameter_bias=7.700e-03
+  Synthetic K=56: n=46, dense=39.1%, deployment=39.1%
+  Synthetic: dense=95.2%, deployment=95.2%, MSE=2.169e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.032e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.950e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.535e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.127e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=4.459e-06, K=72.00
+Epoch 048/128 proposal [........................] 1/47 MSE=1.943e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 048/128 proposal [=====...................] 10/47 MSE=1.949e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 048/128 proposal [==========..............] 20/47 MSE=1.360e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 048/128 proposal [===============.........] 30/47 MSE=1.799e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 048/128 proposal [====================....] 40/47 MSE=1.993e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 048/128 proposal [========================] 47/47 MSE=1.792e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 048 phase=proposal lr=group_0:2.0e-04 val dense=97.3% deployment=97.3% worst-source=95.8% qualification=47.8% MSE=1.591e-05 K=72.00 mass=29.62 beta=0.36 soft_cost=1.0199 selection_score=-1.0199 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=47.8%
+  Proposal train geometry: coverage_MAE=3.2639e-03, ordered_assignment_MAE=3.2640e-03, matched_K=34.59, R@.005/.01/.02=0.784/0.999/1.000, parameter_bias=7.651e-03
+  Synthetic K=56: n=46, dense=47.8%, deployment=47.8%
+  Synthetic: dense=95.8%, deployment=95.8%, MSE=2.078e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.028e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.808e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.483e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.124e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=4.726e-06, K=72.00
+Epoch 049/128 proposal [........................] 1/47 MSE=1.706e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 049/128 proposal [=====...................] 10/47 MSE=2.345e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 049/128 proposal [==========..............] 20/47 MSE=1.467e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 049/128 proposal [===============.........] 30/47 MSE=1.685e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 049/128 proposal [====================....] 40/47 MSE=1.812e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 049/128 proposal [========================] 47/47 MSE=1.803e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 049 phase=proposal lr=group_0:2.0e-04 val dense=97.4% deployment=97.4% worst-source=96.0% qualification=50.0% MSE=1.573e-05 K=72.00 mass=29.66 beta=0.36 soft_cost=1.0183 selection_score=-1.0183 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=50.0%
+  Proposal train geometry: coverage_MAE=3.2309e-03, ordered_assignment_MAE=3.2309e-03, matched_K=34.59, R@.005/.01/.02=0.790/0.999/1.000, parameter_bias=7.570e-03
+  Synthetic K=56: n=46, dense=50.0%, deployment=50.0%
+  Synthetic: dense=96.0%, deployment=96.0%, MSE=2.028e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.046e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.061e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.561e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.161e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=4.591e-06, K=72.00
+Epoch 050/128 proposal [........................] 1/47 MSE=1.577e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 050/128 proposal [=====...................] 10/47 MSE=1.620e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 050/128 proposal [==========..............] 20/47 MSE=1.552e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 050/128 proposal [===============.........] 30/47 MSE=1.838e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 050/128 proposal [====================....] 40/47 MSE=1.605e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 050/128 proposal [========================] 47/47 MSE=1.877e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 050 phase=proposal lr=group_0:2.0e-04 val dense=97.9% deployment=97.9% worst-source=96.8% qualification=58.7% MSE=1.553e-05 K=72.00 mass=29.68 beta=0.36 soft_cost=1.0123 selection_score=-1.0123 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=58.7%
+  Proposal train geometry: coverage_MAE=3.2050e-03, ordered_assignment_MAE=3.2051e-03, matched_K=34.59, R@.005/.01/.02=0.794/0.999/1.000, parameter_bias=7.538e-03
+  Synthetic K=56: n=46, dense=58.7%, deployment=58.7%
+  Synthetic: dense=96.8%, deployment=96.8%, MSE=2.014e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.091e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.807e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.509e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.131e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=4.482e-06, K=72.00
+Epoch 051/128 proposal [........................] 1/47 MSE=1.411e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 051/128 proposal [=====...................] 10/47 MSE=1.646e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 051/128 proposal [==========..............] 20/47 MSE=1.703e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 051/128 proposal [===============.........] 30/47 MSE=1.737e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 051/128 proposal [====================....] 40/47 MSE=1.336e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 051/128 proposal [========================] 47/47 MSE=1.518e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 051 phase=proposal lr=group_0:2.0e-04 val dense=97.3% deployment=97.3% worst-source=96.0% qualification=50.0% MSE=1.581e-05 K=72.00 mass=29.67 beta=0.36 soft_cost=1.0194 selection_score=-1.0194 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=50.0%
+  Proposal train geometry: coverage_MAE=3.1698e-03, ordered_assignment_MAE=3.1699e-03, matched_K=34.59, R@.005/.01/.02=0.799/0.999/1.000, parameter_bias=7.534e-03
+  Synthetic K=56: n=46, dense=50.0%, deployment=50.0%
+  Synthetic: dense=96.0%, deployment=96.0%, MSE=2.018e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.008e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.228e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.598e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.196e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=5.081e-06, K=72.00
+Epoch 052/128 proposal [........................] 1/47 MSE=1.444e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 052/128 proposal [=====...................] 10/47 MSE=1.928e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 052/128 proposal [==========..............] 20/47 MSE=1.638e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 052/128 proposal [===============.........] 30/47 MSE=1.673e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 052/128 proposal [====================....] 40/47 MSE=1.400e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 052/128 proposal [========================] 47/47 MSE=1.389e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 052 phase=proposal lr=group_0:2.0e-04 val dense=98.1% deployment=98.1% worst-source=97.2% qualification=65.2% MSE=1.516e-05 K=72.00 mass=29.70 beta=0.35 soft_cost=1.0097 selection_score=-1.0097 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=65.2%
+  Proposal train geometry: coverage_MAE=3.1639e-03, ordered_assignment_MAE=3.1639e-03, matched_K=34.59, R@.005/.01/.02=0.802/0.999/1.000, parameter_bias=7.437e-03
+  Synthetic K=56: n=46, dense=65.2%, deployment=65.2%
+  Synthetic: dense=97.2%, deployment=97.2%, MSE=1.924e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.043e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.145e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.548e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.152e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=5.267e-06, K=72.00
+Epoch 053/128 proposal [........................] 1/47 MSE=1.900e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 053/128 proposal [=====...................] 10/47 MSE=1.631e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 053/128 proposal [==========..............] 20/47 MSE=1.415e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 053/128 proposal [===============.........] 30/47 MSE=1.499e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 053/128 proposal [====================....] 40/47 MSE=1.601e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 053/128 proposal [========================] 47/47 MSE=1.686e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 053 phase=proposal lr=group_0:2.0e-04 val dense=97.5% deployment=97.5% worst-source=96.3% qualification=52.2% MSE=1.531e-05 K=72.00 mass=29.74 beta=0.35 soft_cost=1.0166 selection_score=-1.0166 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=52.2%
+  Proposal train geometry: coverage_MAE=3.1294e-03, ordered_assignment_MAE=3.1295e-03, matched_K=34.59, R@.005/.01/.02=0.805/0.999/1.000, parameter_bias=7.392e-03
+  Synthetic K=56: n=46, dense=52.2%, deployment=52.2%
+  Synthetic: dense=96.3%, deployment=96.3%, MSE=1.939e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.000e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.181e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.546e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.162e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=5.853e-06, K=72.00
+Epoch 054/128 proposal [........................] 1/47 MSE=1.408e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 054/128 proposal [=====...................] 10/47 MSE=1.706e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 054/128 proposal [==========..............] 20/47 MSE=1.476e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 054/128 proposal [===============.........] 30/47 MSE=1.960e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 054/128 proposal [====================....] 40/47 MSE=1.499e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 054/128 proposal [========================] 47/47 MSE=1.580e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 054 phase=proposal lr=group_0:2.0e-04 val dense=98.1% deployment=98.1% worst-source=97.0% qualification=65.2% MSE=1.499e-05 K=72.00 mass=29.71 beta=0.35 soft_cost=1.0102 selection_score=-1.0102 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=65.2%
+  Proposal train geometry: coverage_MAE=3.1171e-03, ordered_assignment_MAE=3.1171e-03, matched_K=34.59, R@.005/.01/.02=0.809/0.999/1.000, parameter_bias=7.360e-03
+  Synthetic K=56: n=46, dense=65.2%, deployment=65.2%
+  Synthetic: dense=97.3%, deployment=97.3%, MSE=1.890e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.017e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.928e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.539e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.172e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=5.820e-06, K=72.00
+Epoch 055/128 proposal [........................] 1/47 MSE=1.604e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 055/128 proposal [=====...................] 10/47 MSE=1.585e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 055/128 proposal [==========..............] 20/47 MSE=1.535e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 055/128 proposal [===============.........] 30/47 MSE=1.589e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 055/128 proposal [====================....] 40/47 MSE=1.341e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 055/128 proposal [========================] 47/47 MSE=1.125e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 055 phase=proposal lr=group_0:2.0e-04 val dense=98.5% deployment=98.5% worst-source=97.0% qualification=73.9% MSE=1.490e-05 K=72.00 mass=29.77 beta=0.35 soft_cost=1.0050 selection_score=-1.0050 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=73.9%
+  Proposal train geometry: coverage_MAE=3.0919e-03, ordered_assignment_MAE=3.0919e-03, matched_K=34.59, R@.005/.01/.02=0.812/0.999/1.000, parameter_bias=7.320e-03
+  Synthetic K=56: n=46, dense=73.9%, deployment=73.9%
+  Synthetic: dense=98.0%, deployment=98.0%, MSE=1.859e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.063e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.228e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.595e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.209e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=5.539e-06, K=72.00
+Epoch 056/128 proposal [........................] 1/47 MSE=1.101e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 056/128 proposal [=====...................] 10/47 MSE=1.264e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 056/128 proposal [==========..............] 20/47 MSE=1.523e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 056/128 proposal [===============.........] 30/47 MSE=1.406e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 056/128 proposal [====================....] 40/47 MSE=1.453e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 056/128 proposal [========================] 47/47 MSE=1.347e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 056 phase=proposal lr=group_0:2.0e-04 val dense=98.2% deployment=98.2% worst-source=97.3% qualification=67.4% MSE=1.444e-05 K=72.00 mass=29.69 beta=0.35 soft_cost=1.0078 selection_score=-1.0078 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=67.4%
+  Proposal train geometry: coverage_MAE=3.0649e-03, ordered_assignment_MAE=3.0650e-03, matched_K=34.59, R@.005/.01/.02=0.818/0.999/1.000, parameter_bias=7.288e-03
+  Synthetic K=56: n=46, dense=67.4%, deployment=67.4%
+  Synthetic: dense=97.3%, deployment=97.3%, MSE=1.829e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.053e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.707e-06, K=72.00
+  natural_earth_10m_coastline: dense=98.0%, deployment=98.0%, MSE=1.465e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.117e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=5.449e-06, K=72.00
+Epoch 057/128 proposal [........................] 1/47 MSE=1.412e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 057/128 proposal [=====...................] 10/47 MSE=1.623e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 057/128 proposal [==========..............] 20/47 MSE=1.541e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 057/128 proposal [===============.........] 30/47 MSE=1.444e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 057/128 proposal [====================....] 40/47 MSE=1.432e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 057/128 proposal [========================] 47/47 MSE=1.693e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 057 phase=proposal lr=group_0:2.0e-04 val dense=98.1% deployment=98.1% worst-source=97.0% qualification=65.2% MSE=1.507e-05 K=72.00 mass=29.73 beta=0.35 soft_cost=1.0100 selection_score=-1.0100 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=65.2%
+  Proposal train geometry: coverage_MAE=3.0455e-03, ordered_assignment_MAE=3.0455e-03, matched_K=34.59, R@.005/.01/.02=0.821/0.999/1.000, parameter_bias=7.244e-03
+  Synthetic K=56: n=46, dense=65.2%, deployment=65.2%
+  Synthetic: dense=97.3%, deployment=97.3%, MSE=1.870e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.093e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.376e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.635e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.239e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=5.742e-06, K=72.00
+Epoch 058/128 proposal [........................] 1/47 MSE=1.409e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 058/128 proposal [=====...................] 10/47 MSE=1.449e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 058/128 proposal [==========..............] 20/47 MSE=1.326e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 058/128 proposal [===============.........] 30/47 MSE=1.612e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 058/128 proposal [====================....] 40/47 MSE=1.300e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 058/128 proposal [========================] 47/47 MSE=1.519e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 058 phase=proposal lr=group_0:2.0e-04 val dense=98.2% deployment=98.2% worst-source=97.0% qualification=69.6% MSE=1.457e-05 K=72.00 mass=29.76 beta=0.35 soft_cost=1.0084 selection_score=-1.0084 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=69.6%
+  Proposal train geometry: coverage_MAE=3.0239e-03, ordered_assignment_MAE=3.0239e-03, matched_K=34.59, R@.005/.01/.02=0.823/0.999/1.000, parameter_bias=7.226e-03
+  Synthetic K=56: n=46, dense=69.6%, deployment=69.6%
+  Synthetic: dense=97.5%, deployment=97.5%, MSE=1.803e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.010e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.206e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.557e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.175e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=6.451e-06, K=72.00
+Epoch 059/128 proposal [........................] 1/47 MSE=1.642e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 059/128 proposal [=====...................] 10/47 MSE=1.378e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 059/128 proposal [==========..............] 20/47 MSE=1.582e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 059/128 proposal [===============.........] 30/47 MSE=1.528e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 059/128 proposal [====================....] 40/47 MSE=1.358e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 059/128 proposal [========================] 47/47 MSE=1.389e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 059 phase=proposal lr=group_0:2.0e-04 val dense=98.8% deployment=98.8% worst-source=97.0% qualification=80.4% MSE=1.471e-05 K=72.00 mass=29.75 beta=0.35 soft_cost=1.0020 selection_score=-1.0020 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=80.4%
+  Proposal train geometry: coverage_MAE=3.0027e-03, ordered_assignment_MAE=3.0027e-03, matched_K=34.59, R@.005/.01/.02=0.828/0.999/1.000, parameter_bias=7.185e-03
+  Synthetic K=56: n=46, dense=80.4%, deployment=80.4%
+  Synthetic: dense=98.5%, deployment=98.5%, MSE=1.806e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.610, param_RMSE=2.000e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.475e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.622e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.223e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=6.253e-06, K=72.00
+Epoch 060/128 proposal [........................] 1/47 MSE=1.738e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 060/128 proposal [=====...................] 10/47 MSE=1.310e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 060/128 proposal [==========..............] 20/47 MSE=1.321e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 060/128 proposal [===============.........] 30/47 MSE=1.486e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 060/128 proposal [====================....] 40/47 MSE=1.583e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 060/128 proposal [========================] 47/47 MSE=1.544e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 060 phase=proposal lr=group_0:2.0e-04 val dense=98.1% deployment=98.1% worst-source=97.0% qualification=67.4% MSE=1.426e-05 K=72.00 mass=29.72 beta=0.35 soft_cost=1.0094 selection_score=-1.0094 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=67.4%
+  Proposal train geometry: coverage_MAE=2.9849e-03, ordered_assignment_MAE=2.9849e-03, matched_K=34.59, R@.005/.01/.02=0.831/0.999/1.000, parameter_bias=7.105e-03
+  Synthetic K=56: n=46, dense=67.4%, deployment=67.4%
+  Synthetic: dense=97.3%, deployment=97.3%, MSE=1.784e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.021e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.837e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.487e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.125e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=6.013e-06, K=72.00
+Epoch 061/128 proposal [........................] 1/47 MSE=1.422e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 061/128 proposal [=====...................] 10/47 MSE=1.288e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 061/128 proposal [==========..............] 20/47 MSE=1.388e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 061/128 proposal [===============.........] 30/47 MSE=1.589e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 061/128 proposal [====================....] 40/47 MSE=1.465e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 061/128 proposal [========================] 47/47 MSE=1.432e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 061 phase=proposal lr=group_0:2.0e-04 val dense=98.4% deployment=98.4% worst-source=97.0% qualification=73.9% MSE=1.401e-05 K=72.00 mass=29.83 beta=0.35 soft_cost=1.0054 selection_score=-1.0054 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=73.9%
+  Proposal train geometry: coverage_MAE=2.9634e-03, ordered_assignment_MAE=2.9634e-03, matched_K=34.59, R@.005/.01/.02=0.834/0.999/1.000, parameter_bias=7.116e-03
+  Synthetic K=56: n=46, dense=73.9%, deployment=73.9%
+  Synthetic: dense=97.8%, deployment=97.8%, MSE=1.724e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.032e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.103e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.508e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.168e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=6.226e-06, K=72.00
+Epoch 062/128 proposal [........................] 1/47 MSE=1.217e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 062/128 proposal [=====...................] 10/47 MSE=1.284e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 062/128 proposal [==========..............] 20/47 MSE=1.449e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 062/128 proposal [===============.........] 30/47 MSE=1.217e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 062/128 proposal [====================....] 40/47 MSE=1.193e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 062/128 proposal [========================] 47/47 MSE=1.500e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 062 phase=proposal lr=group_0:2.0e-04 val dense=98.6% deployment=98.6% worst-source=97.0% qualification=78.3% MSE=1.406e-05 K=72.00 mass=29.74 beta=0.35 soft_cost=1.0037 selection_score=-1.0037 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=78.3%
+  Proposal train geometry: coverage_MAE=2.9542e-03, ordered_assignment_MAE=2.9542e-03, matched_K=34.59, R@.005/.01/.02=0.836/0.999/1.000, parameter_bias=7.073e-03
+  Synthetic K=56: n=46, dense=78.3%, deployment=78.3%
+  Synthetic: dense=98.2%, deployment=98.2%, MSE=1.753e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.077e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.851e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.471e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.134e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=5.930e-06, K=72.00
+Epoch 063/128 proposal [........................] 1/47 MSE=1.310e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 063/128 proposal [=====...................] 10/47 MSE=1.263e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 063/128 proposal [==========..............] 20/47 MSE=1.204e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 063/128 proposal [===============.........] 30/47 MSE=1.460e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 063/128 proposal [====================....] 40/47 MSE=1.365e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 063/128 proposal [========================] 47/47 MSE=1.203e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 063 phase=proposal lr=group_0:2.0e-04 val dense=98.7% deployment=98.7% worst-source=97.0% qualification=78.3% MSE=1.418e-05 K=72.00 mass=29.75 beta=0.35 soft_cost=1.0034 selection_score=-1.0034 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=78.3%
+  Proposal train geometry: coverage_MAE=2.9262e-03, ordered_assignment_MAE=2.9262e-03, matched_K=34.59, R@.005/.01/.02=0.840/0.999/1.000, parameter_bias=7.035e-03
+  Synthetic K=56: n=46, dense=78.3%, deployment=78.3%
+  Synthetic: dense=98.3%, deployment=98.3%, MSE=1.770e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.081e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=2.828e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.483e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.136e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=6.056e-06, K=72.00
+Epoch 064/128 proposal [........................] 1/47 MSE=1.280e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 064/128 proposal [=====...................] 10/47 MSE=1.525e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 064/128 proposal [==========..............] 20/47 MSE=1.234e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 064/128 proposal [===============.........] 30/47 MSE=1.122e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 064/128 proposal [====================....] 40/47 MSE=1.270e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 064/128 proposal [========================] 47/47 MSE=1.312e-05 pass=100.0% K=72.0 denseK=72.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 064 phase=proposal lr=group_0:2.0e-04 val dense=98.6% deployment=98.6% worst-source=97.0% qualification=76.1% MSE=1.389e-05 K=72.00 mass=29.80 beta=0.35 soft_cost=1.0040 selection_score=-1.0040 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 pass_reference_only=76.1%
+  Proposal train geometry: coverage_MAE=2.9105e-03, ordered_assignment_MAE=2.9105e-03, matched_K=34.59, R@.005/.01/.02=0.843/0.999/1.000, parameter_bias=6.976e-03
+  Synthetic K=56: n=46, dense=76.1%, deployment=76.1%
+  Synthetic: dense=98.2%, deployment=98.2%, MSE=1.701e-05, K=72.00, targetK=31.74, count_MAE=40.26, bias=+40.26, knot_F1@0.01=0.611, param_RMSE=2.034e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.037e-06, K=72.00
+  natural_earth_10m_coastline: dense=97.0%, deployment=97.0%, MSE=1.535e-05, K=72.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=1.174e-05, K=72.00
+  industrial_model_offset_curves: dense=100.0%, deployment=100.0%, MSE=6.166e-06, K=72.00
+Proposal schedule complete; loading the validation-ranked best dense initializer from epoch 59 (worst-source pass=97.0%, reporting reference=90.0%). Joint training starts unconditionally in selector_warmup.
+Building/checking fixed-Proposal feasible-subset labels at /home/feng/HouCode/SplineSurpervisedFitting/outputs/teachers/candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1/train.pt; this is offline work, not Joint per-step search.
+Traceback (most recent call last):
+  File "/home/feng/HouCode/SplineSurpervisedFitting/scripts/train_v16.py", line 2560, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/feng/HouCode/SplineSurpervisedFitting/scripts/train_v16.py", line 2014, in main
+    feasible_teacher_cache = build_or_load_v16_feasible_teacher_cache(
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/feng/anaconda3/lib/python3.11/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/feng/HouCode/SplineSurpervisedFitting/src/spline_fitting/training/v16_feasible_teacher.py", line 224, in build_or_load_v16_feasible_teacher_cache
+    raise ValueError(
+ValueError: proposal model is on cuda:0, expected cuda

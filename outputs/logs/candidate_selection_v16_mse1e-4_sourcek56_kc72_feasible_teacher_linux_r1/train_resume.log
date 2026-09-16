@@ -1,0 +1,65 @@
+Checking real manifests and train/val/test group separation...
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl
+  Checking groups/files: 2000/18219
+  Checking groups/files: 4000/18219
+  Checking groups/files: 6000/18219
+  Checking groups/files: 8000/18219
+  Checking groups/files: 10000/18219
+  Checking groups/files: 12000/18219
+  Checking groups/files: 14000/18219
+  Checking groups/files: 16000/18219
+  Checking groups/files: 18000/18219
+  Checking groups/files: 18219/18219
+  Ready uji_pen_characters_v2: train=9670, val=2456 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl
+  Checking groups/files: 2000/3908
+  Checking groups/files: 3908/3908
+  Ready natural_earth_10m_coastline: train=2625, val=750 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl
+  Checking groups/files: 2000/6654
+  Checking groups/files: 4000/6654
+  Checking groups/files: 6000/6654
+  Checking groups/files: 6654/6654
+  Ready usgs_tnm_contours_large_scale: train=4024, val=1210 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/industrial_offsets/v1/manifest.jsonl
+  Checking groups/files: 453/453
+  Ready industrial_model_offset_curves: train=293, val=93 (test excluded from training)
+v16 adaptive mass_topk: cuda, Kc=72 internal (full cubic knot vector at all-keep=80), MSE tolerance=0.0001; 3000 train draws, 993 validation curves; real sources=4
+Synthetic source contract: clean source-subset threshold-minimal certificate at RMS=0.01, margin=20%, audit_points=512
+Joint supervision: certified synthetic geometry labels plus one offline Hard-RMS feasible-subset Teacher on the frozen Proposal parameter/candidate frame. Source K is a reference only. The Teacher mask/count/risk supervise Selector and subset decoder; no subset search runs in Joint steps. Proposal and ParameterHead remain frozen for cache validity. Raw deployment is one-shot; MSE verification/repair is a separate numerical method.
+Checkpoint selection minimizes mean per-curve subset cost: feasible curves trade K against a bounded MSE tie-break; infeasible curves use a logarithmic MSE penalty. Aggregate pass rates and the explicit K=56 boundary audit (n=32) are reported but never gate training. Labelled Joint performs only dense, deployed-mask and labelled-mask fits per batch.
+Proposal-stage synthetic stratification: 50.0% from K>=40; the remainder uses K=4..39. Joint training always uses the original K=4..56 distribution.
+Proposal schedule complete; loading the validation-ranked best dense initializer from epoch 59 (worst-source pass=97.0%, reporting reference=90.0%). Joint training starts unconditionally in selector_warmup.
+Building/checking fixed-Proposal feasible-subset labels at /home/feng/HouCode/SplineSurpervisedFitting/outputs/teachers/candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1/train.pt; this is offline work, not Joint per-step search.
+Traceback (most recent call last):
+  File "/home/feng/HouCode/SplineSurpervisedFitting/scripts/train_v16.py", line 2567, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/feng/HouCode/SplineSurpervisedFitting/scripts/train_v16.py", line 2020, in main
+    feasible_teacher_cache = build_or_load_v16_feasible_teacher_cache(
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/feng/anaconda3/lib/python3.11/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/feng/HouCode/SplineSurpervisedFitting/src/spline_fitting/training/v16_feasible_teacher.py", line 264, in build_or_load_v16_feasible_teacher_cache
+    teacher = build_one_shot_teacher_batch(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/feng/anaconda3/lib/python3.11/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/feng/HouCode/SplineSurpervisedFitting/src/spline_fitting/training/one_shot_teacher.py", line 559, in build_one_shot_teacher_batch
+    single_deletion_rms = single_knot_deletion_rmse_batch(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/feng/anaconda3/lib/python3.11/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/feng/HouCode/SplineSurpervisedFitting/src/spline_fitting/spline/bspline_deletion_teacher.py", line 316, in single_knot_deletion_rmse_batch
+    return single_knot_deletion_mse_batch(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/feng/anaconda3/lib/python3.11/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/feng/HouCode/SplineSurpervisedFitting/src/spline_fitting/spline/bspline_deletion_teacher.py", line 281, in single_knot_deletion_mse_batch
+    solution = torch.linalg.lstsq(
+               ^^^^^^^^^^^^^^^^^^^
+torch._C._LinAlgError: torch.linalg.lstsq: (Batch element 72): The least squares solution could not be computed because the input matrix does not have full rank (error code: 73).
