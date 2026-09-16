@@ -92,6 +92,14 @@ def parser():
         help=("Synthetic validation slots fixed at the maximum source knot "
               "count; these slots are included inside --val-size"),
     )
+    p.add_argument(
+        "--synthetic-high-k-val-size", type=int, default=0,
+        help="Additional fixed validation slots from a high-K stratum inside --val-size",
+    )
+    p.add_argument(
+        "--synthetic-high-k-val-min-knots", type=int, default=None,
+        help="First source K in the high-K validation stratum (default: min(45, max K))",
+    )
     p.add_argument("--real-val-size", type=int, default=100, help="Maximum val curves per real source")
     p.add_argument("--real-manifest", action="append", type=Path, default=[])
     p.add_argument(
@@ -104,8 +112,7 @@ def parser():
         type=float,
         default=0.5,
         help=("Exact fraction (up to integer rounding) of proposal-stage "
-              "synthetic draws sampled from the high-K stratum; joint "
-              "training always restores the original full-range distribution"),
+              "synthetic draws sampled from the high-K stratum"),
     )
     p.add_argument(
         "--proposal-high-k-min-knots",
@@ -113,6 +120,14 @@ def parser():
         default=None,
         help=("First internal-knot count in the proposal high-K stratum "
               "(default: min(40, maximum source K))"),
+    )
+    p.add_argument(
+        "--joint-high-k-fraction", type=float, default=0.0,
+        help="Fixed fraction of Joint synthetic rows drawn from the high-K stratum",
+    )
+    p.add_argument(
+        "--joint-high-k-min-knots", type=int, default=None,
+        help="First source K in Joint high-K stratum (default: min(45, max K))",
     )
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--num-points", type=int, default=192)
@@ -210,10 +225,10 @@ def parser():
     )
     p.add_argument(
         "--feasible-teacher-strategy",
-        choices=("full_greedy", "synthetic_anchor_first"),
+        choices=("full_greedy", "synthetic_anchor_first", "synthetic_anchor_counterfactual"),
         default="full_greedy",
-        help=("Offline labels: legacy full greedy search or certified synthetic "
-              "knot anchors followed by threshold-safe numerical add-back"),
+        help=("Offline labels: full greedy, certified synthetic anchors with "
+              "numerical add-back, or anchors with bounded local swap probes"),
     )
     p.add_argument(
         "--feasible-teacher-anchor-match-tolerance", type=float, default=0.02,
@@ -223,6 +238,10 @@ def parser():
         "--feasible-teacher-anchor-fallback-to-greedy",
         action=argparse.BooleanOptionalAction, default=True,
         help="Use full greedy if certified anchors cannot be uniquely matched to candidate slots",
+    )
+    p.add_argument(
+        "--feasible-teacher-counterfactual-max-probes", type=int, default=16,
+        help="Maximum offline local swap refits per curve for counterfactual labels (1..24)",
     )
     p.add_argument(
         "--count-structure-coupling",
@@ -274,6 +293,10 @@ def parser():
               "positive Keep slots; adds no online spline solves"),
     )
     p.add_argument("--fine-teacher-ranking-weight", type=float, default=0.25)
+    p.add_argument(
+        "--counterfactual-or-weight", type=float, default=1.0,
+        help="Weight for measured feasible-swap Keep(i) OR Keep(j) supervision",
+    )
     p.add_argument("--fine-teacher-temperature", type=float, default=0.5)
     p.add_argument("--keep-fuzzy-negative-radius", type=float, default=0.01)
     p.add_argument("--keep-fuzzy-negative-floor", type=float, default=0.1)
@@ -412,6 +435,7 @@ def validate_args(args):
         "safety_anneal_epochs", "teacher_prefix_search_steps",
         "teacher_low_count_sweep", "minimality_max_attempts",
         "oracle_teacher_extra_knots", "synthetic_boundary_val_size",
+        "synthetic_high_k_val_size",
         "selector_warmup_epochs",
     ):
         value = getattr(args, key)
@@ -442,6 +466,28 @@ def validate_args(args):
         raise ValueError(
             "a partial proposal high-K mixture requires a nonempty low-K range"
         )
+    if args.joint_high_k_min_knots is None:
+        args.joint_high_k_min_knots = min(45, maximum_source_knots)
+    if args.synthetic_high_k_val_min_knots is None:
+        args.synthetic_high_k_val_min_knots = min(45, maximum_source_knots)
+    for name in ("joint_high_k_min_knots", "synthetic_high_k_val_min_knots"):
+        value = getattr(args, name)
+        if (
+            isinstance(value, bool) or not isinstance(value, int)
+            or not minimum_source_knots <= value <= maximum_source_knots
+        ):
+            raise ValueError(f"{name} must lie inside the synthetic internal-knot range")
+    if (
+        0.0 < args.joint_high_k_fraction < 1.0
+        and args.joint_high_k_min_knots <= minimum_source_knots
+    ):
+        raise ValueError("partial Joint high-K sampling requires a nonempty low-K range")
+    if (
+        args.synthetic_high_k_val_size > 0
+        and args.synthetic_boundary_val_size + args.synthetic_high_k_val_size
+        > args.val_size
+    ):
+        raise ValueError("synthetic boundary and high-K validation samples exceed val-size")
     if not 1 <= args.candidate_knots <= args.num_points - 4:
         raise ValueError("candidate-knots must be between 1 and num-points - 4")
     if (
@@ -490,7 +536,8 @@ def validate_args(args):
         "proposal_multiscale_recall_weight",
         "selected_knot_position_weight", "keep_dice_weight", "keep_cdf_weight",
         "parameter_gap_weight", "parameter_bias_weight", "fine_teacher_weight",
-        "fine_teacher_ranking_weight", "fine_teacher_temperature",
+        "fine_teacher_ranking_weight", "counterfactual_or_weight",
+        "fine_teacher_temperature",
         "keep_fuzzy_negative_radius", "knot_position_beta",
         "complexity_max_scale", "proposal_joint_lr", "parameter_joint_lr",
     ):
@@ -532,6 +579,7 @@ def validate_args(args):
     for key in (
         "real_fraction",
         "proposal_high_k_fraction",
+        "joint_high_k_fraction",
         "proposal_pass_target",
         "deployment_pass_target",
     ):
@@ -598,6 +646,11 @@ def validate_args(args):
         or args.feasible_teacher_anchor_match_tolerance <= 0
     ):
         raise ValueError("feasible Teacher anchor-match tolerance must be positive")
+    if (
+        isinstance(args.feasible_teacher_counterfactual_max_probes, bool)
+        or not 1 <= args.feasible_teacher_counterfactual_max_probes <= 24
+    ):
+        raise ValueError("feasible Teacher counterfactual max probes must be in 1..24")
     if (
         args.feasible_teacher_strategy != "full_greedy"
         and args.joint_supervision != "offline_feasible_teacher"
@@ -831,6 +884,7 @@ def simplification_schedule(args, *, epoch, stage):
 
 def summarize(
     rows, tolerance, *, candidate_capacity, synthetic_boundary_knot_count=None,
+    synthetic_high_k_min_count=None,
 ):
     if (
         isinstance(candidate_capacity, bool)
@@ -933,6 +987,29 @@ def summarize(
         result["synthetic_knot_matched_mae"] = synthetic["knot_matched_mae"]
     if "parameter_rmse" in synthetic:
         result["synthetic_parameter_rmse"] = synthetic["parameter_rmse"]
+    if synthetic_high_k_min_count is not None:
+        if (
+            isinstance(synthetic_high_k_min_count, bool)
+            or not isinstance(synthetic_high_k_min_count, int)
+            or synthetic_high_k_min_count < 0
+        ):
+            raise ValueError("synthetic_high_k_min_count must be a non-negative integer")
+        high_k_rows = [
+            row for row in rows
+            if row["source"] == "Synthetic"
+            and row.get("target_k") is not None
+            and row["target_k"] >= synthetic_high_k_min_count
+        ]
+        result["synthetic_high_k_min_count"] = synthetic_high_k_min_count
+        result["synthetic_high_k_sample_count"] = len(high_k_rows)
+        if high_k_rows:
+            high_k_summary = group(high_k_rows)
+            for name in (
+                "dense_pass_rate", "deployment_pass_rate", "deployment_mse",
+                "keep_count", "count_mae", "knot_match_f1",
+            ):
+                if name in high_k_summary:
+                    result[f"synthetic_high_k_{name}"] = high_k_summary[name]
     # The upper end of the source-count range is the hardest labelled stratum
     # in the formal K=4..56 protocol.  Kc=72 now leaves 16 redundant proposal
     # slots there, but an aggregate Synthetic rate can still hide a complete
@@ -992,7 +1069,7 @@ def summarize(
 def validate(
     model, loader, device, tolerance, *, stage="joint",
     knot_match_tolerance=0.01, log_every=10,
-    synthetic_boundary_knot_count=None,
+    synthetic_boundary_knot_count=None, synthetic_high_k_min_count=None,
 ):
     if stage not in ("proposal", "joint"):
         raise ValueError("stage must be 'proposal' or 'joint'")
@@ -1111,6 +1188,7 @@ def validate(
         tolerance,
         candidate_capacity=int(model.max_internal_knots),
         synthetic_boundary_knot_count=synthetic_boundary_knot_count,
+        synthetic_high_k_min_count=synthetic_high_k_min_count,
     )
 
 
@@ -1524,6 +1602,8 @@ def main(argv=None):
         seed=args.val_seed,
         real_per_source=args.real_val_size,
         synthetic_boundary_samples=args.synthetic_boundary_val_size,
+        synthetic_high_k_samples=args.synthetic_high_k_val_size,
+        synthetic_high_k_min_knots=args.synthetic_high_k_val_min_knots,
     )
     loader_runtime = dict(
         num_workers=args.num_workers,
@@ -1603,7 +1683,12 @@ def main(argv=None):
             "feasible_teacher_strategy": "full_greedy",
             "feasible_teacher_anchor_match_tolerance": 0.02,
             "feasible_teacher_anchor_fallback_to_greedy": True,
+            "feasible_teacher_counterfactual_max_probes": 16,
             "count_structure_coupling": False,
+            "joint_high_k_fraction": 0.0,
+            "joint_high_k_min_knots": min(45, args.max_control_points - 4),
+            "synthetic_high_k_val_size": 0,
+            "synthetic_high_k_val_min_knots": min(45, args.max_control_points - 4),
         }
         # A checkpoint already inside the historical one-group Joint optimizer
         # must preserve that exact layout so Adam moments remain loadable.  A
@@ -1837,6 +1922,7 @@ def main(argv=None):
         parameter_bias_weight=args.parameter_bias_weight,
         fine_teacher_weight=args.fine_teacher_weight,
         fine_teacher_ranking_weight=args.fine_teacher_ranking_weight,
+        counterfactual_or_weight=args.counterfactual_or_weight,
         fine_teacher_temperature=args.fine_teacher_temperature,
         keep_fuzzy_negative_radius=args.keep_fuzzy_negative_radius,
         keep_fuzzy_negative_floor=args.keep_fuzzy_negative_floor,
@@ -1924,12 +2010,25 @@ def main(argv=None):
             )
     else:
         proposal_sampling = "disabled (original full-range distribution)"
+    if args.joint_high_k_fraction > 0.0:
+        joint_sampling = (
+            f"{args.joint_high_k_fraction:.1%} from K>="
+            f"{args.joint_high_k_min_knots}"
+        )
+        if args.joint_high_k_fraction < 1.0:
+            joint_sampling += (
+                f"; the remainder uses K={args.min_control_points - 4}.."
+                f"{args.joint_high_k_min_knots - 1}"
+            )
+    else:
+        joint_sampling = "disabled (original full-range distribution)"
     print(
         "Proposal-stage synthetic stratification: "
         + proposal_sampling
-        + ". Joint training always uses the original "
-        f"K={args.min_control_points - 4}.."
-        f"{args.max_control_points - 4} distribution.",
+        + ". Joint-stage synthetic stratification: "
+        + joint_sampling
+        + f". Fixed high-K validation rows: {args.synthetic_high_k_val_size} "
+        + f"at K>={args.synthetic_high_k_val_min_knots}.",
         flush=True,
     )
     feasible_teacher_cache = None
@@ -2036,9 +2135,13 @@ def main(argv=None):
             epoch=epoch - 1,
             resample=args.resample_train_each_epoch,
             synthetic_high_k_fraction=(
-                args.proposal_high_k_fraction if stage == "proposal" else 0.0
+                args.proposal_high_k_fraction if stage == "proposal"
+                else args.joint_high_k_fraction
             ),
-            synthetic_high_k_min_knots=args.proposal_high_k_min_knots,
+            synthetic_high_k_min_knots=(
+                args.proposal_high_k_min_knots if stage == "proposal"
+                else args.joint_high_k_min_knots
+            ),
         )
         if stage == "joint" and args.joint_supervision == "offline_feasible_teacher":
             if feasible_teacher_cache is None:
@@ -2069,6 +2172,9 @@ def main(argv=None):
                     teacher_strategy=args.feasible_teacher_strategy,
                     anchor_match_tolerance=args.feasible_teacher_anchor_match_tolerance,
                     anchor_fallback_to_greedy=args.feasible_teacher_anchor_fallback_to_greedy,
+                    counterfactual_max_probes=(
+                        args.feasible_teacher_counterfactual_max_probes
+                    ),
                     progress=lambda done, total: progress(
                         done, total, "offline feasible Teacher",
                         every=args.feasible_teacher_batch_size,
@@ -2166,6 +2272,15 @@ def main(argv=None):
                 feasible_teacher_mse=feasible_labels.get("teacher_fit_mse"),
                 feasible_teacher_pass=feasible_labels.get("teacher_threshold_satisfied"),
                 feasible_teacher_risk=feasible_labels.get("teacher_soft_keep_risk"),
+                feasible_teacher_counterfactual_slot_weight=feasible_labels.get(
+                    "teacher_counterfactual_slot_weight"
+                ),
+                feasible_teacher_counterfactual_swap_feasible=feasible_labels.get(
+                    "teacher_counterfactual_swap_feasible"
+                ),
+                feasible_teacher_counterfactual_replacement_slot=feasible_labels.get(
+                    "teacher_counterfactual_replacement_slot"
+                ),
             )
             loss.backward()
             if optimizer_regime == "joint_named_groups":
@@ -2211,6 +2326,10 @@ def main(argv=None):
             knot_match_tolerance=args.knot_match_tolerance,
             log_every=args.log_every_batches,
             synthetic_boundary_knot_count=args.max_control_points - 4,
+            synthetic_high_k_min_count=(
+                args.synthetic_high_k_val_min_knots
+                if args.synthetic_high_k_val_size else None
+            ),
         )
         train_metrics = {k: v/samples for k, v in total.items()}
         reporting_target_met = (
@@ -2351,13 +2470,22 @@ def main(argv=None):
                     strategy=feasible_teacher_cache.teacher_strategy,
                     anchor_match_tolerance=(
                         args.feasible_teacher_anchor_match_tolerance
-                        if feasible_teacher_cache.teacher_strategy == "synthetic_anchor_first"
+                        if feasible_teacher_cache.teacher_strategy in {
+                            "synthetic_anchor_first", "synthetic_anchor_counterfactual"
+                        }
                         else None
                     ),
                     anchor_fallback_to_greedy=(
                         args.feasible_teacher_anchor_fallback_to_greedy
-                        if feasible_teacher_cache.teacher_strategy == "synthetic_anchor_first"
+                        if feasible_teacher_cache.teacher_strategy in {
+                            "synthetic_anchor_first", "synthetic_anchor_counterfactual"
+                        }
                         else None
+                    ),
+                    counterfactual_max_probes=(
+                        args.feasible_teacher_counterfactual_max_probes
+                        if feasible_teacher_cache.teacher_strategy
+                        == "synthetic_anchor_counterfactual" else None
                     ),
                     teacher_not_globally_minimal=True,
                     greedy_not_globally_minimal=True,
@@ -2457,7 +2585,8 @@ def main(argv=None):
                                   "keep_dice_weight", "keep_cdf_weight",
                                   "parameter_gap_weight", "parameter_bias_weight",
                                   "fine_teacher_weight",
-                                  "fine_teacher_ranking_weight")},
+                                  "fine_teacher_ranking_weight",
+                                  "counterfactual_or_weight")},
                              fine_teacher_temperature=(
                                  objective.fine_teacher_temperature
                              ),
@@ -2565,6 +2694,16 @@ def main(argv=None):
                 f"{count_calibration_detail}{fine_risk_detail}",
                 flush=True,
             )
+            if args.feasible_teacher_strategy == "synthetic_anchor_counterfactual":
+                print(
+                    "  Counterfactual Keep: feasible-swap="
+                    f"{train_metrics['counterfactual_feasible_swap_fraction']:.1%}, "
+                    "swap-equivalent recall="
+                    f"{train_metrics['keep_mask_swap_equivalent_recall']:.3f}, "
+                    "OR loss="
+                    f"{train_metrics['counterfactual_or_loss']:.3e}",
+                    flush=True,
+                )
             if args.joint_supervision == "offline_feasible_teacher":
                 print(
                     "  Feasibility chain: numerical Teacher pass/MSE="
@@ -2594,6 +2733,17 @@ def main(argv=None):
             print(
                 f"  Synthetic K={measured['synthetic_boundary_knot_count']}: "
                 "boundary audit unavailable (uncertified diagnostic data)",
+                flush=True,
+            )
+        if measured.get("synthetic_high_k_sample_count", 0):
+            print(
+                f"  Synthetic K>={measured['synthetic_high_k_min_count']}: "
+                f"n={measured['synthetic_high_k_sample_count']}, "
+                f"dense={measured['synthetic_high_k_dense_pass_rate']:.1%}, "
+                "deployment="
+                f"{measured['synthetic_high_k_deployment_pass_rate']:.1%}, "
+                f"MSE={measured['synthetic_high_k_deployment_mse']:.3e}, "
+                f"K={measured['synthetic_high_k_keep_count']:.2f}",
                 flush=True,
             )
         for name, values in measured["by_source"].items():

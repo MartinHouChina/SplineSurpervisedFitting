@@ -24,6 +24,7 @@ BATCH_SIZE=64
 FEASIBLE_TEACHER_BATCH_SIZE=8
 MAX_CONTROL_POINTS=60
 CANDIDATE_KNOTS=72
+BASELINE_CAP=56
 SYNTHETIC_BOUNDARY_VAL_SIZE=32
 NUM_WORKERS=4
 SYNTHETIC_SAMPLES_PER_K=5
@@ -38,6 +39,8 @@ OUTPUT_ROOT=""
 INIT_CHECKPOINT=""
 RESUME_RUN=0
 PILOT_KC56=0
+KEEP_SWAP_HIGHK72=0
+RUN_PROFILE=default
 PREPARE_REAL_DATA=0
 DIAGNOSTIC=0
 DRY_RUN=0
@@ -54,6 +57,7 @@ END_TO_END_REPEATS_EXPLICIT=0
 for option in "$@"; do
   if [[ "$option" == "--pilot-kc56" ]]; then
     PILOT_KC56=1
+    RUN_PROFILE=PILOT
     RUN_NAME="candidate_selection_v16_mse1e-4_pilot_sourcek44_kc56_linux_r1"
     EPOCHS=72
     PROPOSAL_EPOCHS=48
@@ -67,6 +71,26 @@ for option in "$@"; do
     MAX_CONTROL_POINTS=48
     CANDIDATE_KNOTS=56
     SYNTHETIC_BOUNDARY_VAL_SIZE=16
+    BENCHMARK_PROFILE="quick"
+    DIAGNOSTIC=1
+  elif [[ "$option" == "--keep-swap-highk72" ]]; then
+    KEEP_SWAP_HIGHK72=1
+    RUN_PROFILE=KEEP_SWAP_HIGHK72
+    RUN_NAME="candidate_selection_v16_mse1e-4_keep_swap_highk72_linux_r1"
+    EPOCHS=96
+    PROPOSAL_EPOCHS=64
+    SELECTOR_WARMUP_EPOCHS=8
+    TRAIN_SIZE=1500
+    VAL_SIZE=400
+    REAL_VAL_SIZE=40
+    PROPOSAL_HIGH_K_FRACTION=0.65
+    PROPOSAL_HIGH_K_MIN_KNOTS=40
+    BATCH_SIZE=64
+    FEASIBLE_TEACHER_BATCH_SIZE=8
+    MAX_CONTROL_POINTS=60
+    CANDIDATE_KNOTS=72
+    BASELINE_CAP=72
+    SYNTHETIC_BOUNDARY_VAL_SIZE=32
     BENCHMARK_PROFILE="quick"
     DIAGNOSTIC=1
   fi
@@ -105,6 +129,9 @@ Main options:
   --pilot-kc56                  Opt-in quick architecture diagnostic: source K=4..44,
                                   Kc=56, Proposal 48 + Joint 24, train/val=1500/300,
                                   real-val=30. Forces diagnostic, never formal.
+  --keep-swap-highk72           Opt-in KeepMask exchange-supervision + high-K diagnostic:
+                                  source K=4..56, Kc=72, Proposal 64 + Joint 32,
+                                  train/val=1500/400, real-val=40. Forces diagnostic.
   --prepare-real-data            Prepare missing UJI, Natural Earth, USGS and industrial-offset data
   --benchmark-profile quick|full Quick smoke benchmark or full comparison (default: full)
   --diagnostic                   Continue after a structural-integrity audit failure
@@ -165,6 +192,7 @@ while (($#)); do
     --resume-run) RESUME_RUN=1; shift ;;
     --feasible-teacher-batch-size) need_value "$@"; FEASIBLE_TEACHER_BATCH_SIZE="$2"; shift 2 ;;
     --pilot-kc56) shift ;;
+    --keep-swap-highk72) shift ;;
     --prepare-real-data) PREPARE_REAL_DATA=1; shift ;;
     --benchmark-profile) need_value "$@"; BENCHMARK_PROFILE="$2"; shift 2 ;;
     --diagnostic) DIAGNOSTIC=1; shift ;;
@@ -173,6 +201,9 @@ while (($#)); do
     *) die "unknown option: $1" ;;
   esac
 done
+
+((PILOT_KC56 + KEEP_SWAP_HIGHK72 <= 1)) || \
+  die "--pilot-kc56 and --keep-swap-highk72 are mutually exclusive"
 
 [[ "$BENCHMARK_PROFILE" == "quick" || "$BENCHMARK_PROFILE" == "full" ]] || \
   die "benchmark profile must be quick or full"
@@ -220,6 +251,7 @@ for item in \
   "FEASIBLE_TEACHER_BATCH_SIZE:$FEASIBLE_TEACHER_BATCH_SIZE" \
   "MAX_CONTROL_POINTS:$MAX_CONTROL_POINTS" \
   "CANDIDATE_KNOTS:$CANDIDATE_KNOTS" \
+  "BASELINE_CAP:$BASELINE_CAP" \
   "SYNTHETIC_BOUNDARY_VAL_SIZE:$SYNTHETIC_BOUNDARY_VAL_SIZE" \
   "SYNTHETIC_SAMPLES_PER_K:$SYNTHETIC_SAMPLES_PER_K" \
   "REAL_SAMPLES_PER_DATASET:$REAL_SAMPLES_PER_DATASET" \
@@ -401,7 +433,7 @@ run_logged() {
 
 printf '%s v16 Linux %s profile: MSE=1e-4, Kc=%s, training source K=4..%s, train/val=%s/%s, batch=%s.\n' \
   "$([[ $RESUME_RUN -eq 1 ]] && printf Resume || printf Fresh)" \
-  "$([[ $PILOT_KC56 -eq 1 ]] && printf PILOT || printf default)" \
+  "$RUN_PROFILE" \
   "$CANDIDATE_KNOTS" "$SOURCE_MAX_KNOTS" "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
 printf 'Simplification contract: %s\n' "$SIMPLIFICATION_CONTRACT"
 printf 'Checkpoint selection is empirical: inspect the trained Proposal, feasible Teacher and one-shot deployment separately; no pass rate is assumed achieved.\n'
@@ -409,14 +441,24 @@ printf 'Training supervision: certified Synthetic geometry labels plus an offlin
 printf 'Joint samples are fixed across epochs so teacher cache labels remain sample-aligned. Teacher cache: %s\n' "$TEACHER_DIRECTORY"
 printf 'Benchmark profile=%s: synthetic=%s per K, real=%s per dataset. Quick results are diagnostic, not publication estimates.\n' \
   "$BENCHMARK_PROFILE" "$SYNTHETIC_SAMPLES_PER_K" "$REAL_SAMPLES_PER_DATASET"
-printf 'Proposal synthetic high-K share=%s at K>=%s; Joint restores training source K=4..%s.\n' \
-  "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS" "$SOURCE_MAX_KNOTS"
+if ((KEEP_SWAP_HIGHK72)); then
+  printf 'Proposal synthetic high-K share=%s at K>=%s; Joint samples K>=45 at 0.50 within source K=4..%s.\n' \
+    "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS" "$SOURCE_MAX_KNOTS"
+else
+  printf 'Proposal synthetic high-K share=%s at K>=%s; Joint restores training source K=4..%s.\n' \
+    "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS" "$SOURCE_MAX_KNOTS"
+fi
 printf 'Candidate redundancy: %s proposal slots for at most %s labelled source knots. Evaluation stress-tests K=4..56.\n' \
   "$CANDIDATE_KNOTS" "$SOURCE_MAX_KNOTS"
 if ((PILOT_KC56)); then
   printf 'PILOT ONLY: trained up to source K=%s but benchmark includes K=45..56 out-of-training-range stress cases; all outputs are diagnostic.\n' \
     "$SOURCE_MAX_KNOTS"
   printf 'PILOT offline Teacher: synthetic anchors + numerical MSE add-back; unmatched anchors fall back to full greedy. Count loss also updates candidate structure. Neither speed nor feasibility is assumed.\n'
+fi
+if ((KEEP_SWAP_HIGHK72)); then
+  printf 'HIGH-K DIAGNOSTIC: train and test source K=4..56; Proposal high-K share=0.65 at K>=40 and Joint high-K share=0.50 at K>=45.\n'
+  printf 'Offline teacher uses bounded numerical exchange supervision; Proposal remains fixed in Joint. Raw one-shot and numerical repair must be reported separately.\n'
+  printf 'Capacity disclosure: network and numerical baselines each start/cap at %s internal knots; quick sample size is diagnostic only.\n' "$BASELINE_CAP"
 fi
 printf 'Joint optimization: fixed Proposal/encoder/ParameterHead; %s selector/decoder warmup epochs; grouped LR selector=%s, proposal=%s, parameter=%s, decoder=%s.\n' \
   "$SELECTOR_WARMUP_EPOCHS" "$SELECTOR_LR" "$PROPOSAL_JOINT_LR" \
@@ -500,6 +542,19 @@ if ((PILOT_KC56)); then
     --count-structure-coupling
   )
 fi
+if ((KEEP_SWAP_HIGHK72)); then
+  TRAIN_ARGS+=(
+    --joint-high-k-fraction 0.50
+    --joint-high-k-min-knots 45
+    --synthetic-high-k-val-size 32
+    --synthetic-high-k-val-min-knots 45
+    --feasible-teacher-strategy synthetic_anchor_counterfactual
+    --feasible-teacher-anchor-match-tolerance 0.02
+    --feasible-teacher-counterfactual-max-probes 16
+    --counterfactual-or-weight 1.0
+    --count-structure-coupling
+  )
+fi
 TRAIN_PHASE=train_fresh
 if ((RESUME_RUN)); then
   printf 'Resuming the existing training run: %s\n' "$LAST_PATH"
@@ -579,13 +634,13 @@ MANIFEST_ARGS=(
   --manifest "IndustrialOffset=$INDUSTRIAL_OFFSET_MANIFEST"
 )
 BASELINE_ARGS=(
-  --max-internal-knots 56
+  --max-internal-knots "$BASELINE_CAP"
   --gradient-steps 12
-  --paper-initial-knots 56
+  --paper-initial-knots "$BASELINE_CAP"
   --paper-admm-iterations "$KANG_ADMM_ITERATIONS"
   --paper-lambda-bisections 10
   --paper-relocation-iterations 12
-  --liang-dense-knots 56
+  --liang-dense-knots "$BASELINE_CAP"
   --liang-feature-samples 1025
   --dung-scan-intervals 10
   --dung-optimization-iterations 10

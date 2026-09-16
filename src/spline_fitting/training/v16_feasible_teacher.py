@@ -32,7 +32,11 @@ from .one_shot_teacher import (
 
 _PROPOSAL_PREFIXES = ("encoder.", "parameter_head.", "candidate_head.")
 _ANCHOR_STRATEGY_VERSION = "synthetic_anchor_first_v2_residual_addback_safe_cleanup"
-_TEACHER_STRATEGIES = {"full_greedy", "synthetic_anchor_first"}
+_COUNTERFACTUAL_STRATEGY_VERSION = "synthetic_anchor_counterfactual_v1_nearest_swap"
+_TEACHER_STRATEGIES = {
+    "full_greedy", "synthetic_anchor_first", "synthetic_anchor_counterfactual",
+}
+_ANCHOR_STRATEGIES = {"synthetic_anchor_first", "synthetic_anchor_counterfactual"}
 
 
 def _devices_equivalent(actual: torch.device, requested: torch.device) -> bool:
@@ -86,6 +90,7 @@ def _fixed_dataset_points(
     dataset: Dataset, *, teacher_strategy: str = "full_greedy",
     anchor_match_tolerance: float = 0.02,
     anchor_fallback_to_greedy: bool = True,
+    counterfactual_max_probes: int = 16,
 ) -> tuple[torch.Tensor, str, list[tuple[torch.Tensor, torch.Tensor]] | None]:
     """Materialize and fingerprint the exact ordered points in index order."""
     if bool(getattr(dataset, "resample_each_epoch", False)):
@@ -95,10 +100,17 @@ def _fixed_dataset_points(
     digest = hashlib.sha256()
     points: list[torch.Tensor] = []
     anchors: list[tuple[torch.Tensor, torch.Tensor]] = []
-    if teacher_strategy == "synthetic_anchor_first":
-        digest.update(_ANCHOR_STRATEGY_VERSION.encode("ascii"))
+    if teacher_strategy in _ANCHOR_STRATEGIES:
+        version = (
+            _COUNTERFACTUAL_STRATEGY_VERSION
+            if teacher_strategy == "synthetic_anchor_counterfactual"
+            else _ANCHOR_STRATEGY_VERSION
+        )
+        digest.update(version.encode("ascii"))
         digest.update(repr(anchor_match_tolerance).encode("ascii"))
         digest.update(repr(anchor_fallback_to_greedy).encode("ascii"))
+        if teacher_strategy == "synthetic_anchor_counterfactual":
+            digest.update(f"max_probes={counterfactual_max_probes}".encode("ascii"))
     expected_shape: tuple[int, int] | None = None
     for index in range(len(dataset)):
         sample = dataset[index]
@@ -125,7 +137,7 @@ def _fixed_dataset_points(
         digest.update(str(shape).encode("ascii"))
         digest.update(point.numpy().tobytes())
         points.append(point)
-        if teacher_strategy == "synthetic_anchor_first":
+        if teacher_strategy in _ANCHOR_STRATEGIES:
             if not bool(torch.as_tensor(sample.get("target_geometry_valid", False))):
                 raise ValueError(
                     "anchor-first teacher requires certified synthetic geometry "
@@ -167,7 +179,7 @@ def _fixed_dataset_points(
                 digest.update(value.numpy().tobytes())
             anchors.append((parameter_cpu, true_knots))
     return torch.stack(points), digest.hexdigest(), (
-        anchors if teacher_strategy == "synthetic_anchor_first" else None
+        anchors if teacher_strategy in _ANCHOR_STRATEGIES else None
     )
 
 
@@ -440,6 +452,94 @@ def _anchor_first_teacher_batch(
     )
 
 
+@torch.no_grad()
+def _local_swap_counterfactual_labels(
+    parameters: torch.Tensor,
+    points: torch.Tensor,
+    candidate_knots: torch.Tensor,
+    teacher: OneShotTeacherBatch,
+    *,
+    max_probes: int,
+) -> dict[str, torch.Tensor]:
+    """Probe up to ``max_probes`` nearest omitted replacements per curve.
+
+    These are *local* alternatives, not a proof of global knot necessity.
+    A feasible swap softens both its retained slot and omitted substitute;
+    a failed measured swap modestly emphasizes the retained slot. Every
+    trial uses one endpoint-constrained standard B-spline refit offline.
+    """
+    batch, capacity = candidate_knots.shape
+    weights = candidate_knots.new_ones((batch, capacity))
+    probe_mask = torch.zeros((batch, capacity), dtype=torch.bool, device=candidate_knots.device)
+    feasible = torch.zeros_like(probe_mask)
+    swap_mse = candidate_knots.new_zeros((batch, capacity))
+    replacement = torch.full((batch, capacity), -1, dtype=torch.long, device=candidate_knots.device)
+    probe_count = torch.zeros(batch, dtype=torch.long, device=candidate_knots.device)
+    for row in range(batch):
+        if not bool(teacher.teacher_threshold_satisfied[row]):
+            continue
+        kept = teacher.teacher_retained_mask[row].nonzero(as_tuple=False).flatten().tolist()
+        omitted = (~teacher.teacher_retained_mask[row]).nonzero(as_tuple=False).flatten().tolist()
+        if not kept or not omitted:
+            continue
+        # Prioritize close, plausible alternatives so the cap focuses on
+        # ambiguous slots rather than paying O(Kc) fits for distant swaps.
+        nearest: list[tuple[float, int, int]] = []
+        for slot in kept:
+            substitute = min(
+                omitted,
+                key=lambda other: (abs(float(candidate_knots[row, slot] - candidate_knots[row, other])), other),
+            )
+            gap = abs(float(candidate_knots[row, slot] - candidate_knots[row, substitute]))
+            nearest.append((gap, slot, substitute))
+        used_feasible_substitutes: set[int] = set()
+        for _gap, slot, _nearest_substitute in sorted(nearest)[:max_probes]:
+            # One omitted slot may replace one retained slot, not several at
+            # once. Select the nearest still-unclaimed omitted alternative.
+            available = [other for other in omitted if other not in used_feasible_substitutes]
+            if not available:
+                break
+            substitute = min(
+                available,
+                key=lambda other: (
+                    abs(float(candidate_knots[row, slot] - candidate_knots[row, other])),
+                    other,
+                ),
+            )
+            trial_slots = sorted((set(kept) - {slot}) | {substitute})
+            fit = refit_bspline_control_points(
+                parameters[row], points[row], candidate_knots[row, trial_slots],
+                degree=teacher.config.degree,
+                smoothness_weight=teacher.config.smoothness_weight,
+                control_ridge=teacher.config.control_ridge,
+                interpolate_endpoints=True,
+                rcond=teacher.config.rcond,
+            )
+            mse = fit.fit_mse.to(candidate_knots.dtype)
+            probe_mask[row, slot] = True
+            swap_mse[row, slot] = mse
+            replacement[row, slot] = substitute
+            probe_count[row] += 1
+            if float(mse) <= teacher.config.error_tolerance ** 2:
+                feasible[row, slot] = True
+                used_feasible_substitutes.add(substitute)
+                # Exact-mask BCE/ranking must not force either member of an
+                # accepted one-for-one alternative. The OR loss supplies
+                # supervision that at least one member remains active.
+                weights[row, slot] = 0.0
+                weights[row, substitute] = 0.0
+            else:
+                weights[row, slot] = 1.5
+    return {
+        "teacher_counterfactual_slot_weight": weights,
+        "teacher_counterfactual_probe_mask": probe_mask,
+        "teacher_counterfactual_swap_feasible": feasible,
+        "teacher_counterfactual_swap_mse": swap_mse,
+        "teacher_counterfactual_replacement_slot": replacement,
+        "teacher_counterfactual_probe_count": probe_count,
+    }
+
+
 @dataclass(frozen=True)
 class V16FeasibleTeacherCache:
     """Indexed, CPU-resident teacher labels for a fixed Joint population."""
@@ -510,6 +610,7 @@ def build_or_load_v16_feasible_teacher_cache(
     teacher_strategy: str = "full_greedy",
     anchor_match_tolerance: float = 0.02,
     anchor_fallback_to_greedy: bool = True,
+    counterfactual_max_probes: int = 16,
     progress: Callable[[int, int], None] | None = None,
 ) -> V16FeasibleTeacherCache:
     """Build once or validate/reuse exact fixed-Proposal, fixed-data labels.
@@ -525,6 +626,13 @@ def build_or_load_v16_feasible_teacher_cache(
         raise ValueError("batch_size must be a positive integer")
     if teacher_strategy not in _TEACHER_STRATEGIES:
         raise ValueError(f"teacher_strategy must be one of {sorted(_TEACHER_STRATEGIES)}")
+    if (
+        isinstance(counterfactual_max_probes, bool)
+        or not isinstance(counterfactual_max_probes, int)
+        or counterfactual_max_probes < 1
+        or counterfactual_max_probes > 24
+    ):
+        raise ValueError("counterfactual_max_probes must be an integer in [1,24]")
     if not math.isfinite(anchor_match_tolerance) or anchor_match_tolerance < 0:
         raise ValueError("anchor_match_tolerance must be finite and non-negative")
     destination = Path(cache_path)
@@ -535,6 +643,7 @@ def build_or_load_v16_feasible_teacher_cache(
         teacher_strategy=teacher_strategy,
         anchor_match_tolerance=anchor_match_tolerance,
         anchor_fallback_to_greedy=anchor_fallback_to_greedy,
+        counterfactual_max_probes=counterfactual_max_probes,
     )
     proposal_fingerprint = _proposal_fingerprint(model)
     candidate_count = int(getattr(model, "max_internal_knots"))
@@ -602,7 +711,7 @@ def build_or_load_v16_feasible_teacher_cache(
                 raise ValueError("proposal parameter output has an invalid shape")
             if candidates.shape != (stop - start, candidate_count):
                 raise ValueError("proposal candidate output has an invalid shape")
-            if teacher_strategy == "synthetic_anchor_first":
+            if teacher_strategy in _ANCHOR_STRATEGIES:
                 assert all_anchor_labels is not None
                 teacher = _anchor_first_teacher_batch(
                     parameters.double(),
@@ -621,6 +730,18 @@ def build_or_load_v16_feasible_teacher_cache(
                     candidates.double(),
                     sample_indices=sample_indices[start:stop],
                     config=config,
+                )
+            if teacher_strategy == "synthetic_anchor_counterfactual":
+                extra = _local_swap_counterfactual_labels(
+                    parameters.double(), points.double(), candidates.double(), teacher,
+                    max_probes=counterfactual_max_probes,
+                )
+                teacher = OneShotTeacherBatch(
+                    sample_indices=teacher.sample_indices,
+                    input_shapes=teacher.input_shapes,
+                    config=teacher.config,
+                    **teacher.as_loss_kwargs(),
+                    **extra,
                 )
             for name, value in teacher.as_loss_kwargs().items():
                 rows.setdefault(name, []).append(value.detach().cpu())

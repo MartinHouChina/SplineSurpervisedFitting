@@ -25,6 +25,7 @@ from ..spline.bspline_deletion_teacher import single_knot_deletion_rmse_batch
 
 _CACHE_FORMAT = "spline_fitting.one_shot_teacher"
 _CACHE_VERSION = 3
+_COUNTERFACTUAL_CACHE_VERSION = 4
 _LEGACY_CACHE_VERSION = 2
 _INPUT_NAMES = ("parameters", "points", "candidate_knots")
 _LOSS_KEYS = (
@@ -43,6 +44,14 @@ _LOSS_KEYS = (
     "teacher_relocation_mean_abs",
     "teacher_relocation_max_abs",
     "teacher_extra_deleted_after_relocation",
+)
+_COUNTERFACTUAL_KEYS = (
+    "teacher_counterfactual_slot_weight",
+    "teacher_counterfactual_probe_mask",
+    "teacher_counterfactual_swap_feasible",
+    "teacher_counterfactual_swap_mse",
+    "teacher_counterfactual_replacement_slot",
+    "teacher_counterfactual_probe_count",
 )
 
 
@@ -242,6 +251,12 @@ class OneShotTeacherBatch:
     teacher_relocation_mean_abs: torch.Tensor
     teacher_relocation_max_abs: torch.Tensor
     teacher_extra_deleted_after_relocation: torch.Tensor
+    teacher_counterfactual_slot_weight: torch.Tensor | None = None
+    teacher_counterfactual_probe_mask: torch.Tensor | None = None
+    teacher_counterfactual_swap_feasible: torch.Tensor | None = None
+    teacher_counterfactual_swap_mse: torch.Tensor | None = None
+    teacher_counterfactual_replacement_slot: torch.Tensor | None = None
+    teacher_counterfactual_probe_count: torch.Tensor | None = None
 
     def __post_init__(self) -> None:
         shapes = _normalize_shapes(self.input_shapes)
@@ -370,13 +385,60 @@ class OneShotTeacherBatch:
                 "teacher_deletion_order contains an invalid original index"
             )
 
+        counterfactual_values = [getattr(self, name) for name in _COUNTERFACTUAL_KEYS]
+        if any(value is not None for value in counterfactual_values):
+            if not all(isinstance(value, torch.Tensor) for value in counterfactual_values):
+                raise ValueError("counterfactual teacher labels must be complete tensors")
+            slot_names = _COUNTERFACTUAL_KEYS[:-1]
+            for name in slot_names:
+                value = getattr(self, name)
+                if value.shape != (batch_size, candidate_count):
+                    raise ValueError(f"{name} must have shape [B,Kc]")
+            if self.teacher_counterfactual_probe_count.shape != (batch_size,):
+                raise ValueError("teacher_counterfactual_probe_count must have shape [B]")
+            if (
+                self.teacher_counterfactual_probe_mask.dtype != torch.bool
+                or self.teacher_counterfactual_swap_feasible.dtype != torch.bool
+                or self.teacher_counterfactual_replacement_slot.dtype != torch.long
+                or self.teacher_counterfactual_probe_count.dtype != torch.long
+            ):
+                raise ValueError("counterfactual mask/index labels have invalid dtypes")
+            for name in ("teacher_counterfactual_slot_weight", "teacher_counterfactual_swap_mse"):
+                value = getattr(self, name)
+                if not value.is_floating_point() or not torch.isfinite(value).all() or bool((value < 0).any()):
+                    raise ValueError(f"{name} must be finite non-negative floats")
+            probed = self.teacher_counterfactual_probe_mask
+            replacements = self.teacher_counterfactual_replacement_slot
+            if not torch.equal(probed.sum(-1).long(), self.teacher_counterfactual_probe_count):
+                raise ValueError("counterfactual probe counts disagree with mask")
+            if bool((probed & ~self.teacher_retained_mask).any()):
+                raise ValueError("only retained teacher knots may be swap-probed")
+            if bool((self.teacher_counterfactual_swap_feasible & ~probed).any()):
+                raise ValueError("swap feasibility requires a measured probe")
+            if bool(((replacements >= 0) != probed).any()) or bool((replacements >= candidate_count).any()):
+                raise ValueError("counterfactual replacement indices disagree with probes")
+            if bool(self.teacher_retained_mask.gather(-1, replacements.clamp_min(0))[probed].any()):
+                raise ValueError("counterfactual replacement must be omitted by teacher")
+            for row in range(batch_size):
+                feasible_slots = self.teacher_counterfactual_swap_feasible[row]
+                selected_replacements = replacements[row, feasible_slots]
+                if selected_replacements.unique().numel() != selected_replacements.numel():
+                    raise ValueError("feasible counterfactual swaps must use distinct substitutes")
+
     @property
     def config_fingerprint(self) -> str:
-        return self.config.fingerprint()
+        version = (
+            _COUNTERFACTUAL_CACHE_VERSION
+            if self.teacher_counterfactual_slot_weight is not None else _CACHE_VERSION
+        )
+        return _config_fingerprint(self.config.as_dict(), version=version)
 
     def as_loss_kwargs(self) -> dict[str, torch.Tensor]:
         """Return only tensors that can be merged into a training batch."""
-        return {name: getattr(self, name) for name in _LOSS_KEYS}
+        result = {name: getattr(self, name) for name in _LOSS_KEYS}
+        if self.teacher_counterfactual_slot_weight is not None:
+            result.update({name: getattr(self, name) for name in _COUNTERFACTUAL_KEYS})
+        return result
 
     def as_dict(self) -> dict[str, torch.Tensor]:
         return self.as_loss_kwargs()
@@ -729,9 +791,13 @@ compute_one_shot_teacher_batch = build_one_shot_teacher_batch
 
 
 def _cache_payload(batch: OneShotTeacherBatch) -> dict[str, object]:
+    version = (
+        _COUNTERFACTUAL_CACHE_VERSION
+        if batch.teacher_counterfactual_slot_weight is not None else _CACHE_VERSION
+    )
     return {
         "format": _CACHE_FORMAT,
-        "version": _CACHE_VERSION,
+        "version": version,
         "config": batch.config.as_dict(),
         "config_fingerprint": batch.config_fingerprint,
         "sample_indices": batch.sample_indices.detach().cpu(),
@@ -782,7 +848,7 @@ def load_one_shot_teacher_cache(
     if payload.get("format") != _CACHE_FORMAT:
         raise ValueError("not a one-shot teacher cache")
     version = payload.get("version")
-    if version not in {_LEGACY_CACHE_VERSION, _CACHE_VERSION}:
+    if version not in {_LEGACY_CACHE_VERSION, _CACHE_VERSION, _COUNTERFACTUAL_CACHE_VERSION}:
         raise ValueError(f"unsupported teacher cache version: {version!r}")
 
     raw_config = payload.get("config")
@@ -837,7 +903,9 @@ def load_one_shot_teacher_cache(
         "teacher_single_deletion_rms",
     }
     expected_label_keys = (
-        legacy_loss_keys if version == _LEGACY_CACHE_VERSION else set(_LOSS_KEYS)
+        legacy_loss_keys if version == _LEGACY_CACHE_VERSION else
+        set(_LOSS_KEYS) | set(_COUNTERFACTUAL_KEYS)
+        if version == _COUNTERFACTUAL_CACHE_VERSION else set(_LOSS_KEYS)
     )
     if set(raw_labels) != expected_label_keys:
         missing = sorted(expected_label_keys - set(raw_labels))

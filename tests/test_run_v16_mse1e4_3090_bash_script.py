@@ -58,9 +58,10 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
         "--mse-tolerance 1e-4",
         "--initial-keep-fraction 0.4166666666666667",
         "--min-knot-count 4 --max-knot-count 56",
-        "--max-internal-knots 56",
-        "--paper-initial-knots 56",
-        "--liang-dense-knots 56",
+        "BASELINE_CAP=56",
+        '--max-internal-knots "$BASELINE_CAP"',
+        '--paper-initial-knots "$BASELINE_CAP"',
+        '--liang-dense-knots "$BASELINE_CAP"',
         "--method-set published",
         "scripts/inspect_v16_checkpoint.py",
         "scripts/plot_v16_method_comparison.py",
@@ -217,6 +218,9 @@ def test_linux_pilot_kc56_dry_run_preserves_formal_defaults_and_marks_stress_as_
     assert "Kc=72, training source K=4..56" in formal.stdout
     assert "--candidate-knots 72" in formal.stdout
     assert "--max-control-points 60" in formal.stdout
+    assert "--max-internal-knots 56" in formal.stdout
+    assert "--paper-initial-knots 56" in formal.stdout
+    assert "--liang-dense-knots 56" in formal.stdout
     assert "--epochs 128" in formal.stdout
     assert "--proposal-epochs 64" in formal.stdout
     assert "--synthetic-test-max-control-points" not in formal.stdout
@@ -241,3 +245,60 @@ def test_linux_pilot_kc56_refuses_existing_checkpoint_artifact(tmp_path: Path) -
     )
     assert completed.returncode != 0
     assert "refusing to overwrite existing run artifact" in completed.stderr
+
+
+def test_linux_keep_swap_highk72_profile_is_opt_in_and_complete(tmp_path: Path) -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    for fragment in (
+        "--keep-swap-highk72", "KEEP_SWAP_HIGHK72=1",
+        "PROPOSAL_EPOCHS=64", "EPOCHS=96", "TRAIN_SIZE=1500",
+        "VAL_SIZE=400", "REAL_VAL_SIZE=40", "CANDIDATE_KNOTS=72",
+        "MAX_CONTROL_POINTS=60", "BASELINE_CAP=72",
+        "PROPOSAL_HIGH_K_FRACTION=0.65",
+        "--joint-high-k-fraction 0.50", "--joint-high-k-min-knots 45",
+        "--synthetic-high-k-val-size 32",
+        "--synthetic-high-k-val-min-knots 45",
+        "--feasible-teacher-strategy synthetic_anchor_counterfactual",
+        "--feasible-teacher-counterfactual-max-probes 16",
+        "--count-structure-coupling", "DIAGNOSTIC=1",
+    ):
+        assert fragment in source
+    bash = shutil.which("bash")
+    if bash is None or not Path(bash).as_posix().startswith("/"):
+        pytest.skip("native /bin/bash is unavailable on this platform")
+    command = [
+        bash, str(SCRIPT), "--dry-run", "--device", "cpu",
+        "--output-root", str(tmp_path / "outputs"),
+        "--run-name", "keep_swap_highk72_dry_run", "--keep-swap-highk72",
+    ]
+    run = subprocess.run(
+        command, cwd=ROOT, capture_output=True, text=True,
+        timeout=10, check=False,
+    )
+    assert run.returncode == 0, run.stdout + run.stderr
+    for fragment in (
+        "KEEP_SWAP_HIGHK72 profile", "Kc=72, training source K=4..56",
+        "--candidate-knots 72", "--max-control-points 60",
+        "--epochs 96", "--proposal-epochs 64", "--train-size 1500",
+        "--val-size 400", "--real-val-size 40", "--batch-size 64",
+        "--proposal-high-k-fraction 0.65",
+        "--joint-high-k-fraction 0.50", "--joint-high-k-min-knots 45",
+        "--synthetic-high-k-val-size 32",
+        "--feasible-teacher-strategy synthetic_anchor_counterfactual",
+        "--feasible-teacher-counterfactual-max-probes 16",
+        "--count-structure-coupling", "--max-knot-count 56",
+        "--max-internal-knots 72", "--paper-initial-knots 72",
+        "--liang-dense-knots 72",
+        "--force-diagnostic", "[train_fresh]", "[benchmark_six_methods_plus_verified]",
+        "[plot_four_metrics]", "[visualize_six_method_real_cases]",
+    ):
+        assert fragment in run.stdout
+    assert "--synthetic-test-max-control-points" not in run.stdout
+    assert "--init-checkpoint" not in run.stdout
+
+    incompatible = subprocess.run(
+        command + ["--pilot-kc56"], cwd=ROOT,
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    assert incompatible.returncode != 0
+    assert "mutually exclusive" in incompatible.stderr

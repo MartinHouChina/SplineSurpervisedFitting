@@ -1186,3 +1186,98 @@ def test_offline_feasible_joint_uses_verified_subset_not_source_count():
     assert torch.isfinite(loss)
     loss.backward()
     assert model.keep_head.weight.grad is not None
+
+
+def test_counterfactual_ranking_does_not_hard_penalize_feasible_substitute():
+    objective = V16SubsetLoss(policy_samples=2)
+    logits = torch.tensor([[3.0, 2.0, -2.0, 1.0]], requires_grad=True)
+    teacher_mask = torch.tensor([[False, True, False, True]])
+    ordinary = objective._weighted_pairwise_ranking_loss(
+        logits, teacher_mask, torch.ones_like(logits), margin=1.0,
+    )
+    # Slot 0 has a measured feasible one-for-one swap for kept slot 1.
+    # Slot 3 failed its local swap and therefore gets more emphasis.
+    slot_weight = torch.tensor([[0.0, 0.0, 1.0, 1.5]])
+    counterfactual = objective._weighted_pairwise_ranking_loss(
+        logits, teacher_mask,
+        torch.where(teacher_mask, torch.ones_like(logits), slot_weight),
+        margin=1.0, positive_weight=slot_weight,
+    )
+    assert counterfactual < ordinary
+    counterfactual.backward()
+    assert torch.isfinite(logits.grad).all()
+
+
+def test_feasible_swap_or_loss_accepts_either_member_without_requiring_both():
+    objective = V16SubsetLoss(policy_samples=2)
+    pair = torch.tensor([[True, False]])
+    replacement = torch.tensor([[1, -1]])
+    retained_only = objective._swap_equivalence_or_loss(
+        torch.tensor([[8.0, -8.0]]), pair, replacement,
+    )
+    substitute_only = objective._swap_equivalence_or_loss(
+        torch.tensor([[-8.0, 8.0]]), pair, replacement,
+    )
+    neither = objective._swap_equivalence_or_loss(
+        torch.tensor([[-8.0, -8.0]]), pair, replacement,
+    )
+    both = objective._swap_equivalence_or_loss(
+        torch.tensor([[8.0, 8.0]]), pair, replacement,
+    )
+    assert retained_only < 1e-3
+    assert substitute_only < 1e-3
+    assert both < 1e-3
+    assert neither > 7.0
+    logits = torch.tensor([[-3.0, -3.0]], requires_grad=True)
+    objective._swap_equivalence_or_loss(logits, pair, replacement).backward()
+    assert logits.grad[0, 1] < 0  # raises feasible substitute's keep score
+
+
+def test_offline_counterfactual_slot_weight_validation():
+    torch.manual_seed(81)
+    points = curve_batch()[:1]
+    params = torch.linspace(0, 1, points.shape[1]).unsqueeze(0)
+    model = V16CandidateSelectionNetwork(
+        hidden_dim=16, encoder_layers=1, max_internal_knots=6,
+        attention_heads=2, selector_layers=1, min_selected_knots=0,
+        one_shot_selection_policy="mass_topk",
+        one_shot_adaptive_threshold=True,
+    )
+    objective = V16SubsetLoss(
+        mse_tolerance=1e-4, policy_samples=2,
+        joint_supervision="offline_feasible_teacher",
+        ranked_prefix_teacher=False, complexity_weight=0,
+    )
+    kwargs = dict(
+        synthetic_target_count=torch.tensor([2]),
+        synthetic_target_valid=torch.tensor([True]),
+        target_params=params,
+        target_internal_knots=torch.tensor([[0.2, 0.6, 0.0, 0.0, 0.0, 0.0]]),
+        target_internal_knot_mask=torch.tensor([[True, True, False, False, False, False]]),
+        target_geometry_valid=torch.tensor([True]),
+        feasible_teacher_mask=torch.tensor([[False, True, False, False, True, False]]),
+        feasible_teacher_knots=torch.tensor([[0.25, 0.68, 0.0, 0.0, 0.0, 0.0]]),
+        feasible_teacher_knot_mask=torch.tensor([[True, True, False, False, False, False]]),
+        feasible_teacher_count=torch.tensor([2]),
+        feasible_teacher_mse=torch.tensor([9e-5]),
+        feasible_teacher_pass=torch.tensor([True]),
+        feasible_teacher_risk=torch.tensor([[0.0, 0.8, 0.0, 0.0, 0.7, 0.0]]),
+        feasible_teacher_counterfactual_slot_weight=torch.tensor(
+            [[0.0, 0.0, 1.0, 1.5, 1.0, 1.0]],
+        ),
+        feasible_teacher_counterfactual_swap_feasible=torch.tensor(
+            [[False, True, False, False, False, False]],
+        ),
+        feasible_teacher_counterfactual_replacement_slot=torch.tensor(
+            [[-1, 0, -1, -1, -1, -1]],
+        ),
+    )
+    with patch.object(objective, "_fit", wraps=objective._fit) as fitted:
+        loss, _metrics = objective(model, points, stage="joint", **kwargs)
+    assert fitted.call_count == 3  # swaps were solved offline, never in Joint
+    assert torch.isfinite(loss)
+    with pytest.raises(ValueError, match="counterfactual slot weights"):
+        objective(
+            model, points, stage="joint",
+            **{**kwargs, "feasible_teacher_counterfactual_slot_weight": torch.ones(1, 5)},
+        )

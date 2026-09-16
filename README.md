@@ -4,14 +4,16 @@
 
 > 训练只使用带真参数、真内部节点、真节点数和逐节点删除 MSE 的认证合成曲线；UJI Pen、Natural Earth、USGS 和工业型线等距线只用于留出验证与测试，不参与梯度更新。冻结 Proposal 后，在**预测候选/参数域**上离线搜索可行子集并缓存标签；这是训练时教师，不在网络部署时间内。
 
-推荐的 Linux/3090 快速诊断入口如下；它训练源 `K=4..44`、候选 `Kc=56`、Proposal 48 + Joint 24 epoch、训练/验证 1500/300、Batch 64，测试仍覆盖源 `K=4..56`，其中 K=45..56 明确为训练范围外压力测试。它启用真节点锚定的离线教师和 Count–Keep 梯度耦合；旧默认行为与检查点仍保留。详细协议见 [Kc56 快速诊断说明](docs/v16_kc56_fast_pilot.md)。
+已拉取的 Kc=56 快速试验降低了节点数量，但一次性验证通过率仅 10.7%；尤其 K=45..56 的测试超出了其训练范围，且候选池本身常不满足阈值。下一步的独立诊断档恢复 `Kc=72` 与训练源 `K=4..56`，强化高 K 候选学习，并用离线交换代价监督 KeepMask。它尚未训练验证，不能预设通过率或用时；详见 [KeepMask 交换监督与高 K 诊断](docs/v16_keep_swap_highk.md)。旧 Kc=56 命令保留在 [历史快速诊断说明](docs/v16_kc56_fast_pilot.md)。
+
+新的 Linux/3090 一条龙诊断入口：
 
 ```bash
 bash scripts/run_v16_mse1e-4_3090.sh \
-  --pilot-kc56 \
+  --keep-swap-highk72 \
   --prepare-real-data \
   --device cuda \
-  --run-name candidate_selection_v16_mse1e-4_pilot_sourcek44_kc56_linux_r1
+  --run-name candidate_selection_v16_mse1e-4_keep_swap_highk72_linux_r1
 ```
 
 ## 原 Kc72 大规模实验合同（保留用于对照）
@@ -137,6 +139,7 @@ python scripts/fit_v16_point_cloud.py `
 ## 文档入口
 
 - [当前 v16 可行教师工作流与 Linux 指令](docs/v16_feasible_teacher_workflow.md)
+- [KeepMask 交换监督与高 K 分层诊断](docs/v16_keep_swap_highk.md)
 - [旧 supervised-only 训练流程](docs/training_pipeline.md)
 - [细粒度合成教师与新增监督](docs/v16_fine_grained_supervision.md)
 - [工业型线等距线数据集](docs/industrial_offset_dataset.md)

@@ -170,9 +170,9 @@ def _curve_record(
             raise RuntimeError("synthetic internal-knot target has an unexpected shape")
         if source_internal_knot_mask.shape != source_internal_knots.shape:
             raise RuntimeError("synthetic internal-knot mask has an unexpected shape")
-        # A proposal-only stratified sampler may generate its low-K bucket
-        # from a narrower source range. Pad that bucket back to the global
-        # source capacity so low/high rows still collate into one batch.
+        # A stratified sampler may generate its low-K bucket from a narrower
+        # source range. Pad back to global capacity so low/high rows collate
+        # into one batch in either Proposal or Joint training.
         target_internal_knots = points.new_zeros(max_internal_knots)
         target_internal_knot_mask = torch.zeros(
             max_internal_knots,
@@ -429,7 +429,9 @@ class MixedTrainingCurves(Dataset):
 
 class ValidationCurves(Dataset):
     def __init__(self, config, real_sources=(), *, size=1000, seed=1_000_000,
-                 real_per_source=100, synthetic_boundary_samples=0):
+                 real_per_source=100, synthetic_boundary_samples=0,
+                 synthetic_high_k_samples=0,
+                 synthetic_high_k_min_knots=None):
         if size < 1 or real_per_source < 1:
             raise ValueError("validation counts must be positive")
         if (
@@ -440,6 +442,21 @@ class ValidationCurves(Dataset):
             raise ValueError(
                 "synthetic_boundary_samples must be a non-negative integer"
             )
+        if (
+            isinstance(synthetic_high_k_samples, bool)
+            or not isinstance(synthetic_high_k_samples, int)
+            or synthetic_high_k_samples < 0
+        ):
+            raise ValueError(
+                "synthetic_high_k_samples must be a non-negative integer"
+            )
+        if (
+            synthetic_high_k_samples > 0
+            and synthetic_boundary_samples + synthetic_high_k_samples > size
+        ):
+            raise ValueError(
+                "synthetic boundary and high-K validation samples exceed size"
+            )
         options = dict(config)
         self.certified_synthetic_targets = bool(
             options.get("certified_minimal_source", False)
@@ -448,14 +465,18 @@ class ValidationCurves(Dataset):
             return_ground_truth=False,
             cache_samples=True,
         )
+        # Preserve legacy behavior when a tiny validation run requests more
+        # max-K boundary rows than its entire synthetic validation size.
         boundary_size = min(synthetic_boundary_samples, size)
-        random_size = max(size - boundary_size, 1)
+        high_k_size = synthetic_high_k_samples
+        random_size = max(size - boundary_size - high_k_size, 1)
         self.synthetic = SyntheticCubicBSplineDataset(
             size=random_size,
             seed=seed,
             **options,
         )
         self.synthetic_boundary = None
+        self.synthetic_high_k = None
         self.entries = []
         if boundary_size:
             boundary_options = dict(options)
@@ -469,9 +490,36 @@ class ValidationCurves(Dataset):
                 ("Synthetic", self.synthetic_boundary, i)
                 for i in range(boundary_size)
             )
+        if high_k_size:
+            if (
+                isinstance(synthetic_high_k_min_knots, bool)
+                or not isinstance(synthetic_high_k_min_knots, int)
+            ):
+                raise ValueError(
+                    "synthetic_high_k_min_knots must be an integer when "
+                    "high-K validation is enabled"
+                )
+            minimum_knots = int(options["min_control_points"]) - 4
+            maximum_knots = int(options["max_control_points"]) - 4
+            if not minimum_knots <= synthetic_high_k_min_knots <= maximum_knots:
+                raise ValueError(
+                    "synthetic_high_k_min_knots must lie inside the synthetic "
+                    "internal-knot range"
+                )
+            high_options = dict(options)
+            high_options["min_control_points"] = synthetic_high_k_min_knots + 4
+            self.synthetic_high_k = SyntheticCubicBSplineDataset(
+                size=high_k_size,
+                seed=seed + 30_000_003,
+                **high_options,
+            )
+            self.entries.extend(
+                ("Synthetic", self.synthetic_high_k, i)
+                for i in range(high_k_size)
+            )
         self.entries.extend(
             ("Synthetic", self.synthetic, i)
-            for i in range(size - boundary_size)
+            for i in range(size - boundary_size - high_k_size)
         )
         self.selected_real_ids = {}
         for source_index, (label, _, val) in enumerate(real_sources):

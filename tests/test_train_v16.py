@@ -42,6 +42,9 @@ def test_default_profile_keeps_ninety_percent_as_reporting_reference():
     assert args.feasible_teacher_strategy == "full_greedy"
     assert args.feasible_teacher_anchor_match_tolerance == pytest.approx(0.02)
     assert args.feasible_teacher_anchor_fallback_to_greedy is True
+    assert args.feasible_teacher_counterfactual_max_probes == 16
+    assert args.joint_high_k_fraction == 0
+    assert args.synthetic_high_k_val_size == 0
     assert args.count_structure_coupling is False
     assert args.proposal_high_k_fraction == pytest.approx(0.5)
     assert args.proposal_high_k_min_knots == 40
@@ -157,6 +160,37 @@ def test_fast_pilot_teacher_and_count_coupling_flags_are_opt_in():
     ])
     with pytest.raises(ValueError, match="anchor-first strategy requires"):
         train_v16.validate_args(non_offline)
+
+
+def test_high_k_swap_profile_validates_strata_and_probe_budget():
+    base = [
+        "--joint-supervision", "offline_feasible_teacher",
+        "--feasible-teacher-cache-dir", "outputs/teachers/high-k-swap-unit",
+        "--feasible-teacher-strategy", "synthetic_anchor_counterfactual",
+        "--feasible-teacher-counterfactual-max-probes", "16",
+        "--synthetic-count-role", "reference_only",
+        "--no-resample-train-each-epoch",
+        "--proposal-joint-lr", "0",
+        "--parameter-joint-lr", "0",
+        "--joint-high-k-fraction", "0.5",
+        "--joint-high-k-min-knots", "45",
+        "--synthetic-high-k-val-size", "32",
+        "--synthetic-high-k-val-min-knots", "45",
+    ]
+    args = train_v16.parser().parse_args(base)
+    train_v16.validate_args(args)
+    assert args.joint_high_k_min_knots == 45
+    assert args.synthetic_high_k_val_min_knots == 45
+    invalid = train_v16.parser().parse_args(base + [
+        "--feasible-teacher-counterfactual-max-probes", "25",
+    ])
+    with pytest.raises(ValueError, match="max probes"):
+        train_v16.validate_args(invalid)
+    oversized = train_v16.parser().parse_args(base + [
+        "--val-size", "40",
+    ])
+    with pytest.raises(ValueError, match="exceed val-size"):
+        train_v16.validate_args(oversized)
 
 
 def test_uncertified_synthetic_ablation_disables_canonical_certificate():
@@ -956,6 +990,30 @@ def test_validation_summary_audits_capacity_boundary_separately():
     assert result["qualification_deployment_pass_rate"] == pytest.approx(0.5)
 
 
+def test_validation_summary_reports_high_k_stratum_separately():
+    rows = [
+        dict(
+            source="Synthetic", mse=mse, dense_mse=dense_mse, k=keep,
+            target_k=target, probability_mass=float(keep),
+            adaptive_threshold=0.5,
+        )
+        for mse, dense_mse, keep, target in (
+            (5e-5, 1e-5, 52, 56),
+            (2e-4, 1e-5, 45, 45),
+            (1e-5, 1e-5, 4, 4),
+        )
+    ]
+    result = train_v16.summarize(
+        rows, 1e-4, candidate_capacity=72,
+        synthetic_high_k_min_count=45,
+    )
+    assert result["synthetic_high_k_sample_count"] == 2
+    assert result["synthetic_high_k_dense_pass_rate"] == pytest.approx(1.0)
+    assert result["synthetic_high_k_deployment_pass_rate"] == pytest.approx(0.5)
+    assert result["synthetic_high_k_deployment_mse"] == pytest.approx(1.25e-4)
+    assert result["synthetic_high_k_keep_count"] == pytest.approx(48.5)
+
+
 def test_validation_subset_cost_matches_the_per_curve_teacher_semantics():
     tolerance = 1e-4
     capacity = 8
@@ -1114,6 +1172,44 @@ def test_tiny_anchor_teacher_and_coupled_count_joint_train_end_to_end(tmp_path):
     assert payload["offline_feasible_teacher"]["strategy"] == "synthetic_anchor_first"
     assert payload["offline_feasible_teacher"]["teacher_not_globally_minimal"] is True
     assert payload["offline_feasible_teacher"]["sample_count"] == 4
+    assert (cache_dir / "train.pt").is_file()
+
+
+def test_tiny_counterfactual_teacher_high_k_joint_train_end_to_end(tmp_path):
+    output = tmp_path / "tiny_counterfactual_high_k.pt"
+    cache_dir = tmp_path / "counterfactual_teacher"
+    command = training_command(output) + [
+        "--joint-supervision", "offline_feasible_teacher",
+        "--feasible-teacher-cache-dir", str(cache_dir),
+        "--feasible-teacher-strategy", "synthetic_anchor_counterfactual",
+        "--feasible-teacher-anchor-match-tolerance", "1",
+        "--feasible-teacher-counterfactual-max-probes", "2",
+        "--count-structure-coupling",
+        "--proposal-high-k-fraction", "0.5",
+        "--proposal-high-k-min-knots", "6",
+        "--joint-high-k-fraction", "0.5",
+        "--joint-high-k-min-knots", "6",
+        "--synthetic-boundary-val-size", "1",
+        "--synthetic-high-k-val-size", "1",
+        "--synthetic-high-k-val-min-knots", "6",
+        "--synthetic-count-role", "reference_only",
+        "--no-resample-train-each-epoch",
+        "--proposal-joint-lr", "0",
+        "--parameter-joint-lr", "0",
+        "--selector-warmup-epochs", "0",
+    ]
+    assert train_v16.main(command) == 0
+    payload = torch.load(
+        tmp_path / "tiny_counterfactual_high_k.last.pt",
+        map_location="cpu", weights_only=True,
+    )
+    assert payload["offline_feasible_teacher"]["strategy"] == (
+        "synthetic_anchor_counterfactual"
+    )
+    assert payload["offline_feasible_teacher"]["counterfactual_max_probes"] == 2
+    assert payload["loss_config"]["weights"]["counterfactual_or_weight"] == 1.0
+    assert payload["validation_metrics"]["synthetic_high_k_sample_count"] >= 1
+    assert "counterfactual_or_loss" in payload["history"][1]["train"]
     assert (cache_dir / "train.pt").is_file()
 
 

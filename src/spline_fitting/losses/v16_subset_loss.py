@@ -122,6 +122,7 @@ class V16SubsetLoss(nn.Module):
         parameter_bias_weight: float = 0.0,
         fine_teacher_weight: float = 0.0,
         fine_teacher_ranking_weight: float = 0.0,
+        counterfactual_or_weight: float = 1.0,
         fine_teacher_temperature: float = 0.5,
         keep_fuzzy_negative_radius: float = 0.01,
         keep_fuzzy_negative_floor: float = 0.1,
@@ -165,6 +166,7 @@ class V16SubsetLoss(nn.Module):
             ("parameter_bias_weight", parameter_bias_weight),
             ("fine_teacher_weight", fine_teacher_weight),
             ("fine_teacher_ranking_weight", fine_teacher_ranking_weight),
+            ("counterfactual_or_weight", counterfactual_or_weight),
             ("keep_fuzzy_negative_radius", keep_fuzzy_negative_radius),
             ("false_remove_weight", false_remove_weight),
             ("ranking_margin", ranking_margin),
@@ -975,6 +977,37 @@ class V16SubsetLoss(nn.Module):
             penalty[pair_mask] * active_weight
         ).sum() / active_weight.sum().clamp_min(torch.finfo(logits.dtype).eps)
 
+    @staticmethod
+    def _swap_equivalence_or_loss(
+        logits: torch.Tensor,
+        feasible_swap: torch.Tensor,
+        replacement_slot: torch.Tensor,
+    ) -> torch.Tensor:
+        """Require at least one member of each measured feasible swap.
+
+        ``-log P(keep_i OR keep_j)`` has no incentive to activate both once
+        either succeeds. The fixed-count objective decides the cardinality.
+        This is training-only algebra on cached labels, not a numerical fit.
+        """
+        if not bool(feasible_swap.any()):
+            return logits.new_zeros(())
+        rows, retained = feasible_swap.nonzero(as_tuple=True)
+        substitute = replacement_slot[rows, retained]
+        retained_logit = logits[rows, retained]
+        substitute_logit = logits[rows, substitute]
+        log_numerator = torch.logsumexp(
+            torch.stack((
+                retained_logit,
+                substitute_logit,
+                retained_logit + substitute_logit,
+            ), dim=-1),
+            dim=-1,
+        )
+        log_denominator = (
+            F.softplus(retained_logit) + F.softplus(substitute_logit)
+        )
+        return (log_denominator - log_numerator).mean()
+
     def _proposal_ordered_assignment_loss(
         self, predicted, target, target_mask, valid,
     ):
@@ -1332,6 +1365,9 @@ class V16SubsetLoss(nn.Module):
         feasible_teacher_mse=None,
         feasible_teacher_pass=None,
         feasible_teacher_risk=None,
+        feasible_teacher_counterfactual_slot_weight=None,
+        feasible_teacher_counterfactual_swap_feasible=None,
+        feasible_teacher_counterfactual_replacement_slot=None,
     ):
         """Train Joint from source labels or fixed-Proposal offline subsets.
 
@@ -1377,6 +1413,9 @@ class V16SubsetLoss(nn.Module):
             ):
                 raise ValueError(f"{name} must be finite floating-point [B,K]")
         offline_feasible = self.joint_supervision == "offline_feasible_teacher"
+        counterfactual_slot_weight = None
+        counterfactual_swap_feasible = None
+        counterfactual_replacement_slot = None
         if offline_feasible:
             if (
                 not isinstance(feasible_teacher_mask, torch.Tensor)
@@ -1420,6 +1459,50 @@ class V16SubsetLoss(nn.Module):
                 or not torch.isfinite(feasible_teacher_risk).all()
             ):
                 raise ValueError("feasible teacher slot risk must be finite [B,Kc]")
+            if feasible_teacher_counterfactual_slot_weight is not None:
+                value = feasible_teacher_counterfactual_slot_weight
+                if (
+                    not isinstance(value, torch.Tensor)
+                    or value.shape != proposals.shape
+                    or value.device != points.device
+                    or not value.is_floating_point()
+                    or not torch.isfinite(value).all()
+                    or bool((value < 0).any())
+                ):
+                    raise ValueError(
+                        "feasible teacher counterfactual slot weights must be "
+                        "finite non-negative [B,Kc] on device"
+                    )
+                counterfactual_slot_weight = value.to(structure_logits.dtype)
+            extra_values = (
+                feasible_teacher_counterfactual_slot_weight,
+                feasible_teacher_counterfactual_swap_feasible,
+                feasible_teacher_counterfactual_replacement_slot,
+            )
+            if any(value is not None for value in extra_values):
+                if not all(value is not None for value in extra_values):
+                    raise ValueError("counterfactual swap labels must be provided together")
+                feasible = feasible_teacher_counterfactual_swap_feasible
+                replacement = feasible_teacher_counterfactual_replacement_slot
+                if (
+                    not isinstance(feasible, torch.Tensor)
+                    or feasible.shape != proposals.shape
+                    or feasible.device != points.device
+                    or feasible.dtype != torch.bool
+                    or not isinstance(replacement, torch.Tensor)
+                    or replacement.shape != proposals.shape
+                    or replacement.device != points.device
+                    or replacement.dtype != torch.long
+                    or bool((feasible & ~target_mask).any())
+                    or bool((replacement[feasible] < 0).any())
+                    or bool((replacement[feasible] >= proposals.shape[1]).any())
+                ):
+                    raise ValueError("counterfactual swap labels must be valid [B,Kc]")
+                replacement_kept = target_mask.gather(-1, replacement.clamp_min(0))
+                if bool(replacement_kept[feasible].any()):
+                    raise ValueError("counterfactual swap replacement must be omitted")
+                counterfactual_swap_feasible = feasible
+                counterfactual_replacement_slot = replacement
         else:
             target_mask = self._ordered_ground_truth_candidate_mask(
                 supervised_proposals, geometry_knots, geometry_mask, geometry_valid,
@@ -1514,7 +1597,6 @@ class V16SubsetLoss(nn.Module):
             target_mask.to(structure_logits.dtype),
             reduction="none",
         )
-        positive_count = target_mask.sum(-1).clamp_min(1)
         negative_mask = ~target_mask
         if offline_feasible:
             negative_confidence = torch.ones_like(proposals)
@@ -1530,11 +1612,32 @@ class V16SubsetLoss(nn.Module):
             )
         if not fine_teacher_active:
             negative_confidence = torch.ones_like(negative_confidence)
+        if counterfactual_slot_weight is not None:
+            # A measured threshold-feasible replacement is an acceptable
+            # alternative, not a hard false positive. Failed local swaps
+            # instead emphasize the teacher slot they could not replace.
+            negative_confidence = (
+                negative_confidence * counterfactual_slot_weight
+            )
+        counterfactual_or_loss = (
+            self._swap_equivalence_or_loss(
+                structure_logits,
+                counterfactual_swap_feasible,
+                counterfactual_replacement_slot,
+            )
+            if counterfactual_swap_feasible is not None
+            else structure_logits.new_zeros(())
+        )
         negative_weight = negative_mask.to(element_loss.dtype) * negative_confidence
         negative_count = negative_weight.sum(-1).clamp_min(1.0)
+        positive_weight = (
+            counterfactual_slot_weight
+            if counterfactual_slot_weight is not None
+            else torch.ones_like(element_loss)
+        ) * target_mask.to(element_loss.dtype)
         positive_loss = (
-            element_loss * target_mask.to(element_loss.dtype)
-        ).sum(-1) / positive_count
+            element_loss * positive_weight
+        ).sum(-1) / positive_weight.sum(-1).clamp_min(1.0)
         negative_loss = (
             element_loss * negative_weight
         ).sum(-1) / negative_count
@@ -1546,15 +1649,28 @@ class V16SubsetLoss(nn.Module):
             ) / (self.false_remove_weight + 1.0),
             positive_loss,
         ).mean()
+        distribution_target = target_mask.to(structure_probabilities.dtype)
+        if counterfactual_swap_feasible is not None and bool(counterfactual_swap_feasible.any()):
+            # Preserve the target cardinality while sharing spatial mass
+            # between two measured feasible alternatives. Otherwise Dice/CDF
+            # would contradict the swap-aware BCE/ranking and OR losses.
+            rows, retained = counterfactual_swap_feasible.nonzero(as_tuple=True)
+            substitute = counterfactual_replacement_slot[rows, retained]
+            distribution_target = distribution_target.clone()
+            distribution_target[rows, retained] = 0.5
+            distribution_target[rows, substitute] = 0.5
         keep_dice_loss, keep_cdf_loss = self._keep_distribution_losses(
             structure_probabilities,
-            target_mask,
+            distribution_target,
             supervised_proposals,
         )
         if fine_teacher_active:
+            fine_positive_weight = teacher_risk[target_mask].to(structure_logits.dtype)
+            if counterfactual_slot_weight is not None:
+                fine_positive_weight = fine_positive_weight * counterfactual_slot_weight[target_mask]
             fine_teacher_loss = (
                 F.softplus(-structure_logits)[target_mask]
-                * teacher_risk[target_mask].to(structure_logits.dtype)
+                * fine_positive_weight
             ).mean()
         else:
             fine_teacher_loss = logits.new_zeros(())
@@ -1588,18 +1704,23 @@ class V16SubsetLoss(nn.Module):
         ranking_loss = self._weighted_pairwise_ranking_loss(
             structure_logits,
             target_mask,
-            negative_confidence,
+            negative_confidence.clamp(0.0, 1.0),
             margin=self.ranking_margin,
+            positive_weight=counterfactual_slot_weight,
         )
         if fine_teacher_active and bool(pair_mask.any()):
             risk = teacher_risk.to(logits.dtype)
             fine_teacher_ranking_loss = self._weighted_pairwise_ranking_loss(
                 structure_logits,
                 target_mask,
-                negative_confidence,
+                negative_confidence.clamp(0.0, 1.0),
                 margin=self.ranking_margin,
                 positive_margin=risk,
-                positive_weight=risk.clamp_min(0.5),
+                positive_weight=(
+                    risk.clamp_min(0.5) * counterfactual_slot_weight
+                    if counterfactual_slot_weight is not None
+                    else risk.clamp_min(0.5)
+                ),
             )
         else:
             fine_teacher_ranking_loss = logits.new_zeros(())
@@ -1735,6 +1856,7 @@ class V16SubsetLoss(nn.Module):
             self.fit_weight * selected_fit
             + self.dense_weight * dense_penalty
             + self.distillation_weight * keep_supervision_loss
+            + self.counterfactual_or_weight * counterfactual_or_loss
             + self.keep_dice_weight * keep_dice_loss
             + self.keep_cdf_weight * keep_cdf_loss
             + self.fine_teacher_weight * fine_teacher_loss
@@ -1770,7 +1892,22 @@ class V16SubsetLoss(nn.Module):
                 torch.finfo(dense_mse.dtype).eps
             )
         )
+        if counterfactual_swap_feasible is not None:
+            substitute_selected = deployment_mask.gather(
+                -1, counterfactual_replacement_slot.clamp_min(0),
+            )
+            equivalent_covered = (
+                (deployment_mask & target_mask)
+                | (counterfactual_swap_feasible & substitute_selected)
+            )
+            equivalent_recall = (
+                equivalent_covered.sum().to(dense_mse.dtype) / labelled_positive
+            )
+        else:
+            equivalent_recall = keep_recall
         critical = target_mask & (teacher_risk >= 0.75)
+        if counterfactual_swap_feasible is not None:
+            critical = critical & ~counterfactual_swap_feasible
         critical_false_delete_rate = (
             (critical & ~deployment_mask).sum().to(dense_mse.dtype)
             / critical.sum().clamp_min(1).to(dense_mse.dtype)
@@ -1787,10 +1924,17 @@ class V16SubsetLoss(nn.Module):
             # teacher distillation. Prefer supervised_keep_loss in new reports.
             "mask_distillation_loss": keep_supervision_loss,
             "supervised_keep_loss": keep_supervision_loss,
+            "counterfactual_or_loss": counterfactual_or_loss,
+            "counterfactual_feasible_swap_fraction": (
+                counterfactual_swap_feasible.to(dense_mse.dtype).sum()
+                / target_mask.sum().clamp_min(1).to(dense_mse.dtype)
+                if counterfactual_swap_feasible is not None else zero
+            ),
             "keep_dice_loss": keep_dice_loss,
             "keep_cdf_loss": keep_cdf_loss,
             "keep_mask_precision": keep_precision,
             "keep_mask_recall": keep_recall,
+            "keep_mask_swap_equivalent_recall": equivalent_recall,
             "keep_mask_f1": keep_f1,
             "fine_teacher_loss": fine_teacher_loss,
             "fine_teacher_ranking_loss": fine_teacher_ranking_loss,
@@ -1897,6 +2041,9 @@ class V16SubsetLoss(nn.Module):
         feasible_teacher_knot_mask=None, feasible_teacher_count=None,
         feasible_teacher_mse=None, feasible_teacher_pass=None,
         feasible_teacher_risk=None,
+        feasible_teacher_counterfactual_slot_weight=None,
+        feasible_teacher_counterfactual_swap_feasible=None,
+        feasible_teacher_counterfactual_replacement_slot=None,
     ):
         if stage not in ("proposal", "joint"):
             raise ValueError("stage must be 'proposal' or 'joint'")
@@ -2151,6 +2298,15 @@ class V16SubsetLoss(nn.Module):
                     feasible_teacher_mse=feasible_teacher_mse,
                     feasible_teacher_pass=feasible_teacher_pass,
                     feasible_teacher_risk=feasible_teacher_risk,
+                    feasible_teacher_counterfactual_slot_weight=(
+                        feasible_teacher_counterfactual_slot_weight
+                    ),
+                    feasible_teacher_counterfactual_swap_feasible=(
+                        feasible_teacher_counterfactual_swap_feasible
+                    ),
+                    feasible_teacher_counterfactual_replacement_slot=(
+                        feasible_teacher_counterfactual_replacement_slot
+                    ),
                 )
             logits = context["keep_logits"]
             if logits.shape != proposals.shape or logits.device != points.device:

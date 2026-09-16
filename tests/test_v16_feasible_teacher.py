@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -14,6 +15,7 @@ from spline_fitting.training.v16_feasible_teacher import (
     _devices_equivalent,
     _ordered_anchor_slots,
     build_or_load_v16_feasible_teacher_cache,
+    _local_swap_counterfactual_labels,
 )
 from spline_fitting.data.synthetic import bspline_basis_matrix
 from spline_fitting.evaluation.knot_diagnostics import build_open_knot_vector
@@ -317,6 +319,74 @@ def test_anchor_first_adds_back_until_threshold_or_all_candidates(tmp_path):
     assert bool(cache.batch.teacher_threshold_satisfied.item()) == (
         float(cache.batch.teacher_fit_rms.item()) <= 1e-6
     )
+
+
+def test_counterfactual_swap_softens_feasible_alternative_and_bounds_work(monkeypatch):
+    calls = []
+
+    def fake_refit(parameters, points, knots, **kwargs):
+        calls.append(knots.clone())
+        mse = 5e-5 if float(knots[0]) < 0.35 else 2e-4
+        return SimpleNamespace(fit_mse=torch.tensor(mse, dtype=knots.dtype))
+
+    monkeypatch.setattr(
+        "spline_fitting.training.v16_feasible_teacher.refit_bspline_control_points",
+        fake_refit,
+    )
+    teacher = SimpleNamespace(
+        teacher_retained_mask=torch.tensor([[False, True, False, True, False]]),
+        teacher_threshold_satisfied=torch.tensor([True]),
+        config=SimpleNamespace(
+            error_tolerance=0.01, degree=3, smoothness_weight=0.0,
+            control_ridge=0.0, rcond=None,
+        ),
+    )
+    candidates = torch.tensor([[0.3, 0.4, 0.6, 0.7, 0.8]], dtype=torch.float64)
+    labels = _local_swap_counterfactual_labels(
+        torch.linspace(0, 1, 12, dtype=torch.float64).unsqueeze(0),
+        torch.zeros(1, 12, 2, dtype=torch.float64),
+        candidates, teacher, max_probes=2,
+    )
+    assert len(calls) == 2
+    assert labels["teacher_counterfactual_probe_count"].tolist() == [2]
+    assert labels["teacher_counterfactual_swap_feasible"].tolist() == [
+        [False, True, False, False, False],
+    ]
+    weights = labels["teacher_counterfactual_slot_weight"][0]
+    assert weights[1].item() == 0.0
+    assert weights[0].item() == 0.0  # feasible pair gets OR, no hard BCE
+    assert weights[3].item() == 1.5  # measured local swap breaches tolerance
+    assert weights[2].item() == 1.0
+
+
+def test_counterfactual_cache_is_opt_in_versioned_and_probe_fingerprinted(tmp_path):
+    model = _CertifiedProposal()
+    dataset = _CertifiedSynthetic()
+    path = tmp_path / "counterfactual.pt"
+    options = dict(
+        mse_tolerance=1e-8, device="cpu", batch_size=1,
+        teacher_strategy="synthetic_anchor_counterfactual",
+        anchor_match_tolerance=0.02, counterfactual_max_probes=2,
+    )
+    cache = build_or_load_v16_feasible_teacher_cache(model, dataset, path, **options)
+    assert cache.batch.teacher_counterfactual_probe_count.item() <= 2
+    assert cache.batch.teacher_counterfactual_slot_weight.shape == (1, 5)
+    assert torch.load(path, weights_only=True)["version"] == 4
+    loaded = build_or_load_v16_feasible_teacher_cache(model, dataset, path, **options)
+    assert loaded.loaded
+    assert torch.equal(
+        loaded.batch.teacher_counterfactual_slot_weight,
+        cache.batch.teacher_counterfactual_slot_weight,
+    )
+    with pytest.raises(ValueError, match="does not match frozen Proposal"):
+        build_or_load_v16_feasible_teacher_cache(
+            model, dataset, path, **{**options, "counterfactual_max_probes": 3},
+        )
+    with pytest.raises(ValueError, match="does not match frozen Proposal"):
+        build_or_load_v16_feasible_teacher_cache(
+            model, dataset, path,
+            **{**options, "teacher_strategy": "synthetic_anchor_first"},
+        )
 
 
 @pytest.mark.parametrize(
