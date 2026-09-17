@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # ruff: noqa: E402
 
+import copy
 import importlib.util
 from pathlib import Path
 import sys
@@ -21,6 +22,7 @@ from spline_fitting.checkpointing import (
     V16_JOINT_CHECKPOINT_QUALITY,
     V16_SIMPLIFICATION_CONTRACT,
 )
+from plot_v16_method_comparison import _synthetic_canonical_k
 from visualize_batch_comparison import source_knot_count_from_seed
 spec = importlib.util.spec_from_file_location("benchmark_v15", ROOT / "scripts/benchmark_v15_datasets.py")
 benchmark = importlib.util.module_from_spec(spec)
@@ -280,10 +282,94 @@ def test_synthetic_summary_reports_canonical_count_accuracy():
     summary = benchmark.summarize(rows)[0]
 
     assert summary["canonical_k_mean"] == pytest.approx(34 / 3)
+    assert summary["canonical_label_n"] == 3
+    assert summary["canonical_count_valid_n"] == 3
     assert summary["canonical_count_mae"] == pytest.approx(1.0)
     assert summary["canonical_count_bias"] == pytest.approx(-1 / 3)
     assert summary["canonical_count_exact_rate"] == pytest.approx(1 / 3)
     assert summary["canonical_count_within_one_rate"] == pytest.approx(2 / 3)
+
+
+@pytest.mark.parametrize("failed_indices", [(2,), (0, 1, 2)])
+def test_paired_canonical_summary_keeps_labels_when_a_method_fails(failed_indices):
+    methods = ("ours", "park_dominant_point_2007_adaptation")
+    rows = []
+    for method in methods:
+        for index, (canonical_k, final_k) in enumerate(((8, 9), (12, 12), (14, 12))):
+            failed = method != "ours" and index in failed_indices
+            rows.append({
+                "dataset": "Synthetic", "sample_id": f"synthetic-{index}",
+                "method": method, "status": "failed" if failed else "ok",
+                "mse": None if failed else 1e-6, "reference_mse": None,
+                "fit_pass": not failed, "reference_pass": None,
+                "final_k": None if failed else final_k, "canonical_k": canonical_k,
+                "total_ms": 3, "network_ms": 1 if method == "ours" else None,
+                "error": "numeric failure" if failed else None,
+            })
+    original = copy.deepcopy(rows)
+
+    summary = benchmark.summarize(rows)
+    index = {(row["dataset"], row["method"]): row for row in summary}
+    ours = index[("Synthetic", "ours")]
+    baseline = index[("Synthetic", methods[1])]
+
+    assert rows == original
+    assert ours["n"] == baseline["n"] == 3
+    assert ours["canonical_label_n"] == baseline["canonical_label_n"] == 3
+    assert ours["canonical_k_mean"] == pytest.approx(34 / 3)
+    assert baseline["canonical_k_mean"] == pytest.approx(34 / 3)
+    assert _synthetic_canonical_k(index, methods) == pytest.approx(34 / 3)
+    assert baseline["failed"] == len(failed_indices)
+    assert baseline["fit_pass_rate"] == pytest.approx((3 - len(failed_indices)) / 3)
+    assert ours["canonical_count_valid_n"] == 3
+    assert baseline["canonical_count_valid_n"] == 3 - len(failed_indices)
+    if len(failed_indices) == 3:
+        assert baseline["mse_mean"] is None
+        assert baseline["final_k_mean"] is None
+        for metric in ("mae", "bias", "exact_rate", "within_one_rate"):
+            assert baseline[f"canonical_count_{metric}"] is None
+    else:
+        assert baseline["canonical_count_mae"] == pytest.approx(0.5)
+        assert baseline["canonical_count_bias"] == pytest.approx(0.5)
+        assert baseline["canonical_count_exact_rate"] == pytest.approx(0.5)
+        assert baseline["canonical_count_within_one_rate"] == pytest.approx(1.0)
+
+    # A genuine paired-label mismatch remains an error, including when the
+    # differing label belongs to a failed measurement.
+    mismatched = copy.deepcopy(rows)
+    mismatched[-1]["canonical_k"] = 16
+    mismatched_index = {
+        (row["dataset"], row["method"]): row
+        for row in benchmark.summarize(mismatched)
+    }
+    with pytest.raises(ValueError, match="inconsistent across paired methods"):
+        _synthetic_canonical_k(mismatched_index, methods)
+
+
+def test_canonical_count_accuracy_does_not_filter_unsatisfied_mse_threshold():
+    row = {
+        "dataset": "Synthetic", "method": "ours", "status": "ok",
+        "mse": 1e-2, "reference_mse": None, "fit_pass": False,
+        "reference_pass": None, "final_k": 20, "canonical_k": 12,
+        "total_ms": 3, "network_ms": 1,
+    }
+    failed = {
+        **row, "status": "failed", "mse": None,
+        "final_k": 0, "canonical_k": 14,
+    }
+
+    summary = benchmark.summarize([row, failed])[0]
+
+    assert summary["n"] == 2
+    assert summary["failed"] == 1
+    assert summary["fit_pass_rate"] == 0.0
+    assert summary["canonical_k_mean"] == pytest.approx(13.0)
+    assert summary["canonical_label_n"] == 2
+    assert summary["canonical_count_valid_n"] == 1
+    assert summary["canonical_count_mae"] == pytest.approx(8.0)
+    assert summary["canonical_count_bias"] == pytest.approx(8.0)
+    assert summary["canonical_count_exact_rate"] == 0.0
+    assert summary["canonical_count_within_one_rate"] == 0.0
 
 
 def test_summary_without_canonical_labels_and_empty_input_are_safe():
@@ -297,6 +383,8 @@ def test_summary_without_canonical_labels_and_empty_input_are_safe():
     summary = benchmark.summarize([row])[0]
 
     assert summary["canonical_k_mean"] is None
+    assert summary["canonical_label_n"] == 0
+    assert summary["canonical_count_valid_n"] == 0
     assert summary["canonical_count_mae"] is None
     assert summary["canonical_count_bias"] is None
     assert summary["canonical_count_exact_rate"] is None

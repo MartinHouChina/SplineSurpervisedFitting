@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "attempts": [
+    {
+      "signature": {
+        "request": "same"
+      },
+      "directory": "E:\\SelfSurpervisedSplineFitting\\outputs\\self_validation\\runner_resume_tests_20260917_a2\\test_plot_retry_preserves_part0\\figures",
+      "state": "interrupted",
+      "exit_code": 1
+    },
+    {
+      "signature": {
+        "request": "same"
+      },
+      "directory": "E:\\SelfSurpervisedSplineFitting\\outputs\\self_validation\\runner_resume_tests_20260917_a2\\test_plot_retry_preserves_part0\\figures\\attempt_955097961381",
+      "state": "complete",
+      "artifacts": {
+        "v16_published_methods_input.png": "06b29bb318814108e94270528fe7994c096308b3692923723bf1ae6f98d50b4f"
+      }
+    }
+  ]
+}

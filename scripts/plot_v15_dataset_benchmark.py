@@ -25,6 +25,10 @@ METHODS = (
     "yeh_feature_cdf_2020",
     "uniform_gradient_pruning",
 )
+# Some benchmark reports retain a separately timed numerical repair row.
+# Accept it when reading, but do not silently add it to the comparison panels
+# or substitute its measurements for the raw one-shot network.
+AUXILIARY_METHODS = ("ours_verified",)
 LABELS = {
     "ours": "Ours v15",
     "park_dominant_point_2007_adaptation": "Park & Lee 2007 (DOM adaptation)",
@@ -80,7 +84,7 @@ def read_report(path: Path) -> dict:
         if pair in pairs:
             raise ValueError(f"Duplicate summary row: {pair}")
         pairs.add(pair)
-        if row["method"] not in METHODS:
+        if row["method"] not in (*METHODS, *AUXILIARY_METHODS):
             raise ValueError(f"Unsupported method: {row['method']}")
         for key in ("mse_mean", "reference_mse_mean", "total_ms_mean", "network_ms_mean"):
             value = row.get(key)

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "attempts": [
+    {
+      "signature": {},
+      "directory": "E:\\SelfSurpervisedSplineFitting\\outputs\\self_validation\\runner_resume_tests_20260917_a2\\test_unowned_figure_files_are_0\\attempt_b74bb1f53154",
+      "state": "complete",
+      "artifacts": {
+        "v16_published_methods_input.png": "f6a214f7a5fcda0c2cee9660b7fc29f5649e3c68aad48e20e950137c98913a68"
+      }
+    }
+  ]
+}

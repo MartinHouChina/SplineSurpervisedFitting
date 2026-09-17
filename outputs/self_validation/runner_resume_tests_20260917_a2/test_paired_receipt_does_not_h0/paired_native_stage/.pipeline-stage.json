@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "attempts": [
+    {
+      "signature": {},
+      "directory": "E:\\SelfSurpervisedSplineFitting\\outputs\\self_validation\\runner_resume_tests_20260917_a2\\test_paired_receipt_does_not_h0\\paired_native_stage",
+      "state": "complete",
+      "artifacts": {
+        "paired_native.json": "be0ba73ee2428cfb189f8d1d1c87345e0b69c9628fd647d3f051a2514d38e8ae"
+      }
+    }
+  ]
+}

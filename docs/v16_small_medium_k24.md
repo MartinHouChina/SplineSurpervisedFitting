@@ -74,6 +74,22 @@ bash scripts/run_v16_small_medium_k24_3090.sh \
 
 数据已齐全时可省略 `--prepare-real-data`。该 wrapper 调用现有主脚本的 `--small-medium-k24` 配置。使用新的运行名，不覆盖旧检查点。中断后带相同运行名和 `--resume-run` 恢复本次实验，不加载旧高容量的 `.last.pt`。
 
+```bash
+bash scripts/run_v16_small_medium_k24_3090.sh \
+  --resume-run \
+  --device cuda \
+  --run-name v16_small_medium_k24_r1
+```
+
+如首次运行覆盖过训练或评测参数，续跑时也须提供相同参数。续跑按阶段处理：
+
+- 训练未完成：原生 `.last.pt` 断点续训；训练已完成：验证原配置和模型工件后跳过，不要求增加 epoch。
+- 评测已完整：核对检查点、配置、代码、数据、运行环境及逐例记录后复用；只有部分记录：使用 benchmark 的 `--resume` 补齐。
+- 绘图或案例输出已完成：校验 `.pipeline-stage.json` 和产物哈希后复用；此前中断：写入新的 `attempt_*` 子目录，保留旧 PNG/JSON。终端日志会打印实际目录。
+- 未显式加 `--resume-run` 时仍拒绝覆盖现有运行。代码或数据指纹变化时也会拒绝混合旧测量，不会因续跑而绕过校验。已保存且统计正确的 `comparison.json` 可单独用绘图脚本输出到新目录，无需重训模型。
+
+本次修复仅涉及评测统计、绘图读取和流程恢复，不改变 K24 网络、Teacher 或训练损失；详见 [检查与修复记录](v16_k24_code_audit.md)。
+
 ## 对比与报告边界
 
 - 合成六方法对比只扫描 source K=4..20，所有方法内部节点预算统一为 24，使用相同曲线、MSE 定义及阈值。

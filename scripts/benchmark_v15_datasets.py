@@ -715,9 +715,15 @@ def summarize(rows: list[dict]) -> list[dict]:
     for (dataset, method), values in groups.items():
         valid = [r for r in values if r["status"] == "ok"]
         refs = [r for r in valid if r["reference_mse"] is not None]
-        knot_labels = [r for r in valid if r.get("canonical_k") is not None]
+        # Ground-truth statistics describe the paired dataset, not the subset
+        # on which this method happened to finish successfully.
+        knot_labels = [r for r in values if r.get("canonical_k") is not None]
+        count_predictions = [
+            r for r in valid
+            if r.get("canonical_k") is not None and r.get("final_k") is not None
+        ]
         count_errors = [
-            r["final_k"] - r["canonical_k"] for r in knot_labels
+            r["final_k"] - r["canonical_k"] for r in count_predictions
         ]
         safeguard_rows = [
             r
@@ -746,6 +752,8 @@ def summarize(rows: list[dict]) -> list[dict]:
                 statistics.fmean(r["canonical_k"] for r in knot_labels)
                 if knot_labels else None
             ),
+            "canonical_label_n": len(knot_labels),
+            "canonical_count_valid_n": len(count_errors),
             "canonical_count_mae": (
                 statistics.fmean(abs(error) for error in count_errors)
                 if count_errors else None

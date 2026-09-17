@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import struct
 import sys
 from pathlib import Path
@@ -136,6 +137,42 @@ def test_four_metric_renderer_writes_input_and_reference_pngs_without_mutation(
         assert width >= 500
         assert height >= 300
     assert report == before
+
+
+def test_cli_reads_verified_rows_but_plots_only_the_six_original_methods(
+    tmp_path, report, monkeypatch,
+):
+    for dataset in ("Synthetic", "UJI"):
+        row = next(row for row in report["summary"]
+                   if row["dataset"] == dataset and row["method"] == "ours")
+        report["summary"].append(dict(row, method="ours_verified", mse_mean=1e-9))
+        report["measurements"].append({
+            "dataset": dataset, "sample_id": f"{dataset.lower()}-0",
+            "method": "ours_verified", "status": "ok",
+        })
+    report["metadata"]["diagnostic_not_final"] = True
+    report["metadata"]["fingerprint"] = plotting._metadata_fingerprint(report["metadata"])
+    path = tmp_path / "comparison.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    original_bytes = path.read_bytes()
+    methods_drawn = set()
+    draw = plotting._plot_value
+
+    def record_method(*args, **kwargs):
+        methods_drawn.add(kwargs["method"])
+        return draw(*args, **kwargs)
+
+    monkeypatch.setattr(plotting, "_plot_value", record_method)
+    monkeypatch.setattr(sys, "argv", [
+        "plot_v16_method_comparison.py", "--input", str(path),
+        "--output-dir", str(tmp_path / "figures"), "--method-set", "published",
+        "--dpi", "40", "--reference", "--allow-unqualified-diagnostic",
+    ])
+    plotting.main()
+    assert methods_drawn == set(plotting.PUBLISHED_METHODS)
+    assert path.read_bytes() == original_bytes
+    for name in ("v16_published_methods_input.png", "v16_published_methods_reference.png"):
+        assert (tmp_path / "figures" / name).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_only_synthetic_canonical_k_is_used_as_reference(report: dict) -> None:

@@ -196,7 +196,9 @@ Main options:
   --paired-reference-checkpoint PATH Native paired reference (recovery resume override)
   --no-init-checkpoint           Train all modules from scratch
   --resume-run                   Continue this run from its existing .last.pt
-                                  (keeps the original --output and Proposal)
+                                  (keeps the original --output and Proposal).
+                                  Completed training is validated and skipped;
+                                  evaluation/figure stages resume without overwriting.
   --feasible-teacher-batch-size N Numerical Teacher build batch (default: 8)
   --pilot-kc56                  Opt-in quick architecture diagnostic: source K=4..44,
                                   Kc=56, Proposal 48 + Joint 24, train/val=1500/300,
@@ -572,6 +574,20 @@ run_logged() {
   return "$status"
 }
 
+run_stage_logged() {
+  local phase="$1" kind="$2"
+  shift 2
+  if ((DRY_RUN)); then
+    # Keep dry-run commands directly executable and do not inspect checkpoints.
+    run_logged "$phase" "$@"
+  else
+    local recovery_args=()
+    ((RESUME_RUN == 0)) || recovery_args+=(--resume-run)
+    run_logged "$phase" "$PYTHON_BIN" scripts/v16_pipeline_resume.py \
+      "$kind" "${recovery_args[@]}" -- "$@"
+  fi
+}
+
 printf '%s v16 Linux %s profile: MSE=1e-4, Kc=%s, training source K=4..%s, train/val=%s/%s, batch=%s.\n' \
   "$([[ $RESUME_RUN -eq 1 ]] && printf Resume || printf Fresh)" \
   "$RUN_PROFILE" \
@@ -770,7 +786,17 @@ elif [[ -n "$INIT_CHECKPOINT" ]]; then
       "$INIT_CHECKPOINT" >&2
   fi
 fi
-run_logged "$TRAIN_PHASE" "${TRAIN_ARGS[@]}"
+TRAINING_STATUS=resume
+if ((RESUME_RUN && DRY_RUN == 0)); then
+  CURRENT_PHASE=validate_training_resume
+  TRAINING_STATUS="$("$PYTHON_BIN" scripts/v16_pipeline_resume.py training-status \
+    -- "${TRAIN_ARGS[@]:2}")"
+fi
+if [[ "$TRAINING_STATUS" == complete ]]; then
+  printf '\n[train_already_complete] Validated completed training; reusing %s\n' "$CHECKPOINT_PATH"
+else
+  run_logged "$TRAIN_PHASE" "${TRAIN_ARGS[@]}"
+fi
 
 if ((DRY_RUN == 0)); then
   [[ -f "$CHECKPOINT_PATH" ]] || die "training completed without best checkpoint: $CHECKPOINT_PATH"
@@ -818,7 +844,9 @@ COMPARISON_DIRECTORY="$COMPARISON_ROOT/$TAG"
 METRIC_FIGURE_DIRECTORY="$FIGURE_ROOT/$TAG/four_metrics"
 REAL_FIGURE_DIRECTORY="$FIGURE_ROOT/$TAG/six_method_real_cases"
 for directory in "$COMPARISON_DIRECTORY" "$METRIC_FIGURE_DIRECTORY" "$REAL_FIGURE_DIRECTORY"; do
-  [[ ! -e "$directory" ]] || die "refusing to overwrite evaluation output: $directory"
+  if ((RESUME_RUN == 0)); then
+    [[ ! -e "$directory" ]] || die "refusing to overwrite evaluation output: $directory"
+  fi
   if ((DRY_RUN == 0)); then
     mkdir -p -- "$directory"
   fi
@@ -851,7 +879,7 @@ if ((PILOT_KC56)); then
   STRESS_ARGS=(--synthetic-test-max-control-points 60)
 fi
 
-run_logged benchmark_six_methods_plus_verified \
+run_stage_logged benchmark_six_methods_plus_verified benchmark \
   "$PYTHON_BIN" scripts/benchmark_v16_datasets.py \
   --checkpoint "$CHECKPOINT_PATH" \
   --output-dir "$COMPARISON_DIRECTORY" \
@@ -868,14 +896,14 @@ run_logged benchmark_six_methods_plus_verified \
   --torch-num-threads 4 --device "$DEVICE" \
   "${DIAGNOSTIC_ARGS[@]}" "${FORCE_DIAGNOSTIC_ARGS[@]}"
 
-run_logged plot_four_metrics \
+run_stage_logged plot_four_metrics plot \
   "$PYTHON_BIN" scripts/plot_v16_method_comparison.py \
   --input "$COMPARISON_DIRECTORY/comparison.json" \
   --output-dir "$METRIC_FIGURE_DIRECTORY" \
   --method-set published --dpi 300 --reference \
   "${DIAGNOSTIC_ARGS[@]}"
 
-run_logged visualize_six_method_real_cases \
+run_stage_logged visualize_six_method_real_cases visualize \
   "$PYTHON_BIN" scripts/visualize_v16_real_deployments.py \
   --checkpoint "$CHECKPOINT_PATH" \
   --output-dir "$REAL_FIGURE_DIRECTORY" \
@@ -888,11 +916,11 @@ run_logged visualize_six_method_real_cases \
   "${DIAGNOSTIC_ARGS[@]}" "${FORCE_DIAGNOSTIC_ARGS[@]}"
 
 if ((KEEP_STATE_RECOVERY)); then
-  run_logged paired_native_deployment \
+  run_stage_logged paired_native_deployment paired \
     "$PYTHON_BIN" scripts/quick_compare_v16_checkpoints.py \
     --old-checkpoint "$PAIRED_REFERENCE_CHECKPOINT" \
     --new-checkpoint "$CHECKPOINT_PATH" \
-    --output-json "$COMPARISON_DIRECTORY/paired_native.json" \
+    --output-json "$COMPARISON_DIRECTORY/paired_native_stage/paired_native.json" \
     --min-source-k 4 --max-source-k 56 --samples-per-k 1 \
     --real-samples-per-dataset 5 \
     --manifest "UJI=$UJI_MANIFEST" \

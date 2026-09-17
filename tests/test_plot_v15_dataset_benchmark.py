@@ -73,6 +73,22 @@ def test_read_report_preserves_measurements_and_nullable_failed_mse(tmp_path, re
     assert plotting._num_points(parsed["metadata"]) == "32"
 
 
+def test_read_report_keeps_verified_auxiliary_without_adding_a_default_method(tmp_path, report):
+    verified = dict(report["summary"][0], method="ours_verified", mse_mean=1e-9)
+    report["summary"].append(verified)
+    original = copy.deepcopy(report)
+    parsed = plotting.read_report(_write_report(tmp_path, report))
+    assert parsed == original
+    assert "ours_verified" not in plotting.METHODS
+    assert parsed["summary"][0]["mse_mean"] != verified["mse_mean"]
+    assert plotting.render_report(parsed, tmp_path, dpi=40) is not None
+    assert parsed == original
+
+    report["summary"][-1]["mse_mean"] = -1.0
+    with pytest.raises(ValueError, match="Invalid mse_mean"):
+        plotting.read_report(_write_report(tmp_path, report))
+
+
 @pytest.mark.parametrize("tolerance", [None, 0.0, -1e-5, float("nan"), float("inf")])
 def test_read_report_rejects_invalid_threshold(tmp_path, report, tolerance) -> None:
     report["metadata"]["mse_tolerance"] = tolerance
