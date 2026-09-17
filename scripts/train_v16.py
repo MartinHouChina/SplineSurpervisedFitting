@@ -64,6 +64,9 @@ V16_OFFLINE_LOSS_SEMANTICS_REVISION = "offline_teacher_proposal_frame_positions_
 V16_SMALL_MEDIUM_SYNTHETIC_CONTRACT = (
     "certified_source_subset_threshold_minimal_k4_20_kc24_span001_v1"
 )
+V16_SMALL_MEDIUM_K48_SYNTHETIC_CONTRACT = (
+    "certified_source_subset_threshold_minimal_k4_20_kc48_span001_v1"
+)
 
 
 class IndexedTrainingDataset(Dataset):
@@ -84,8 +87,9 @@ class IndexedTrainingDataset(Dataset):
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
-        "--study-scope", choices=("legacy", "small_medium_k24"), default="legacy",
-        help="Use an explicit independent K=4..20, Kc=24 study contract",
+        "--study-scope", choices=("legacy", "small_medium_k24", "small_medium_k48"),
+        default="legacy",
+        help="Use an explicit independent K=4..20 study contract with Kc=24 or Kc=48",
     )
     p.add_argument("--epochs", type=int, default=128, help="Total proposal plus joint epochs")
     p.add_argument(
@@ -519,21 +523,22 @@ def validate_args(args):
         > args.val_size
     ):
         raise ValueError("synthetic boundary and high-K validation samples exceed val-size")
-    if args.study_scope == "small_medium_k24":
-        if (args.min_control_points, args.max_control_points, args.candidate_knots) != (8, 24, 24):
+    if args.study_scope in {"small_medium_k24", "small_medium_k48"}:
+        study_candidates = 48 if args.study_scope == "small_medium_k48" else 24
+        if (args.min_control_points, args.max_control_points, args.candidate_knots) != (8, 24, study_candidates):
             raise ValueError(
-                "small_medium_k24 requires source control points 8..24 "
-                "(source K=4..20) and candidate-knots 24"
+                f"{args.study_scope} requires source control points 8..24 "
+                f"(source K=4..20) and candidate-knots {study_candidates}"
             )
         if (args.proposal_high_k_fraction != 0.0 or args.joint_high_k_fraction != 0.0
                 or args.synthetic_high_k_val_size != 0):
             raise ValueError(
-                "small_medium_k24 requires proposal-high-k-fraction 0, "
+                f"{args.study_scope} requires proposal-high-k-fraction 0, "
                 "joint-high-k-fraction 0 and synthetic-high-k-val-size 0"
             )
         if args.knot_min_span != 0.01 or not args.certified_minimal_source:
             raise ValueError(
-                "small_medium_k24 requires knot-min-span 0.01 and certified minimal sources"
+                f"{args.study_scope} requires knot-min-span 0.01 and certified minimal sources"
             )
     if not 1 <= args.candidate_knots <= args.num_points - 4:
         raise ValueError("candidate-knots must be between 1 and num-points - 4")
@@ -1777,6 +1782,8 @@ def synthetic_data_contract(args):
         return "random_source_uncertified"
     if args.study_scope == "small_medium_k24":
         return V16_SMALL_MEDIUM_SYNTHETIC_CONTRACT
+    if args.study_scope == "small_medium_k48":
+        return V16_SMALL_MEDIUM_K48_SYNTHETIC_CONTRACT
     return V16_CERTIFIED_SYNTHETIC_CONTRACT
 
 

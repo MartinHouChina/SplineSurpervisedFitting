@@ -55,6 +55,7 @@ PILOT_KC56=0
 KEEP_SWAP_HIGHK72=0
 KEEP_STATE_RECOVERY=0
 SMALL_MEDIUM_K24=0
+SMALL_MEDIUM_K48=0
 RUN_PROFILE=default
 PREPARE_REAL_DATA=0
 DIAGNOSTIC=0
@@ -132,10 +133,7 @@ for option in "$@"; do
     COMPLEXITY_RAMP_EPOCHS=0
     BENCHMARK_PROFILE="quick"
     DIAGNOSTIC=1
-  elif [[ "$option" == "--small-medium-k24" ]]; then
-    SMALL_MEDIUM_K24=1
-    RUN_PROFILE=SMALL_MEDIUM_K24
-    RUN_NAME="candidate_selection_v16_mse5e-5_small_medium_sourcek20_kc24_p64_j64_linux_r1"
+  elif [[ "$option" == "--small-medium-k24" || "$option" == "--small-medium-k48" ]]; then
     MSE_TOLERANCE=5e-5
     EPOCHS=128
     PROPOSAL_EPOCHS=64
@@ -162,6 +160,17 @@ for option in "$@"; do
     COMPLEXITY_RAMP_EPOCHS=0
     BENCHMARK_PROFILE="quick"
     DIAGNOSTIC=1
+    if [[ "$option" == "--small-medium-k48" ]]; then
+      SMALL_MEDIUM_K48=1
+      RUN_PROFILE=SMALL_MEDIUM_K48
+      CANDIDATE_KNOTS=48
+      BASELINE_CAP=48
+      RUN_NAME="candidate_selection_v16_mse5e-5_small_medium_sourcek20_kc48_p64_j64_linux_r1"
+    else
+      SMALL_MEDIUM_K24=1
+      RUN_PROFILE=SMALL_MEDIUM_K24
+      RUN_NAME="candidate_selection_v16_mse5e-5_small_medium_sourcek20_kc24_p64_j64_linux_r1"
+    fi
   fi
 done
 
@@ -174,7 +183,7 @@ Main options:
   --run-name NAME                Fresh output name
   --device auto|cpu|cuda         Training/evaluation device (default: cuda)
   --mse-tolerance X             Shared training/Teacher/evaluation MSE tolerance
-                                  (default: 1e-4; small-medium-k24: 5e-5; not RMS).
+                                  (default: 1e-4; small-medium-k24/k48: 5e-5; not RMS).
   --epochs N                     Total epochs (default: 128)
   --proposal-epochs N            Proposal-stage epochs (default: 64)
   --selector-warmup-epochs N     Joint selector/decoder-only warmup (default: 8)
@@ -190,8 +199,8 @@ Main options:
                                   real manifests are validation/test only.
   --proposal-high-k-fraction X   Proposal synthetic high-K share (default: 0.50)
   --proposal-high-k-min-knots N  High-K stratum begins here (default: 40)
-  --joint-high-k-fraction X      Override Joint high-K share (K24 requires 0)
-  --synthetic-high-k-val-size N  Override dedicated high-K validation size (K24 requires 0)
+  --joint-high-k-fraction X      Override Joint high-K share (K24/K48 requires 0)
+  --synthetic-high-k-val-size N  Override dedicated high-K validation size (K24/K48 requires 0)
   --batch-size N                 Batch size (default: 64)
   --num-workers N                DataLoader workers (default: 4)
   --output-root PATH             Output root (default: repository outputs/)
@@ -221,6 +230,10 @@ Main options:
                                   real-val=20, batch=32; no high-K strata.
                                   Diagnostic only, even with --benchmark-profile full.
                                   Initializers are rejected; --resume-run is supported.
+  --small-medium-k48            Current small/medium experiment: source K=4..20,
+                                  Kc=48 (full cubic knot vector=56), baselines cap=48.
+                                  Otherwise the same MSE=5e-5, Proposal 64 + Joint 64,
+                                  data sizes and fresh-run rules as the K24 profile.
   --prepare-real-data            Prepare missing UJI, Natural Earth, USGS and industrial-offset data
   --benchmark-profile quick|full Quick smoke benchmark or full comparison (default: full)
   --diagnostic                   Continue after a structural-integrity audit failure
@@ -228,7 +241,7 @@ Main options:
   -h, --help                     Show this help
 
 Evaluation-size options (override the selected profile):
-  --synthetic-samples-per-k N    Cases per source K (4..20 for K24; otherwise 4..56)
+  --synthetic-samples-per-k N    Cases per source K (4..20 for K24/K48; otherwise 4..56)
   --real-samples-per-dataset N   Real benchmark cases per dataset
   --visual-samples-per-dataset N Real plotted cases per dataset
   --kang-admm-iterations N
@@ -290,6 +303,7 @@ while (($#)); do
     --keep-swap-highk72) shift ;;
     --keep-state-recovery) shift ;;
     --small-medium-k24) shift ;;
+    --small-medium-k48) shift ;;
     --prepare-real-data) PREPARE_REAL_DATA=1; shift ;;
     --benchmark-profile) need_value "$@"; BENCHMARK_PROFILE="$2"; shift 2 ;;
     --diagnostic) DIAGNOSTIC=1; shift ;;
@@ -299,24 +313,25 @@ while (($#)); do
   esac
 done
 
-((PILOT_KC56 + KEEP_SWAP_HIGHK72 + KEEP_STATE_RECOVERY + SMALL_MEDIUM_K24 <= 1)) || \
-  die "--pilot-kc56, --keep-swap-highk72, --keep-state-recovery and --small-medium-k24 are mutually exclusive"
+((PILOT_KC56 + KEEP_SWAP_HIGHK72 + KEEP_STATE_RECOVERY + SMALL_MEDIUM_K24 + SMALL_MEDIUM_K48 <= 1)) || \
+  die "--pilot-kc56, --keep-swap-highk72, --keep-state-recovery, --small-medium-k24 and --small-medium-k48 are mutually exclusive"
 if ((KEEP_STATE_RECOVERY)); then
   BENCHMARK_PROFILE=quick
   DIAGNOSTIC=1
   [[ -n "$INIT_FULL_CHECKPOINT" || "$RESUME_RUN" == 1 ]] || \
     die "--keep-state-recovery requires a full initializer or --resume-run"
 fi
-if ((SMALL_MEDIUM_K24)); then
+if ((SMALL_MEDIUM_K24 || SMALL_MEDIUM_K48)); then
   DIAGNOSTIC=1
+  SMALL_MEDIUM_OPTION="--small-medium-k${CANDIDATE_KNOTS}"
   [[ -z "$INIT_CHECKPOINT" && -z "$INIT_FULL_CHECKPOINT" ]] || \
-    die "--small-medium-k24 rejects --init-checkpoint and --init-full-checkpoint; train from scratch or --resume-run"
+    die "$SMALL_MEDIUM_OPTION rejects --init-checkpoint and --init-full-checkpoint; train from scratch or --resume-run"
   [[ "$PROPOSAL_HIGH_K_FRACTION" =~ ^0([.]0+)?$ ]] || \
-    die "--small-medium-k24 requires --proposal-high-k-fraction 0"
+    die "$SMALL_MEDIUM_OPTION requires --proposal-high-k-fraction 0"
   [[ -z "$JOINT_HIGH_K_FRACTION_OVERRIDE" || "$JOINT_HIGH_K_FRACTION_OVERRIDE" =~ ^0([.]0+)?$ ]] || \
-    die "--small-medium-k24 requires --joint-high-k-fraction 0"
+    die "$SMALL_MEDIUM_OPTION requires --joint-high-k-fraction 0"
   [[ -z "$SYNTHETIC_HIGH_K_VAL_SIZE_OVERRIDE" || "$SYNTHETIC_HIGH_K_VAL_SIZE_OVERRIDE" =~ ^0+$ ]] || \
-    die "--small-medium-k24 requires --synthetic-high-k-val-size 0"
+    die "$SMALL_MEDIUM_OPTION requires --synthetic-high-k-val-size 0"
 fi
 
 [[ "$BENCHMARK_PROFILE" == "quick" || "$BENCHMARK_PROFILE" == "full" ]] || \
@@ -637,8 +652,9 @@ if ((KEEP_STATE_RECOVERY)); then
   printf 'Proposal LR=%s; Joint high-K share=0.40 at K>=45. Keep safety stays sigma=0.03, knots=0; no inactive schedule delays checkpoint selection.\n' "$PROPOSAL_LR"
   printf 'Paired check: identical 53 Synthetic + 3 real datasets x 5 curves; native one-shot deployment, no numerical repair.\n'
 fi
-if ((SMALL_MEDIUM_K24)); then
-  printf 'SMALL/MEDIUM DIAGNOSTIC: source K=4..20; 24 internal candidates, full cubic knot vector=32; baseline cap=24.\n'
+if ((SMALL_MEDIUM_K24 || SMALL_MEDIUM_K48)); then
+  printf 'SMALL/MEDIUM DIAGNOSTIC: source K=4..20; %s internal candidates, full cubic knot vector=%s; baseline cap=%s.\n' \
+    "$CANDIDATE_KNOTS" "$((CANDIDATE_KNOTS + 8))" "$BASELINE_CAP"
   printf 'Fresh initialization; Proposal and Joint high-K strata disabled, no dedicated high-K validation. The 16 boundary validation curves have source K=20.\n'
   printf 'Keep-state interaction, global warp and boundary ranking remain enabled. Narrowing the range does not establish that Keep selection has been fixed or that pass rates improve.\n'
 fi
@@ -754,9 +770,9 @@ if ((KEEP_STATE_RECOVERY)); then
     --keep-boundary-ranking-weight 1.0
   )
 fi
-if ((SMALL_MEDIUM_K24)); then
+if ((SMALL_MEDIUM_K24 || SMALL_MEDIUM_K48)); then
   TRAIN_ARGS+=(
-    --study-scope small_medium_k24
+    --study-scope "small_medium_k${CANDIDATE_KNOTS}"
     --joint-high-k-fraction 0
     --joint-high-k-min-knots 20
     --synthetic-high-k-val-size 0
