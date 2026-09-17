@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/home/feng/HouCode/SplineSurpervisedFitting/scripts/plot_v16_method_comparison.py", line 525, in <module>
+    main()
+  File "/home/feng/HouCode/SplineSurpervisedFitting/scripts/plot_v16_method_comparison.py", line 500, in main
+    report = read_report(args.input)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/feng/HouCode/SplineSurpervisedFitting/scripts/plot_v15_dataset_benchmark.py", line 84, in read_report
+    raise ValueError(f"Unsupported method: {row['method']}")
+ValueError: Unsupported method: ours_verified

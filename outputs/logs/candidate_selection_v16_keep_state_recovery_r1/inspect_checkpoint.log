@@ -1,0 +1,65 @@
+v16 checkpoint inspection
+  checkpoint: /home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/candidate_selection_v16_keep_state_recovery_r1.pt
+  objective: candidate_selection_feasible_teacher_bspline_v16
+  stage: joint
+  epoch: 13
+Training supervision
+  optimizer data: certified Synthetic only
+  real-data fraction: 0
+  Joint target: offline_feasible_teacher
+  exact knot-count label: reference_only
+  online Teacher: False
+  certified fine teacher: frozen_proposal_feasible_subset_risk
+  fine-teacher unit / online solves: mean_squared_euclidean / 0
+Selection architecture
+  revision: v16_count_structure_coupled_mass_topk_pilot_v1
+  policy: mass_topk
+  internal candidate capacity: 56
+  full knot-vector size at all-keep: 64
+  adaptive beta: True
+  simplification contract: fixed_proposal_offline_feasible_subset_v1
+  simplification curriculum mature: True
+  aggregate pass feedback: False (must be False)
+  checkpoint selection: mean_per_curve_subset_cost_v1
+  checkpoint quality: supervised_fit_count_selected
+Proposal curriculum
+  high-K synthetic allocation: 50.000% (0.500000)
+  high-K stratum begins at internal K: 40
+  ordered assignment weight: 1
+Synthetic data contract
+  revision: source_subset_threshold_minimal_k4_56_span001_v2
+  certified minimal source: True
+  source control-point range: 8..60 (formal: 8..60)
+  source internal-knot range: K=4..56
+  knot min span: 0.01 (formal: 0.01)
+  certificate RMS tolerance: 1.000000e-02
+Configured targets
+  proposal pass: 90.000% (0.900000)
+  deployment pass: 90.000% (0.900000)
+  recorded MSE tolerance: 1.000000e-04
+Observed validation
+  overall dense: 70.417% (0.704167)
+  overall deployment: 72.500% (0.725000)
+  worst-source dense: 56.250% (0.562500)
+  worst-source deployment: 59.375% (0.593750)
+  qualification dense/deployment (min of worst-source and K=56): 0.000% (0.000000) / 0.000% (0.000000)
+  certified synthetic count MAE: 16.525
+  certified synthetic knot F1 / matched MAE: 0.77327 / 4.034109e-03
+  synthetic boundary: K=56, n=36, dense=0.000% (0.000000), deployment=0.000% (0.000000)
+  by source:
+    Synthetic: dense=56.250% (0.562500), deployment=59.375% (0.593750), dense_MSE=3.338731e-04, deployment_MSE=2.974189e-04, K=55.8687, target_K=39.3438, count_MAE=16.525, count_bias=16.525, knot_F1=0.77327, matched_MAE=4.034109e-03
+    industrial_model_offset_curves: dense=100.000% (1.000000), deployment=100.000% (1.000000), dense_MSE=1.014935e-06, deployment_MSE=2.131867e-06, K=54.2
+    natural_earth_10m_coastline: dense=95.000% (0.950000), deployment=95.000% (0.950000), dense_MSE=1.929166e-05, deployment_MSE=2.273883e-05, K=54.95
+    uji_pen_characters_v2: dense=100.000% (1.000000), deployment=100.000% (1.000000), dense_MSE=7.660832e-07, deployment_MSE=2.224712e-06, K=48.5
+    usgs_tnm_contours_large_scale: dense=100.000% (1.000000), deployment=100.000% (1.000000), dense_MSE=3.413129e-06, deployment_MSE=5.459547e-06, K=54.5
+Formal benchmark integrity
+  pass-rate reference (diagnostic only): 90.000% (0.900000)
+  pass-rate reference met: False (does not affect eligibility)
+  required MSE tolerance: 1.000000e-04
+  historical diagnostics only: Synthetic count MAE <= 2, knot F1 >= 0.6, matched MAE <= 5.000000e-03
+  structurally eligible: NO
+  eligible: NO
+  reasons:
+    - initialization model lineage is mixed-data or unknown; synthetic-only fine-tuning does not erase pretraining exposure
+    - checkpoint is not the current v16 adaptive-beta mass-TopK revision
+    - formal v16 candidate-knot capacity must equal 72 internal knots

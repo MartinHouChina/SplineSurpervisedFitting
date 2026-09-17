@@ -1,0 +1,162 @@
+Checking real manifests and train/val/test group separation...
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl
+  Checking groups/files: 2000/18219
+  Checking groups/files: 4000/18219
+  Checking groups/files: 6000/18219
+  Checking groups/files: 8000/18219
+  Checking groups/files: 10000/18219
+  Checking groups/files: 12000/18219
+  Checking groups/files: 14000/18219
+  Checking groups/files: 16000/18219
+  Checking groups/files: 18000/18219
+  Checking groups/files: 18219/18219
+  Ready uji_pen_characters_v2: train=9670, val=2456 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl
+  Checking groups/files: 2000/3908
+  Checking groups/files: 3908/3908
+  Ready natural_earth_10m_coastline: train=2625, val=750 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl
+  Checking groups/files: 2000/6654
+  Checking groups/files: 4000/6654
+  Checking groups/files: 6000/6654
+  Checking groups/files: 6654/6654
+  Ready usgs_tnm_contours_large_scale: train=4024, val=1210 (test excluded from training)
+Transferred 41 proposal tensors (41 exact, 0 rank-resized); retained 1 target anchor buffer(s), skipped 0 other shape mismatch(es). Selector and subset decoder start fresh.
+v16 adaptive mass_topk: cuda, Kc=56 internal (full cubic knot vector at all-keep=64), MSE tolerance=0.0001; 600 train draws, 220 validation curves; real sources=3
+Synthetic source contract: clean source-subset threshold-minimal certificate at RMS=0.01, margin=20%, audit_points=512
+Simplification curriculum: training-only ranked-prefix teacher steps=7, exact low-K sweep through K=16; certified source K role=upper_bound; geometry-oracle bootstrap=True (+2); certified over-count weight=1, symmetric true-count weight=1; deterministic Joint-epoch complexity multiplier 0..6; safety 2+0.2sigma -> 0+0.03sigma. Deployment still uses one network forward and one final refit.
+Checkpoint selection minimizes mean per-curve subset cost: feasible curves trade K against a bounded MSE tie-break; infeasible curves use a logarithmic MSE penalty. Aggregate pass rates and the explicit K=56 boundary audit (n=16) are reported but never gate training. Additional subset fits run only during training.
+Proposal-stage synthetic stratification: 50.0% from K>=40; the remainder uses K=4..39. Joint training always uses the original K=4..56 distribution.
+Epoch 001/13 proposal [====....................] 1/5 MSE=9.186e-05 pass=79.7% K=56.0 teacherK=56.0 countMAE=0.00
+Epoch 001/13 proposal [========================] 5/5 MSE=6.581e-05 pass=79.5% K=56.0 teacherK=56.0 countMAE=0.00
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 001 val dense=82.7% deployment=82.7% worst-source=76.9% qualification=0.0% MSE=1.610e-04 K=56.00 mass=30.89 beta=-0.21 soft_cost=1.4498 selection_score=-1.4498 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=4.3581e-03, ordered_assignment_MAE=4.4949e-03, matched_K=34.49
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.9%, deployment=76.9%, MSE=2.185e-04, K=56.00, targetK=32.39, count_MAE=23.61, bias=+23.61, knot_F1@0.01=0.679, param_RMSE=2.744e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=5.661e-07, K=56.00
+  natural_earth_10m_coastline: dense=95.0%, deployment=95.0%, MSE=1.918e-05, K=56.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=2.842e-06, K=56.00
+Proposal schedule complete; loading the lowest-cost dense initializer (pass=0.0%, reporting reference=90.0%). Joint training starts unconditionally.
+Epoch 002/13 joint [====....................] 1/5 MSE=8.770e-04 pass=42.2% K=34.0 teacherK=36.4 countMAE=15.09
+Epoch 002/13 joint [========================] 5/5 MSE=1.080e-03 pass=34.1% K=34.9 teacherK=41.7 countMAE=13.85
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 002 val dense=83.2% deployment=26.8% worst-source=6.2% qualification=0.0% MSE=1.533e-03 K=34.97 mass=31.84 beta=-0.28 soft_cost=3.6421 selection_score=-3.6421 complexity=0.00->0.55 safety=2+0.20sigma scale=1.00->0.91 pass_reference_only=0.0%
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.5%, deployment=6.2%, MSE=2.076e-03, K=34.97, targetK=32.39, count_MAE=13.09, bias=+2.58, knot_F1@0.01=0.558, param_RMSE=2.746e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=95.0%, MSE=2.473e-05, K=34.90
+  natural_earth_10m_coastline: dense=95.0%, deployment=65.0%, MSE=1.521e-04, K=35.00
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=85.0%, MSE=8.057e-05, K=35.00
+Epoch 003/13 joint [====....................] 1/5 MSE=1.254e-03 pass=32.8% K=34.9 teacherK=42.4 countMAE=14.25
+Epoch 003/13 joint [========================] 5/5 MSE=1.293e-03 pass=21.6% K=35.8 teacherK=44.2 countMAE=13.66
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 003 val dense=82.7% deployment=20.5% worst-source=2.5% qualification=0.0% MSE=1.496e-03 K=35.85 mass=32.69 beta=-0.34 soft_cost=3.8825 selection_score=-3.8825 complexity=0.55->1.09 safety=2+0.18sigma scale=0.91->0.82 pass_reference_only=0.0%
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.9%, deployment=2.5%, MSE=1.989e-03, K=35.92, targetK=32.39, count_MAE=13.17, bias=+3.53, knot_F1@0.01=0.562, param_RMSE=2.749e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=9.959e-05, K=35.30
+  natural_earth_10m_coastline: dense=95.0%, deployment=45.0%, MSE=2.948e-04, K=35.70
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=70.0%, MSE=1.486e-04, K=35.90
+Epoch 004/13 joint [====....................] 1/5 MSE=1.492e-03 pass=19.5% K=35.8 teacherK=45.5 countMAE=14.08
+Epoch 004/13 joint [========================] 5/5 MSE=1.339e-03 pass=17.0% K=36.6 teacherK=46.2 countMAE=13.00
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 004 val dense=82.7% deployment=17.7% worst-source=1.2% qualification=0.0% MSE=1.460e-03 K=36.67 mass=33.45 beta=-0.39 soft_cost=3.9503 selection_score=-3.9503 complexity=1.09->1.64 safety=2+0.17sigma scale=0.82->0.73 pass_reference_only=0.0%
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.9%, deployment=1.2%, MSE=1.929e-03, K=36.89, targetK=32.39, count_MAE=13.32, bias=+4.49, knot_F1@0.01=0.564, param_RMSE=2.749e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=9.956e-05, K=35.75
+  natural_earth_10m_coastline: dense=95.0%, deployment=35.0%, MSE=3.289e-04, K=36.15
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=60.0%, MSE=2.001e-04, K=36.40
+Epoch 005/13 joint [====....................] 1/5 MSE=1.270e-03 pass=19.5% K=36.5 teacherK=44.3 countMAE=13.71
+Epoch 005/13 joint [========================] 5/5 MSE=1.369e-03 pass=12.5% K=36.9 teacherK=47.7 countMAE=14.98
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 005 val dense=82.7% deployment=16.8% worst-source=0.6% qualification=0.0% MSE=1.438e-03 K=37.24 mass=34.16 beta=-0.45 soft_cost=3.9560 selection_score=-3.9560 complexity=1.64->2.18 safety=2+0.15sigma scale=0.73->0.64 pass_reference_only=0.0%
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.9%, deployment=0.6%, MSE=1.882e-03, K=37.44, targetK=32.39, count_MAE=13.39, bias=+5.05, knot_F1@0.01=0.567, param_RMSE=2.749e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=2.180e-04, K=36.30
+  natural_earth_10m_coastline: dense=95.0%, deployment=35.0%, MSE=3.332e-04, K=36.85
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=55.0%, MSE=2.041e-04, K=36.95
+Epoch 006/13 joint [====....................] 1/5 MSE=1.347e-03 pass=13.3% K=37.1 teacherK=46.9 countMAE=15.96
+Epoch 006/13 joint [========================] 5/5 MSE=1.132e-03 pass=19.3% K=37.6 teacherK=45.7 countMAE=14.98
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 006 val dense=82.7% deployment=16.8% worst-source=0.6% qualification=0.0% MSE=1.400e-03 K=37.74 mass=34.81 beta=-0.50 soft_cost=3.9294 selection_score=-3.9294 complexity=2.18->2.73 safety=2+0.14sigma scale=0.64->0.55 pass_reference_only=0.0%
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.9%, deployment=0.6%, MSE=1.845e-03, K=37.91, targetK=32.39, count_MAE=13.59, bias=+5.52, knot_F1@0.01=0.572, param_RMSE=2.752e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=1.199e-04, K=36.75
+  natural_earth_10m_coastline: dense=95.0%, deployment=30.0%, MSE=3.372e-04, K=37.30
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=60.0%, MSE=1.858e-04, K=37.75
+Epoch 007/13 joint [====....................] 1/5 MSE=1.277e-03 pass=17.2% K=37.7 teacherK=47.7 countMAE=12.54
+Epoch 007/13 joint [========================] 5/5 MSE=1.084e-03 pass=15.9% K=38.2 teacherK=47.3 countMAE=14.85
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 007 val dense=82.7% deployment=18.6% worst-source=2.5% qualification=0.0% MSE=1.317e-03 K=38.50 mass=35.44 beta=-0.55 soft_cost=3.8484 selection_score=-3.8484 complexity=2.73->3.27 safety=2+0.12sigma scale=0.55->0.45 pass_reference_only=0.0%
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.9%, deployment=2.5%, MSE=1.736e-03, K=38.81, targetK=32.39, count_MAE=13.76, bias=+6.41, knot_F1@0.01=0.578, param_RMSE=2.756e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=1.201e-04, K=37.05
+  natural_earth_10m_coastline: dense=95.0%, deployment=30.0%, MSE=3.006e-04, K=37.80
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=65.0%, MSE=1.751e-04, K=38.15
+Epoch 008/13 joint [====....................] 1/5 MSE=1.272e-03 pass=14.1% K=37.4 teacherK=47.6 countMAE=14.75
+Epoch 008/13 joint [========================] 5/5 MSE=1.192e-03 pass=18.2% K=37.5 teacherK=45.8 countMAE=14.53
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 008 val dense=83.2% deployment=16.8% worst-source=0.6% qualification=0.0% MSE=1.387e-03 K=37.75 mass=36.03 beta=-0.59 soft_cost=3.9266 selection_score=-3.9266 complexity=3.27->3.82 safety=1+0.11sigma scale=0.45->0.36 pass_reference_only=0.0%
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.5%, deployment=0.6%, MSE=1.825e-03, K=37.95, targetK=32.39, count_MAE=13.61, bias=+5.56, knot_F1@0.01=0.573, param_RMSE=2.761e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=1.202e-04, K=36.65
+  natural_earth_10m_coastline: dense=95.0%, deployment=30.0%, MSE=3.437e-04, K=37.30
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=60.0%, MSE=1.963e-04, K=37.70
+Epoch 009/13 joint [====....................] 1/5 MSE=1.386e-03 pass=18.0% K=37.6 teacherK=48.5 countMAE=12.36
+Epoch 009/13 joint [========================] 5/5 MSE=1.137e-03 pass=20.5% K=38.4 teacherK=46.2 countMAE=13.51
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 009 val dense=83.2% deployment=17.3% worst-source=1.2% qualification=0.0% MSE=1.330e-03 K=38.46 mass=36.58 beta=-0.64 soft_cost=3.8920 selection_score=-3.8920 complexity=3.82->4.36 safety=1+0.09sigma scale=0.36->0.27 pass_reference_only=0.0%
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.5%, deployment=1.2%, MSE=1.750e-03, K=38.81, targetK=32.39, count_MAE=13.76, bias=+6.42, knot_F1@0.01=0.582, param_RMSE=2.765e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=1.190e-04, K=36.85
+  natural_earth_10m_coastline: dense=95.0%, deployment=30.0%, MSE=3.365e-04, K=37.60
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=60.0%, MSE=1.808e-04, K=38.15
+Epoch 010/13 joint [====....................] 1/5 MSE=1.191e-03 pass=22.7% K=38.3 teacherK=46.4 countMAE=13.39
+Epoch 010/13 joint [========================] 5/5 MSE=1.250e-03 pass=14.8% K=38.6 teacherK=48.3 countMAE=14.87
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 010 val dense=83.2% deployment=17.7% worst-source=1.2% qualification=0.0% MSE=1.316e-03 K=38.73 mass=37.10 beta=-0.68 soft_cost=3.8706 selection_score=-3.8706 complexity=4.36->4.91 safety=1+0.08sigma scale=0.27->0.18 pass_reference_only=0.0%
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=77.5%, deployment=1.2%, MSE=1.733e-03, K=39.00, targetK=32.39, count_MAE=13.89, bias=+6.61, knot_F1@0.01=0.581, param_RMSE=2.765e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=1.173e-04, K=37.10
+  natural_earth_10m_coastline: dense=95.0%, deployment=35.0%, MSE=3.057e-04, K=38.25
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=60.0%, MSE=1.874e-04, K=38.65
+Epoch 011/13 joint [====....................] 1/5 MSE=1.209e-03 pass=14.1% K=38.6 teacherK=48.7 countMAE=15.44
+Epoch 011/13 joint [========================] 5/5 MSE=1.106e-03 pass=11.4% K=39.2 teacherK=48.6 countMAE=16.56
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 011 val dense=82.7% deployment=17.3% worst-source=1.2% qualification=0.0% MSE=1.251e-03 K=39.37 mass=37.57 beta=-0.72 soft_cost=3.8421 selection_score=-3.8421 complexity=4.91->5.45 safety=1+0.06sigma scale=0.18->0.09 pass_reference_only=0.0%
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.9%, deployment=1.2%, MSE=1.645e-03, K=39.76, targetK=32.39, count_MAE=13.99, bias=+7.37, knot_F1@0.01=0.590, param_RMSE=2.762e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=1.141e-04, K=37.65
+  natural_earth_10m_coastline: dense=95.0%, deployment=30.0%, MSE=3.015e-04, K=38.40
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=60.0%, MSE=1.853e-04, K=38.95
+Epoch 012/13 joint [====....................] 1/5 MSE=1.071e-03 pass=21.1% K=39.2 teacherK=47.0 countMAE=13.70
+Epoch 012/13 joint [========================] 5/5 MSE=1.058e-03 pass=20.5% K=39.3 teacherK=46.4 countMAE=15.57
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 012 val dense=82.7% deployment=17.7% worst-source=1.9% qualification=0.0% MSE=1.252e-03 K=39.50 mass=37.99 beta=-0.75 soft_cost=3.8405 selection_score=-3.8405 complexity=5.45->6.00 safety=1+0.05sigma scale=0.09->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.9%, deployment=1.9%, MSE=1.648e-03, K=39.83, targetK=32.39, count_MAE=14.04, bias=+7.43, knot_F1@0.01=0.590, param_RMSE=2.758e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=1.117e-04, K=37.75
+  natural_earth_10m_coastline: dense=95.0%, deployment=30.0%, MSE=2.953e-04, K=38.80
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=60.0%, MSE=1.818e-04, K=39.35
+Epoch 013/13 joint [====....................] 1/5 MSE=1.299e-03 pass=10.9% K=38.4 teacherK=49.2 countMAE=13.78
+Epoch 013/13 joint [========================] 5/5 MSE=9.778e-04 pass=20.5% K=38.8 teacherK=47.0 countMAE=17.20
+  validation [============............] 1/2 
+  validation [========================] 2/2 
+Epoch 013 val dense=82.3% deployment=17.7% worst-source=1.9% qualification=0.0% MSE=1.269e-03 K=39.10 mass=38.35 beta=-0.78 soft_cost=3.8540 selection_score=-3.8540 complexity=6.00->6.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Synthetic K=56: n=19, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.2%, deployment=1.9%, MSE=1.666e-03, K=39.55, targetK=32.39, count_MAE=13.93, bias=+7.16, knot_F1@0.01=0.588, param_RMSE=2.757e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=90.0%, MSE=1.108e-04, K=36.90
+  natural_earth_10m_coastline: dense=95.0%, deployment=30.0%, MSE=3.266e-04, K=38.10
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=60.0%, MSE=1.950e-04, K=38.65
+Saved best v16: /home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/v16_r2_rollback_fast_k4_56_r1.pt; quality=soft_fit_complexity_selected. Last/resume: /home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/v16_r2_rollback_fast_k4_56_r1.last.pt

@@ -1,0 +1,58 @@
+Running visualize stage in: /home/feng/HouCode/SplineSurpervisedFitting/outputs/figures/candidate_selection_v16_mse5e-5_small_medium_sourcek20_kc24_p64_j64_linux_r1/diagnostic_a2c27f197797/six_method_real_cases
+[1/8] UJI / uji2_04047_stroke_00
+  Ours v16: MSE=2.777e-05, K=16, time=8.52 ms
+  Park & Lee 2007 (DOM adaptation): MSE=3.073e-05, K=5, time=7.41 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=1.171e-05, K=4, time=4.62 ms
+  Dung & Tjahjowidodo 2017 (threshold-safe adaptation): MSE=5.522e-06, K=2, time=62.05 ms
+  Kang 2015 (threshold-safe ADMM adaptation): MSE=1.438e-05, K=1, time=8.46 ms
+  Luo et al. 2022 (threshold-safe l-infinity,1 + DE adaptation): MSE=1.642e-05, K=1, time=2123.82 ms
+[2/8] UJI / uji2_06300_stroke_01
+  Ours v16: MSE=1.253e-05, K=18, time=8.44 ms
+  Park & Lee 2007 (DOM adaptation): MSE=2.029e-05, K=7, time=9.41 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.443e-05, K=7, time=6.95 ms
+  Dung & Tjahjowidodo 2017 (threshold-safe adaptation): MSE=3.533e-05, K=6, time=111.43 ms
+  Kang 2015 (threshold-safe ADMM adaptation): MSE=2.152e-05, K=12, time=679.93 ms
+  Luo et al. 2022 (threshold-safe l-infinity,1 + DE adaptation): MSE=4.321e-05, K=5, time=2294.76 ms
+[3/8] NaturalEarth / natural_earth_10m_coastline_bbe20e40ab31_w000_bbe20e40
+  Ours v16: MSE=2.419e-04, K=19, time=8.27 ms
+  Park & Lee 2007 (DOM adaptation): MSE=3.182e-05, K=22, time=27.11 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.145e-05, K=23, time=23.83 ms
+  Dung & Tjahjowidodo 2017 (threshold-safe adaptation): MSE=3.718e-05, K=20, time=287.97 ms
+  Kang 2015 (threshold-safe ADMM adaptation): MSE=1.025e-04, K=24, time=8.23 ms
+  Luo et al. 2022 (threshold-safe l-infinity,1 + DE adaptation): MSE=4.933e-05, K=24, time=811.19 ms
+[4/8] NaturalEarth / natural_earth_10m_coastline_d7aa47ef9854_w000_d7aa47ef
+  Ours v16: MSE=6.897e-04, K=20, time=8.34 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.144e-04, K=24, time=30.09 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=1.131e-04, K=24, time=25.07 ms
+  Dung & Tjahjowidodo 2017 (threshold-safe adaptation): MSE=8.431e-05, K=24, time=403.90 ms
+  Kang 2015 (threshold-safe ADMM adaptation): MSE=2.635e-04, K=24, time=8.22 ms
+  Luo et al. 2022 (threshold-safe l-infinity,1 + DE adaptation): MSE=2.635e-04, K=24, time=814.37 ms
+[5/8] USGS / usgs_tnm_contours_large_scale_1477c0967614_w000_1477c096
+  Ours v16: MSE=1.025e-03, K=13, time=8.18 ms
+  Park & Lee 2007 (DOM adaptation): MSE=2.277e-04, K=24, time=30.15 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=1.660e-04, K=24, time=25.23 ms
+  Dung & Tjahjowidodo 2017 (threshold-safe adaptation): MSE=1.438e-04, K=24, time=472.29 ms
+  Kang 2015 (threshold-safe ADMM adaptation): MSE=1.771e-04, K=24, time=8.17 ms
+  Luo et al. 2022 (threshold-safe l-infinity,1 + DE adaptation): MSE=1.593e-04, K=24, time=780.36 ms
+[6/8] USGS / usgs_tnm_contours_large_scale_65af32c85902_w000_65af32c8
+  Ours v16: MSE=4.959e-04, K=20, time=8.41 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.593e-04, K=24, time=29.94 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=1.485e-04, K=24, time=25.11 ms
+  Dung & Tjahjowidodo 2017 (threshold-safe adaptation): MSE=1.056e-04, K=24, time=472.10 ms
+  Kang 2015 (threshold-safe ADMM adaptation): MSE=2.031e-04, K=24, time=8.25 ms
+  Luo et al. 2022 (threshold-safe l-infinity,1 + DE adaptation): MSE=2.007e-04, K=24, time=684.64 ms
+[7/8] IndustrialOffset / industrial_offset_naca_airfoil_v011_o03_p0p0200
+  Ours v16: MSE=9.466e-06, K=18, time=8.26 ms
+  Park & Lee 2007 (DOM adaptation): MSE=2.084e-05, K=10, time=20.87 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=3.558e-05, K=6, time=5.77 ms
+  Dung & Tjahjowidodo 2017 (threshold-safe adaptation): MSE=2.098e-05, K=6, time=79.74 ms
+  Kang 2015 (threshold-safe ADMM adaptation): MSE=2.229e-05, K=24, time=366.23 ms
+  Luo et al. 2022 (threshold-safe l-infinity,1 + DE adaptation): MSE=3.058e-05, K=9, time=2253.18 ms
+[8/8] IndustrialOffset / industrial_offset_lobed_rotor_v004_o03_p0p0200
+  Ours v16: MSE=4.944e-04, K=19, time=8.40 ms
+  Park & Lee 2007 (DOM adaptation): MSE=3.862e-05, K=22, time=30.24 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=5.097e-05, K=24, time=25.42 ms
+  Dung & Tjahjowidodo 2017 (threshold-safe adaptation): MSE=3.555e-05, K=23, time=312.89 ms
+  Kang 2015 (threshold-safe ADMM adaptation): MSE=4.323e-05, K=24, time=369.79 ms
+  Luo et al. 2022 (threshold-safe l-infinity,1 + DE adaptation): MSE=4.696e-05, K=24, time=1380.63 ms
+Saved 8 PNG files and /home/feng/HouCode/SplineSurpervisedFitting/outputs/figures/candidate_selection_v16_mse5e-5_small_medium_sourcek20_kc24_p64_j64_linux_r1/diagnostic_a2c27f197797/six_method_real_cases/deployment_visualizations.json

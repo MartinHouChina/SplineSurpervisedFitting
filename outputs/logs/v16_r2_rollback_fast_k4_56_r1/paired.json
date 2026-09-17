@@ -1,0 +1,1050 @@
+{
+  "protocol": "native_one_shot_one_standard_bspline_refit_no_verified_or_hard_repair",
+  "mse_definition": "mean squared Euclidean distance at the observed ordered points",
+  "mse_tolerance": 0.0001,
+  "old_checkpoint": "/home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux_r2_joint_fast.pt",
+  "new_checkpoint": "/home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/v16_r2_rollback_fast_k4_56_r1.pt",
+  "synthetic_generator_checkpoint": "/home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux_r2_joint_fast.pt",
+  "synthetic_source_k_range": [
+    4,
+    56
+  ],
+  "samples_per_k": 1,
+  "device": "cuda",
+  "summary": {
+    "synthetic_overall": {
+      "n": 53,
+      "old": {
+        "pass_rate": 0.8301886792452831,
+        "mse_mean": 7.403341898777205e-05,
+        "k_mean": 43.0
+      },
+      "new": {
+        "pass_rate": 0.018867924528301886,
+        "mse_mean": 0.0014865081493147555,
+        "k_mean": 39.45283018867924
+      }
+    },
+    "synthetic_high_k_ge_45": {
+      "n": 12,
+      "old": {
+        "pass_rate": 0.25,
+        "mse_mean": 0.00022206415413300641,
+        "k_mean": 56.0
+      },
+      "new": {
+        "pass_rate": 0.0,
+        "mse_mean": 0.002037097273514895,
+        "k_mean": 40.0
+      }
+    },
+    "synthetic_k_56": {
+      "n": 1,
+      "old": {
+        "pass_rate": 0.0,
+        "mse_mean": 0.0009764003955070186,
+        "k_mean": 56.0
+      },
+      "new": {
+        "pass_rate": 0.0,
+        "mse_mean": 0.002629968612777652,
+        "k_mean": 40.0
+      }
+    },
+    "real_by_dataset": {
+      "NaturalEarth": {
+        "n": 5,
+        "old": {
+          "pass_rate": 0.8,
+          "mse_mean": 6.440362505997666e-05,
+          "k_mean": 36.8
+        },
+        "new": {
+          "pass_rate": 0.0,
+          "mse_mean": 0.0013018307612841303,
+          "k_mean": 39.0
+        }
+      },
+      "UJI": {
+        "n": 5,
+        "old": {
+          "pass_rate": 1.0,
+          "mse_mean": 1.935200882537729e-05,
+          "k_mean": 11.6
+        },
+        "new": {
+          "pass_rate": 0.6,
+          "mse_mean": 0.00014576476783299756,
+          "k_mean": 36.8
+        }
+      },
+      "USGS": {
+        "n": 5,
+        "old": {
+          "pass_rate": 0.8,
+          "mse_mean": 4.652163001856021e-05,
+          "k_mean": 44.8
+        },
+        "new": {
+          "pass_rate": 0.2,
+          "mse_mean": 0.0006672411200582457,
+          "k_mean": 39.0
+        }
+      }
+    }
+  },
+  "rows": [
+    {
+      "dataset": "Synthetic",
+      "case_id": "K4_seed9000000000",
+      "source_k": 4,
+      "synthetic_seed": 9000000000,
+      "old": {
+        "mse": 1.3845111584461615e-05,
+        "k": 12
+      },
+      "new": {
+        "mse": 8.831846510036225e-05,
+        "k": 36
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K5_seed9000100003",
+      "source_k": 5,
+      "synthetic_seed": 9000100003,
+      "old": {
+        "mse": 1.816903777091791e-05,
+        "k": 9
+      },
+      "new": {
+        "mse": 0.0002359874221997128,
+        "k": 36
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K6_seed9000200006",
+      "source_k": 6,
+      "synthetic_seed": 9000200006,
+      "old": {
+        "mse": 1.7122480040713333e-05,
+        "k": 12
+      },
+      "new": {
+        "mse": 0.0006448978749530714,
+        "k": 37
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K7_seed9000300009",
+      "source_k": 7,
+      "synthetic_seed": 9000300009,
+      "old": {
+        "mse": 1.3025414535576841e-05,
+        "k": 16
+      },
+      "new": {
+        "mse": 0.00040528314183243636,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K8_seed9000400012",
+      "source_k": 8,
+      "synthetic_seed": 9000400012,
+      "old": {
+        "mse": 1.2040191716440723e-05,
+        "k": 16
+      },
+      "new": {
+        "mse": 0.0004350331580688311,
+        "k": 38
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K9_seed9000500015",
+      "source_k": 9,
+      "synthetic_seed": 9000500015,
+      "old": {
+        "mse": 2.0308054288031657e-05,
+        "k": 15
+      },
+      "new": {
+        "mse": 0.0009228156222762038,
+        "k": 38
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K10_seed9000600018",
+      "source_k": 10,
+      "synthetic_seed": 9000600018,
+      "old": {
+        "mse": 1.4249763135560983e-05,
+        "k": 19
+      },
+      "new": {
+        "mse": 0.0011198644465782554,
+        "k": 38
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K11_seed9000700021",
+      "source_k": 11,
+      "synthetic_seed": 9000700021,
+      "old": {
+        "mse": 1.673821376287372e-05,
+        "k": 22
+      },
+      "new": {
+        "mse": 0.0008634982809495121,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K12_seed9000800024",
+      "source_k": 12,
+      "synthetic_seed": 9000800024,
+      "old": {
+        "mse": 2.48264395673958e-05,
+        "k": 22
+      },
+      "new": {
+        "mse": 0.0010879049573814456,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K13_seed9000900027",
+      "source_k": 13,
+      "synthetic_seed": 9000900027,
+      "old": {
+        "mse": 1.0479464780429707e-05,
+        "k": 26
+      },
+      "new": {
+        "mse": 0.000923618973700171,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K14_seed9001000030",
+      "source_k": 14,
+      "synthetic_seed": 9001000030,
+      "old": {
+        "mse": 1.2964247585226258e-05,
+        "k": 29
+      },
+      "new": {
+        "mse": 0.0014532991433637565,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K15_seed9001100033",
+      "source_k": 15,
+      "synthetic_seed": 9001100033,
+      "old": {
+        "mse": 2.6707381777151343e-05,
+        "k": 27
+      },
+      "new": {
+        "mse": 0.001184196170483138,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K16_seed9001200036",
+      "source_k": 16,
+      "synthetic_seed": 9001200036,
+      "old": {
+        "mse": 1.9190830764436675e-05,
+        "k": 31
+      },
+      "new": {
+        "mse": 0.0009543264043604757,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K17_seed9001300039",
+      "source_k": 17,
+      "synthetic_seed": 9001300039,
+      "old": {
+        "mse": 2.261668054052902e-05,
+        "k": 31
+      },
+      "new": {
+        "mse": 0.0011515834561067874,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K18_seed9001400042",
+      "source_k": 18,
+      "synthetic_seed": 9001400042,
+      "old": {
+        "mse": 1.2666238125953564e-05,
+        "k": 34
+      },
+      "new": {
+        "mse": 0.0011743996049057316,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K19_seed9001500045",
+      "source_k": 19,
+      "synthetic_seed": 9001500045,
+      "old": {
+        "mse": 2.7814382001796272e-05,
+        "k": 33
+      },
+      "new": {
+        "mse": 0.0014724361511048287,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K20_seed9001600048",
+      "source_k": 20,
+      "synthetic_seed": 9001600048,
+      "old": {
+        "mse": 4.420985262791153e-05,
+        "k": 36
+      },
+      "new": {
+        "mse": 0.0015044485913976956,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K21_seed9001700051",
+      "source_k": 21,
+      "synthetic_seed": 9001700051,
+      "old": {
+        "mse": 5.026306769839901e-05,
+        "k": 37
+      },
+      "new": {
+        "mse": 0.0016088111107827624,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K22_seed9001800054",
+      "source_k": 22,
+      "synthetic_seed": 9001800054,
+      "old": {
+        "mse": 1.903822191601226e-05,
+        "k": 39
+      },
+      "new": {
+        "mse": 0.0015790347215393632,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K23_seed9001900057",
+      "source_k": 23,
+      "synthetic_seed": 9001900057,
+      "old": {
+        "mse": 2.412133616211419e-05,
+        "k": 43
+      },
+      "new": {
+        "mse": 0.0011755651558403937,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K24_seed9002000060",
+      "source_k": 24,
+      "synthetic_seed": 9002000060,
+      "old": {
+        "mse": 2.4731831451973817e-05,
+        "k": 42
+      },
+      "new": {
+        "mse": 0.0014129102314822692,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K25_seed9002100063",
+      "source_k": 25,
+      "synthetic_seed": 9002100063,
+      "old": {
+        "mse": 1.7684565329798737e-05,
+        "k": 43
+      },
+      "new": {
+        "mse": 0.001119846022047343,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K26_seed9002200066",
+      "source_k": 26,
+      "synthetic_seed": 9002200066,
+      "old": {
+        "mse": 2.175501970003992e-05,
+        "k": 45
+      },
+      "new": {
+        "mse": 0.0016077564200158011,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K27_seed9002300069",
+      "source_k": 27,
+      "synthetic_seed": 9002300069,
+      "old": {
+        "mse": 2.849095444031326e-05,
+        "k": 48
+      },
+      "new": {
+        "mse": 0.0012616666553213515,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K28_seed9002400072",
+      "source_k": 28,
+      "synthetic_seed": 9002400072,
+      "old": {
+        "mse": 4.8809586286323336e-05,
+        "k": 48
+      },
+      "new": {
+        "mse": 0.0012878528398938304,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K29_seed9002500075",
+      "source_k": 29,
+      "synthetic_seed": 9002500075,
+      "old": {
+        "mse": 3.611420707612751e-05,
+        "k": 49
+      },
+      "new": {
+        "mse": 0.0017145319957535086,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K30_seed9002600078",
+      "source_k": 30,
+      "synthetic_seed": 9002600078,
+      "old": {
+        "mse": 2.0296916440722897e-05,
+        "k": 53
+      },
+      "new": {
+        "mse": 0.0016547117650963954,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K31_seed9002700081",
+      "source_k": 31,
+      "synthetic_seed": 9002700081,
+      "old": {
+        "mse": 6.995349529984332e-05,
+        "k": 51
+      },
+      "new": {
+        "mse": 0.0017084397113215557,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K32_seed9002800084",
+      "source_k": 32,
+      "synthetic_seed": 9002800084,
+      "old": {
+        "mse": 5.2028652323404e-05,
+        "k": 52
+      },
+      "new": {
+        "mse": 0.0016488380444123756,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K33_seed9002900087",
+      "source_k": 33,
+      "synthetic_seed": 9002900087,
+      "old": {
+        "mse": 6.344505380018162e-05,
+        "k": 52
+      },
+      "new": {
+        "mse": 0.0014320047298111325,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K34_seed9003000090",
+      "source_k": 34,
+      "synthetic_seed": 9003000090,
+      "old": {
+        "mse": 1.6744482861280217e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0016392804900130363,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K35_seed9003100093",
+      "source_k": 35,
+      "synthetic_seed": 9003100093,
+      "old": {
+        "mse": 3.65980871418739e-05,
+        "k": 55
+      },
+      "new": {
+        "mse": 0.00145712546910565,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K36_seed9003200096",
+      "source_k": 36,
+      "synthetic_seed": 9003200096,
+      "old": {
+        "mse": 2.4523220200646283e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0015941909941874588,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K37_seed9003300099",
+      "source_k": 37,
+      "synthetic_seed": 9003300099,
+      "old": {
+        "mse": 3.384316299333395e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.00161856934926655,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K38_seed9003400102",
+      "source_k": 38,
+      "synthetic_seed": 9003400102,
+      "old": {
+        "mse": 4.185217592280005e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0016737150585955012,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K39_seed9003500105",
+      "source_k": 39,
+      "synthetic_seed": 9003500105,
+      "old": {
+        "mse": 4.100874712879035e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0019547670084823147,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K40_seed9003600108",
+      "source_k": 40,
+      "synthetic_seed": 9003600108,
+      "old": {
+        "mse": 2.6636238124326678e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.00198940923152925,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K41_seed9003700111",
+      "source_k": 41,
+      "synthetic_seed": 9003700111,
+      "old": {
+        "mse": 5.938847011606946e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.002004051578238301,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K42_seed9003800114",
+      "source_k": 42,
+      "synthetic_seed": 9003800114,
+      "old": {
+        "mse": 4.995885466082118e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0019457883854986265,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K43_seed9003900117",
+      "source_k": 43,
+      "synthetic_seed": 9003900117,
+      "old": {
+        "mse": 5.7127454007017985e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0018511906347320013,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K44_seed9004000120",
+      "source_k": 44,
+      "synthetic_seed": 9004000120,
+      "old": {
+        "mse": 6.76137710682202e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0017777951637741043,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K45_seed9004100123",
+      "source_k": 45,
+      "synthetic_seed": 9004100123,
+      "old": {
+        "mse": 6.219097443166945e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.001711838650560843,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K46_seed9004200126",
+      "source_k": 46,
+      "synthetic_seed": 9004200126,
+      "old": {
+        "mse": 6.322709394423658e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.001595380167572302,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K47_seed9004300129",
+      "source_k": 47,
+      "synthetic_seed": 9004300129,
+      "old": {
+        "mse": 8.167301600279409e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0018221342582091622,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K48_seed9004400132",
+      "source_k": 48,
+      "synthetic_seed": 9004400132,
+      "old": {
+        "mse": 0.00013357643928886843,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0017532057524106226,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K49_seed9004500135",
+      "source_k": 49,
+      "synthetic_seed": 9004500135,
+      "old": {
+        "mse": 0.00012068594048500487,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0018118733208735364,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K50_seed9004600138",
+      "source_k": 50,
+      "synthetic_seed": 9004600138,
+      "old": {
+        "mse": 0.00015642939387247527,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.002345564078460398,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K51_seed9004700141",
+      "source_k": 51,
+      "synthetic_seed": 9004700141,
+      "old": {
+        "mse": 0.00020550272200417353,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.002337303095099163,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K52_seed9004800144",
+      "source_k": 52,
+      "synthetic_seed": 9004800144,
+      "old": {
+        "mse": 0.00024696873237648934,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0020881769033526533,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K53_seed9004900147",
+      "source_k": 53,
+      "synthetic_seed": 9004900147,
+      "old": {
+        "mse": 0.0001364137855024869,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.002010471592572218,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K54_seed9005000150",
+      "source_k": 54,
+      "synthetic_seed": 9005000150,
+      "old": {
+        "mse": 0.00014906400667682434,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.002424255265118444,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K55_seed9005100153",
+      "source_k": 55,
+      "synthetic_seed": 9005100153,
+      "old": {
+        "mse": 0.0003326373495040353,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0019149955851717486,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K56_seed9005200156",
+      "source_k": 56,
+      "synthetic_seed": 9005200156,
+      "old": {
+        "mse": 0.0009764003955070186,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.002629968612777652,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "UJI",
+      "case_id": "uji2_09816_stroke_00",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl",
+      "old": {
+        "mse": 2.413617617126222e-05,
+        "k": 9
+      },
+      "new": {
+        "mse": 5.1660718267214345e-05,
+        "k": 36
+      }
+    },
+    {
+      "dataset": "UJI",
+      "case_id": "uji2_06892_stroke_00",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl",
+      "old": {
+        "mse": 1.6692525444555608e-05,
+        "k": 18
+      },
+      "new": {
+        "mse": 0.000428140993593151,
+        "k": 37
+      }
+    },
+    {
+      "dataset": "UJI",
+      "case_id": "uji2_08657_stroke_00",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl",
+      "old": {
+        "mse": 2.684451681270741e-05,
+        "k": 14
+      },
+      "new": {
+        "mse": 0.00023773568117785096,
+        "k": 38
+      }
+    },
+    {
+      "dataset": "UJI",
+      "case_id": "uji2_10411_stroke_01",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl",
+      "old": {
+        "mse": 6.638707815434624e-06,
+        "k": 5
+      },
+      "new": {
+        "mse": 4.408261998860117e-06,
+        "k": 37
+      }
+    },
+    {
+      "dataset": "UJI",
+      "case_id": "uji2_03101_stroke_00",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl",
+      "old": {
+        "mse": 2.2448117882926574e-05,
+        "k": 12
+      },
+      "new": {
+        "mse": 6.878184127911351e-06,
+        "k": 36
+      }
+    },
+    {
+      "dataset": "NaturalEarth",
+      "case_id": "natural_earth_10m_coastline_c5b1e333ebb6_w000_c5b1e333",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl",
+      "old": {
+        "mse": 3.923290352321754e-05,
+        "k": 54
+      },
+      "new": {
+        "mse": 0.0005270075309043684,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "NaturalEarth",
+      "case_id": "natural_earth_10m_coastline_32c6bcdd2e37_w000_32c6bcdd",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl",
+      "old": {
+        "mse": 3.706580051589423e-05,
+        "k": 23
+      },
+      "new": {
+        "mse": 0.00013108532750085672,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "NaturalEarth",
+      "case_id": "natural_earth_10m_coastline_0492a6ef404e_w000_0492a6ef",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl",
+      "old": {
+        "mse": 0.00017901254850973694,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.004040941714672144,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "NaturalEarth",
+      "case_id": "natural_earth_10m_coastline_5e92fdf08677_w000_5e92fdf0",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl",
+      "old": {
+        "mse": 3.8262607590532554e-05,
+        "k": 31
+      },
+      "new": {
+        "mse": 0.0016041990047644663,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "NaturalEarth",
+      "case_id": "natural_earth_10m_coastline_86debeade3de_w000_86debead",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl",
+      "old": {
+        "mse": 2.844426516050209e-05,
+        "k": 20
+      },
+      "new": {
+        "mse": 0.00020592022857881544,
+        "k": 38
+      }
+    },
+    {
+      "dataset": "USGS",
+      "case_id": "usgs_tnm_contours_large_scale_bb7e4cd4bbd5_w000_bb7e4cd4",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl",
+      "old": {
+        "mse": 2.51573200194398e-05,
+        "k": 17
+      },
+      "new": {
+        "mse": 4.2344921562668014e-05,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "USGS",
+      "case_id": "usgs_tnm_contours_large_scale_dab11f616d2e_w000_dab11f61",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl",
+      "old": {
+        "mse": 2.7477008304618652e-05,
+        "k": 41
+      },
+      "new": {
+        "mse": 0.0005236721072054922,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "USGS",
+      "case_id": "usgs_tnm_contours_large_scale_95f442df1b13_w000_ce1d593e",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl",
+      "old": {
+        "mse": 1.2912636730750463e-05,
+        "k": 55
+      },
+      "new": {
+        "mse": 0.0002151248561023509,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "USGS",
+      "case_id": "usgs_tnm_contours_large_scale_6db0a6485765_w000_6db0a648",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl",
+      "old": {
+        "mse": 3.767934670205516e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.00045567870665421274,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "USGS",
+      "case_id": "usgs_tnm_contours_large_scale_2c338fda54bb_w000_2c338fda",
+      "source_k": null,
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl",
+      "old": {
+        "mse": 0.00012938183833593697,
+        "k": 55
+      },
+      "new": {
+        "mse": 0.002099385008766505,
+        "k": 39
+      }
+    }
+  ]
+}

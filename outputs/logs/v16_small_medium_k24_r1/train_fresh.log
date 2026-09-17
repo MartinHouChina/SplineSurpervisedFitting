@@ -1,0 +1,782 @@
+Checking real manifests and train/val/test group separation...
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl
+  Checking groups/files: 2000/18219
+  Checking groups/files: 4000/18219
+  Checking groups/files: 6000/18219
+  Checking groups/files: 8000/18219
+  Checking groups/files: 10000/18219
+  Checking groups/files: 12000/18219
+  Checking groups/files: 14000/18219
+  Checking groups/files: 16000/18219
+  Checking groups/files: 18000/18219
+  Checking groups/files: 18219/18219
+  Ready uji_pen_characters_v2: train=9670, val=2456 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl
+  Checking groups/files: 2000/3908
+  Checking groups/files: 3908/3908
+  Ready natural_earth_10m_coastline: train=2625, val=750 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl
+  Checking groups/files: 2000/6654
+  Checking groups/files: 4000/6654
+  Checking groups/files: 6000/6654
+  Checking groups/files: 6654/6654
+  Ready usgs_tnm_contours_large_scale: train=4024, val=1210 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/industrial_offsets/v1/manifest.jsonl
+  Checking groups/files: 453/453
+  Ready industrial_model_offset_curves: train=293, val=93 (test excluded from training)
+v16 adaptive mass_topk: cuda, Kc=24 internal (full cubic knot vector at all-keep=32), MSE tolerance=0.0001; 600 train draws, 240 validation curves; real sources=4
+Synthetic source contract: clean source-subset threshold-minimal certificate at RMS=0.01, margin=20%, audit_points=512
+Joint supervision: certified synthetic geometry labels plus one offline Hard-RMS feasible-subset Teacher on the frozen Proposal parameter/candidate frame. Source K is a reference only. The Teacher mask/count/risk supervise Selector and subset decoder; no subset search runs in Joint steps. Proposal and ParameterHead remain frozen for cache validity. Raw deployment is one-shot; MSE verification/repair is a separate numerical method.
+Checkpoint selection minimizes mean per-curve subset cost: feasible curves trade K against a bounded MSE tie-break; infeasible curves use a logarithmic MSE penalty. Aggregate pass rates and the explicit K=20 boundary audit (n=16) are reported but never gate training. Labelled Joint performs only dense, deployed-mask and labelled-mask fits per batch.
+Proposal-stage synthetic stratification: disabled (original full-range distribution). Joint-stage synthetic stratification: disabled (original full-range distribution). Fixed high-K validation rows: 0 at K>=20.
+Optimizer budget: 19 updates/epoch (ceil(600/32)); remaining Proposal=456, Joint=456. Increasing batch size without extending epochs reduces optimization steps.
+Epoch 001/48 proposal [=.......................] 1/19 MSE=1.225e-04 pass=56.2% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 001/48 proposal [============............] 10/19 MSE=2.334e-04 pass=31.2% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 001/48 proposal [========================] 19/19 MSE=1.360e-04 pass=62.5% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 001 phase=proposal lr=group_0:2.0e-04 val dense=64.6% deployment=64.6% worst-source=52.5% qualification=0.0% MSE=2.045e-04 K=24.00 mass=11.80 beta=0.03 soft_cost=1.7848 selection_score=-1.7848 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=1.2889e-02, ordered_assignment_MAE=1.3068e-02, matched_K=11.63, R@.005/.01/.02=0.190/0.392/0.805, parameter_bias=2.146e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=52.5%, deployment=52.5%, MSE=2.795e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.272, param_RMSE=5.547e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=6.099e-06, K=24.00
+  natural_earth_10m_coastline: dense=75.0%, deployment=75.0%, MSE=1.265e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=90.0%, deployment=90.0%, MSE=5.786e-05, K=24.00
+  industrial_model_offset_curves: dense=90.0%, deployment=90.0%, MSE=2.803e-05, K=24.00
+Epoch 002/48 proposal [=.......................] 1/19 MSE=1.772e-04 pass=56.2% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 002/48 proposal [============............] 10/19 MSE=2.473e-04 pass=56.2% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 002/48 proposal [========================] 19/19 MSE=5.704e-05 pass=83.3% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 002 phase=proposal lr=group_0:2.0e-04 val dense=72.5% deployment=72.5% worst-source=61.9% qualification=0.0% MSE=1.483e-04 K=24.00 mass=11.84 beta=0.03 soft_cost=1.6198 selection_score=-1.6198 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=1.2009e-02, ordered_assignment_MAE=1.2142e-02, matched_K=11.64, R@.005/.01/.02=0.208/0.427/0.847, parameter_bias=2.016e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=61.9%, deployment=61.9%, MSE=1.959e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.323, param_RMSE=4.689e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=4.502e-06, K=24.00
+  natural_earth_10m_coastline: dense=90.0%, deployment=90.0%, MSE=1.363e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=90.0%, deployment=90.0%, MSE=5.674e-05, K=24.00
+  industrial_model_offset_curves: dense=95.0%, deployment=95.0%, MSE=1.462e-05, K=24.00
+Epoch 003/48 proposal [=.......................] 1/19 MSE=6.411e-05 pass=75.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 003/48 proposal [============............] 10/19 MSE=1.403e-04 pass=71.9% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 003/48 proposal [========================] 19/19 MSE=1.066e-04 pass=66.7% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 003 phase=proposal lr=group_0:2.0e-04 val dense=73.8% deployment=73.8% worst-source=66.9% qualification=0.0% MSE=1.456e-04 K=24.00 mass=11.80 beta=0.03 soft_cost=1.5937 selection_score=-1.5937 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=1.0746e-02, ordered_assignment_MAE=1.0844e-02, matched_K=11.63, R@.005/.01/.02=0.231/0.479/0.911, parameter_bias=1.788e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=66.9%, deployment=66.9%, MSE=1.860e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.339, param_RMSE=4.024e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=8.774e-06, K=24.00
+  natural_earth_10m_coastline: dense=75.0%, deployment=75.0%, MSE=1.529e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=6.812e-05, K=24.00
+  industrial_model_offset_curves: dense=90.0%, deployment=90.0%, MSE=2.966e-05, K=24.00
+Epoch 004/48 proposal [=.......................] 1/19 MSE=8.717e-05 pass=71.9% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 004/48 proposal [============............] 10/19 MSE=1.397e-04 pass=53.1% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 004/48 proposal [========================] 19/19 MSE=1.091e-04 pass=66.7% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 004 phase=proposal lr=group_0:2.0e-04 val dense=73.3% deployment=73.3% worst-source=66.9% qualification=0.0% MSE=1.347e-04 K=24.00 mass=11.84 beta=0.03 soft_cost=1.5795 selection_score=-1.5795 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=1.0146e-02, ordered_assignment_MAE=1.0213e-02, matched_K=11.63, R@.005/.01/.02=0.257/0.511/0.932, parameter_bias=1.727e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=66.9%, deployment=66.9%, MSE=1.682e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.330, param_RMSE=3.972e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=9.577e-06, K=24.00
+  natural_earth_10m_coastline: dense=75.0%, deployment=75.0%, MSE=1.608e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=6.785e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.311e-05, K=24.00
+Epoch 005/48 proposal [=.......................] 1/19 MSE=8.626e-05 pass=75.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 005/48 proposal [============............] 10/19 MSE=9.681e-05 pass=68.8% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 005/48 proposal [========================] 19/19 MSE=1.206e-04 pass=75.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 005 phase=proposal lr=group_0:2.0e-04 val dense=73.3% deployment=73.3% worst-source=65.0% qualification=0.0% MSE=1.349e-04 K=24.00 mass=11.88 beta=0.02 soft_cost=1.5792 selection_score=-1.5792 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=1.0029e-02, ordered_assignment_MAE=1.0084e-02, matched_K=11.64, R@.005/.01/.02=0.260/0.520/0.937, parameter_bias=1.738e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=68.1%, deployment=68.1%, MSE=1.665e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.336, param_RMSE=3.929e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.090e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.655e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.668e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.356e-05, K=24.00
+Epoch 006/48 proposal [=.......................] 1/19 MSE=1.058e-04 pass=75.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 006/48 proposal [============............] 10/19 MSE=1.374e-04 pass=65.6% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 006/48 proposal [========================] 19/19 MSE=1.558e-04 pass=58.3% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 006 phase=proposal lr=group_0:2.0e-04 val dense=73.3% deployment=73.3% worst-source=65.0% qualification=0.0% MSE=1.239e-04 K=24.00 mass=11.84 beta=0.03 soft_cost=1.5590 selection_score=-1.5590 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=9.9678e-03, ordered_assignment_MAE=1.0006e-02, matched_K=11.63, R@.005/.01/.02=0.263/0.519/0.936, parameter_bias=1.742e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=68.1%, deployment=68.1%, MSE=1.515e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.331, param_RMSE=4.005e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.038e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.624e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.114e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=2.999e-05, K=24.00
+Epoch 007/48 proposal [=.......................] 1/19 MSE=9.487e-05 pass=78.1% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 007/48 proposal [============............] 10/19 MSE=6.785e-05 pass=84.4% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 007/48 proposal [========================] 19/19 MSE=5.857e-05 pass=87.5% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 007 phase=proposal lr=group_0:2.0e-04 val dense=73.3% deployment=73.3% worst-source=65.0% qualification=0.0% MSE=1.226e-04 K=24.00 mass=11.83 beta=0.03 soft_cost=1.5552 selection_score=-1.5552 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=9.9440e-03, ordered_assignment_MAE=9.9861e-03, matched_K=11.63, R@.005/.01/.02=0.258/0.523/0.941, parameter_bias=1.751e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=68.1%, deployment=68.1%, MSE=1.486e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.343, param_RMSE=3.956e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.144e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.660e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.262e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.299e-05, K=24.00
+Epoch 008/48 proposal [=.......................] 1/19 MSE=8.240e-05 pass=71.9% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 008/48 proposal [============............] 10/19 MSE=5.354e-05 pass=87.5% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 008/48 proposal [========================] 19/19 MSE=1.068e-04 pass=70.8% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 008 phase=proposal lr=group_0:2.0e-04 val dense=72.9% deployment=72.9% worst-source=65.0% qualification=0.0% MSE=1.228e-04 K=24.00 mass=11.83 beta=0.03 soft_cost=1.5556 selection_score=-1.5556 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=9.8359e-03, ordered_assignment_MAE=9.8617e-03, matched_K=11.63, R@.005/.01/.02=0.264/0.529/0.945, parameter_bias=1.745e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=67.5%, deployment=67.5%, MSE=1.481e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.342, param_RMSE=3.920e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.244e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.657e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.555e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.499e-05, K=24.00
+Epoch 009/48 proposal [=.......................] 1/19 MSE=7.002e-05 pass=75.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 009/48 proposal [============............] 10/19 MSE=7.860e-05 pass=84.4% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 009/48 proposal [========================] 19/19 MSE=9.596e-05 pass=66.7% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 009 phase=proposal lr=group_0:2.0e-04 val dense=73.3% deployment=73.3% worst-source=65.0% qualification=0.0% MSE=1.183e-04 K=24.00 mass=11.82 beta=0.03 soft_cost=1.5428 selection_score=-1.5428 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=9.7621e-03, ordered_assignment_MAE=9.7899e-03, matched_K=11.63, R@.005/.01/.02=0.265/0.535/0.948, parameter_bias=1.716e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=68.1%, deployment=68.1%, MSE=1.412e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.342, param_RMSE=3.930e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.206e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.660e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.790e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.366e-05, K=24.00
+Epoch 010/48 proposal [=.......................] 1/19 MSE=8.367e-05 pass=78.1% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 010/48 proposal [============............] 10/19 MSE=5.481e-05 pass=84.4% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 010/48 proposal [========================] 19/19 MSE=3.994e-05 pass=87.5% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 010 phase=proposal lr=group_0:2.0e-04 val dense=73.8% deployment=73.8% worst-source=60.0% qualification=0.0% MSE=1.138e-04 K=24.00 mass=11.83 beta=0.03 soft_cost=1.5219 selection_score=-1.5219 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=9.6824e-03, ordered_assignment_MAE=9.7088e-03, matched_K=11.63, R@.005/.01/.02=0.270/0.539/0.952, parameter_bias=1.707e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=69.4%, deployment=69.4%, MSE=1.329e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.355, param_RMSE=3.852e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.329e-05, K=24.00
+  natural_earth_10m_coastline: dense=60.0%, deployment=60.0%, MSE=1.721e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=8.069e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.711e-05, K=24.00
+Epoch 011/48 proposal [=.......................] 1/19 MSE=6.683e-05 pass=81.2% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 011/48 proposal [============............] 10/19 MSE=3.446e-05 pass=90.6% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 011/48 proposal [========================] 19/19 MSE=5.144e-05 pass=87.5% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 011 phase=proposal lr=group_0:2.0e-04 val dense=74.2% deployment=74.2% worst-source=65.0% qualification=0.0% MSE=1.088e-04 K=24.00 mass=11.83 beta=0.03 soft_cost=1.5077 selection_score=-1.5077 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=9.6338e-03, ordered_assignment_MAE=9.6525e-03, matched_K=11.64, R@.005/.01/.02=0.270/0.539/0.955, parameter_bias=1.699e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=69.4%, deployment=69.4%, MSE=1.269e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.342, param_RMSE=3.915e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.226e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.675e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.492e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.583e-05, K=24.00
+Epoch 012/48 proposal [=.......................] 1/19 MSE=5.748e-05 pass=81.2% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 012/48 proposal [============............] 10/19 MSE=6.479e-05 pass=81.2% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 012/48 proposal [========================] 19/19 MSE=3.952e-05 pass=95.8% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 012 phase=proposal lr=group_0:2.0e-04 val dense=74.2% deployment=74.2% worst-source=60.0% qualification=0.0% MSE=1.061e-04 K=24.00 mass=11.82 beta=0.03 soft_cost=1.4931 selection_score=-1.4931 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=9.5902e-03, ordered_assignment_MAE=9.6119e-03, matched_K=11.63, R@.005/.01/.02=0.275/0.540/0.956, parameter_bias=1.684e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=70.0%, deployment=70.0%, MSE=1.203e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.358, param_RMSE=3.834e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.515e-05, K=24.00
+  natural_earth_10m_coastline: dense=60.0%, deployment=60.0%, MSE=1.783e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.936e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.834e-05, K=24.00
+Epoch 013/48 proposal [=.......................] 1/19 MSE=7.110e-05 pass=71.9% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 013/48 proposal [============............] 10/19 MSE=5.324e-05 pass=78.1% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 013/48 proposal [========================] 19/19 MSE=4.820e-05 pass=87.5% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 013 phase=proposal lr=group_0:2.0e-04 val dense=74.2% deployment=74.2% worst-source=65.0% qualification=0.0% MSE=1.048e-04 K=24.00 mass=11.83 beta=0.03 soft_cost=1.4894 selection_score=-1.4894 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=9.5253e-03, ordered_assignment_MAE=9.5451e-03, matched_K=11.63, R@.005/.01/.02=0.274/0.545/0.959, parameter_bias=1.657e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=69.4%, deployment=69.4%, MSE=1.178e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.364, param_RMSE=3.784e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.488e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.804e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.864e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=4.117e-05, K=24.00
+Epoch 014/48 proposal [=.......................] 1/19 MSE=3.336e-05 pass=93.8% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 014/48 proposal [============............] 10/19 MSE=5.083e-05 pass=81.2% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 014/48 proposal [========================] 19/19 MSE=5.179e-05 pass=83.3% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 014 phase=proposal lr=group_0:2.0e-04 val dense=76.2% deployment=76.2% worst-source=60.0% qualification=0.0% MSE=9.423e-05 K=24.00 mass=11.86 beta=0.02 soft_cost=1.4400 selection_score=-1.4400 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=9.4074e-03, ordered_assignment_MAE=9.4278e-03, matched_K=11.64, R@.005/.01/.02=0.281/0.559/0.962, parameter_bias=1.664e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=73.1%, deployment=73.1%, MSE=1.037e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.370, param_RMSE=3.877e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.402e-05, K=24.00
+  natural_earth_10m_coastline: dense=60.0%, deployment=60.0%, MSE=1.726e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.769e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.714e-05, K=24.00
+Epoch 015/48 proposal [=.......................] 1/19 MSE=5.495e-05 pass=87.5% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 015/48 proposal [============............] 10/19 MSE=4.684e-05 pass=90.6% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 015/48 proposal [========================] 19/19 MSE=3.404e-05 pass=91.7% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 015 phase=proposal lr=group_0:2.0e-04 val dense=77.1% deployment=77.1% worst-source=60.0% qualification=0.0% MSE=9.289e-05 K=24.00 mass=11.84 beta=0.03 soft_cost=1.4223 selection_score=-1.4223 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=9.2774e-03, ordered_assignment_MAE=9.2962e-03, matched_K=11.64, R@.005/.01/.02=0.290/0.561/0.960, parameter_bias=1.654e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=74.4%, deployment=74.4%, MSE=1.006e-04, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.385, param_RMSE=3.827e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.553e-05, K=24.00
+  natural_earth_10m_coastline: dense=60.0%, deployment=60.0%, MSE=1.767e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.944e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.828e-05, K=24.00
+Epoch 016/48 proposal [=.......................] 1/19 MSE=6.067e-05 pass=75.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 016/48 proposal [============............] 10/19 MSE=4.877e-05 pass=87.5% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 016/48 proposal [========================] 19/19 MSE=5.042e-05 pass=83.3% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 016 phase=proposal lr=group_0:2.0e-04 val dense=77.5% deployment=77.5% worst-source=65.0% qualification=4.8% MSE=8.121e-05 K=24.00 mass=11.83 beta=0.03 soft_cost=1.3797 selection_score=-1.3797 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=4.8%
+  Proposal train geometry: coverage_MAE=9.2166e-03, ordered_assignment_MAE=9.2332e-03, matched_K=11.63, R@.005/.01/.02=0.296/0.565/0.961, parameter_bias=1.661e-02
+  Synthetic K=20: n=21, dense=4.8%, deployment=4.8%
+  Synthetic: dense=74.4%, deployment=74.4%, MSE=8.438e-05, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.400, param_RMSE=3.856e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.399e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.693e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.750e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.874e-05, K=24.00
+Epoch 017/48 proposal [=.......................] 1/19 MSE=4.293e-05 pass=90.6% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 017/48 proposal [============............] 10/19 MSE=3.423e-05 pass=90.6% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 017/48 proposal [========================] 19/19 MSE=5.009e-05 pass=83.3% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 017 phase=proposal lr=group_0:2.0e-04 val dense=77.1% deployment=77.1% worst-source=65.0% qualification=0.0% MSE=8.457e-05 K=24.00 mass=11.82 beta=0.03 soft_cost=1.3896 selection_score=-1.3896 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=9.0462e-03, ordered_assignment_MAE=9.0586e-03, matched_K=11.64, R@.005/.01/.02=0.304/0.583/0.967, parameter_bias=1.636e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=73.8%, deployment=73.8%, MSE=8.666e-05, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.401, param_RMSE=3.723e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.528e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.822e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=8.164e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=4.249e-05, K=24.00
+Epoch 018/48 proposal [=.......................] 1/19 MSE=4.414e-05 pass=96.9% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 018/48 proposal [============............] 10/19 MSE=4.125e-05 pass=90.6% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 018/48 proposal [========================] 19/19 MSE=3.793e-05 pass=87.5% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 018 phase=proposal lr=group_0:2.0e-04 val dense=78.3% deployment=78.3% worst-source=65.0% qualification=4.8% MSE=7.910e-05 K=24.00 mass=11.82 beta=0.03 soft_cost=1.3618 selection_score=-1.3618 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=4.8%
+  Proposal train geometry: coverage_MAE=8.9128e-03, ordered_assignment_MAE=8.9278e-03, matched_K=11.64, R@.005/.01/.02=0.308/0.589/0.968, parameter_bias=1.627e-02
+  Synthetic K=20: n=21, dense=4.8%, deployment=4.8%
+  Synthetic: dense=75.6%, deployment=75.6%, MSE=8.087e-05, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.406, param_RMSE=3.816e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.451e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.733e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.704e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.732e-05, K=24.00
+Epoch 019/48 proposal [=.......................] 1/19 MSE=3.142e-05 pass=96.9% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 019/48 proposal [============............] 10/19 MSE=3.664e-05 pass=93.8% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 019/48 proposal [========================] 19/19 MSE=3.799e-05 pass=91.7% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 019 phase=proposal lr=group_0:2.0e-04 val dense=78.3% deployment=78.3% worst-source=65.0% qualification=4.8% MSE=7.621e-05 K=24.00 mass=11.84 beta=0.03 soft_cost=1.3492 selection_score=-1.3492 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=4.8%
+  Proposal train geometry: coverage_MAE=8.9223e-03, ordered_assignment_MAE=8.9360e-03, matched_K=11.63, R@.005/.01/.02=0.305/0.593/0.965, parameter_bias=1.632e-02
+  Synthetic K=20: n=21, dense=4.8%, deployment=4.8%
+  Synthetic: dense=75.6%, deployment=75.6%, MSE=7.562e-05, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.416, param_RMSE=3.777e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.464e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.766e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.853e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.981e-05, K=24.00
+Epoch 020/48 proposal [=.......................] 1/19 MSE=3.212e-05 pass=100.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 020/48 proposal [============............] 10/19 MSE=3.776e-05 pass=93.8% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 020/48 proposal [========================] 19/19 MSE=3.081e-05 pass=95.8% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 020 phase=proposal lr=group_0:2.0e-04 val dense=78.8% deployment=78.8% worst-source=65.0% qualification=0.0% MSE=7.462e-05 K=24.00 mass=11.83 beta=0.03 soft_cost=1.3348 selection_score=-1.3348 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=0.0%
+  Proposal train geometry: coverage_MAE=8.8560e-03, ordered_assignment_MAE=8.8781e-03, matched_K=11.63, R@.005/.01/.02=0.313/0.600/0.964, parameter_bias=1.617e-02
+  Synthetic K=20: n=21, dense=0.0%, deployment=0.0%
+  Synthetic: dense=76.2%, deployment=76.2%, MSE=7.293e-05, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.420, param_RMSE=3.753e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.533e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.784e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.829e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.999e-05, K=24.00
+Epoch 021/48 proposal [=.......................] 1/19 MSE=3.336e-05 pass=90.6% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 021/48 proposal [============............] 10/19 MSE=2.328e-05 pass=100.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 021/48 proposal [========================] 19/19 MSE=4.251e-05 pass=87.5% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 021 phase=proposal lr=group_0:2.0e-04 val dense=80.4% deployment=80.4% worst-source=60.0% qualification=4.8% MSE=7.164e-05 K=24.00 mass=11.84 beta=0.03 soft_cost=1.3107 selection_score=-1.3107 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=4.8%
+  Proposal train geometry: coverage_MAE=8.7728e-03, ordered_assignment_MAE=8.7894e-03, matched_K=11.64, R@.005/.01/.02=0.316/0.603/0.966, parameter_bias=1.611e-02
+  Synthetic K=20: n=21, dense=4.8%, deployment=4.8%
+  Synthetic: dense=79.4%, deployment=79.4%, MSE=6.894e-05, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.419, param_RMSE=3.758e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.492e-05, K=24.00
+  natural_earth_10m_coastline: dense=60.0%, deployment=60.0%, MSE=1.773e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.758e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.830e-05, K=24.00
+Epoch 022/48 proposal [=.......................] 1/19 MSE=2.823e-05 pass=100.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 022/48 proposal [============............] 10/19 MSE=1.913e-05 pass=100.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 022/48 proposal [========================] 19/19 MSE=3.789e-05 pass=95.8% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 022 phase=proposal lr=group_0:2.0e-04 val dense=79.6% deployment=79.6% worst-source=65.0% qualification=4.8% MSE=7.449e-05 K=24.00 mass=11.85 beta=0.02 soft_cost=1.3273 selection_score=-1.3273 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=4.8%
+  Proposal train geometry: coverage_MAE=8.7210e-03, ordered_assignment_MAE=8.7359e-03, matched_K=11.64, R@.005/.01/.02=0.326/0.606/0.963, parameter_bias=1.611e-02
+  Synthetic K=20: n=21, dense=4.8%, deployment=4.8%
+  Synthetic: dense=78.1%, deployment=78.1%, MSE=7.234e-05, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.415, param_RMSE=3.728e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.537e-05, K=24.00
+  natural_earth_10m_coastline: dense=65.0%, deployment=65.0%, MSE=1.805e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=80.0%, deployment=80.0%, MSE=8.095e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.839e-05, K=24.00
+Epoch 023/48 proposal [=.......................] 1/19 MSE=3.594e-05 pass=93.8% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 023/48 proposal [============............] 10/19 MSE=2.997e-05 pass=100.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 023/48 proposal [========================] 19/19 MSE=2.691e-05 pass=95.8% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 023 phase=proposal lr=group_0:2.0e-04 val dense=79.6% deployment=79.6% worst-source=60.0% qualification=4.8% MSE=6.944e-05 K=24.00 mass=11.83 beta=0.03 soft_cost=1.3128 selection_score=-1.3128 complexity=0.00->0.00 safety=0+0.03sigma scale=1.00->1.00 pass_reference_only=4.8%
+  Proposal train geometry: coverage_MAE=8.7418e-03, ordered_assignment_MAE=8.7552e-03, matched_K=11.63, R@.005/.01/.02=0.321/0.606/0.966, parameter_bias=1.598e-02
+  Synthetic K=20: n=21, dense=4.8%, deployment=4.8%
+  Synthetic: dense=78.1%, deployment=78.1%, MSE=6.575e-05, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.423, param_RMSE=3.761e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.532e-05, K=24.00
+  natural_earth_10m_coastline: dense=60.0%, deployment=60.0%, MSE=1.774e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.767e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.679e-05, K=24.00
+Epoch 024/48 proposal [=.......................] 1/19 MSE=2.328e-05 pass=100.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 024/48 proposal [============............] 10/19 MSE=3.195e-05 pass=100.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+Epoch 024/48 proposal [========================] 19/19 MSE=2.701e-05 pass=100.0% K=24.0 denseK=24.0 countMAE=0.00 lr=group_0:2.0e-04
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 024 phase=proposal lr=group_0:2.0e-04 val dense=81.2% deployment=81.2% worst-source=60.0% qualification=9.5% MSE=6.807e-05 K=24.00 mass=11.84 beta=0.03 soft_cost=1.2873 selection_score=-1.2873 complexity=0.00->1.00 safety=0+0.03sigma scale=1.00->0.00 pass_reference_only=9.5%
+  Proposal train geometry: coverage_MAE=8.6891e-03, ordered_assignment_MAE=8.7027e-03, matched_K=11.63, R@.005/.01/.02=0.326/0.609/0.964, parameter_bias=1.592e-02
+  Synthetic K=20: n=21, dense=9.5%, deployment=9.5%
+  Synthetic: dense=80.6%, deployment=80.6%, MSE=6.414e-05, K=24.00, targetK=12.60, count_MAE=11.40, bias=+11.40, knot_F1@0.01=0.435, param_RMSE=3.735e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.491e-05, K=24.00
+  natural_earth_10m_coastline: dense=60.0%, deployment=60.0%, MSE=1.745e-04, K=24.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=85.0%, MSE=7.728e-05, K=24.00
+  industrial_model_offset_curves: dense=85.0%, deployment=85.0%, MSE=3.693e-05, K=24.00
+Proposal schedule complete; loading the validation-ranked best dense initializer from epoch 24 (worst-source pass=60.0%, reporting reference=90.0%). Joint training starts unconditionally in selector_warmup.
+Building/checking fixed-Proposal feasible-subset labels at /home/feng/HouCode/SplineSurpervisedFitting/outputs/teachers/v16_small_medium_k24_r1/train.pt; this is offline work, not Joint per-step search.
+offline feasible Teacher [........................] 8/600 
+offline feasible Teacher [........................] 16/600 
+offline feasible Teacher [........................] 24/600 
+offline feasible Teacher [=.......................] 32/600 
+offline feasible Teacher [=.......................] 40/600 
+offline feasible Teacher [=.......................] 48/600 
+offline feasible Teacher [==......................] 56/600 
+offline feasible Teacher [==......................] 64/600 
+offline feasible Teacher [==......................] 72/600 
+offline feasible Teacher [===.....................] 80/600 
+offline feasible Teacher [===.....................] 88/600 
+offline feasible Teacher [===.....................] 96/600 
+offline feasible Teacher [====....................] 104/600 
+offline feasible Teacher [====....................] 112/600 
+offline feasible Teacher [====....................] 120/600 
+offline feasible Teacher [=====...................] 128/600 
+offline feasible Teacher [=====...................] 136/600 
+offline feasible Teacher [=====...................] 144/600 
+offline feasible Teacher [======..................] 152/600 
+offline feasible Teacher [======..................] 160/600 
+offline feasible Teacher [======..................] 168/600 
+offline feasible Teacher [=======.................] 176/600 
+offline feasible Teacher [=======.................] 184/600 
+offline feasible Teacher [=======.................] 192/600 
+offline feasible Teacher [========................] 200/600 
+offline feasible Teacher [========................] 208/600 
+offline feasible Teacher [========................] 216/600 
+offline feasible Teacher [========................] 224/600 
+offline feasible Teacher [=========...............] 232/600 
+offline feasible Teacher [=========...............] 240/600 
+offline feasible Teacher [=========...............] 248/600 
+offline feasible Teacher [==========..............] 256/600 
+offline feasible Teacher [==========..............] 264/600 
+offline feasible Teacher [==========..............] 272/600 
+offline feasible Teacher [===========.............] 280/600 
+offline feasible Teacher [===========.............] 288/600 
+offline feasible Teacher [===========.............] 296/600 
+offline feasible Teacher [============............] 304/600 
+offline feasible Teacher [============............] 312/600 
+offline feasible Teacher [============............] 320/600 
+offline feasible Teacher [=============...........] 328/600 
+offline feasible Teacher [=============...........] 336/600 
+offline feasible Teacher [=============...........] 344/600 
+offline feasible Teacher [==============..........] 352/600 
+offline feasible Teacher [==============..........] 360/600 
+offline feasible Teacher [==============..........] 368/600 
+offline feasible Teacher [===============.........] 376/600 
+offline feasible Teacher [===============.........] 384/600 
+offline feasible Teacher [===============.........] 392/600 
+offline feasible Teacher [================........] 400/600 
+offline feasible Teacher [================........] 408/600 
+offline feasible Teacher [================........] 416/600 
+offline feasible Teacher [================........] 424/600 
+offline feasible Teacher [=================.......] 432/600 
+offline feasible Teacher [=================.......] 440/600 
+offline feasible Teacher [=================.......] 448/600 
+offline feasible Teacher [==================......] 456/600 
+offline feasible Teacher [==================......] 464/600 
+offline feasible Teacher [==================......] 472/600 
+offline feasible Teacher [===================.....] 480/600 
+offline feasible Teacher [===================.....] 488/600 
+offline feasible Teacher [===================.....] 496/600 
+offline feasible Teacher [====================....] 504/600 
+offline feasible Teacher [====================....] 512/600 
+offline feasible Teacher [====================....] 520/600 
+offline feasible Teacher [=====================...] 528/600 
+offline feasible Teacher [=====================...] 536/600 
+offline feasible Teacher [=====================...] 544/600 
+offline feasible Teacher [======================..] 552/600 
+offline feasible Teacher [======================..] 560/600 
+offline feasible Teacher [======================..] 568/600 
+offline feasible Teacher [=======================.] 576/600 
+offline feasible Teacher [=======================.] 584/600 
+offline feasible Teacher [=======================.] 592/600 
+offline feasible Teacher [========================] 600/600 
+Epoch 025/48 selector_warmup [=.......................] 1/19 MSE=1.447e-03 pass=3.1% K=12.2 feasibleK=13.6 countMAE=4.00 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 025/48 selector_warmup [============............] 10/19 MSE=1.479e-03 pass=3.1% K=13.0 feasibleK=13.8 countMAE=3.81 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 025/48 selector_warmup [========================] 19/19 MSE=1.907e-03 pass=0.0% K=13.0 feasibleK=13.6 countMAE=3.46 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 025 phase=selector_warmup lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=7.5% worst-source=0.0% qualification=0.0% MSE=1.679e-03 K=13.00 mass=12.26 beta=-0.04 soft_cost=4.2190 selection_score=-4.2190 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.596/0.521/0.555, critical_false_delete=0.465, proposal R@.005/.01/.02=0.341/0.614/0.966, parameter_bias=1.591e-02, count-cal loss=6.294e-02, score/target/bias/MAE=12.10/14.34/-2.23/4.47, fine-risk mean/std/range=0.973/0.086/0.491, fine-loss/rank=7.529e-01/2.117e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.531, OR loss=2.884e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=89.0%/8.355e-05, student one-shot pass/MSE=2.3%/1.735e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.662/0.000, boundary-rank loss=1.343e+00, teacher-frame parameter displacement=4.725e-05
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=1.9%, MSE=2.193e-03, K=13.00, targetK=12.60, count_MAE=4.51, bias=+0.40, knot_F1@0.01=0.341, param_RMSE=3.734e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=50.0%, MSE=1.820e-04, K=13.00
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=8.976e-04, K=13.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=20.0%, MSE=7.383e-04, K=13.00
+  industrial_model_offset_curves: dense=85.0%, deployment=5.0%, MSE=7.936e-04, K=13.00
+Epoch 026/48 selector_warmup [=.......................] 1/19 MSE=2.009e-03 pass=0.0% K=13.0 feasibleK=14.6 countMAE=4.25 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 026/48 selector_warmup [============............] 10/19 MSE=2.366e-03 pass=12.5% K=13.0 feasibleK=15.7 countMAE=4.84 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 026/48 selector_warmup [========================] 19/19 MSE=1.778e-03 pass=4.2% K=13.0 feasibleK=12.6 countMAE=4.04 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 026 phase=selector_warmup lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=10.8% worst-source=0.0% qualification=0.0% MSE=1.631e-03 K=13.01 mass=12.67 beta=-0.11 soft_cost=4.1382 selection_score=-4.1382 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.627/0.559/0.590, critical_false_delete=0.455, proposal R@.005/.01/.02=0.341/0.614/0.966, parameter_bias=1.592e-02, count-cal loss=5.853e-02, score/target/bias/MAE=12.54/14.34/-1.80/4.32, fine-risk mean/std/range=0.973/0.086/0.488, fine-loss/rank=7.121e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.567, OR loss=2.656e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=90.0%/8.297e-05, student one-shot pass/MSE=3.5%/2.029e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.683/0.000, boundary-rank loss=1.319e+00, teacher-frame parameter displacement=6.507e-05
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=3.8%, MSE=2.115e-03, K=13.02, targetK=12.60, count_MAE=4.49, bias=+0.42, knot_F1@0.01=0.355, param_RMSE=3.734e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=60.0%, MSE=1.749e-04, K=13.00
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.036e-03, K=13.00
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=20.0%, MSE=6.428e-04, K=13.00
+  industrial_model_offset_curves: dense=85.0%, deployment=20.0%, MSE=7.939e-04, K=13.00
+Epoch 027/48 selector_warmup [=.......................] 1/19 MSE=1.861e-03 pass=3.1% K=13.0 feasibleK=14.1 countMAE=4.56 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 027/48 selector_warmup [============............] 10/19 MSE=1.563e-03 pass=6.2% K=13.2 feasibleK=12.1 countMAE=3.66 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 027/48 selector_warmup [========================] 19/19 MSE=1.553e-03 pass=4.2% K=13.3 feasibleK=13.4 countMAE=4.12 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 027 phase=selector_warmup lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=6.2% worst-source=0.0% qualification=0.0% MSE=1.635e-03 K=13.38 mass=12.82 beta=-0.14 soft_cost=4.2728 selection_score=-4.2728 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.632/0.575/0.601, critical_false_delete=0.432, proposal R@.005/.01/.02=0.340/0.613/0.966, parameter_bias=1.592e-02, count-cal loss=5.526e-02, score/target/bias/MAE=12.83/14.34/-1.51/4.19, fine-risk mean/std/range=0.973/0.086/0.486, fine-loss/rank=6.836e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.586, OR loss=2.539e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=90.2%/8.254e-05, student one-shot pass/MSE=2.3%/1.939e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.687/0.005, boundary-rank loss=1.317e+00, teacher-frame parameter displacement=8.809e-05
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=1.9%, MSE=2.062e-03, K=13.44, targetK=12.60, count_MAE=4.17, bias=+0.84, knot_F1@0.01=0.341, param_RMSE=3.734e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=55.0%, MSE=2.116e-04, K=13.05
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.152e-03, K=13.05
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=5.0%, MSE=9.061e-04, K=13.30
+  industrial_model_offset_curves: dense=85.0%, deployment=0.0%, MSE=8.476e-04, K=13.65
+Epoch 028/48 selector_warmup [=.......................] 1/19 MSE=2.014e-03 pass=0.0% K=13.3 feasibleK=14.1 countMAE=3.56 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 028/48 selector_warmup [============............] 10/19 MSE=1.982e-03 pass=0.0% K=13.5 feasibleK=14.5 countMAE=4.09 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 028/48 selector_warmup [========================] 19/19 MSE=2.103e-03 pass=0.0% K=13.5 feasibleK=15.5 countMAE=3.92 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 028 phase=selector_warmup lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=7.5% worst-source=0.0% qualification=0.0% MSE=1.693e-03 K=13.44 mass=12.79 beta=-0.13 soft_cost=4.2753 selection_score=-4.2753 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.635/0.583/0.607, critical_false_delete=0.422, proposal R@.005/.01/.02=0.342/0.615/0.967, parameter_bias=1.593e-02, count-cal loss=5.238e-02, score/target/bias/MAE=12.86/14.34/-1.48/4.08, fine-risk mean/std/range=0.973/0.086/0.488, fine-loss/rank=6.779e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.594, OR loss=2.573e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=90.7%/8.192e-05, student one-shot pass/MSE=2.2%/1.943e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.687/0.000, boundary-rank loss=1.317e+00, teacher-frame parameter displacement=1.440e-04
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=1.2%, MSE=2.183e-03, K=13.43, targetK=12.60, count_MAE=4.15, bias=+0.82, knot_F1@0.01=0.347, param_RMSE=3.734e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=60.0%, MSE=1.668e-04, K=13.15
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=9.330e-04, K=13.25
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=20.0%, MSE=8.164e-04, K=13.45
+  industrial_model_offset_curves: dense=85.0%, deployment=0.0%, MSE=9.298e-04, K=14.00
+Epoch 029/48 joint_finetune [=.......................] 1/19 MSE=1.722e-03 pass=0.0% K=13.2 feasibleK=13.1 countMAE=3.59 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 029/48 joint_finetune [============............] 10/19 MSE=1.950e-03 pass=0.0% K=13.1 feasibleK=14.0 countMAE=3.78 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 029/48 joint_finetune [========================] 19/19 MSE=2.091e-03 pass=0.0% K=13.2 feasibleK=15.5 countMAE=4.04 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 029 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=7.5% worst-source=0.0% qualification=0.0% MSE=1.709e-03 K=13.32 mass=12.72 beta=-0.12 soft_cost=4.3362 selection_score=-4.3362 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.633/0.573/0.601, critical_false_delete=0.430, proposal R@.005/.01/.02=0.339/0.611/0.966, parameter_bias=1.594e-02, count-cal loss=4.911e-02, score/target/bias/MAE=12.65/14.34/-1.68/3.97, fine-risk mean/std/range=0.973/0.086/0.492, fine-loss/rank=6.900e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.584, OR loss=2.756e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=91.3%/8.144e-05, student one-shot pass/MSE=1.2%/1.958e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.680/0.005, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=1.905e-04
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.6%, MSE=2.152e-03, K=13.26, targetK=12.60, count_MAE=3.98, bias=+0.66, knot_F1@0.01=0.342, param_RMSE=3.736e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=75.0%, MSE=1.306e-04, K=13.15
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.067e-03, K=13.35
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=10.0%, MSE=8.951e-04, K=13.45
+  industrial_model_offset_curves: dense=85.0%, deployment=0.0%, MSE=1.201e-03, K=13.85
+Epoch 030/48 joint_finetune [=.......................] 1/19 MSE=2.053e-03 pass=0.0% K=13.1 feasibleK=14.1 countMAE=2.75 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 030/48 joint_finetune [============............] 10/19 MSE=2.115e-03 pass=0.0% K=13.7 feasibleK=15.5 countMAE=3.62 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 030/48 joint_finetune [========================] 19/19 MSE=1.837e-03 pass=8.3% K=13.2 feasibleK=14.1 countMAE=3.58 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 030 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=7.5% worst-source=0.0% qualification=0.0% MSE=1.690e-03 K=13.37 mass=12.81 beta=-0.14 soft_cost=4.2697 selection_score=-4.2697 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.640/0.586/0.611, critical_false_delete=0.416, proposal R@.005/.01/.02=0.341/0.614/0.966, parameter_bias=1.595e-02, count-cal loss=4.336e-02, score/target/bias/MAE=12.86/14.34/-1.48/3.71, fine-risk mean/std/range=0.973/0.087/0.489, fine-loss/rank=6.641e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.596, OR loss=2.748e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=91.3%/8.087e-05, student one-shot pass/MSE=2.2%/1.946e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.687/0.002, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=2.965e-04
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=2.153e-03, K=13.26, targetK=12.60, count_MAE=3.73, bias=+0.66, knot_F1@0.01=0.346, param_RMSE=3.741e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=70.0%, MSE=1.115e-04, K=13.25
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.122e-03, K=13.55
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=20.0%, MSE=6.823e-04, K=13.65
+  industrial_model_offset_curves: dense=85.0%, deployment=0.0%, MSE=1.143e-03, K=13.85
+Epoch 031/48 joint_finetune [=.......................] 1/19 MSE=1.898e-03 pass=0.0% K=13.2 feasibleK=14.6 countMAE=3.16 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 031/48 joint_finetune [============............] 10/19 MSE=2.372e-03 pass=0.0% K=13.6 feasibleK=16.6 countMAE=3.31 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 031/48 joint_finetune [========================] 19/19 MSE=2.055e-03 pass=0.0% K=13.9 feasibleK=15.0 countMAE=3.21 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 031 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=8.8% worst-source=0.0% qualification=0.0% MSE=1.601e-03 K=13.96 mass=13.38 beta=-0.23 soft_cost=4.2218 selection_score=-4.2218 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.650/0.586/0.616, critical_false_delete=0.414, proposal R@.005/.01/.02=0.340/0.613/0.966, parameter_bias=1.596e-02, count-cal loss=3.615e-02, score/target/bias/MAE=12.65/14.34/-1.68/3.40, fine-risk mean/std/range=0.973/0.086/0.488, fine-loss/rank=6.706e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.596, OR loss=3.071e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=92.3%/8.040e-05, student one-shot pass/MSE=1.0%/1.975e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.688/0.002, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=3.911e-04
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.6%, MSE=2.049e-03, K=13.88, targetK=12.60, count_MAE=3.52, bias=+1.28, knot_F1@0.01=0.371, param_RMSE=3.744e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=65.0%, MSE=2.205e-04, K=13.70
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.289e-03, K=13.80
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=30.0%, MSE=5.629e-04, K=14.25
+  industrial_model_offset_curves: dense=85.0%, deployment=5.0%, MSE=7.538e-04, K=14.75
+Epoch 032/48 joint_finetune [=.......................] 1/19 MSE=2.024e-03 pass=0.0% K=14.0 feasibleK=15.5 countMAE=2.91 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 032/48 joint_finetune [============............] 10/19 MSE=1.824e-03 pass=0.0% K=13.0 feasibleK=13.9 countMAE=2.66 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 032/48 joint_finetune [========================] 19/19 MSE=2.207e-03 pass=0.0% K=13.9 feasibleK=16.0 countMAE=3.17 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 032 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=8.8% worst-source=0.0% qualification=0.0% MSE=1.523e-03 K=13.95 mass=13.40 beta=-0.24 soft_cost=4.1842 selection_score=-4.1842 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.665/0.609/0.635, critical_false_delete=0.389, proposal R@.005/.01/.02=0.341/0.613/0.966, parameter_bias=1.597e-02, count-cal loss=2.575e-02, score/target/bias/MAE=12.86/14.34/-1.48/2.86, fine-risk mean/std/range=0.973/0.086/0.484, fine-loss/rank=6.391e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.619, OR loss=3.271e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=92.8%/7.992e-05, student one-shot pass/MSE=0.3%/1.930e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.690/0.003, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=4.837e-04
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.939e-03, K=13.83, targetK=12.60, count_MAE=3.06, bias=+1.23, knot_F1@0.01=0.385, param_RMSE=3.750e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=70.0%, MSE=1.395e-04, K=13.75
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.186e-03, K=13.90
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=20.0%, MSE=6.193e-04, K=14.55
+  industrial_model_offset_curves: dense=85.0%, deployment=15.0%, MSE=8.254e-04, K=14.55
+Epoch 033/48 joint_finetune [=.......................] 1/19 MSE=2.133e-03 pass=0.0% K=14.2 feasibleK=16.3 countMAE=3.28 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 033/48 joint_finetune [============............] 10/19 MSE=1.985e-03 pass=0.0% K=13.8 feasibleK=15.4 countMAE=2.50 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 033/48 joint_finetune [========================] 19/19 MSE=1.880e-03 pass=0.0% K=13.0 feasibleK=13.4 countMAE=2.00 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 033 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=10.0% worst-source=0.0% qualification=0.0% MSE=1.605e-03 K=14.16 mass=13.60 beta=-0.28 soft_cost=4.1937 selection_score=-4.1937 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.670/0.629/0.649, critical_false_delete=0.361, proposal R@.005/.01/.02=0.340/0.613/0.966, parameter_bias=1.599e-02, count-cal loss=1.735e-02, score/target/bias/MAE=13.17/14.34/-1.17/2.34, fine-risk mean/std/range=0.973/0.086/0.489, fine-loss/rank=6.009e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.640, OR loss=3.503e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=92.8%/7.950e-05, student one-shot pass/MSE=0.2%/1.864e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.692/0.003, boundary-rank loss=1.317e+00, teacher-frame parameter displacement=5.796e-04
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=2.009e-03, K=13.99, targetK=12.60, count_MAE=2.67, bias=+1.39, knot_F1@0.01=0.399, param_RMSE=3.755e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=65.0%, MSE=1.756e-04, K=14.15
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.921e-03, K=14.25
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=25.0%, MSE=6.522e-04, K=14.80
+  industrial_model_offset_curves: dense=85.0%, deployment=30.0%, MSE=4.424e-04, K=14.80
+Epoch 034/48 joint_finetune [=.......................] 1/19 MSE=2.284e-03 pass=0.0% K=14.1 feasibleK=15.8 countMAE=2.28 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 034/48 joint_finetune [============............] 10/19 MSE=1.910e-03 pass=0.0% K=13.8 feasibleK=15.2 countMAE=2.25 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 034/48 joint_finetune [========================] 19/19 MSE=1.875e-03 pass=0.0% K=13.6 feasibleK=14.2 countMAE=1.71 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 034 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=10.8% worst-source=0.0% qualification=0.0% MSE=1.588e-03 K=14.41 mass=13.82 beta=-0.32 soft_cost=4.2160 selection_score=-4.2160 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.678/0.638/0.657, critical_false_delete=0.348, proposal R@.005/.01/.02=0.340/0.613/0.967, parameter_bias=1.600e-02, count-cal loss=1.337e-02, score/target/bias/MAE=13.23/14.34/-1.11/2.05, fine-risk mean/std/range=0.973/0.086/0.486, fine-loss/rank=5.881e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.2%, swap-equivalent recall=0.649, OR loss=3.909e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=93.3%/7.904e-05, student one-shot pass/MSE=0.2%/1.836e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.691/0.003, boundary-rank loss=1.317e+00, teacher-frame parameter displacement=6.538e-04
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=2.069e-03, K=14.18, targetK=12.60, count_MAE=2.51, bias=+1.57, knot_F1@0.01=0.397, param_RMSE=3.762e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=70.0%, MSE=1.604e-04, K=14.60
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.150e-03, K=14.45
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=25.0%, MSE=6.257e-04, K=15.30
+  industrial_model_offset_curves: dense=85.0%, deployment=35.0%, MSE=5.651e-04, K=15.20
+Epoch 035/48 joint_finetune [=.......................] 1/19 MSE=1.960e-03 pass=0.0% K=13.0 feasibleK=13.6 countMAE=1.81 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 035/48 joint_finetune [============............] 10/19 MSE=1.751e-03 pass=0.0% K=14.3 feasibleK=15.4 countMAE=1.94 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 035/48 joint_finetune [========================] 19/19 MSE=1.870e-03 pass=0.0% K=13.2 feasibleK=14.3 countMAE=2.25 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 035 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=12.9% worst-source=0.0% qualification=0.0% MSE=1.455e-03 K=14.37 mass=13.77 beta=-0.31 soft_cost=4.0749 selection_score=-4.0749 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.686/0.657/0.671, critical_false_delete=0.328, proposal R@.005/.01/.02=0.341/0.614/0.966, parameter_bias=1.601e-02, count-cal loss=1.176e-02, score/target/bias/MAE=13.51/14.34/-0.83/1.90, fine-risk mean/std/range=0.973/0.086/0.486, fine-loss/rank=5.630e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.2%, swap-equivalent recall=0.667, OR loss=3.953e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=93.0%/7.859e-05, student one-shot pass/MSE=0.2%/1.807e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.695/0.003, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=7.536e-04
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.903e-03, K=14.11, targetK=12.60, count_MAE=2.35, bias=+1.51, knot_F1@0.01=0.415, param_RMSE=3.768e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=75.0%, MSE=1.397e-04, K=14.85
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.146e-03, K=14.55
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=40.0%, MSE=4.817e-04, K=15.15
+  industrial_model_offset_curves: dense=85.0%, deployment=40.0%, MSE=4.646e-04, K=14.95
+Epoch 036/48 joint_finetune [=.......................] 1/19 MSE=2.103e-03 pass=0.0% K=14.6 feasibleK=15.6 countMAE=2.00 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 036/48 joint_finetune [============............] 10/19 MSE=1.714e-03 pass=0.0% K=14.4 feasibleK=14.7 countMAE=2.00 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 036/48 joint_finetune [========================] 19/19 MSE=1.582e-03 pass=0.0% K=13.2 feasibleK=12.9 countMAE=1.50 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 036 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=11.2% worst-source=0.0% qualification=0.0% MSE=1.350e-03 K=14.95 mass=14.39 beta=-0.43 soft_cost=4.0347 selection_score=-4.0347 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.686/0.665/0.676, critical_false_delete=0.318, proposal R@.005/.01/.02=0.341/0.614/0.966, parameter_bias=1.602e-02, count-cal loss=1.142e-02, score/target/bias/MAE=13.65/14.34/-0.69/1.86, fine-risk mean/std/range=0.973/0.086/0.487, fine-loss/rank=5.502e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.2%, swap-equivalent recall=0.677, OR loss=3.957e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=93.2%/7.818e-05, student one-shot pass/MSE=0.0%/1.727e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.696/0.005, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=8.065e-04
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.6%, MSE=1.729e-03, K=14.71, targetK=12.60, count_MAE=2.73, bias=+2.11, knot_F1@0.01=0.415, param_RMSE=3.775e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=75.0%, MSE=1.590e-04, K=15.10
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.290e-03, K=15.05
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=25.0%, MSE=5.224e-04, K=15.90
+  industrial_model_offset_curves: dense=85.0%, deployment=30.0%, MSE=3.976e-04, K=15.65
+Epoch 037/48 joint_finetune [=.......................] 1/19 MSE=1.644e-03 pass=0.0% K=13.8 feasibleK=13.6 countMAE=1.66 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 037/48 joint_finetune [============............] 10/19 MSE=1.838e-03 pass=0.0% K=12.4 feasibleK=13.4 countMAE=1.59 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 037/48 joint_finetune [========================] 19/19 MSE=1.448e-03 pass=0.0% K=14.9 feasibleK=14.8 countMAE=2.17 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 037 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=11.2% worst-source=0.0% qualification=0.0% MSE=1.235e-03 K=15.21 mass=14.63 beta=-0.47 soft_cost=3.9482 selection_score=-3.9482 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.688/0.655/0.671, critical_false_delete=0.326, proposal R@.005/.01/.02=0.341/0.614/0.966, parameter_bias=1.604e-02, count-cal loss=1.161e-02, score/target/bias/MAE=13.39/14.34/-0.95/1.86, fine-risk mean/std/range=0.973/0.086/0.486, fine-loss/rank=5.705e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.666, OR loss=4.202e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=94.2%/7.751e-05, student one-shot pass/MSE=0.3%/1.798e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.694/0.005, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=9.059e-04
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.602e-03, K=14.97, targetK=12.60, count_MAE=2.81, bias=+2.37, knot_F1@0.01=0.414, param_RMSE=3.784e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=70.0%, MSE=1.357e-04, K=15.25
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=9.820e-04, K=15.25
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=35.0%, MSE=4.555e-04, K=16.25
+  industrial_model_offset_curves: dense=85.0%, deployment=30.0%, MSE=4.314e-04, K=16.05
+Epoch 038/48 joint_finetune [=.......................] 1/19 MSE=1.433e-03 pass=0.0% K=13.9 feasibleK=13.9 countMAE=1.72 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 038/48 joint_finetune [============............] 10/19 MSE=1.568e-03 pass=0.0% K=15.3 feasibleK=15.2 countMAE=1.84 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 038/48 joint_finetune [========================] 19/19 MSE=1.607e-03 pass=0.0% K=12.8 feasibleK=13.3 countMAE=1.25 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 038 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=12.1% worst-source=0.0% qualification=0.0% MSE=1.328e-03 K=14.93 mass=14.34 beta=-0.42 soft_cost=4.0083 selection_score=-4.0083 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.686/0.669/0.677, critical_false_delete=0.310, proposal R@.005/.01/.02=0.341/0.614/0.966, parameter_bias=1.606e-02, count-cal loss=1.007e-02, score/target/bias/MAE=13.71/14.34/-0.63/1.74, fine-risk mean/std/range=0.973/0.086/0.490, fine-loss/rank=5.430e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.684, OR loss=4.000e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=94.3%/7.699e-05, student one-shot pass/MSE=0.2%/1.673e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.696/0.007, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=1.065e-03
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.6%, MSE=1.725e-03, K=14.66, targetK=12.60, count_MAE=2.59, bias=+2.06, knot_F1@0.01=0.421, param_RMSE=3.795e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=75.0%, MSE=1.405e-04, K=15.20
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.030e-03, K=15.20
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=40.0%, MSE=5.484e-04, K=15.85
+  industrial_model_offset_curves: dense=85.0%, deployment=25.0%, MSE=4.145e-04, K=15.60
+Epoch 039/48 joint_finetune [=.......................] 1/19 MSE=1.655e-03 pass=0.0% K=14.7 feasibleK=15.4 countMAE=1.75 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 039/48 joint_finetune [============............] 10/19 MSE=1.463e-03 pass=0.0% K=16.1 feasibleK=16.1 countMAE=1.72 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 039/48 joint_finetune [========================] 19/19 MSE=1.853e-03 pass=0.0% K=14.3 feasibleK=14.6 countMAE=1.62 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 039 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=10.8% worst-source=0.0% qualification=0.0% MSE=1.400e-03 K=15.00 mass=14.42 beta=-0.44 soft_cost=4.0885 selection_score=-4.0885 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.686/0.671/0.678, critical_false_delete=0.309, proposal R@.005/.01/.02=0.341/0.614/0.966, parameter_bias=1.607e-02, count-cal loss=9.769e-03, score/target/bias/MAE=13.73/14.34/-0.61/1.71, fine-risk mean/std/range=0.973/0.086/0.489, fine-loss/rank=5.424e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.685, OR loss=4.011e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=94.5%/7.649e-05, student one-shot pass/MSE=0.2%/1.652e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.694/0.008, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=1.150e-03
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.807e-03, K=14.72, targetK=12.60, count_MAE=2.59, bias=+2.12, knot_F1@0.01=0.407, param_RMSE=3.803e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=75.0%, MSE=1.416e-04, K=15.25
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.219e-03, K=15.20
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=30.0%, MSE=5.008e-04, K=16.00
+  industrial_model_offset_curves: dense=85.0%, deployment=25.0%, MSE=4.837e-04, K=15.75
+Epoch 040/48 joint_finetune [=.......................] 1/19 MSE=1.657e-03 pass=0.0% K=13.6 feasibleK=13.7 countMAE=1.72 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 040/48 joint_finetune [============............] 10/19 MSE=1.517e-03 pass=0.0% K=12.7 feasibleK=12.8 countMAE=1.53 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 040/48 joint_finetune [========================] 19/19 MSE=1.830e-03 pass=0.0% K=14.1 feasibleK=14.6 countMAE=2.12 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 040 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=11.7% worst-source=0.0% qualification=0.0% MSE=1.343e-03 K=14.97 mass=14.41 beta=-0.43 soft_cost=4.0244 selection_score=-4.0244 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.688/0.673/0.680, critical_false_delete=0.309, proposal R@.005/.01/.02=0.340/0.613/0.966, parameter_bias=1.609e-02, count-cal loss=9.484e-03, score/target/bias/MAE=13.78/14.34/-0.56/1.69, fine-risk mean/std/range=0.973/0.086/0.489, fine-loss/rank=5.375e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.685, OR loss=3.998e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=94.7%/7.584e-05, student one-shot pass/MSE=0.0%/1.686e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.695/0.005, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=1.289e-03
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.748e-03, K=14.69, targetK=12.60, count_MAE=2.55, bias=+2.09, knot_F1@0.01=0.414, param_RMSE=3.812e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=75.0%, MSE=1.829e-04, K=15.25
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.059e-03, K=15.20
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=35.0%, MSE=4.922e-04, K=16.00
+  industrial_model_offset_curves: dense=85.0%, deployment=30.0%, MSE=3.982e-04, K=15.75
+Epoch 041/48 joint_finetune [=.......................] 1/19 MSE=1.844e-03 pass=0.0% K=13.1 feasibleK=13.3 countMAE=1.62 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 041/48 joint_finetune [============............] 10/19 MSE=1.642e-03 pass=0.0% K=13.8 feasibleK=13.1 countMAE=1.09 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 041/48 joint_finetune [========================] 19/19 MSE=1.736e-03 pass=0.0% K=13.6 feasibleK=14.5 countMAE=1.67 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 041 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=12.5% worst-source=0.0% qualification=0.0% MSE=1.333e-03 K=15.04 mass=14.48 beta=-0.45 soft_cost=4.0043 selection_score=-4.0043 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.691/0.674/0.682, critical_false_delete=0.305, proposal R@.005/.01/.02=0.341/0.614/0.966, parameter_bias=1.611e-02, count-cal loss=9.436e-03, score/target/bias/MAE=13.72/14.34/-0.62/1.67, fine-risk mean/std/range=0.973/0.086/0.489, fine-loss/rank=5.404e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.687, OR loss=4.074e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=94.5%/7.523e-05, student one-shot pass/MSE=0.2%/1.678e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.699/0.005, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=1.450e-03
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.737e-03, K=14.76, targetK=12.60, count_MAE=2.59, bias=+2.16, knot_F1@0.01=0.415, param_RMSE=3.823e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=75.0%, MSE=1.745e-04, K=15.25
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.043e-03, K=15.25
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=40.0%, MSE=5.136e-04, K=16.05
+  industrial_model_offset_curves: dense=85.0%, deployment=35.0%, MSE=3.638e-04, K=15.85
+Epoch 042/48 joint_finetune [=.......................] 1/19 MSE=1.529e-03 pass=0.0% K=14.0 feasibleK=14.3 countMAE=1.81 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 042/48 joint_finetune [============............] 10/19 MSE=1.707e-03 pass=0.0% K=15.0 feasibleK=15.1 countMAE=1.66 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 042/48 joint_finetune [========================] 19/19 MSE=1.623e-03 pass=0.0% K=13.4 feasibleK=12.9 countMAE=1.38 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 042 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=11.2% worst-source=0.0% qualification=0.0% MSE=1.324e-03 K=15.24 mass=14.68 beta=-0.49 soft_cost=4.0279 selection_score=-4.0279 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.688/0.674/0.681, critical_false_delete=0.304, proposal R@.005/.01/.02=0.341/0.614/0.966, parameter_bias=1.613e-02, count-cal loss=9.125e-03, score/target/bias/MAE=13.78/14.34/-0.56/1.65, fine-risk mean/std/range=0.973/0.086/0.488, fine-loss/rank=5.360e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.688, OR loss=4.051e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=94.8%/7.466e-05, student one-shot pass/MSE=0.2%/1.656e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.696/0.010, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=1.602e-03
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.719e-03, K=14.96, targetK=12.60, count_MAE=2.77, bias=+2.36, knot_F1@0.01=0.417, param_RMSE=3.831e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=75.0%, MSE=1.673e-04, K=15.50
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.065e-03, K=15.35
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=35.0%, MSE=4.973e-04, K=16.25
+  industrial_model_offset_curves: dense=85.0%, deployment=25.0%, MSE=3.994e-04, K=16.10
+Epoch 043/48 joint_finetune [=.......................] 1/19 MSE=1.773e-03 pass=0.0% K=14.6 feasibleK=15.2 countMAE=1.50 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 043/48 joint_finetune [============............] 10/19 MSE=1.512e-03 pass=0.0% K=13.4 feasibleK=12.9 countMAE=1.44 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 043/48 joint_finetune [========================] 19/19 MSE=1.802e-03 pass=0.0% K=15.0 feasibleK=16.3 countMAE=2.08 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 043 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=11.7% worst-source=0.0% qualification=0.0% MSE=1.270e-03 K=15.10 mass=14.57 beta=-0.47 soft_cost=3.9552 selection_score=-3.9552 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.690/0.677/0.683, critical_false_delete=0.304, proposal R@.005/.01/.02=0.341/0.613/0.966, parameter_bias=1.614e-02, count-cal loss=9.028e-03, score/target/bias/MAE=13.82/14.34/-0.52/1.63, fine-risk mean/std/range=0.973/0.086/0.488, fine-loss/rank=5.342e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.688, OR loss=4.035e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=94.8%/7.421e-05, student one-shot pass/MSE=0.0%/1.672e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.693/0.007, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=1.710e-03
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.690e-03, K=14.80, targetK=12.60, count_MAE=2.64, bias=+2.20, knot_F1@0.01=0.416, param_RMSE=3.838e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=70.0%, MSE=1.055e-04, K=15.50
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=9.444e-04, K=15.30
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=40.0%, MSE=3.050e-04, K=16.15
+  industrial_model_offset_curves: dense=85.0%, deployment=30.0%, MSE=3.700e-04, K=15.90
+Epoch 044/48 joint_finetune [=.......................] 1/19 MSE=1.637e-03 pass=0.0% K=13.8 feasibleK=14.2 countMAE=1.38 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 044/48 joint_finetune [============............] 10/19 MSE=1.458e-03 pass=0.0% K=14.1 feasibleK=13.9 countMAE=1.56 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 044/48 joint_finetune [========================] 19/19 MSE=1.851e-03 pass=0.0% K=14.0 feasibleK=14.0 countMAE=1.67 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 044 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=11.7% worst-source=0.0% qualification=0.0% MSE=1.352e-03 K=15.28 mass=14.72 beta=-0.49 soft_cost=4.0398 selection_score=-4.0398 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.687/0.679/0.683, critical_false_delete=0.302, proposal R@.005/.01/.02=0.341/0.614/0.966, parameter_bias=1.616e-02, count-cal loss=8.841e-03, score/target/bias/MAE=13.90/14.34/-0.44/1.62, fine-risk mean/std/range=0.973/0.086/0.489, fine-loss/rank=5.259e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.693, OR loss=4.008e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=95.5%/7.351e-05, student one-shot pass/MSE=0.0%/1.653e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.693/0.005, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=1.761e-03
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.784e-03, K=14.99, targetK=12.60, count_MAE=2.77, bias=+2.39, knot_F1@0.01=0.423, param_RMSE=3.855e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=70.0%, MSE=1.237e-04, K=15.55
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=9.863e-04, K=15.45
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=30.0%, MSE=4.931e-04, K=16.25
+  industrial_model_offset_curves: dense=85.0%, deployment=40.0%, MSE=3.441e-04, K=16.20
+Epoch 045/48 joint_finetune [=.......................] 1/19 MSE=1.775e-03 pass=0.0% K=14.2 feasibleK=15.2 countMAE=1.56 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 045/48 joint_finetune [============............] 10/19 MSE=1.548e-03 pass=0.0% K=15.3 feasibleK=15.1 countMAE=1.59 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 045/48 joint_finetune [========================] 19/19 MSE=1.927e-03 pass=0.0% K=13.5 feasibleK=14.5 countMAE=1.88 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 045 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=10.8% worst-source=0.0% qualification=0.0% MSE=1.366e-03 K=14.97 mass=14.38 beta=-0.43 soft_cost=4.0619 selection_score=-4.0619 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.692/0.682/0.687, critical_false_delete=0.300, proposal R@.005/.01/.02=0.342/0.614/0.966, parameter_bias=1.616e-02, count-cal loss=8.839e-03, score/target/bias/MAE=13.87/14.34/-0.47/1.63, fine-risk mean/std/range=0.973/0.086/0.487, fine-loss/rank=5.283e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.2%, swap-equivalent recall=0.695, OR loss=3.972e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=95.7%/7.295e-05, student one-shot pass/MSE=0.0%/1.622e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.700/0.007, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=1.876e-03
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.774e-03, K=14.68, targetK=12.60, count_MAE=2.53, bias=+2.08, knot_F1@0.01=0.412, param_RMSE=3.863e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=75.0%, MSE=1.302e-04, K=15.35
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.128e-03, K=15.20
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=25.0%, MSE=5.267e-04, K=15.95
+  industrial_model_offset_curves: dense=85.0%, deployment=30.0%, MSE=4.170e-04, K=15.75
+Epoch 046/48 joint_finetune [=.......................] 1/19 MSE=1.638e-03 pass=0.0% K=13.4 feasibleK=13.9 countMAE=1.12 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 046/48 joint_finetune [============............] 10/19 MSE=1.635e-03 pass=0.0% K=15.0 feasibleK=14.9 countMAE=1.38 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 046/48 joint_finetune [========================] 19/19 MSE=1.506e-03 pass=0.0% K=13.3 feasibleK=13.4 countMAE=1.50 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 046 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=11.7% worst-source=0.0% qualification=0.0% MSE=1.349e-03 K=15.03 mass=14.45 beta=-0.45 soft_cost=4.0257 selection_score=-4.0257 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.689/0.679/0.683, critical_false_delete=0.301, proposal R@.005/.01/.02=0.341/0.614/0.966, parameter_bias=1.618e-02, count-cal loss=8.636e-03, score/target/bias/MAE=13.87/14.34/-0.47/1.61, fine-risk mean/std/range=0.973/0.086/0.488, fine-loss/rank=5.279e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.693, OR loss=4.010e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=95.3%/7.250e-05, student one-shot pass/MSE=0.0%/1.628e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.694/0.008, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=2.014e-03
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.774e-03, K=14.73, targetK=12.60, count_MAE=2.57, bias=+2.13, knot_F1@0.01=0.422, param_RMSE=3.875e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=75.0%, MSE=1.271e-04, K=15.40
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=1.043e-03, K=15.35
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=25.0%, MSE=4.724e-04, K=16.05
+  industrial_model_offset_curves: dense=85.0%, deployment=40.0%, MSE=3.550e-04, K=15.75
+Epoch 047/48 joint_finetune [=.......................] 1/19 MSE=1.669e-03 pass=0.0% K=14.2 feasibleK=14.5 countMAE=1.75 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 047/48 joint_finetune [============............] 10/19 MSE=1.651e-03 pass=0.0% K=13.6 feasibleK=13.2 countMAE=1.41 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 047/48 joint_finetune [========================] 19/19 MSE=1.693e-03 pass=0.0% K=12.3 feasibleK=12.6 countMAE=1.29 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 047 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=12.5% worst-source=0.0% qualification=0.0% MSE=1.312e-03 K=15.22 mass=14.67 beta=-0.49 soft_cost=3.9964 selection_score=-3.9964 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.690/0.674/0.682, critical_false_delete=0.307, proposal R@.005/.01/.02=0.340/0.613/0.966, parameter_bias=1.618e-02, count-cal loss=8.716e-03, score/target/bias/MAE=13.74/14.34/-0.60/1.60, fine-risk mean/std/range=0.973/0.086/0.488, fine-loss/rank=5.391e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.690, OR loss=4.109e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=95.8%/7.193e-05, student one-shot pass/MSE=0.0%/1.679e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.697/0.008, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=2.110e-03
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.740e-03, K=14.93, targetK=12.60, count_MAE=2.71, bias=+2.33, knot_F1@0.01=0.418, param_RMSE=3.886e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=75.0%, MSE=1.128e-04, K=15.55
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=9.537e-04, K=15.45
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=35.0%, MSE=4.250e-04, K=16.20
+  industrial_model_offset_curves: dense=85.0%, deployment=40.0%, MSE=3.369e-04, K=16.00
+Epoch 048/48 joint_finetune [=.......................] 1/19 MSE=1.679e-03 pass=0.0% K=13.1 feasibleK=13.1 countMAE=2.00 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 048/48 joint_finetune [============............] 10/19 MSE=1.705e-03 pass=0.0% K=15.1 feasibleK=15.1 countMAE=1.25 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+Epoch 048/48 joint_finetune [========================] 19/19 MSE=1.626e-03 pass=0.0% K=12.9 feasibleK=13.2 countMAE=1.08 lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05
+  validation [===.....................] 1/8 
+  validation [========================] 8/8 
+Epoch 048 phase=joint_finetune lr=proposal:0.0e+00/parameter:0.0e+00/selector:5.0e-05/decoder:1.0e-05 val dense=81.2% deployment=13.8% worst-source=0.0% qualification=0.0% MSE=1.248e-03 K=15.24 mass=14.68 beta=-0.49 soft_cost=3.9326 selection_score=-3.9326 complexity=1.00->1.00 safety=0+0.03sigma scale=0.00->0.00 pass_reference_only=0.0%
+  Joint train structure: Keep P/R/F1=0.692/0.682/0.687, critical_false_delete=0.298, proposal R@.005/.01/.02=0.340/0.613/0.966, parameter_bias=1.618e-02, count-cal loss=8.430e-03, score/target/bias/MAE=13.87/14.34/-0.47/1.57, fine-risk mean/std/range=0.973/0.086/0.488, fine-loss/rank=5.297e-01/2.115e+00
+  Counterfactual Keep: feasible-swap=10.3%, swap-equivalent recall=0.695, OR loss=4.004e-01
+  Feasibility chain: numerical Teacher pass/MSE=98.8%/8.526e-05, student teacher-mask pass/MSE=95.8%/7.161e-05, student one-shot pass/MSE=0.0%/1.635e-03, teacher-source |K gap|=2.95; teacher-K topK recall/exact=0.696/0.010, boundary-rank loss=1.316e+00, teacher-frame parameter displacement=2.145e-03
+  Synthetic K=20: n=21, dense=9.5%, deployment=0.0%
+  Synthetic: dense=80.6%, deployment=0.0%, MSE=1.655e-03, K=14.94, targetK=12.60, count_MAE=2.70, bias=+2.34, knot_F1@0.01=0.417, param_RMSE=3.899e-02
+  uji_pen_characters_v2: dense=100.0%, deployment=80.0%, MSE=1.353e-04, K=15.60
+  natural_earth_10m_coastline: dense=60.0%, deployment=0.0%, MSE=8.947e-04, K=15.50
+  usgs_tnm_contours_large_scale: dense=85.0%, deployment=45.0%, MSE=3.796e-04, K=16.25
+  industrial_model_offset_curves: dense=85.0%, deployment=40.0%, MSE=3.268e-04, K=16.05
+Saved best v16: /home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/v16_small_medium_k24_r1.pt; quality=supervised_fit_count_selected. Last/resume: /home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/v16_small_medium_k24_r1.last.pt; Proposal best/final: /home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/v16_small_medium_k24_r1.proposal.pt / /home/feng/HouCode/SplineSurpervisedFitting/outputs/checkpoints/v16_small_medium_k24_r1.proposal.final.pt
