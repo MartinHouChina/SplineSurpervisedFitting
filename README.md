@@ -1,19 +1,22 @@
 # Self-Supervised Spline Fitting（当前 v16 主线）
 
-> 2026-09-17 本地实训验证：当前 Keep 状态恢复档尚未通过“达标且减少节点”的检查，暂不建议直接服务器长训。最佳检查点近乎全留，末轮减少节点后拟合退化。见 [实测结果与定位报告](docs/v16_local_self_validation.md)。
+> 2026-09-17 历史 Kc56 本地实训验证：此前 Keep 状态恢复档尚未通过“达标且减少节点”的检查，最佳检查点近乎全留，末轮减少节点后拟合退化。见 [实测结果与定位报告](docs/v16_local_self_validation.md)；该结果不是当前 K24、`5e-5`、128 代配置的实训结果。
 
 当前新实验配置是 **v16 中小 K 档**：合成源内部 K=4..20、候选上限 Kc=24，完整三次节点向量最多 32 项，控制顶点最多 28 个。保留 Keep 状态交互、节点/参数更新和离线可行 Teacher，取消高 K 混合采样。采用独立数据协议，从零训练，旧模型与历史配置均保留。缩小范围尚不代表 Keep 排序问题已解决，见 [中小 K 配置与运行说明](docs/v16_small_medium_k24.md)。
 
-Linux/3090 一条龙诊断入口（Proposal 24 + Joint 24 代，训练 600、合成验证 160、batch 32；随后运行同容量六方法对比与案例图）：
+Linux/3090 一条龙诊断入口（Proposal 64 + Joint 64 = 128 代；Joint 已含 4 代 warmup；训练 600、合成验证 160、每个真实来源验证最多 20、batch 32；随后运行同容量六方法对比与案例图）：
 
 ```bash
 bash scripts/run_v16_small_medium_k24_3090.sh \
   --prepare-real-data \
   --device cuda \
-  --run-name v16_small_medium_k24_r1
+  --mse-tolerance 5e-5 \
+  --epochs 128 \
+  --proposal-epochs 64 \
+  --run-name candidate_selection_v16_mse5e-5_small_medium_sourcek20_kc24_p64_j64_linux_r1
 ```
 
-新档 MSE 阈值仍为 `1e-4`。真实数据只用于留出验证和测试，不能假定其复杂度都适合 24 个内部节点；超容量失败仍须计入结果。该入口输出诊断结果，不会绕过旧大范围实验的正式资格检查。
+当前 K24 档 MSE 阈值为 `5e-5`；共享脚本的历史档默认仍为 `1e-4`。阈值一致传入合成认证、训练/验证、离线 Teacher 和六方法评测。示例名也是 K24 默认名；若已存在，请换成未使用的唯一运行名。由旧 `1e-4`/48 代配置切换时必须新建实验、重新生成对应数据和 Teacher 缓存，不得静默复用旧 checkpoint 或旧阈值缓存。真实数据只用于留出验证和测试，不能假定其复杂度都适合 24 个内部节点；超容量失败仍须计入结果。该入口输出诊断结果，不会绕过旧大范围实验的正式资格检查，也不保证更严格阈值下每例达标。
 
 同名运行中断后加 `--resume-run`，并保留首次参数：已完成训练会校验后跳过，继续评测/绘图。现已修复 `ours_verified` 阻断四指标图、失败样本真值统计偏差及后处理无法续跑的问题；产物复用须验证指纹，绘图重试保留旧文件。见 [检查与修复记录](docs/v16_k24_code_audit.md)。
 
@@ -66,7 +69,7 @@ bash scripts/run_v16_mse1e-4_3090.sh \
   -> 曲线、控制顶点、内部节点向量、MSE
 ```
 
-Proposal 阶段用真参数、真节点、有序一一匹配和多尺度 recall 监督候选位置。中小 K 档使用 24 个候选，历史恢复档使用 56 个；均允许正间隔全局重分配，并检查 dense 拟合指标。冻结 Proposal 后，在其预测参数/候选域中离线搜索 `MSE<=1e-4` 的删除方案。Joint 学习可行 KeepMask/K；节点监督先统一 Teacher 与 decoder 的参数域。真 `K*` 不强迫与预测域中的可行节点数相等。
+Proposal 阶段用真参数、真节点、有序一一匹配和多尺度 recall 监督候选位置。中小 K 档使用 24 个候选，历史恢复档使用 56 个；均允许正间隔全局重分配，并检查 dense 拟合指标。冻结 Proposal 后，在其预测参数/候选域中离线搜索满足本次 MSE 阈值的删除方案（当前 K24 为 `5e-5`，历史档默认 `1e-4`）。Joint 学习可行 KeepMask/K；节点监督先统一 Teacher 与 decoder 的参数域。真 `K*` 不强迫与预测域中的可行节点数相等。
 
 Joint 固定 GeometryEncoder、ParameterHead、CandidateKnotHead（含全局间隔调整），只更新 Selector/Count 校准、Keep 状态嵌入与 selected-only decoder。恢复档 warmup 为 4 代，固定安全余量，关闭不生效的复杂度日程。若 Proposal 在缓存生成后漂移，离线教师的槽位标签就会失配。
 
@@ -135,7 +138,7 @@ bash scripts/run_v16_mse1e-4_3090.sh \
 
 新教师改变训练目标；旧 checkpoint 不会自动获得改进。必须重新训练，再用独立 Synthetic 与四个外部数据集验证教师掩码可行率、网络一次性 MSE/通过率/K、Proposal `R@.005/.01/.02`、Keep P/R/F1 和参数偏差。`quick` 只作跑通诊断，不能作为论文估计。
 
-## 单条点云部署
+## 单条点云部署（历史 Kc72 示例）
 
 ```powershell
 python scripts/fit_v16_point_cloud.py `
@@ -151,7 +154,7 @@ python scripts/fit_v16_point_cloud.py `
 ## 结果解释边界
 
 - 数据集通过率不再作为 Proposal→Joint、停止训练或 benchmark 资格的硬门槛；Proposal checkpoint 先比较连续的 dense subset cost，再比较最差来源/总体通过率、位置与参数误差、F1/recall，避免 K=56 boundary 全为零时由宽容差 recall 的微小抖动选回早期模型。
-- 单曲线 `MSE<=1e-4` 仍是该曲线是否满足工程阈值的判据。
+- 单曲线 MSE 是否不超过本次运行阈值仍是工程达标判据；当前 K24 为 `5e-5`，上述历史 Kc72 示例为 `1e-4`，两种阈值的结果须分别报告。
 - 合成 source K 是认证生成表示的精确监督标签；该认证只证明固定参数化、原 source 节点子集内的阈值最简性，不等于连续自由重定位下的全局最少节点证明。
 - 五个论文对照是按公开描述实现的 adaptation，不是作者代码的逐行复刻。
 - 真实数据没有节点真值，因此只报告拟合、复杂度和时间，不报告真实节点 precision/recall。

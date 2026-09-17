@@ -64,6 +64,7 @@ def test_unfinished_training_and_explicit_extension_use_native_resume(training_r
     (["--candidate-knots", "80"], "configuration mismatch"),
     (["--max-control-points", "56"], "configuration mismatch"),
     (["--train-size", "10"], "configuration mismatch"),
+    (["--mse-tolerance", "5e-5"], "configuration mismatch"),
 ])
 def test_completed_training_rejects_changed_experiment(training_run, override, expected):
     argv, _, _ = training_run

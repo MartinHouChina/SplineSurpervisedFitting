@@ -8,6 +8,7 @@ PYTHON_BIN="python"
 SIMPLIFICATION_CONTRACT="fixed_proposal_offline_feasible_subset_v1"
 RUN_NAME="candidate_selection_v16_mse1e-4_sourcek56_kc72_feasible_teacher_linux_r1"
 DEVICE="cuda"
+MSE_TOLERANCE=1e-4
 EPOCHS=128
 PROPOSAL_EPOCHS=64
 SELECTOR_WARMUP_EPOCHS=8
@@ -134,9 +135,10 @@ for option in "$@"; do
   elif [[ "$option" == "--small-medium-k24" ]]; then
     SMALL_MEDIUM_K24=1
     RUN_PROFILE=SMALL_MEDIUM_K24
-    RUN_NAME="candidate_selection_v16_mse1e-4_small_medium_sourcek20_kc24_linux_r1"
-    EPOCHS=48
-    PROPOSAL_EPOCHS=24
+    RUN_NAME="candidate_selection_v16_mse5e-5_small_medium_sourcek20_kc24_p64_j64_linux_r1"
+    MSE_TOLERANCE=5e-5
+    EPOCHS=128
+    PROPOSAL_EPOCHS=64
     SELECTOR_WARMUP_EPOCHS=4
     PROPOSAL_LR=2e-4
     SELECTOR_LR=5e-5
@@ -171,6 +173,8 @@ Main options:
   --python PATH                   Python executable (default: python)
   --run-name NAME                Fresh output name
   --device auto|cpu|cuda         Training/evaluation device (default: cuda)
+  --mse-tolerance X             Shared training/Teacher/evaluation MSE tolerance
+                                  (default: 1e-4; small-medium-k24: 5e-5; not RMS).
   --epochs N                     Total epochs (default: 128)
   --proposal-epochs N            Proposal-stage epochs (default: 64)
   --selector-warmup-epochs N     Joint selector/decoder-only warmup (default: 8)
@@ -212,7 +216,8 @@ Main options:
                                   Forces quick diagnostic; adds a paired 68-case check.
   --small-medium-k24            Train from scratch for source K=4..20, Kc=24
                                   (full cubic knot vector=32), numerical baselines cap=24.
-                                  Proposal 24 + Joint 24, train/val=600/160,
+                                  MSE=5e-5, Proposal 64 + Joint 64 (total 128),
+                                  train/val=600/160,
                                   real-val=20, batch=32; no high-K strata.
                                   Diagnostic only, even with --benchmark-profile full.
                                   Initializers are rejected; --resume-run is supported.
@@ -248,6 +253,7 @@ while (($#)); do
     --python) need_value "$@"; PYTHON_BIN="$2"; shift 2 ;;
     --run-name) need_value "$@"; RUN_NAME="$2"; shift 2 ;;
     --device) need_value "$@"; DEVICE="$2"; shift 2 ;;
+    --mse-tolerance) need_value "$@"; MSE_TOLERANCE="$2"; shift 2 ;;
     --epochs) need_value "$@"; EPOCHS="$2"; shift 2 ;;
     --proposal-epochs) need_value "$@"; PROPOSAL_EPOCHS="$2"; shift 2 ;;
     --selector-warmup-epochs) need_value "$@"; SELECTOR_WARMUP_EPOCHS="$2"; shift 2 ;;
@@ -382,6 +388,10 @@ if [[ -n "$JOINT_HIGH_K_FRACTION_OVERRIDE" ]]; then
 fi
 positive_number "SELECTOR_LR" "$SELECTOR_LR"
 positive_number "PROPOSAL_LR" "$PROPOSAL_LR"
+positive_number "MSE_TOLERANCE" "$MSE_TOLERANCE"
+# Reject floating-point overflow/underflow as well as invalid numeric spelling.
+awk 'BEGIN { n=ARGV[1]+0; exit !(n>0 && (n-n)==0) }' "$MSE_TOLERANCE" || \
+  die "MSE_TOLERANCE must be a finite positive number"
 nonnegative_number "PROPOSAL_JOINT_LR" "$PROPOSAL_JOINT_LR"
 nonnegative_number "PARAMETER_JOINT_LR" "$PARAMETER_JOINT_LR"
 positive_number "DECODER_JOINT_LR" "$DECODER_JOINT_LR"
@@ -588,10 +598,12 @@ run_stage_logged() {
   fi
 }
 
-printf '%s v16 Linux %s profile: MSE=1e-4, Kc=%s, training source K=4..%s, train/val=%s/%s, batch=%s.\n' \
+printf '%s v16 Linux %s profile: MSE=%s, Kc=%s, training source K=4..%s, train/val=%s/%s, batch=%s.\n' \
   "$([[ $RESUME_RUN -eq 1 ]] && printf Resume || printf Fresh)" \
   "$RUN_PROFILE" \
-  "$CANDIDATE_KNOTS" "$SOURCE_MAX_KNOTS" "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
+  "$MSE_TOLERANCE" "$CANDIDATE_KNOTS" "$SOURCE_MAX_KNOTS" "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
+printf 'Training schedule: Proposal %s + Joint %s = %s total epochs (Joint includes %s warmup epochs).\n' \
+  "$PROPOSAL_EPOCHS" "$((EPOCHS - PROPOSAL_EPOCHS))" "$EPOCHS" "$SELECTOR_WARMUP_EPOCHS"
 printf 'Simplification contract: %s\n' "$SIMPLIFICATION_CONTRACT"
 printf 'Checkpoint selection is empirical: inspect the trained Proposal, feasible Teacher and one-shot deployment separately; no pass rate is assumed achieved.\n'
 printf 'Training supervision: certified Synthetic geometry labels plus an offline feasible-subset Teacher on a fixed Proposal frame; real data is validation/test only.\n'
@@ -657,7 +669,7 @@ TRAIN_ARGS=(
   --max-control-points "$MAX_CONTROL_POINTS"
   --candidate-knots "$CANDIDATE_KNOTS"
   --knot-min-span 0.01
-  --mse-tolerance 1e-4
+  --mse-tolerance "$MSE_TOLERANCE"
   --knot-match-tolerance 0.01
   --tolerance-factor-min 1
   --tolerance-factor-max 1
@@ -805,7 +817,7 @@ fi
 INSPECT_ARGS=(
   "$PYTHON_BIN" scripts/inspect_v16_checkpoint.py
   --checkpoint "$CHECKPOINT_PATH"
-  --mse-tolerance 1e-4
+  --mse-tolerance "$MSE_TOLERANCE"
 )
 if run_logged inspect_checkpoint "${INSPECT_ARGS[@]}"; then
   CHECKPOINT_INTEGRITY_OK=1
@@ -889,7 +901,7 @@ run_stage_logged benchmark_six_methods_plus_verified benchmark \
   --min-knot-count 4 --max-knot-count "$BENCHMARK_MAX_KNOTS" \
   "${STRESS_ARGS[@]}" \
   --real-samples-per-dataset "$REAL_SAMPLES_PER_DATASET" \
-  --mse-tolerance 1e-4 \
+  --mse-tolerance "$MSE_TOLERANCE" \
   "${MANIFEST_ARGS[@]}" "${BASELINE_ARGS[@]}" \
   --network-warmups 10 --network-repeats "$NETWORK_REPEATS" \
   --end-to-end-repeats "$END_TO_END_REPEATS" \
@@ -908,7 +920,7 @@ run_stage_logged visualize_six_method_real_cases visualize \
   --checkpoint "$CHECKPOINT_PATH" \
   --output-dir "$REAL_FIGURE_DIRECTORY" \
   --real-samples-per-dataset "$VISUAL_SAMPLES_PER_DATASET" \
-  --selection-seed 20260910 --mse-tolerance 1e-4 \
+  --selection-seed 20260910 --mse-tolerance "$MSE_TOLERANCE" \
   "${MANIFEST_ARGS[@]}" "${BASELINE_ARGS[@]}" \
   --network-warmups 10 --network-repeats "$NETWORK_REPEATS" \
   --end-to-end-repeats "$END_TO_END_REPEATS" \
@@ -926,7 +938,7 @@ if ((KEEP_STATE_RECOVERY)); then
     --manifest "UJI=$UJI_MANIFEST" \
     --manifest "NaturalEarth=$NATURAL_EARTH_MANIFEST" \
     --manifest "USGS=$USGS_MANIFEST" \
-    --mse-tolerance 1e-4 --device "$DEVICE"
+    --mse-tolerance "$MSE_TOLERANCE" --device "$DEVICE"
 fi
 
 CURRENT_PHASE="completed"

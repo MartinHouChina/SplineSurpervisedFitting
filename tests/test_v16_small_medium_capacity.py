@@ -88,8 +88,9 @@ def test_small_scope_rejects_inconsistent_labels(override, match):
         train_v16.validate_args(args)
 
 
-def test_source_padding_twenty_and_candidate_twentyfour_forward_teacher(tmp_path):
-    args = train_v16.parser().parse_args(small_profile())
+@pytest.mark.parametrize("mse_tolerance", [1e-4, 5e-5])
+def test_source_padding_twenty_and_candidate_twentyfour_forward_teacher(tmp_path, mse_tolerance):
+    args = train_v16.parser().parse_args(small_profile() + ["--mse-tolerance", str(mse_tolerance)])
     train_v16.validate_args(args)
     dataset = ValidationCurves(
         train_v16.synthetic_dataset_config(args), size=2,
@@ -105,7 +106,7 @@ def test_source_padding_twenty_and_candidate_twentyfour_forward_teacher(tmp_path
         hidden_dim=16, encoder_layers=1, selector_layers=1,
         max_internal_knots=24, one_shot_selection_policy="mass_topk",
         one_shot_adaptive_threshold=True, min_selected_knots=4,
-        mse_tolerance=1e-4, keep_state_interaction=True,
+        mse_tolerance=mse_tolerance, keep_state_interaction=True,
         proposal_global_warp_limit=4.0,
     ).eval()
     with torch.no_grad():
@@ -122,17 +123,24 @@ def test_source_padding_twenty_and_candidate_twentyfour_forward_teacher(tmp_path
     slots = list(range(2, 22))
     assert _ordered_anchor_slots(candidates, candidates[slots], max_distance=1e-6) == slots
     cache = build_or_load_v16_feasible_teacher_cache(
-        model, dataset, tmp_path / "teacher.pt", mse_tolerance=1e-4,
+        model, dataset, tmp_path / "teacher.pt", mse_tolerance=mse_tolerance,
         device="cpu", batch_size=2, teacher_strategy="synthetic_anchor_first",
         anchor_match_tolerance=0.05,
     )
     assert cache.candidate_count == 24
+    assert cache.batch.config.error_tolerance ** 2 == pytest.approx(mse_tolerance)
     assert cache.labels["teacher_retained_mask"].shape == (2, 24)
     assert bool((cache.labels["teacher_count"] <= 24).all())
     assert torch.isfinite(cache.labels["teacher_fit_mse"]).all()
     assert torch.equal(
-        cache.labels["teacher_threshold_satisfied"], cache.labels["teacher_fit_mse"] <= 1e-4,
+        cache.labels["teacher_threshold_satisfied"], cache.labels["teacher_fit_mse"] <= mse_tolerance,
     )
+    with pytest.raises(ValueError, match="does not match frozen Proposal"):
+        build_or_load_v16_feasible_teacher_cache(
+            model, dataset, tmp_path / "teacher.pt", mse_tolerance=mse_tolerance / 2,
+            device="cpu", batch_size=2, teacher_strategy="synthetic_anchor_first",
+            anchor_match_tolerance=0.05,
+        )
 
 
 def test_small_capacity_comparison_uses_32_entry_full_knot_vectors():
@@ -153,9 +161,11 @@ def test_small_capacity_comparison_uses_32_entry_full_knot_vectors():
     assert report["formal_overcomplete_candidate_contract"] is False
 
 
-def test_small_scope_real_joint_gradients_contract_and_resume(tmp_path, capsys):
+@pytest.mark.parametrize("mse_tolerance", [1e-4, 5e-5])
+def test_small_scope_real_joint_gradients_contract_and_resume(tmp_path, capsys, mse_tolerance):
     output = tmp_path / "small.pt"
     command = small_profile() + [
+        "--mse-tolerance", str(mse_tolerance),
         "--output", str(output), "--keep-state-interaction",
         "--proposal-global-warp-limit", "4", "--joint-supervision", "offline_feasible_teacher",
         "--feasible-teacher-cache-dir", str(tmp_path / "teacher"),
@@ -173,6 +183,9 @@ def test_small_scope_real_joint_gradients_contract_and_resume(tmp_path, capsys):
     assert metrics["gradient_norm_selector"] > 0
     assert metrics["gradient_norm_decoder"] > 0
     assert checkpoint["model_config"]["max_internal_knots"] == 24
+    assert checkpoint["training_config"]["mse_tolerance"] == mse_tolerance
+    assert checkpoint["deployment_config"]["mse_tolerance"] == mse_tolerance
+    assert checkpoint["deployment_config"]["error_tolerance"] ** 2 == pytest.approx(mse_tolerance)
     assert not assess_v16_checkpoint(checkpoint)["formal_reporting_eligible"]
     command[command.index("--epochs") + 1] = "3"
     command += ["--resume", str(last_path)]
@@ -181,6 +194,9 @@ def test_small_scope_real_joint_gradients_contract_and_resume(tmp_path, capsys):
     assert resumed["study_scope"] == "small_medium_k24"
     assert resumed["synthetic_data_contract"] == checkpoint["synthetic_data_contract"]
     assert resumed["offline_feasible_teacher"]["loaded_from_cache"] is True
+    with pytest.raises(SystemExit):
+        train_v16.main(command + ["--epochs", "4", "--mse-tolerance", str(mse_tolerance / 2)])
+    assert "mismatch" in capsys.readouterr().err
     command[command.index("--epochs") + 1] = "4"
     command[command.index("--study-scope") + 1] = "legacy"
     with pytest.raises(SystemExit):

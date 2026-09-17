@@ -15,7 +15,7 @@
 | 最终部署内部节点上限 | 24 |
 | 完整部署节点向量最大长度 | 24 + 4 + 4 = 32 |
 | 部署控制顶点最大数量 | 24 + 3 + 1 = 28 |
-| 误差约束 | 平均平方欧氏距离 MSE ≤ 1e-4 |
+| 误差约束 | 平均平方欧氏距离 MSE ≤ 5e-5 |
 
 完整向量为 `[0,0,0,0] + U_internal + [1,1,1,1]`；“32 个节点条目”不是“32 个控制顶点”。MSE 不开方，也不再除以坐标维数。最终最少保留 4 个内部节点沿用现有部署配置，这也是实验需要披露的限制。
 
@@ -25,32 +25,42 @@
 
 本次取消高 K 过采样、额外高 K 验证子集和 K=56 边界测试。普通验证集仍包含 16 条指定 source K=20 的边界样本，检查本次任务自身的上界，不把困难样本全部删掉。
 
-本次主要修改容量与研究范围，未宣称已经解决 [本地验证发现的 Keep 评分趋同和组合选择问题](v16_local_self_validation.md)。保留现有状态交互、全局间隔调整、Count–Keep 耦合、边界排序损失，先在新范围验证；后续需要用受控消融确定哪些机制有效。
+该档最初修改容量与研究范围；当前更新仅将 MSE 阈值收紧为 `5e-5`，并将训练预算改为 64+64 代，不改变网络结构、Teacher 策略或损失形式。未宣称已经解决 [本地验证发现的 Keep 评分趋同和组合选择问题](v16_local_self_validation.md)。保留现有状态交互、全局间隔调整、Count–Keep 耦合、边界排序损失，先在新范围验证；后续需要用受控消融确定哪些机制有效。
 
 ## 初始训练设置
 
 | 参数 | 默认值 |
 |---|---:|
-| Proposal / Joint | 24 / 24 代，总计 48 代 |
+| Proposal / Joint | 64 / 64 代，总计 128 代 |
 | 合成训练 / 验证 | 600 / 160 |
 | 外部来源验证 | 每来源最多 20 条，仅验证、不训练 |
 | 采样点 / Batch | 192 / 32 |
 | Proposal / Selector / Decoder 学习率 | 2e-4 / 5e-5 / 1e-5 |
-| Joint warmup | 4 代 |
+| Joint warmup | 4 代，已包含在 Joint 64 代中 |
 | 初始 Keep 概率质量 | 24×0.5=12，仅初始化值 |
 | Teacher 策略 | synthetic_anchor_counterfactual，最多 8 个局部交换探测 |
 | 固定安全节点 / sigma | 0 / 0.03 |
 | 附加复杂度损失权重 | 0；数量仍由 Teacher 监督 |
 
-Joint 固定 Proposal，不逐轮重建 Teacher；每阶段内训练曲线固定。默认从头训练，不将旧 Kc=56/72 的完整权重硬裁成 Kc=24。旧失败短训的检查点也不会自动加载。48 代只是首轮配置，尚无完整实测耗时或通过率承诺。
+Joint 固定 Proposal，不逐轮重建 Teacher；每阶段内训练曲线固定。默认从头训练，不将旧 Kc=56/72 的完整权重硬裁成 Kc=24。旧失败短训和旧 `1e-4` 配置的检查点不会自动加载。当前为 Proposal 64 + Joint 64 = 128 代，不是 128+4 代；尚无该配置的完整实测耗时或通过率承诺。
+
+`--mse-tolerance 5e-5` 统一传入合成数据认证、训练与验证、离线 Teacher 及六方法评测。共享脚本对历史档保留 `1e-4` 默认值，仅 K24 档默认使用 `5e-5`。阈值改变会改变认证与可行子集目标，必须使用新的唯一运行名、重新生成对应认证数据和 Teacher 缓存，不得静默复用旧阈值缓存或通过 `--resume-run` 将旧实验改成新阈值实验。
 
 新配置带 `--study-scope small_medium_k24`，其认证数据合同使用 `certified_source_subset_threshold_minimal_k4_20_kc24_span001_v1`。旧 K4..56 的合同和恢复行为保持不变，不把不同研究范围的结果混为同一实验。
 
-## 本地检查记录（2026-09-17）
+## 当前设置检查（2026-09-17，MSE=5e-5）
+
+106 项相关回归测试通过，Bash 语法与修改测试文件的 Ruff 检查通过。覆盖 128/64 训练参数、所有评测入口的阈值一致性、旧配置兼容、Teacher 缓存阈值绑定，以及新阈值下的小规模训练/续训。修改阈值后复用旧缓存或续跑旧训练会被拒绝；历史 1070 独立工作树未改动。
+
+这些检查验证流程与参数传递，未执行完整 128 代训练，不代表已达到预期通过率或节点简化效果。
+
+## 历史本地检查记录（2026-09-17，旧 MSE=1e-4 配置）
+
+以下结果来自 K24 原始默认 24+24=48 代配置时期，实际 smoke 只执行下述短流程；不是当前 `5e-5`、64+64 代配置的实训结果。
 
 - 新范围、脚本参数和既有筛选/Teacher 审计测试合计 35 项通过；另外保留了旧训练和完整初始化的兼容测试。
 - 本地 CUDA 实跑了 16 条训练、8 条验证的短流程：2 代 Proposal + 2 代 Joint，随后从 `.last.pt` 续跑 1 代并复用教师缓存，未出现容量或断点恢复错误。
-- 该短流程仅验证代码链路，不验证收敛：末轮自由掩码验证通过率为 0%，不能将这个极短训练的 `model.pt` 当成可用部署模型。产物单独位于 `outputs/self_validation/v16_small_medium_k24_smoke_r1/`，一条龙配置不会加载它。完整 48 代新实验尚未运行。
+- 该短流程仅验证代码链路，不验证收敛：末轮自由掩码验证通过率为 0%，不能将这个极短训练的 `model.pt` 当成可用部署模型。产物单独位于 `outputs/self_validation/v16_small_medium_k24_smoke_r1/`，一条龙配置不会加载它。当时完整 48 代实验尚未运行；该记录不提供当前 128 代配置的性能结论。
 
 ## Linux / 3090 一条龙
 
@@ -59,7 +69,10 @@ Joint 固定 Proposal，不逐轮重建 Teacher；每阶段内训练曲线固定
 ```bash
 bash scripts/run_v16_small_medium_k24_3090.sh \
   --device cuda \
-  --run-name v16_small_medium_k24_r1 \
+  --mse-tolerance 5e-5 \
+  --epochs 128 \
+  --proposal-epochs 64 \
+  --run-name candidate_selection_v16_mse5e-5_small_medium_sourcek20_kc24_p64_j64_linux_r1 \
   --dry-run
 ```
 
@@ -69,16 +82,22 @@ bash scripts/run_v16_small_medium_k24_3090.sh \
 bash scripts/run_v16_small_medium_k24_3090.sh \
   --prepare-real-data \
   --device cuda \
-  --run-name v16_small_medium_k24_r1
+  --mse-tolerance 5e-5 \
+  --epochs 128 \
+  --proposal-epochs 64 \
+  --run-name candidate_selection_v16_mse5e-5_small_medium_sourcek20_kc24_p64_j64_linux_r1
 ```
 
-数据已齐全时可省略 `--prepare-real-data`。该 wrapper 调用现有主脚本的 `--small-medium-k24` 配置。使用新的运行名，不覆盖旧检查点。中断后带相同运行名和 `--resume-run` 恢复本次实验，不加载旧高容量的 `.last.pt`。
+数据已齐全时可省略 `--prepare-real-data`。该 wrapper 调用现有主脚本的 `--small-medium-k24` 配置。上述示例名也是当前 K24 默认运行名；首次运行前确认未被使用，已有同名实验时改用新的唯一名称，不覆盖旧检查点。中断后带相同运行名和 `--resume-run` 仅恢复本次 `5e-5`、128/64 配置，不加载旧高容量或旧 `1e-4` 的 `.last.pt`，也不复用其 Teacher 缓存。
 
 ```bash
 bash scripts/run_v16_small_medium_k24_3090.sh \
   --resume-run \
   --device cuda \
-  --run-name v16_small_medium_k24_r1
+  --mse-tolerance 5e-5 \
+  --epochs 128 \
+  --proposal-epochs 64 \
+  --run-name candidate_selection_v16_mse5e-5_small_medium_sourcek20_kc24_p64_j64_linux_r1
 ```
 
 如首次运行覆盖过训练或评测参数，续跑时也须提供相同参数。续跑按阶段处理：
@@ -88,11 +107,11 @@ bash scripts/run_v16_small_medium_k24_3090.sh \
 - 绘图或案例输出已完成：校验 `.pipeline-stage.json` 和产物哈希后复用；此前中断：写入新的 `attempt_*` 子目录，保留旧 PNG/JSON。终端日志会打印实际目录。
 - 未显式加 `--resume-run` 时仍拒绝覆盖现有运行。代码或数据指纹变化时也会拒绝混合旧测量，不会因续跑而绕过校验。已保存且统计正确的 `comparison.json` 可单独用绘图脚本输出到新目录，无需重训模型。
 
-本次修复仅涉及评测统计、绘图读取和流程恢复，不改变 K24 网络、Teacher 或训练损失；详见 [检查与修复记录](v16_k24_code_audit.md)。
+此前流程修复仅涉及评测统计、绘图读取和流程恢复，不改变 K24 网络、Teacher 策略或训练损失形式；详见历史 [检查与修复记录](v16_k24_code_audit.md)。其中旧阈值结果须继续按旧设置解释，不能改标成当前 `5e-5` 结果。
 
 ## 对比与报告边界
 
-- 合成六方法对比只扫描 source K=4..20，所有方法内部节点预算统一为 24，使用相同曲线、MSE 定义及阈值。
+- 合成六方法对比只扫描 source K=4..20，所有方法内部节点预算统一为 24，使用相同曲线、MSE 定义及当前 `5e-5` 阈值；与旧 `1e-4` 结果分开报告。
 - 保留六方法四项指标图、真实数据拟合案例图；数值修复版本若启用，仍单列，不能混入原始 Ours。
 - 外部真实曲线没有已知真 K；当前不会根据 Ours 是否通过挑选曲线。超过 24 节点预算仍失败的样本照常报告，不隐藏为“范围外”。若以后专门制作中小复杂度真实片段，须事先固定与方法结果无关的分段规则，并让所有方法使用相同片段。
 - 当前 checkpoint 检查器的正式资格合同仍属于历史 K4..56/Kc72 研究。本配置明确作为新的诊断范围运行，不能靠放宽旧检查器让新模型被误报为原研究达标。默认 quick，小样本验证不是论文最终统计；`--benchmark-profile full` 只增加比较预算，不自动赋予正式结论。

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 
@@ -9,6 +11,24 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "run_v16_mse1e-4_3090.sh"
+
+
+def _bash():
+    path = Path(r"C:\Program Files\Git\bin\bash.exe") if os.name == "nt" else shutil.which("bash")
+    if not path or not Path(path).is_file():
+        pytest.skip("Bash is unavailable")
+    return str(path)
+
+
+def _shell_path(path):
+    value = Path(path).resolve().as_posix()
+    return "/" + value[0].lower() + value[2:] if os.name == "nt" else value
+
+
+def _command(output, phase):
+    prefix = f"[{phase}] "
+    line = next(line for line in output.splitlines() if line.startswith(prefix))
+    return shlex.split(line[len(prefix):])
 
 
 def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None:
@@ -55,7 +75,8 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
         "--prepare-real-data",
         "scripts/prepare_industrial_offsets.py",
         'IndustrialOffset=$INDUSTRIAL_OFFSET_MANIFEST',
-        "--mse-tolerance 1e-4",
+        "MSE_TOLERANCE=1e-4",
+        '--mse-tolerance "$MSE_TOLERANCE"',
         "--initial-keep-fraction 0.4166666666666667",
         "--min-knot-count 4 --max-knot-count 56",
         "BASELINE_CAP=56",
@@ -102,6 +123,8 @@ def test_linux_runner_encodes_current_training_and_evaluation_contract() -> None
     assert "--counterfactual-edits" not in source
     assert "--policy-samples" not in source
     assert "--synthetic-geometry-oracle-teacher\n" not in source
+    assert source.count('--mse-tolerance "$MSE_TOLERANCE"') == 5
+    assert "--mse-tolerance 1e-4" not in source
 
 
 def test_linux_runner_refuses_unknown_options_and_documents_help() -> None:
@@ -115,6 +138,7 @@ def test_linux_runner_refuses_unknown_options_and_documents_help() -> None:
     assert "--resume-run" in source
     assert "--feasible-teacher-batch-size" in source
     assert "--python PATH" in source
+    assert "--mse-tolerance X" in source
     assert "--proposal-high-k-fraction X" in source
     assert "--proposal-high-k-min-knots N" in source
     assert "--pilot-kc56" in source
@@ -122,9 +146,7 @@ def test_linux_runner_refuses_unknown_options_and_documents_help() -> None:
 
 
 def test_linux_runner_has_valid_bash_syntax_when_bash_is_available() -> None:
-    bash = shutil.which("bash")
-    if bash is None or not Path(bash).as_posix().startswith("/"):
-        pytest.skip("native /bin/bash is unavailable on this platform")
+    bash = _bash()
     completed = subprocess.run(
         [bash, "-n", str(SCRIPT)],
         cwd=ROOT,
@@ -139,9 +161,7 @@ def test_linux_runner_has_valid_bash_syntax_when_bash_is_available() -> None:
 def test_linux_runner_resume_dry_run_requires_last_and_keeps_run_name(
     request: pytest.FixtureRequest,
 ) -> None:
-    bash = shutil.which("bash")
-    if bash is None or not Path(bash).as_posix().startswith("/"):
-        pytest.skip("native /bin/bash is unavailable on this platform")
+    bash = _bash()
     tmp_path = request.getfixturevalue("tmp_path")
     run_name = "resume_smoke"
     output_root = tmp_path / "outputs"
@@ -149,7 +169,7 @@ def test_linux_runner_resume_dry_run_requires_last_and_keeps_run_name(
     checkpoint_dir.mkdir(parents=True)
     command = [
         bash, str(SCRIPT), "--dry-run", "--benchmark-profile", "quick",
-        "--device", "cpu", "--output-root", str(output_root),
+        "--device", "cpu", "--output-root", _shell_path(output_root),
         "--run-name", run_name, "--resume-run",
     ]
     missing = subprocess.run(
@@ -170,16 +190,14 @@ def test_linux_runner_resume_dry_run_requires_last_and_keeps_run_name(
     assert resumed.returncode == 0, resumed.stdout + resumed.stderr
     assert "[train_resume]" in resumed.stdout
     assert "--resume" in resumed.stdout
-    assert str(last) in resumed.stdout
-    assert str(checkpoint_dir / f"{run_name}.pt") in resumed.stdout
+    assert _shell_path(last) in resumed.stdout
+    assert _shell_path(checkpoint_dir / f"{run_name}.pt") in resumed.stdout
     assert "[train_fresh]" not in resumed.stdout
     assert "--init-checkpoint" not in resumed.stdout
 
 
 def test_linux_pilot_kc56_dry_run_preserves_formal_defaults_and_marks_stress_as_diagnostic() -> None:
-    bash = shutil.which("bash")
-    if bash is None or not Path(bash).as_posix().startswith("/"):
-        pytest.skip("native /bin/bash is unavailable on this platform")
+    bash = _bash()
     pilot = subprocess.run(
         [
             bash, str(SCRIPT), "--dry-run", "--pilot-kc56", "--device", "cpu",
@@ -229,9 +247,7 @@ def test_linux_pilot_kc56_dry_run_preserves_formal_defaults_and_marks_stress_as_
 
 
 def test_linux_pilot_kc56_refuses_existing_checkpoint_artifact(tmp_path: Path) -> None:
-    bash = shutil.which("bash")
-    if bash is None or not Path(bash).as_posix().startswith("/"):
-        pytest.skip("native /bin/bash is unavailable on this platform")
+    bash = _bash()
     output_root = tmp_path / "outputs"
     checkpoint_directory = output_root / "checkpoints"
     checkpoint_directory.mkdir(parents=True)
@@ -239,7 +255,7 @@ def test_linux_pilot_kc56_refuses_existing_checkpoint_artifact(tmp_path: Path) -
     completed = subprocess.run(
         [
             bash, str(SCRIPT), "--dry-run", "--pilot-kc56", "--device", "cpu",
-            "--output-root", str(output_root), "--run-name", "pilot_collision",
+            "--output-root", _shell_path(output_root), "--run-name", "pilot_collision",
         ],
         cwd=ROOT, capture_output=True, text=True, timeout=10, check=False,
     )
@@ -263,12 +279,10 @@ def test_linux_keep_swap_highk72_profile_is_opt_in_and_complete(tmp_path: Path) 
         "--count-structure-coupling", "DIAGNOSTIC=1",
     ):
         assert fragment in source
-    bash = shutil.which("bash")
-    if bash is None or not Path(bash).as_posix().startswith("/"):
-        pytest.skip("native /bin/bash is unavailable on this platform")
+    bash = _bash()
     command = [
         bash, str(SCRIPT), "--dry-run", "--device", "cpu",
-        "--output-root", str(tmp_path / "outputs"),
+        "--output-root", _shell_path(tmp_path / "outputs"),
         "--run-name", "keep_swap_highk72_dry_run", "--keep-swap-highk72",
     ]
     run = subprocess.run(
@@ -302,3 +316,39 @@ def test_linux_keep_swap_highk72_profile_is_opt_in_and_complete(tmp_path: Path) 
     )
     assert incompatible.returncode != 0
     assert "mutually exclusive" in incompatible.stderr
+
+
+@pytest.mark.parametrize("profile", [
+    None, "--pilot-kc56", "--keep-swap-highk72", "--keep-state-recovery",
+])
+@pytest.mark.parametrize("override", [None, "7.5e-5"])
+def test_legacy_profiles_share_default_or_explicit_tolerance_across_all_phases(
+    tmp_path, profile, override,
+):
+    options = [profile] if profile is not None else []
+    phases = [
+        "train_fresh", "inspect_checkpoint", "benchmark_six_methods_plus_verified",
+        "visualize_six_method_real_cases",
+    ]
+    if profile == "--keep-state-recovery":
+        reference = tmp_path / "recovery_reference.pt"
+        reference.write_bytes(b"dry-run placeholder")
+        options.extend(["--init-full-checkpoint", _shell_path(reference)])
+        phases.append("paired_native_deployment")
+    if override is not None:
+        options.extend(["--mse-tolerance", override])
+    result = subprocess.run(
+        [
+            _bash(), str(SCRIPT), "--dry-run", "--device", "cpu",
+            "--output-root", _shell_path(tmp_path / "outputs"),
+            "--run-name", "legacy_tolerance_test", *options,
+        ],
+        cwd=ROOT, capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    expected = float(override) if override is not None else 1e-4
+    for phase in phases:
+        command = _command(result.stdout, phase)
+        assert command.count("--mse-tolerance") == 1
+        assert float(command[command.index("--mse-tolerance") + 1]) == pytest.approx(expected)
+    assert not (tmp_path / "outputs").exists()
