@@ -123,6 +123,7 @@ class V16SubsetLoss(nn.Module):
         fine_teacher_weight: float = 0.0,
         fine_teacher_ranking_weight: float = 0.0,
         counterfactual_or_weight: float = 1.0,
+        keep_boundary_ranking_weight: float = 0.0,
         fine_teacher_temperature: float = 0.5,
         keep_fuzzy_negative_radius: float = 0.01,
         keep_fuzzy_negative_floor: float = 0.1,
@@ -167,6 +168,7 @@ class V16SubsetLoss(nn.Module):
             ("fine_teacher_weight", fine_teacher_weight),
             ("fine_teacher_ranking_weight", fine_teacher_ranking_weight),
             ("counterfactual_or_weight", counterfactual_or_weight),
+            ("keep_boundary_ranking_weight", keep_boundary_ranking_weight),
             ("keep_fuzzy_negative_radius", keep_fuzzy_negative_radius),
             ("false_remove_weight", false_remove_weight),
             ("ranking_margin", ranking_margin),
@@ -1008,6 +1010,74 @@ class V16SubsetLoss(nn.Module):
         )
         return (log_denominator - log_numerator).mean()
 
+    @staticmethod
+    def _keep_boundary_ranking_loss(
+        logits: torch.Tensor,
+        target_mask: torch.Tensor,
+        teacher_pass: torch.Tensor,
+        slot_weight: torch.Tensor | None,
+        *,
+        margin: float,
+    ) -> torch.Tensor:
+        """Separate the hardest indispensable keep/delete slots per feasible row.
+
+        A measured feasible substitute has zero counterfactual slot weight and
+        must not be treated as a mandatory positive or negative.  Infeasible
+        teacher rows and rows without both classes contribute no gradient.
+        """
+        if (
+            logits.ndim != 2
+            or target_mask.shape != logits.shape
+            or target_mask.dtype != torch.bool
+            or teacher_pass.shape != logits.shape[:1]
+            or teacher_pass.dtype != torch.bool
+            or target_mask.device != logits.device
+            or teacher_pass.device != logits.device
+        ):
+            raise ValueError("boundary ranking requires logits/mask [B,K] and pass [B]")
+        if slot_weight is None:
+            eligible_slots = torch.ones_like(target_mask)
+        else:
+            if (
+                slot_weight.shape != logits.shape
+                or slot_weight.device != logits.device
+                or not torch.isfinite(slot_weight).all()
+                or bool((slot_weight < 0).any())
+            ):
+                raise ValueError("boundary ranking slot weights must be finite non-negative [B,K]")
+            eligible_slots = slot_weight > 0
+        if not math.isfinite(margin) or margin < 0:
+            raise ValueError("boundary ranking margin must be finite and non-negative")
+        mandatory_keep = target_mask & eligible_slots
+        mandatory_delete = ~target_mask & eligible_slots
+        active = teacher_pass & mandatory_keep.any(-1) & mandatory_delete.any(-1)
+        if not bool(active.any()):
+            return logits.new_zeros(())
+        lowest_keep = logits.masked_fill(~mandatory_keep, float("inf")).amin(-1)
+        highest_delete = logits.masked_fill(~mandatory_delete, float("-inf")).amax(-1)
+        return F.softplus(
+            highest_delete[active] - lowest_keep[active] + margin
+        ).mean()
+
+    def _offline_teacher_frame_knots(
+        self, output: Mapping[str, torch.Tensor], proposal_params: torch.Tensor,
+    ) -> torch.Tensor:
+        """Express decoded knots in the frozen teacher's Proposal parameter frame.
+
+        The frozen teacher searches using Proposal parameters.  The student
+        decoder predicts a new parameterization; comparing their raw knot
+        coordinates would therefore supervise two different domains.  Bound
+        gradients through the student's parameter warp while retaining full
+        coordinate gradients on its decoded knots.
+        """
+        return self._warp_knots_to_target_parameterization(
+            output["internal_knots"],
+            self._scale_gradient(
+                output["params"], self.joint_parameter_warp_gradient_scale,
+            ),
+            proposal_params.detach(),
+        )
+
     def _proposal_ordered_assignment_loss(
         self, predicted, target, target_mask, valid,
     ):
@@ -1628,6 +1698,17 @@ class V16SubsetLoss(nn.Module):
             if counterfactual_swap_feasible is not None
             else structure_logits.new_zeros(())
         )
+        keep_boundary_ranking_loss = (
+            self._keep_boundary_ranking_loss(
+                structure_logits,
+                target_mask,
+                feasible_teacher_pass,
+                counterfactual_slot_weight,
+                margin=self.ranking_margin,
+            )
+            if offline_feasible and self.keep_boundary_ranking_weight > 0
+            else structure_logits.new_zeros(())
+        )
         negative_weight = negative_mask.to(element_loss.dtype) * negative_confidence
         negative_count = negative_weight.sum(-1).clamp_min(1.0)
         positive_weight = (
@@ -1729,12 +1810,20 @@ class V16SubsetLoss(nn.Module):
             + (1 - structure_probabilities) * F.logsigmoid(-structure_logits)
         ).mean()
 
-        def supervised_geometry(output, mask):
+        if offline_feasible:
+            deployed_teacher_frame_knots = self._offline_teacher_frame_knots(
+                deployment_output, context["proposal_params"],
+            )
+            labelled_teacher_frame_knots = self._offline_teacher_frame_knots(
+                labelled_output, context["proposal_params"],
+            )
+
+        def supervised_geometry(output, mask, teacher_frame_knots=None):
             if offline_feasible:
                 # The numerical teacher's knots are in the frozen Proposal
-                # parameter frame, not the certified source knot frame.
+                # parameter frame, not the student's decoded parameter frame.
                 return self._selected_knot_loss(
-                    output["internal_knots"], mask,
+                    teacher_frame_knots, mask,
                     feasible_teacher_knots,
                     feasible_teacher_knot_mask,
                     geometry_valid,
@@ -1756,16 +1845,22 @@ class V16SubsetLoss(nn.Module):
                 geometry_valid,
             )
 
-        deployed_position = supervised_geometry(deployment_output, deployment_mask)
-        labelled_position = supervised_geometry(labelled_output, target_mask)
+        deployed_position = supervised_geometry(
+            deployment_output, deployment_mask,
+            deployed_teacher_frame_knots if offline_feasible else None,
+        )
+        labelled_position = supervised_geometry(
+            labelled_output, target_mask,
+            labelled_teacher_frame_knots if offline_feasible else None,
+        )
         if offline_feasible:
             deployed_coverage = self._directed_knot_loss(
-                deployment_output["internal_knots"], deployment_mask,
+                deployed_teacher_frame_knots, deployment_mask,
                 feasible_teacher_knots, feasible_teacher_knot_mask,
                 geometry_valid,
             )
             labelled_coverage = self._directed_knot_loss(
-                labelled_output["internal_knots"], target_mask,
+                labelled_teacher_frame_knots, target_mask,
                 feasible_teacher_knots, feasible_teacher_knot_mask,
                 geometry_valid,
             )
@@ -1857,6 +1952,7 @@ class V16SubsetLoss(nn.Module):
             + self.dense_weight * dense_penalty
             + self.distillation_weight * keep_supervision_loss
             + self.counterfactual_or_weight * counterfactual_or_loss
+            + self.keep_boundary_ranking_weight * keep_boundary_ranking_loss
             + self.keep_dice_weight * keep_dice_loss
             + self.keep_cdf_weight * keep_cdf_loss
             + self.fine_teacher_weight * fine_teacher_loss
@@ -1905,6 +2001,41 @@ class V16SubsetLoss(nn.Module):
             )
         else:
             equivalent_recall = keep_recall
+        if offline_feasible:
+            teacher_count_topk_mask = model.select_mask_at_count(
+                context, target_count.long(),
+            )
+            if (
+                teacher_count_topk_mask.shape != target_mask.shape
+                or teacher_count_topk_mask.dtype != torch.bool
+            ):
+                raise ValueError("teacher-count TopK mask must be boolean [B,Kc]")
+            feasible_target = target_mask & feasible_teacher_pass.unsqueeze(-1)
+            feasible_positive_count = feasible_target.sum()
+            teacher_count_topk_recall = (
+                (teacher_count_topk_mask & feasible_target).sum().to(dense_mse.dtype)
+                / feasible_positive_count.clamp_min(1).to(dense_mse.dtype)
+            )
+            teacher_count_topk_exact_rate = (
+                (teacher_count_topk_mask == target_mask).all(-1)[feasible_teacher_pass]
+                .to(dense_mse.dtype).mean()
+                if bool(feasible_teacher_pass.any())
+                else dense_mse.new_zeros(())
+            )
+            offline_teacher_parameter_displacement = 0.5 * (
+                (
+                    deployment_output["params"].detach()
+                    - context["proposal_params"].detach()
+                ).abs().mean()
+                + (
+                    labelled_output["params"].detach()
+                    - context["proposal_params"].detach()
+                ).abs().mean()
+            )
+        else:
+            teacher_count_topk_recall = dense_mse.new_zeros(())
+            teacher_count_topk_exact_rate = dense_mse.new_zeros(())
+            offline_teacher_parameter_displacement = dense_mse.new_zeros(())
         critical = target_mask & (teacher_risk >= 0.75)
         if counterfactual_swap_feasible is not None:
             critical = critical & ~counterfactual_swap_feasible
@@ -1925,6 +2056,12 @@ class V16SubsetLoss(nn.Module):
             "mask_distillation_loss": keep_supervision_loss,
             "supervised_keep_loss": keep_supervision_loss,
             "counterfactual_or_loss": counterfactual_or_loss,
+            "keep_boundary_ranking_loss": keep_boundary_ranking_loss,
+            "teacher_count_topk_recall": teacher_count_topk_recall,
+            "teacher_count_topk_exact_rate": teacher_count_topk_exact_rate,
+            "offline_teacher_parameter_displacement": (
+                offline_teacher_parameter_displacement
+            ),
             "counterfactual_feasible_swap_fraction": (
                 counterfactual_swap_feasible.to(dense_mse.dtype).sum()
                 / target_mask.sum().clamp_min(1).to(dense_mse.dtype)

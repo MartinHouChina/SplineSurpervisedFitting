@@ -83,6 +83,12 @@ def _proposal_fingerprint(model: torch.nn.Module) -> str:
     ):
         if hasattr(model, name):
             digest.update(f"{name}={getattr(model, name)!r}".encode("utf-8"))
+    head = getattr(model, "candidate_head", None)
+    warp_limit = getattr(head, "global_interval_residual_limit", 0.0)
+    if warp_limit:
+        # This limit changes the frozen proposal geometry even with identical
+        # tensor weights; it therefore belongs to the teacher-cache identity.
+        digest.update(f"global_interval_residual_limit={warp_limit!r}".encode("utf-8"))
     return digest.hexdigest()
 
 

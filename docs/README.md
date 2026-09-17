@@ -1,10 +1,12 @@
 # 文档索引
 
-当前 3090 试验主线是 fixed-Proposal + offline feasible-subset Teacher v16，工程阈值为 `MSE<=1e-4`。已拉取的 [Kc=56 快速诊断档](v16_kc56_fast_pilot.md) 显示节点数减少却伴随一次性通过率下降、高 K 候选不可行；新的 [KeepMask 交换监督与高 K 诊断档](v16_keep_swap_highk.md) 恢复源 K=4..56、Kc=72，并单独处理两种故障，效果仍待训练验证。训练只使用认证合成曲线；UJI、Natural Earth、USGS、IndustrialOffset 只用于留出验证/测试。旧 supervised-only Joint 的 `K*=targetK` 可能在预测候选域不可行，不应作为当前正式结论。
+当前推荐先跑 [Keep 状态交互恢复档](v16_keep_state_recovery.md)：完整 r2 热启动，Kc=56、源 K=4..56、`MSE<=1e-4`，Proposal 8 + Joint 24 代，离线可行 Teacher、显式 Keep 状态嵌入和全局候选间隔调整。本次梯度训练仅使用合成数据，默认旧 r2 的真实数据预训练来源会保留在报告中；新效果尚待验证。Kc72 交换监督、Kc56 pilot 和仅 Proposal 热启动的 r2 短训均是独立历史诊断。
 
 工业型线等距线外部验证集的生成、几何有效性规则与运行命令见 [工业模型等距线数据集](industrial_offset_dataset.md)。它是 CAD 驱动半合成数据，不参与训练。
 
 建议阅读顺序：
+
+先阅读 [回滚失败原因、当前修正与 3090 命令](v16_keep_state_recovery.md)，再按需要查阅以下资料。
 
 1. [当前 v16 可行子集教师：数据流、训练、部署与 Linux 指令](v16_feasible_teacher_workflow.md)
 2. [KeepMask 交换监督与高 K 分层诊断：新 Linux 一条龙](v16_keep_swap_highk.md)

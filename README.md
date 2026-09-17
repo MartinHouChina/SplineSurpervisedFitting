@@ -1,19 +1,19 @@
 # Self-Supervised Spline Fitting（当前 v16 主线）
 
-本仓库当前 3090 试验主线是 **v16 fixed-Proposal + offline feasible-subset Teacher**：从有序点云一次性预测三次开放 B 样条的参数化、候选内部节点、KeepMask 和存活节点位置，再做一次标准 B 样条最小二乘 refit。已拉取的 `Kc=72` 结果显示，数值修复虽能压低 MSE，却常把节点数推高；现在推荐先跑可选的 `Kc=56` 快速诊断档，验证 Count/Keep 与教师机制，而不是直接投入另一轮大规模训练。新档效果须重训后实测。
+当前推荐试验是 **v16 Keep 状态交互恢复档**：完整热启动旧 r2，使用 Kc=56、源 K=4..56，在 Proposal 中学习全局候选间隔调整，在 Joint 中用离线可行 Teacher 监督 KeepMask、数量和节点更新。部署仍是一次网络前向、一次选集、一次标准 B 样条 refit。改动及回滚失败原因见 [Keep 状态交互恢复说明](docs/v16_keep_state_recovery.md)。
 
-> 训练只使用带真参数、真内部节点、真节点数和逐节点删除 MSE 的认证合成曲线；UJI Pen、Natural Earth、USGS 和工业型线等距线只用于留出验证与测试，不参与梯度更新。冻结 Proposal 后，在**预测候选/参数域**上离线搜索可行子集并缓存标签；这是训练时教师，不在网络部署时间内。
+> 本次微调只使用认证合成曲线，外部数据用于留出验证和测试。默认完整初始化的旧 r2 曾使用 35% 真实数据，模型来源会明确记录为 mixed-pretrained，不能把它报告成全程纯合成训练。Teacher 在冻结 Proposal 的预测参数/候选域中离线构建，不在部署时搜索。
 
-已拉取的 Kc=56 快速试验降低了节点数量，但一次性验证通过率仅 10.7%；尤其 K=45..56 的测试超出了其训练范围，且候选池本身常不满足阈值。下一步的独立诊断档恢复 `Kc=72` 与训练源 `K=4..56`，强化高 K 候选学习，并用离线交换代价监督 KeepMask。它尚未训练验证，不能预设通过率或用时；详见 [KeepMask 交换监督与高 K 诊断](docs/v16_keep_swap_highk.md)。旧 Kc=56 命令保留在 [历史快速诊断说明](docs/v16_kc56_fast_pilot.md)。
+最近的 r2 短训只迁移了 Proposal，随机初始化 Selector/Decoder，并仅执行 60 次 Joint 更新；配对合成测试通过率由 83.0% 降到 1.9%。新恢复档保留全部旧权重、恢复显式保留状态嵌入、修正 Teacher 与 decoder 的参数域对齐，并增加筛选边界监督。新档效果须重新实测；旧 [Kc72 交换监督](docs/v16_keep_swap_highk.md) 和 [Kc56 pilot](docs/v16_kc56_fast_pilot.md) 保留作对照。
 
 新的 Linux/3090 一条龙诊断入口：
 
 ```bash
 bash scripts/run_v16_mse1e-4_3090.sh \
-  --keep-swap-highk72 \
+  --keep-state-recovery \
   --prepare-real-data \
   --device cuda \
-  --run-name candidate_selection_v16_mse1e-4_keep_swap_highk72_linux_r1
+  --run-name candidate_selection_v16_keep_state_recovery_r1
 ```
 
 ## 原 Kc72 大规模实验合同（保留用于对照）
@@ -38,19 +38,20 @@ bash scripts/run_v16_mse1e-4_3090.sh \
 有序点云 Q
   -> GeometryEncoder
   -> ParameterHead：严格递增参数 t
-  -> CandidateKnotHead：Kc 个有序候选 U_prop
-  -> Selector：keep logits + 曲线自适应 beta
+  -> CandidateKnotHead：Kc 个有序候选 U_prop（恢复档增加全局间隔调整）
+  -> 初步 Keep 概率 + 保留/删除嵌入 -> Selector 交互
+  -> 最终 keep logits + 曲线自适应 beta
   -> probability-mass Top-K：离散 KeepMask
-  -> selected-only decoder：联合更新 t 与存活节点位置
+  -> selected-only decoder：读取 Keep 状态并联合更新 t 与存活节点位置
   -> 标准三次 B 样条 refit × 1
   -> 曲线、控制顶点、内部节点向量、MSE
 ```
 
-Proposal 阶段用真参数、真节点、有序一一匹配和多尺度 recall 监督候选位置。`Kc=72` 对最大源 `K*=56` 保留 16 个冗余槽位。冻结 Proposal 后，针对固定合成 Joint 样本在**该 Proposal 预测的参数和候选域**中离线搜索 `MSE<=1e-4` 的删除方案；Joint 学习缓存的可行 KeepMask/K，真源标签继续监督几何与参数。真 `K*` 不再强迫与预测域中的可行节点数相等。
+Proposal 阶段用真参数、真节点、有序一一匹配和多尺度 recall 监督候选位置。恢复档使用 56 个候选，允许正间隔全局重分配；能否覆盖高 K 曲线须检查 dense 指标。冻结 Proposal 后，在其预测参数/候选域中离线搜索 `MSE<=1e-4` 的删除方案。Joint 学习可行 KeepMask/K；节点监督先统一 Teacher 与 decoder 的参数域。真 `K*` 不强迫与预测域中的可行节点数相等。
 
-Joint 固定 GeometryEncoder、ParameterHead、CandidateKnotHead（Joint 学习率均为 `0`），只更新 Selector/Count 校准与 selected-only decoder；前 8 代仍保留 Selector/decoder warmup 课程。若让 Proposal 在缓存生成后继续漂移，离线教师的槽位标签就会失配，不能把该训练称为固定 Proposal 协议。
+Joint 固定 GeometryEncoder、ParameterHead、CandidateKnotHead（含全局间隔调整），只更新 Selector/Count 校准、Keep 状态嵌入与 selected-only decoder。恢复档 warmup 为 4 代，固定安全余量，关闭不生效的复杂度日程。若 Proposal 在缓存生成后漂移，离线教师的槽位标签就会失配。
 
-离线教师缓存只属于固定训练样本、Proposal 权重和阈值；旧缓存/旧 Joint checkpoint 不能直接复用。原始部署仍是一次 forward、一次 mass-TopK、一次 refit；这一支的 MSE 不能保证每例过阈值。批量评测用 `--include-verified-ours` 添加单独的 `ours_verified` 数值核验/修复行，报告完整时间、额外 refit 和节点数，不与原始 `ours` 行混写。四指标图仍画原六方法，修复数据在汇总表和逐例记录中。`Kc=72` 的 latency 必须重新测量。
+离线教师缓存绑定固定训练样本、Proposal 权重、全局间隔配置和阈值，参数变化需重新构建。原始部署仍是一次 forward、一次 mass-TopK、一次 refit；MSE 不能保证每例过阈值。批量评测用 `--include-verified-ours` 添加单独的 `ours_verified` 数值核验/修复行，报告完整时间、额外 refit 和节点数，不与原始 `ours` 行混写。四指标图仍画原六方法，修复数据在汇总表和逐例记录中。
 
 ## 原 Kc72 一条龙运行（历史复测）
 

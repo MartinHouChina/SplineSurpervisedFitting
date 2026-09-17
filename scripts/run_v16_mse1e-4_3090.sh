@@ -12,6 +12,7 @@ EPOCHS=128
 PROPOSAL_EPOCHS=64
 SELECTOR_WARMUP_EPOCHS=8
 SELECTOR_LR=2e-4
+PROPOSAL_LR=2e-4
 PROPOSAL_JOINT_LR=0
 PARAMETER_JOINT_LR=0
 DECODER_JOINT_LR=5e-5
@@ -26,6 +27,9 @@ MAX_CONTROL_POINTS=60
 CANDIDATE_KNOTS=72
 BASELINE_CAP=56
 SYNTHETIC_BOUNDARY_VAL_SIZE=32
+SAFETY_SIGMA=0
+SAFETY_ANNEAL_EPOCHS=12
+COMPLEXITY_RAMP_EPOCHS=12
 NUM_WORKERS=4
 SYNTHETIC_SAMPLES_PER_K=5
 REAL_SAMPLES_PER_DATASET=20
@@ -37,9 +41,13 @@ NETWORK_REPEATS=100
 END_TO_END_REPEATS=3
 OUTPUT_ROOT=""
 INIT_CHECKPOINT=""
+INIT_FULL_CHECKPOINT=""
+INIT_FULL_EXPLICIT=0
+PAIRED_REFERENCE_CHECKPOINT=""
 RESUME_RUN=0
 PILOT_KC56=0
 KEEP_SWAP_HIGHK72=0
+KEEP_STATE_RECOVERY=0
 RUN_PROFILE=default
 PREPARE_REAL_DATA=0
 DIAGNOSTIC=0
@@ -93,6 +101,30 @@ for option in "$@"; do
     SYNTHETIC_BOUNDARY_VAL_SIZE=32
     BENCHMARK_PROFILE="quick"
     DIAGNOSTIC=1
+  elif [[ "$option" == "--keep-state-recovery" ]]; then
+    KEEP_STATE_RECOVERY=1
+    RUN_PROFILE=KEEP_STATE_RECOVERY
+    RUN_NAME="candidate_selection_v16_mse1e-4_keep_state_recovery_linux_r1"
+    EPOCHS=32
+    PROPOSAL_EPOCHS=8
+    SELECTOR_WARMUP_EPOCHS=4
+    PROPOSAL_LR=5e-5
+    SELECTOR_LR=5e-5
+    DECODER_JOINT_LR=1e-5
+    TRAIN_SIZE=600
+    VAL_SIZE=160
+    REAL_VAL_SIZE=20
+    BATCH_SIZE=32
+    MAX_CONTROL_POINTS=60
+    CANDIDATE_KNOTS=56
+    BASELINE_CAP=56
+    SYNTHETIC_BOUNDARY_VAL_SIZE=32
+    INIT_FULL_CHECKPOINT="outputs/checkpoints/candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux_r2_joint_fast.pt"
+    SAFETY_SIGMA=0.03
+    SAFETY_ANNEAL_EPOCHS=1
+    COMPLEXITY_RAMP_EPOCHS=0
+    BENCHMARK_PROFILE="quick"
+    DIAGNOSTIC=1
   fi
 done
 
@@ -108,6 +140,7 @@ Main options:
   --proposal-epochs N            Proposal-stage epochs (default: 64)
   --selector-warmup-epochs N     Joint selector/decoder-only warmup (default: 8)
   --selector-lr X                Joint Selector learning rate (default: 2e-4)
+  --lr X                         Proposal learning rate (default: 2e-4)
   --proposal-joint-lr X          Joint encoder/candidate LR (default: 0; Proposal fixed)
   --parameter-joint-lr X         Joint ParameterHead LR (default: 0; Proposal fixed)
   --decoder-joint-lr X           Joint selected-decoder LR (default: 5e-5)
@@ -122,6 +155,8 @@ Main options:
   --num-workers N                DataLoader workers (default: 4)
   --output-root PATH             Output root (default: repository outputs/)
   --init-checkpoint PATH         Optional proposal-only warm start
+  --init-full-checkpoint PATH    Full-model warm start, including selector/decoder
+  --paired-reference-checkpoint PATH Native paired reference (recovery resume override)
   --no-init-checkpoint           Train all modules from scratch
   --resume-run                   Continue this run from its existing .last.pt
                                   (keeps the original --output and Proposal)
@@ -132,6 +167,10 @@ Main options:
   --keep-swap-highk72           Opt-in KeepMask exchange-supervision + high-K diagnostic:
                                   source K=4..56, Kc=72, Proposal 64 + Joint 32,
                                   train/val=1500/400, real-val=40. Forces diagnostic.
+  --keep-state-recovery         Full r2 warm start, learned Keep states and global warp:
+                                  source K=4..56, Kc=56, Proposal 8 + Joint 24,
+                                  train/val=600/160, real-val=20, batch=32.
+                                  Forces quick diagnostic; adds a paired 68-case check.
   --prepare-real-data            Prepare missing UJI, Natural Earth, USGS and industrial-offset data
   --benchmark-profile quick|full Quick smoke benchmark or full comparison (default: full)
   --diagnostic                   Continue after a structural-integrity audit failure
@@ -168,6 +207,7 @@ while (($#)); do
     --proposal-epochs) need_value "$@"; PROPOSAL_EPOCHS="$2"; shift 2 ;;
     --selector-warmup-epochs) need_value "$@"; SELECTOR_WARMUP_EPOCHS="$2"; shift 2 ;;
     --selector-lr) need_value "$@"; SELECTOR_LR="$2"; shift 2 ;;
+    --lr) need_value "$@"; PROPOSAL_LR="$2"; shift 2 ;;
     --proposal-joint-lr) need_value "$@"; PROPOSAL_JOINT_LR="$2"; shift 2 ;;
     --parameter-joint-lr) need_value "$@"; PARAMETER_JOINT_LR="$2"; shift 2 ;;
     --decoder-joint-lr) need_value "$@"; DECODER_JOINT_LR="$2"; shift 2 ;;
@@ -188,11 +228,14 @@ while (($#)); do
     --end-to-end-repeats) need_value "$@"; END_TO_END_REPEATS="$2"; END_TO_END_REPEATS_EXPLICIT=1; shift 2 ;;
     --output-root) need_value "$@"; OUTPUT_ROOT="$2"; shift 2 ;;
     --init-checkpoint) need_value "$@"; INIT_CHECKPOINT="$2"; shift 2 ;;
-    --no-init-checkpoint) INIT_CHECKPOINT=""; shift ;;
+    --init-full-checkpoint) need_value "$@"; INIT_FULL_CHECKPOINT="$2"; INIT_FULL_EXPLICIT=1; shift 2 ;;
+    --paired-reference-checkpoint) need_value "$@"; PAIRED_REFERENCE_CHECKPOINT="$2"; shift 2 ;;
+    --no-init-checkpoint) INIT_CHECKPOINT=""; INIT_FULL_CHECKPOINT=""; INIT_FULL_EXPLICIT=0; shift ;;
     --resume-run) RESUME_RUN=1; shift ;;
     --feasible-teacher-batch-size) need_value "$@"; FEASIBLE_TEACHER_BATCH_SIZE="$2"; shift 2 ;;
     --pilot-kc56) shift ;;
     --keep-swap-highk72) shift ;;
+    --keep-state-recovery) shift ;;
     --prepare-real-data) PREPARE_REAL_DATA=1; shift ;;
     --benchmark-profile) need_value "$@"; BENCHMARK_PROFILE="$2"; shift 2 ;;
     --diagnostic) DIAGNOSTIC=1; shift ;;
@@ -202,8 +245,14 @@ while (($#)); do
   esac
 done
 
-((PILOT_KC56 + KEEP_SWAP_HIGHK72 <= 1)) || \
-  die "--pilot-kc56 and --keep-swap-highk72 are mutually exclusive"
+((PILOT_KC56 + KEEP_SWAP_HIGHK72 + KEEP_STATE_RECOVERY <= 1)) || \
+  die "--pilot-kc56, --keep-swap-highk72 and --keep-state-recovery are mutually exclusive"
+if ((KEEP_STATE_RECOVERY)); then
+  BENCHMARK_PROFILE=quick
+  DIAGNOSTIC=1
+  [[ -n "$INIT_FULL_CHECKPOINT" || "$RESUME_RUN" == 1 ]] || \
+    die "--keep-state-recovery requires a full initializer or --resume-run"
+fi
 
 [[ "$BENCHMARK_PROFILE" == "quick" || "$BENCHMARK_PROFILE" == "full" ]] || \
   die "benchmark profile must be quick or full"
@@ -266,6 +315,7 @@ done
 nonnegative_integer "NUM_WORKERS" "$NUM_WORKERS"
 nonnegative_integer "SELECTOR_WARMUP_EPOCHS" "$SELECTOR_WARMUP_EPOCHS"
 positive_number "SELECTOR_LR" "$SELECTOR_LR"
+positive_number "PROPOSAL_LR" "$PROPOSAL_LR"
 nonnegative_number "PROPOSAL_JOINT_LR" "$PROPOSAL_JOINT_LR"
 nonnegative_number "PARAMETER_JOINT_LR" "$PARAMETER_JOINT_LR"
 positive_number "DECODER_JOINT_LR" "$DECODER_JOINT_LR"
@@ -288,10 +338,37 @@ SOURCE_MAX_KNOTS=$((MAX_CONTROL_POINTS - 4))
 if ((RESUME_RUN)) && [[ -n "$INIT_CHECKPOINT" ]]; then
   die "--resume-run cannot be combined with --init-checkpoint"
 fi
+if [[ -n "$INIT_CHECKPOINT" && -n "$INIT_FULL_CHECKPOINT" ]]; then
+  die "--init-checkpoint and --init-full-checkpoint are mutually exclusive"
+fi
+if ((RESUME_RUN && INIT_FULL_EXPLICIT)); then
+  die "--resume-run cannot be combined with --init-full-checkpoint"
+fi
+if [[ -n "$PAIRED_REFERENCE_CHECKPOINT" ]] && ((KEEP_STATE_RECOVERY == 0)); then
+  die "--paired-reference-checkpoint requires --keep-state-recovery"
+fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 cd -- "$REPOSITORY_ROOT"
+
+if [[ -n "$INIT_FULL_CHECKPOINT" ]]; then
+  [[ "$INIT_FULL_CHECKPOINT" == /* ]] || INIT_FULL_CHECKPOINT="$REPOSITORY_ROOT/$INIT_FULL_CHECKPOINT"
+  INIT_FULL_CHECKPOINT="$(readlink -m -- "$INIT_FULL_CHECKPOINT")"
+  if ((RESUME_RUN == 0)); then
+    [[ -f "$INIT_FULL_CHECKPOINT" ]] || die "full-model initializer is missing: $INIT_FULL_CHECKPOINT"
+  fi
+fi
+if ((KEEP_STATE_RECOVERY)); then
+  if [[ -z "$PAIRED_REFERENCE_CHECKPOINT" ]]; then
+    PAIRED_REFERENCE_CHECKPOINT="$INIT_FULL_CHECKPOINT"
+  fi
+  [[ -n "$PAIRED_REFERENCE_CHECKPOINT" ]] || die "recovery resume needs --paired-reference-checkpoint"
+  [[ "$PAIRED_REFERENCE_CHECKPOINT" == /* ]] || \
+    PAIRED_REFERENCE_CHECKPOINT="$REPOSITORY_ROOT/$PAIRED_REFERENCE_CHECKPOINT"
+  PAIRED_REFERENCE_CHECKPOINT="$(readlink -m -- "$PAIRED_REFERENCE_CHECKPOINT")"
+  [[ -f "$PAIRED_REFERENCE_CHECKPOINT" ]] || die "paired reference is missing: $PAIRED_REFERENCE_CHECKPOINT"
+fi
 
 export PYTHONUNBUFFERED=1
 export PYTHONUTF8=1
@@ -444,6 +521,9 @@ printf 'Benchmark profile=%s: synthetic=%s per K, real=%s per dataset. Quick res
 if ((KEEP_SWAP_HIGHK72)); then
   printf 'Proposal synthetic high-K share=%s at K>=%s; Joint samples K>=45 at 0.50 within source K=4..%s.\n' \
     "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS" "$SOURCE_MAX_KNOTS"
+elif ((KEEP_STATE_RECOVERY)); then
+  printf 'Proposal synthetic high-K share=%s at K>=%s; Joint samples K>=45 at 0.40 within source K=4..%s.\n' \
+    "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS" "$SOURCE_MAX_KNOTS"
 else
   printf 'Proposal synthetic high-K share=%s at K>=%s; Joint restores training source K=4..%s.\n' \
     "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS" "$SOURCE_MAX_KNOTS"
@@ -460,6 +540,11 @@ if ((KEEP_SWAP_HIGHK72)); then
   printf 'Offline teacher uses bounded numerical exchange supervision; Proposal remains fixed in Joint. Raw one-shot and numerical repair must be reported separately.\n'
   printf 'Capacity disclosure: network and numerical baselines each start/cap at %s internal knots; quick sample size is diagnostic only.\n' "$BASELINE_CAP"
 fi
+if ((KEEP_STATE_RECOVERY)); then
+  printf 'KEEP-STATE RECOVERY: preserve all r2 learned weights; enable zero-initialized Keep embeddings and interval warp. Mixed-source warm-start provenance remains diagnostic.\n'
+  printf 'Proposal LR=%s; Joint high-K share=0.40 at K>=45. Keep safety stays sigma=0.03, knots=0; no inactive schedule delays checkpoint selection.\n' "$PROPOSAL_LR"
+  printf 'Paired check: identical 53 Synthetic + 3 real datasets x 5 curves; native one-shot deployment, no numerical repair.\n'
+fi
 printf 'Joint optimization: fixed Proposal/encoder/ParameterHead; %s selector/decoder warmup epochs; grouped LR selector=%s, proposal=%s, parameter=%s, decoder=%s.\n' \
   "$SELECTOR_WARMUP_EPOCHS" "$SELECTOR_LR" "$PROPOSAL_JOINT_LR" \
   "$PARAMETER_JOINT_LR" "$DECODER_JOINT_LR"
@@ -470,6 +555,7 @@ TRAIN_ARGS=(
   --proposal-epochs "$PROPOSAL_EPOCHS"
   --selector-warmup-epochs "$SELECTOR_WARMUP_EPOCHS"
   --selector-lr "$SELECTOR_LR"
+  --lr "$PROPOSAL_LR"
   --proposal-joint-lr "$PROPOSAL_JOINT_LR"
   --parameter-joint-lr "$PARAMETER_JOINT_LR"
   --decoder-joint-lr "$DECODER_JOINT_LR"
@@ -516,12 +602,12 @@ TRAIN_ARGS=(
   --no-synthetic-geometry-oracle-teacher
   --one-shot-coverage-bins 0
   --min-selected-knots 4
-  --one-shot-safety-sigma 0
+  --one-shot-safety-sigma "$SAFETY_SIGMA"
   --one-shot-safety-knots 0
-  --final-safety-sigma 0
+  --final-safety-sigma "$SAFETY_SIGMA"
   --final-safety-knots 0
-  --safety-anneal-epochs 12
-  --complexity-ramp-epochs 12
+  --safety-anneal-epochs "$SAFETY_ANNEAL_EPOCHS"
+  --complexity-ramp-epochs "$COMPLEXITY_RAMP_EPOCHS"
   --complexity-max-scale 1.0
   --complexity-weight 0
   --real-fraction 0
@@ -555,11 +641,30 @@ if ((KEEP_SWAP_HIGHK72)); then
     --count-structure-coupling
   )
 fi
+if ((KEEP_STATE_RECOVERY)); then
+  TRAIN_ARGS+=(
+    --joint-high-k-fraction 0.40
+    --joint-high-k-min-knots 45
+    --synthetic-high-k-val-size 32
+    --synthetic-high-k-val-min-knots 45
+    --feasible-teacher-strategy synthetic_anchor_counterfactual
+    --feasible-teacher-anchor-match-tolerance 0.02
+    --feasible-teacher-counterfactual-max-probes 8
+    --counterfactual-or-weight 1.0
+    --keep-state-interaction
+    --proposal-global-warp-limit 1.0
+    --count-structure-coupling
+    --keep-boundary-ranking-weight 1.0
+  )
+fi
 TRAIN_PHASE=train_fresh
 if ((RESUME_RUN)); then
   printf 'Resuming the existing training run: %s\n' "$LAST_PATH"
   TRAIN_ARGS+=(--resume "$LAST_PATH")
   TRAIN_PHASE=train_resume
+elif [[ -n "$INIT_FULL_CHECKPOINT" ]]; then
+  printf 'Using full-model warm start: %s\n' "$INIT_FULL_CHECKPOINT"
+  TRAIN_ARGS+=(--init-full-checkpoint "$INIT_FULL_CHECKPOINT")
 elif [[ -n "$INIT_CHECKPOINT" ]]; then
   if [[ "$INIT_CHECKPOINT" != /* ]]; then
     INIT_CHECKPOINT="$REPOSITORY_ROOT/$INIT_CHECKPOINT"
@@ -689,6 +794,20 @@ run_logged visualize_six_method_real_cases \
   --end-to-end-repeats "$END_TO_END_REPEATS" \
   --torch-num-threads 4 --device "$DEVICE" --dpi 300 \
   "${DIAGNOSTIC_ARGS[@]}" "${FORCE_DIAGNOSTIC_ARGS[@]}"
+
+if ((KEEP_STATE_RECOVERY)); then
+  run_logged paired_native_deployment \
+    "$PYTHON_BIN" scripts/quick_compare_v16_checkpoints.py \
+    --old-checkpoint "$PAIRED_REFERENCE_CHECKPOINT" \
+    --new-checkpoint "$CHECKPOINT_PATH" \
+    --output-json "$COMPARISON_DIRECTORY/paired_native.json" \
+    --min-source-k 4 --max-source-k 56 --samples-per-k 1 \
+    --real-samples-per-dataset 5 \
+    --manifest "UJI=$UJI_MANIFEST" \
+    --manifest "NaturalEarth=$NATURAL_EARTH_MANIFEST" \
+    --manifest "USGS=$USGS_MANIFEST" \
+    --mse-tolerance 1e-4 --device "$DEVICE"
+fi
 
 CURRENT_PHASE="completed"
 trap - ERR

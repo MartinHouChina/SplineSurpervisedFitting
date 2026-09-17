@@ -269,6 +269,23 @@ def assess_v16_checkpoint(
         checkpoint.get("stage") == "joint" and configured_target_met
     )
     reasons: list[str] = []
+    initialization = checkpoint.get("initialization_provenance")
+    full_model_initialization = (
+        isinstance(initialization, dict)
+        and initialization.get("mode") == "full_model"
+        and isinstance(initialization.get("source_checkpoint"), str)
+    )
+    synthetic_only_lineage = (
+        initialization.get("synthetic_only_model_lineage")
+        if isinstance(initialization, dict) else None
+    )
+    # A synthetic-only fine-tuning run may still inherit a model trained on
+    # real curves. Keep that exposure visible when auditing a new experiment.
+    if initialization is not None and synthetic_only_lineage is not True:
+        reasons.append(
+            "initialization model lineage is mixed-data or unknown; "
+            "synthetic-only fine-tuning does not erase pretraining exposure"
+        )
     feasible_teacher_mode = (
         checkpoint.get("objective_version")
         == V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION
@@ -298,7 +315,7 @@ def assess_v16_checkpoint(
         # updated Proposal or ParameterHead in Joint training.
         if checkpoint_epoch is None or checkpoint_epoch < 1:
             reasons.append("current v16 checkpoint epoch is missing or invalid")
-        if proposal_epochs is None or proposal_epochs < 1:
+        if proposal_epochs is None or proposal_epochs < (0 if full_model_initialization else 1):
             reasons.append(
                 "current v16 proposal_epochs is missing or invalid"
             )
@@ -315,7 +332,7 @@ def assess_v16_checkpoint(
             checkpoint_epoch is not None
             and checkpoint_epoch >= 1
             and proposal_epochs is not None
-            and proposal_epochs >= 1
+            and proposal_epochs >= (0 if full_model_initialization else 1)
             and selector_warmup_epochs is not None
             and selector_warmup_epochs >= 0
             and checkpoint_epoch <= proposal_epochs + selector_warmup_epochs
@@ -675,6 +692,10 @@ def assess_v16_checkpoint(
         "configured_proposal_high_k_min_knots": proposal_high_k_min_knots,
         "proposal_knot_assignment_weight": proposal_knot_assignment_weight,
         "training_real_fraction": training_real_fraction,
+        "synthetic_only_model_lineage": synthetic_only_lineage,
+        "initialization_mode": (
+            initialization.get("mode") if isinstance(initialization, dict) else None
+        ),
         "joint_supervision": joint_supervision,
         "online_teacher": loss_config.get("online_teacher"),
         "fine_grained_teacher": fine_grained_teacher,

@@ -30,6 +30,7 @@ class CandidateKnotHead(nn.Module):
         local_attention_bandwidth: float = 0.0,
         interval_logit_limit: float = 0.0,
         position_parameterization: str = "interval_softmax",
+        global_interval_residual_limit: float = 0.0,
     ) -> None:
         super().__init__()
         if num_candidates <= 0:
@@ -49,6 +50,11 @@ class CandidateKnotHead(nn.Module):
             )
         if not math.isfinite(interval_logit_limit) or interval_logit_limit < 0.0:
             raise ValueError("interval_logit_limit must be finite and non-negative")
+        if (
+            not math.isfinite(global_interval_residual_limit)
+            or global_interval_residual_limit < 0.0
+        ):
+            raise ValueError("global_interval_residual_limit must be finite and non-negative")
         if position_parameterization not in {
             "interval_softmax",
             "bounded_anchor_residual",
@@ -65,6 +71,7 @@ class CandidateKnotHead(nn.Module):
         self.local_attention_bandwidth = float(local_attention_bandwidth)
         self.interval_logit_limit = float(interval_logit_limit)
         self.position_parameterization = str(position_parameterization)
+        self.global_interval_residual_limit = float(global_interval_residual_limit)
 
         # Interval queries have a fixed left-to-right identity.  Positional
         # anchors make the initial attention cover the complete domain, while
@@ -102,6 +109,14 @@ class CandidateKnotHead(nn.Module):
         self.interval_score = nn.Linear(self.hidden_dim, 1)
         nn.init.normal_(self.interval_score.weight, std=0.01)
         nn.init.zeros_(self.interval_score.bias)
+        if self.global_interval_residual_limit > 0:
+            # A local half-cell bound cannot represent many nonuniform Kc-knot
+            # curves, even when their knot count fits the candidate budget.
+            # Start with the original proposal exactly, then learn a bounded
+            # redistribution of its positive intervals. No candidate is added.
+            self.interval_warp_score = nn.Linear(self.hidden_dim, 1)
+            nn.init.zeros_(self.interval_warp_score.weight)
+            nn.init.zeros_(self.interval_warp_score.bias)
 
         # Candidate j is the boundary shared by interval j and j+1.  Fusing
         # both adjacent tokens gives the pruning stage evidence from both sides
@@ -268,6 +283,25 @@ class CandidateKnotHead(nn.Module):
                 dim=-1,
             )
             candidate_intervals = boundaries[:, 1:] - boundaries[:, :-1]
+
+        if self.global_interval_residual_limit > 0:
+            raw_warp = self.interval_warp_score(interval_tokens).squeeze(-1)
+            raw_warp = raw_warp - raw_warp.mean(dim=-1, keepdim=True)
+            limit = self.global_interval_residual_limit
+            multipliers = torch.exp(limit * torch.tanh(raw_warp / limit))
+            free = (candidate_intervals - self.min_gap).clamp_min(0.0)
+            free_sum = free.sum(dim=-1, keepdim=True)
+            normalizer = (free * multipliers).sum(dim=-1, keepdim=True) / free_sum.clamp_min(
+                torch.finfo(free.dtype).tiny
+            )
+            # With zero-initialized scores multipliers == normalizer == 1,
+            # so delta is exactly zero, preserving a warm-started prediction.
+            delta = free * (multipliers / normalizer - 1.0)
+            candidate_intervals = candidate_intervals + delta
+            candidate_positions = candidate_positions + delta.cumsum(dim=-1)[:, :-1]
+            candidate_position_residual = candidate_positions - self.candidate_position_anchors.to(
+                device=local_features.device, dtype=local_features.dtype
+            ).unsqueeze(0)
 
         adjacent_tokens = torch.cat(
             [interval_tokens[:, :-1], interval_tokens[:, 1:]],

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import inspect
 import json
 import math
 import random
@@ -59,6 +60,7 @@ from spline_fitting.training.v16_feasible_teacher import (
 
 
 V16_CHECKPOINT_SELECTION = V16_CHECKPOINT_SELECTION_CONTRACT
+V16_OFFLINE_LOSS_SEMANTICS_REVISION = "offline_teacher_proposal_frame_positions_v2"
 
 
 class IndexedTrainingDataset(Dataset):
@@ -81,7 +83,8 @@ def parser():
     p.add_argument("--epochs", type=int, default=128, help="Total proposal plus joint epochs")
     p.add_argument(
         "--proposal-epochs", type=int, default=64,
-        help="Last proposal-stage epoch (total, not extra epochs when resuming)",
+        help=("Last proposal-stage epoch (total, not extra epochs when resuming); "
+              "0 skips Proposal for a full-model warm start"),
     )
     p.add_argument("--train-size", type=int, default=2400, help="Mixture draws per epoch")
     p.add_argument("--val-size", type=int, default=500, help="Synthetic validation curves")
@@ -249,6 +252,11 @@ def parser():
         help="Let supervised count calibration update candidate scores as well as beta",
     )
     p.add_argument(
+        "--keep-state-interaction",
+        action=argparse.BooleanOptionalAction, default=False,
+        help="Add learned Keep/Remove state embeddings to candidate interactions",
+    )
+    p.add_argument(
         "--synthetic-geometry-oracle-teacher",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -271,6 +279,10 @@ def parser():
     p.add_argument("--true-parameter-weight", type=float, default=0.1)
     p.add_argument("--proposal-knot-coverage-weight", type=float, default=1.0)
     p.add_argument(
+        "--proposal-global-warp-limit", type=float, default=0.0,
+        help="Optional global interval warp for nonuniform proposals (0 preserves legacy anchors)",
+    )
+    p.add_argument(
         "--proposal-knot-assignment-weight",
         type=float,
         default=1.0,
@@ -285,6 +297,10 @@ def parser():
     p.add_argument("--selected-knot-position-weight", type=float, default=1.0)
     p.add_argument("--keep-dice-weight", type=float, default=0.5)
     p.add_argument("--keep-cdf-weight", type=float, default=0.25)
+    p.add_argument(
+        "--keep-boundary-ranking-weight", type=float, default=0.0,
+        help="Supervise separation of retained and removed candidates at the top-K boundary",
+    )
     p.add_argument("--parameter-gap-weight", type=float, default=0.05)
     p.add_argument("--parameter-bias-weight", type=float, default=0.1)
     p.add_argument(
@@ -400,6 +416,12 @@ def parser():
               "not optimizer/selector/subset-decoder resume"),
     )
     p.add_argument(
+        "--init-full-checkpoint", type=Path,
+        help=("Start a new experiment with all v16 model weights, including Selector "
+              "and subset decoder; requires matching architecture/capacity and "
+              "does not restore optimizer, epoch or history"),
+    )
+    p.add_argument(
         "--resume", type=Path,
         help=("Resume .last.pt with the original data/targets/output; only total epochs, "
               "runtime options, and an unfinished proposal-stage end may be extended"),
@@ -418,8 +440,10 @@ def validate_args(args):
         args.candidate_knots = args.full_knot_vector_size - 8
     elif args.candidate_knots is None:
         args.candidate_knots = V16_FORMAL_CANDIDATE_INTERNAL_KNOTS
-    if not 1 <= args.proposal_epochs < args.epochs:
-        raise ValueError("require 1 <= proposal-epochs < epochs")
+    if not 0 <= args.proposal_epochs < args.epochs:
+        raise ValueError("require 0 <= proposal-epochs < epochs")
+    if args.proposal_epochs == 0 and not (args.init_full_checkpoint or args.resume):
+        raise ValueError("proposal-epochs 0 requires --init-full-checkpoint (or its --resume)")
     for key in ("train_size", "val_size", "real_val_size", "batch_size",
                 "feasible_teacher_batch_size", "hidden_dim",
                 "encoder_layers", "attention_heads", "selector_layers", "torch_num_threads", "log_every_batches"):
@@ -535,6 +559,8 @@ def validate_args(args):
         "proposal_knot_assignment_weight",
         "proposal_multiscale_recall_weight",
         "selected_knot_position_weight", "keep_dice_weight", "keep_cdf_weight",
+        "keep_boundary_ranking_weight",
+        "proposal_global_warp_limit",
         "parameter_gap_weight", "parameter_bias_weight", "fine_teacher_weight",
         "fine_teacher_ranking_weight", "counterfactual_or_weight",
         "fine_teacher_temperature",
@@ -665,8 +691,10 @@ def validate_args(args):
         or not 0.0 < args.initial_keep_fraction < 1.0
     ):
         raise ValueError("initial-keep-fraction must lie strictly inside (0,1)")
-    if args.resume and args.init_checkpoint:
-        raise ValueError("resume and init-checkpoint are mutually exclusive")
+    if sum(bool(value) for value in (
+        args.resume, args.init_checkpoint, args.init_full_checkpoint,
+    )) > 1:
+        raise ValueError("resume, init-checkpoint and init-full-checkpoint are mutually exclusive")
     if args.train_size >= EPOCH_SEED_STRIDE:
         raise ValueError("train-size exceeds epoch seed stride")
     for epoch in range(args.epochs if args.resample_train_each_epoch else 1):
@@ -693,6 +721,7 @@ def joint_parameter_groups(model):
         "coverage_embedding.",
         "selection_blocks.",
         "keep_head.",
+        "keep_state_embedding.",
         "adaptive_threshold_norm.",
         "adaptive_threshold_head.",
     )
@@ -1540,6 +1569,185 @@ def transfer_proposal_weights(model, checkpoint) -> ProposalTransferReport:
     )
 
 
+def transfer_full_model_weights(model, checkpoint) -> dict:
+    """Load every learned component, with explicit zero-state extensions.
+
+    Capacity and geometry contracts are never resized here. Deployment settings
+    and loss-only coupling may change for the new experiment, but every such
+    change is returned for the initialization audit.
+    """
+    if checkpoint.get("objective_version") not in {
+        V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        V16_SUPERVISED_SUBSET_OBJECTIVE_VERSION,
+        V16_FEASIBLE_TEACHER_OBJECTIVE_VERSION,
+    }:
+        raise ValueError("full initialization requires a recognized v16 checkpoint")
+    if checkpoint.get("stage") != "joint":
+        raise ValueError(
+            "full initialization requires a Joint checkpoint (stage='joint'); "
+            "a Proposal checkpoint does not establish a trained Selector/decoder. "
+            "Use --init-checkpoint for proposal-only transfer or --resume for "
+            "this run's initialization artifact."
+        )
+    source_config = checkpoint.get("model_config")
+    if not isinstance(source_config, dict):
+        raise ValueError("full initialization requires model_config")
+    defaults = {
+        name: parameter.default
+        for name, parameter in inspect.signature(V16CandidateSelectionNetwork).parameters.items()
+        if parameter.default is not inspect.Parameter.empty
+    }
+    unknown = sorted(set(source_config) - set(defaults))
+    if unknown:
+        raise ValueError(f"full initialization has unknown model_config keys: {unknown}")
+    source_config = {**defaults, **source_config}
+    target_config = model.get_config()
+    experiment_fields = {
+        "mse_tolerance", "one_shot_selection_policy", "one_shot_safety_sigma",
+        "one_shot_safety_knots", "one_shot_coverage_bins", "min_selected_knots",
+        "initial_keep_fraction", "relocation_blend", "count_structure_coupling",
+        "keep_state_interaction",
+        "proposal_global_warp_limit",
+    }
+    incompatible = {
+        key: (source_config.get(key), value)
+        for key, value in target_config.items()
+        if key not in experiment_fields and source_config.get(key) != value
+    }
+    if incompatible:
+        raise ValueError(f"full initialization requires matching architecture/capacity: {incompatible}")
+    if source_config.get("keep_state_interaction") and not target_config.get("keep_state_interaction"):
+        raise ValueError("full initialization cannot discard learned Keep-state interaction")
+    if source_config.get("proposal_global_warp_limit", 0.0) and (
+        source_config["proposal_global_warp_limit"] != target_config.get("proposal_global_warp_limit", 0.0)
+    ):
+        raise ValueError("full initialization must preserve an existing global proposal warp limit")
+    source_state = checkpoint.get("model_state_dict")
+    if not isinstance(source_state, dict):
+        raise ValueError("full initialization requires model_state_dict")
+    target_state = model.state_dict()
+    extension = (
+        {"keep_state_embedding.weight"}
+        if target_config.get("keep_state_interaction")
+        and not source_config.get("keep_state_interaction")
+        else set()
+    )
+    if target_config.get("proposal_global_warp_limit", 0.0) > 0 and not source_config.get("proposal_global_warp_limit", 0.0):
+        extension.update({
+            "candidate_head.interval_warp_score.weight",
+            "candidate_head.interval_warp_score.bias",
+        })
+    missing = set(target_state) - set(source_state)
+    unexpected = set(source_state) - set(target_state)
+    if missing != extension or unexpected:
+        raise ValueError(
+            "full initialization requires every model tensor; "
+            f"missing={sorted(missing)}, unexpected={sorted(unexpected)}, "
+            f"allowed zero extension={sorted(extension)}"
+        )
+    mismatched = [
+        key for key, value in source_state.items()
+        if not isinstance(value, torch.Tensor) or value.shape != target_state[key].shape
+    ]
+    if mismatched:
+        raise ValueError(f"full initialization tensor shape mismatch: {mismatched}")
+    for key in extension:
+        if bool(torch.count_nonzero(target_state[key])):
+            raise ValueError(f"full initialization extension must start at zero: {key}")
+    model.load_state_dict({**target_state, **source_state}, strict=True)
+    initialization_only = {"initial_keep_fraction", "relocation_blend"}
+    return {
+        "copied_tensor_count": len(source_state),
+        "zero_initialized_extensions": sorted(extension),
+        "configuration_changes": {
+            key: {"source": source_config.get(key), "target": value}
+            for key, value in target_config.items()
+            if key not in initialization_only and source_config.get(key) != value
+        },
+        "ignored_initialization_settings": {
+            key: {
+                "source_config": source_config.get(key),
+                "requested": target_config[key],
+                "reason": "Constructor initializer only; learned checkpoint tensors are preserved",
+            }
+            for key in sorted(initialization_only)
+            if source_config.get(key) != target_config[key]
+        },
+    }
+
+
+def resume_loss_semantics_migration(checkpoint, *, joint_supervision):
+    """Never restore Joint Adam moments across a changed geometric objective."""
+    if joint_supervision != "offline_feasible_teacher":
+        return None
+    revision = checkpoint.get("loss_semantics_revision")
+    if revision == V16_OFFLINE_LOSS_SEMANTICS_REVISION:
+        return checkpoint.get("loss_semantics_migration")
+    if checkpoint.get("stage") != "proposal":
+        raise ValueError(
+            "offline Teacher Joint resume has an incompatible loss semantics "
+            f"revision ({revision!r}); the current decoder-position loss uses "
+            "the frozen Proposal parameter frame. Start a new experiment with "
+            "--init-full-checkpoint to reset the optimizer, or resume with the "
+            "original training code."
+        )
+    return {
+        "source_revision": revision,
+        "target_revision": V16_OFFLINE_LOSS_SEMANTICS_REVISION,
+        "source_stage": "proposal",
+        "reason": "Proposal checkpoint has no Joint optimizer moments; Proposal objective is unchanged",
+    }
+
+
+def initialization_provenance(checkpoint, *, path, mode, real_fraction):
+    """Keep source data exposure distinct from this run's training mixture."""
+    source_training = checkpoint.get("training_config", {})
+    source_fraction = source_training.get("real_fraction")
+    fraction_known = (
+        not isinstance(source_fraction, bool)
+        and isinstance(source_fraction, (int, float))
+        and math.isfinite(source_fraction)
+        and 0.0 <= source_fraction <= 1.0
+    )
+    previous = checkpoint.get("initialization_provenance")
+    ancestor_known_clean = (
+        previous.get("synthetic_only_model_lineage") is True
+        if isinstance(previous, dict)
+        else not any(source_training.get(key) for key in (
+            "init_checkpoint", "init_full_checkpoint",
+        ))
+    )
+    return {
+        "mode": mode,
+        "source_checkpoint": str(Path(path).resolve()),
+        "source_epoch": checkpoint.get("epoch"),
+        "source_stage": checkpoint.get("stage"),
+        "source_objective_version": checkpoint.get("objective_version"),
+        "source_training_real_fraction": float(source_fraction) if fraction_known else None,
+        "source_initialization_provenance": previous,
+        "current_training_real_fraction": float(real_fraction),
+        "synthetic_only_model_lineage": bool(
+            fraction_known and source_fraction == 0.0
+            and ancestor_known_clean and real_fraction == 0.0
+        ),
+        "optimizer_restored": False,
+        "history_restored": False,
+    }
+
+
+def training_update_budget(args, *, start_epoch=1):
+    """Report actual optimizer updates, since epochs hide batch-size changes."""
+    steps_per_epoch = math.ceil(args.train_size / args.batch_size)
+    proposal_epochs = max(0, args.proposal_epochs - start_epoch + 1)
+    joint_epochs = max(0, args.epochs - max(args.proposal_epochs + 1, start_epoch) + 1)
+    return {
+        "steps_per_epoch": steps_per_epoch,
+        "remaining_proposal_updates": proposal_epochs * steps_per_epoch,
+        "remaining_joint_updates": joint_epochs * steps_per_epoch,
+        "remaining_total_updates": (proposal_epochs + joint_epochs) * steps_per_epoch,
+    }
+
+
 def main(argv=None):
     p = parser()
     args = p.parse_args(argv)
@@ -1557,6 +1765,11 @@ def main(argv=None):
         if args.joint_supervision == "offline_feasible_teacher"
         else V16_SIMPLIFICATION_CONTRACT
     )
+    run_loss_semantics_revision = (
+        V16_OFFLINE_LOSS_SEMANTICS_REVISION
+        if args.joint_supervision == "offline_feasible_teacher" else None
+    )
+    loss_semantics_migration = None
     run_architecture_revision = (
         "v16_count_structure_coupled_mass_topk_pilot_v1"
         if args.one_shot_selection_policy == "mass_topk"
@@ -1569,6 +1782,8 @@ def main(argv=None):
     last_path = output.with_name(output.stem + ".last.pt")
     proposal_path = output.with_name(output.stem + ".proposal.pt")
     proposal_final_path = output.with_name(output.stem + ".proposal.final.pt")
+    initial_path = output.with_name(output.stem + ".initial.pt")
+    initial_validation_path = output.with_name(output.stem + ".initial.validation.json")
     history_path = output.with_suffix(".history.json")
     artifacts = (
         output,
@@ -1576,6 +1791,8 @@ def main(argv=None):
         proposal_path,
         proposal_final_path,
         history_path,
+        initial_path,
+        initial_validation_path,
     )
     if not args.resume and any(path.exists() for path in artifacts):
         p.error(
@@ -1626,10 +1843,19 @@ def main(argv=None):
         one_shot_coverage_bins=args.one_shot_coverage_bins,
         min_selected_knots=args.min_selected_knots,
         initial_keep_fraction=args.initial_keep_fraction,
-        count_structure_coupling=args.count_structure_coupling)
+        count_structure_coupling=args.count_structure_coupling,
+        keep_state_interaction=args.keep_state_interaction,
+        proposal_global_warp_limit=args.proposal_global_warp_limit)
     history, start_epoch, best_rank, proposal_rank, proposal_ready = [], 1, None, None, False
     reporting_target_streak = 0
     resume_payload = None
+    initialization = {
+        "mode": "random",
+        "current_training_real_fraction": float(args.real_fraction),
+        "synthetic_only_model_lineage": args.real_fraction == 0.0,
+        "optimizer_restored": False,
+        "history_restored": False,
+    }
     legacy_joint_optimizer_contract = False
     if args.resume:
         resume_payload = torch.load(args.resume, map_location="cpu", weights_only=True)
@@ -1637,6 +1863,18 @@ def main(argv=None):
             p.error(
                 "resume objective does not match --joint-supervision; use "
                 "--init-checkpoint for proposal-only transfer"
+            )
+        try:
+            loss_semantics_migration = resume_loss_semantics_migration(
+                resume_payload, joint_supervision=args.joint_supervision,
+            )
+        except ValueError as error:
+            p.error(str(error))
+        if loss_semantics_migration:
+            print(
+                "Offline loss semantics migration: "
+                + json.dumps(loss_semantics_migration, sort_keys=True),
+                flush=True,
             )
         if resume_payload.get("architecture_revision") != run_architecture_revision:
             p.error(
@@ -1662,7 +1900,7 @@ def main(argv=None):
                 "contract; start a new K=4..56 run or use --init-checkpoint "
                 "for proposal-only transfer"
             )
-        ignored = {"epochs", "resume", "init_checkpoint", "output", "device", "num_workers",
+        ignored = {"epochs", "resume", "init_checkpoint", "init_full_checkpoint", "output", "device", "num_workers",
                    "feasible_teacher_batch_size",
                    "torch_num_threads", "log_every_batches", "initial_keep_fraction"}
         previous_config = dict(resume_payload["training_config"])
@@ -1685,6 +1923,9 @@ def main(argv=None):
             "feasible_teacher_anchor_fallback_to_greedy": True,
             "feasible_teacher_counterfactual_max_probes": 16,
             "count_structure_coupling": False,
+            "keep_state_interaction": False,
+            "keep_boundary_ranking_weight": 0.0,
+            "proposal_global_warp_limit": 0.0,
             "joint_high_k_fraction": 0.0,
             "joint_high_k_min_knots": min(45, args.max_control_points - 4),
             "synthetic_high_k_val_size": 0,
@@ -1733,6 +1974,14 @@ def main(argv=None):
         if changed or resume_payload.get("real_data_provenance") != provenance:
             p.error(f"resume data/training configuration mismatch: {changed or 'manifest fingerprints'}")
         model, _, _ = build_model_from_checkpoint(resume_payload)
+        initialization = resume_payload.get("initialization_provenance") or initialization_provenance(
+            resume_payload, path=args.resume, mode="legacy_resume", real_fraction=args.real_fraction,
+        )
+        if args.proposal_epochs == 0 and initialization.get("mode") != "full_model":
+            p.error("proposal-epochs 0 resume requires a saved full-model initialization")
+        # Preserve the initialization source in subsequent resume checkpoints.
+        for key in ("init_checkpoint", "init_full_checkpoint"):
+            current_config[key] = previous_config.get(key)
         history = resume_payload.get("history", [])
         start_epoch = int(resume_payload["epoch"]) + 1
         selection_compatible = (
@@ -1812,6 +2061,27 @@ def main(argv=None):
             if final_epoch is None or final_epoch < resume_epoch:
                 proposal_final_path.parent.mkdir(parents=True, exist_ok=True)
                 atomic_save(resume_payload, proposal_final_path)
+    elif args.init_full_checkpoint:
+        source_checkpoint = torch.load(args.init_full_checkpoint, map_location="cpu", weights_only=True)
+        try:
+            transfer = transfer_full_model_weights(model, source_checkpoint)
+        except (KeyError, TypeError, ValueError, RuntimeError) as error:
+            p.error(str(error))
+        initialization = initialization_provenance(
+            source_checkpoint, path=args.init_full_checkpoint, mode="full_model",
+            real_fraction=args.real_fraction,
+        )
+        initialization.update(transfer)
+        print(
+            f"Full-model warm start: copied {transfer['copied_tensor_count']} tensors, "
+            "including Selector and subset decoder; optimizer/history start fresh. "
+            f"Source training real_fraction={initialization['source_training_real_fraction']}; "
+            f"synthetic-only model lineage={initialization['synthetic_only_model_lineage']}.",
+            flush=True,
+        )
+        if (transfer["zero_initialized_extensions"] or transfer["configuration_changes"]
+                or transfer["ignored_initialization_settings"]):
+            print("  Full initialization audit: " + json.dumps(transfer, sort_keys=True), flush=True)
     elif args.init_checkpoint:
         source_checkpoint = torch.load(args.init_checkpoint, map_location="cpu", weights_only=True)
         if args.joint_supervision in {"synthetic_ground_truth", "offline_feasible_teacher"}:
@@ -1830,6 +2100,10 @@ def main(argv=None):
             transfer = transfer_proposal_weights(model, source_checkpoint)
         except (KeyError, TypeError, ValueError) as error:
             p.error(str(error))
+        initialization = initialization_provenance(
+            source_checkpoint, path=args.init_checkpoint, mode="proposal_only",
+            real_fraction=args.real_fraction,
+        )
         print(
             f"Transferred {transfer.transferred_count} proposal tensors "
             f"({len(transfer.copied)} exact, {len(transfer.resized)} rank-resized); "
@@ -1918,6 +2192,7 @@ def main(argv=None):
         selected_knot_position_weight=args.selected_knot_position_weight,
         keep_dice_weight=args.keep_dice_weight,
         keep_cdf_weight=args.keep_cdf_weight,
+        keep_boundary_ranking_weight=args.keep_boundary_ranking_weight,
         parameter_gap_weight=args.parameter_gap_weight,
         parameter_bias_weight=args.parameter_bias_weight,
         fine_teacher_weight=args.fine_teacher_weight,
@@ -2031,6 +2306,123 @@ def main(argv=None):
         + f"at K>={args.synthetic_high_k_val_min_knots}.",
         flush=True,
     )
+    update_budget = training_update_budget(args, start_epoch=start_epoch)
+    print(
+        f"Optimizer budget: {update_budget['steps_per_epoch']} updates/epoch "
+        f"(ceil({args.train_size}/{args.batch_size})); remaining Proposal="
+        f"{update_budget['remaining_proposal_updates']}, Joint="
+        f"{update_budget['remaining_joint_updates']}. Increasing batch size "
+        "without extending epochs reduces optimization steps.",
+        flush=True,
+    )
+    if update_budget["remaining_joint_updates"] < 100:
+        print(
+            "WARNING: fewer than 100 Joint optimizer updates remain; this is "
+            "a short diagnostic budget, not evidence of convergence.",
+            flush=True,
+        )
+    completed_updates = sum(
+        int(row.get("optimizer_updates", update_budget["steps_per_epoch"]))
+        for row in history
+    )
+    completed_joint_updates = sum(
+        int(row.get("optimizer_updates", update_budget["steps_per_epoch"]))
+        for row in history if row.get("stage") == "joint"
+    )
+    initial_validation = (
+        resume_payload.get("initial_validation") if resume_payload else None
+    )
+    if args.init_full_checkpoint:
+        # Measure before any updates and keep the full initialized model as an
+        # independently inspectable baseline. It also seeds the dense Proposal
+        # selection so a short adaptation cannot replace a better initializer.
+        initial_validation = validate(
+            model, val_loader, device, args.mse_tolerance,
+            stage="joint", knot_match_tolerance=args.knot_match_tolerance,
+            log_every=args.log_every_batches,
+            synthetic_boundary_knot_count=args.max_control_points - 4,
+            synthetic_high_k_min_count=(
+                args.synthetic_high_k_val_min_knots
+                if args.synthetic_high_k_val_size else None
+            ),
+        )
+        # Proposal geometry diagnostics describe all candidate knots, whereas
+        # Joint diagnostics describe only decoded survivors. Use the same
+        # measurement as subsequent Proposal epochs for its tie-break ranking.
+        initial_proposal_validation = (
+            validate(
+                model, val_loader, device, args.mse_tolerance,
+                stage="proposal", knot_match_tolerance=args.knot_match_tolerance,
+                log_every=args.log_every_batches,
+                synthetic_boundary_knot_count=args.max_control_points - 4,
+                synthetic_high_k_min_count=(
+                    args.synthetic_high_k_val_min_knots
+                    if args.synthetic_high_k_val_size else None
+                ),
+            )
+            if args.proposal_epochs > 0 else initial_validation
+        )
+        proposal_rank = (
+            proposal_checkpoint_rank(initial_proposal_validation)
+            if args.joint_supervision in {"synthetic_ground_truth", "offline_feasible_teacher"}
+            else (
+                -initial_proposal_validation["dense_subset_cost"],
+                -initial_proposal_validation["dense_mse"],
+                initial_proposal_validation["qualification_dense_pass_rate"],
+            )
+        )
+        initial_payload = dict(
+            objective_version=run_objective_version,
+            loss_semantics_revision=run_loss_semantics_revision,
+            loss_semantics_migration=loss_semantics_migration,
+            model_config=model.get_config(),
+            model_state_dict={key: value.detach().cpu() for key, value in model.state_dict().items()},
+            epoch=0, stage="proposal", training_phase="full_model_initialization",
+            training_config=current_config, dataset_config=dataset_config,
+            initialization_provenance=initialization,
+            real_data_provenance=provenance,
+            validation_real_ids=validation.selected_real_ids,
+            initial_validation=initial_validation,
+            validation_metrics=initial_validation,
+            history=[], best_proposal_rank=proposal_rank, best_joint_rank=None,
+            proposal_ready=True,
+            proposal_ready_role="full_model_warm_start_without_proposal_updates",
+            architecture_revision=run_architecture_revision,
+            simplification_contract=run_simplification_contract,
+            checkpoint_selection=V16_CHECKPOINT_SELECTION,
+            checkpoint_quality="full_model_initialization_baseline",
+            optimizer_state_dict=optimizer.state_dict(),
+            rng_state=torch.get_rng_state(),
+            cuda_rng_state=(torch.cuda.get_rng_state_all() if device.type == "cuda" else []),
+            synthetic_data_contract=(
+                V16_CERTIFIED_SYNTHETIC_CONTRACT
+                if args.certified_minimal_source else "random_source_uncertified"
+            ),
+        )
+        atomic_save(initial_payload, initial_path)
+        initial_proposal_payload = dict(
+            initial_payload, validation_metrics=initial_proposal_validation,
+        )
+        atomic_save(initial_proposal_payload, proposal_path)
+        atomic_save(initial_proposal_payload, proposal_final_path)
+        # A failed/interrupted offline-cache build must be resumable even when
+        # the user requested zero Proposal optimizer epochs.
+        atomic_save(initial_proposal_payload, last_path)
+        initial_validation_path.write_text(json.dumps({
+            "initialization_provenance": initialization,
+            "model_config": model.get_config(),
+            "validation_metrics": initial_validation,
+            "note": "Before updates, evaluated using this experiment's configured deployment settings",
+        }, indent=2, allow_nan=False), encoding="utf-8")
+        proposal_ready = True
+        print(
+            "Full-model initial baseline: "
+            f"dense={initial_validation['dense_pass_rate']:.1%}, "
+            f"deployment={initial_validation['deployment_pass_rate']:.1%}, "
+            f"MSE={initial_validation['deployment_mse']:.3e}; "
+            f"saved {initial_path} and {initial_validation_path}.",
+            flush=True,
+        )
     feasible_teacher_cache = None
     for epoch in range(start_epoch, args.epochs + 1):
         stage = "proposal" if epoch <= args.proposal_epochs else "joint"
@@ -2095,8 +2487,10 @@ def main(argv=None):
                 )
                 optimizer_regime = "joint_named_groups"
             print(
-                "Proposal schedule complete; loading the validation-ranked "
-                "best dense "
+                ("Full-model initialization ready; loading the preserved "
+                 if args.proposal_epochs == 0 else
+                 "Proposal schedule complete; loading the validation-ranked ")
+                + "best dense "
                 f"initializer from epoch {proposal_initializer_epoch} "
                 f"(worst-source pass={proposal_dense_pass:.1%}, reporting "
                 f"reference={args.proposal_pass_target:.1%}). Joint training "
@@ -2293,6 +2687,9 @@ def main(argv=None):
                 )
                 gradient_norms = {"global": float(global_norm)}
             optimizer.step()
+            completed_updates += 1
+            if stage == "joint":
+                completed_joint_updates += 1
             if (
                 feasible_teacher_cache is not None
                 and step == len(train_loader)
@@ -2344,6 +2741,9 @@ def main(argv=None):
                 reporting_target_streak = 0
         entry = dict(
             epoch=epoch, stage=stage, train=train_metrics, validation=measured,
+            optimizer_updates=len(train_loader),
+            cumulative_optimizer_updates=completed_updates,
+            cumulative_joint_optimizer_updates=completed_joint_updates,
             training_phase=training_phase,
             optimizer_regime=optimizer_regime,
             learning_rates=current_learning_rates,
@@ -2399,6 +2799,8 @@ def main(argv=None):
             tolerance=args.mse_tolerance,
         )
         payload = dict(objective_version=run_objective_version,
+            loss_semantics_revision=run_loss_semantics_revision,
+            loss_semantics_migration=loss_semantics_migration,
             model_config=model.get_config(), model_state_dict={k:v.detach().cpu() for k,v in model.state_dict().items()},
             optimizer_state_dict=optimizer.state_dict(), epoch=epoch, stage=stage,
             training_phase=training_phase,
@@ -2414,6 +2816,11 @@ def main(argv=None):
                 selector_warmup_epochs=args.selector_warmup_epochs,
             ),
             training_config=current_config, dataset_config=dataset_config, history=history,
+            initialization_provenance=initialization,
+            initial_validation=initial_validation,
+            optimizer_update_budget=update_budget,
+            cumulative_optimizer_updates=completed_updates,
+            cumulative_joint_optimizer_updates=completed_joint_updates,
             dataset_type=(
                 (
                     "certified_synthetic_supervised_train_real_validation_only"
@@ -2583,6 +2990,7 @@ def main(argv=None):
                                   "proposal_multiscale_recall_weight",
                                   "selected_knot_position_weight",
                                   "keep_dice_weight", "keep_cdf_weight",
+                                  "keep_boundary_ranking_weight",
                                   "parameter_gap_weight", "parameter_bias_weight",
                                   "fine_teacher_weight",
                                   "fine_teacher_ranking_weight",
@@ -2716,7 +3124,14 @@ def main(argv=None):
                     f"{train_metrics['deployment_pass_rate']:.1%}/"
                     f"{train_metrics['deployment_mse']:.3e}, "
                     "teacher-source |K gap|="
-                    f"{train_metrics['offline_teacher_source_count_gap']:.2f}",
+                    f"{train_metrics['offline_teacher_source_count_gap']:.2f}; "
+                    "teacher-K topK recall/exact="
+                    f"{train_metrics['teacher_count_topk_recall']:.3f}/"
+                    f"{train_metrics['teacher_count_topk_exact_rate']:.3f}, "
+                    "boundary-rank loss="
+                    f"{train_metrics['keep_boundary_ranking_loss']:.3e}, "
+                    "teacher-frame parameter displacement="
+                    f"{train_metrics['offline_teacher_parameter_displacement']:.3e}",
                     flush=True,
                 )
         boundary_n = measured["synthetic_boundary_sample_count"]

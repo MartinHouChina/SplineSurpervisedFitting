@@ -63,6 +63,8 @@ class V16CandidateSelectionNetwork(nn.Module):
         min_selected_knots: int = 0,
         initial_keep_fraction: float = 0.95,
         count_structure_coupling: bool = False,
+        keep_state_interaction: bool = False,
+        proposal_global_warp_limit: float = 0.0,
         structure_mode: str = "candidate_pruning_one_shot",
     ) -> None:
         super().__init__()
@@ -93,6 +95,13 @@ class V16CandidateSelectionNetwork(nn.Module):
             raise ValueError("one_shot_adaptive_threshold must be Boolean")
         if not isinstance(count_structure_coupling, bool):
             raise ValueError("count_structure_coupling must be Boolean")
+        if not isinstance(keep_state_interaction, bool):
+            raise ValueError("keep_state_interaction must be Boolean")
+        if (
+            not math.isfinite(proposal_global_warp_limit)
+            or proposal_global_warp_limit < 0
+        ):
+            raise ValueError("proposal_global_warp_limit must be finite and non-negative")
         if not math.isfinite(one_shot_safety_sigma) or one_shot_safety_sigma < 0:
             raise ValueError("one_shot_safety_sigma must be finite and non-negative")
         if (
@@ -130,6 +139,8 @@ class V16CandidateSelectionNetwork(nn.Module):
             min_selected_knots=min_selected_knots,
             initial_keep_fraction=initial_keep_fraction,
             count_structure_coupling=count_structure_coupling,
+            keep_state_interaction=keep_state_interaction,
+            proposal_global_warp_limit=proposal_global_warp_limit,
             structure_mode=structure_mode,
         )
         self.point_dim, self.degree, self.hidden_dim = point_dim, degree, hidden_dim
@@ -145,6 +156,7 @@ class V16CandidateSelectionNetwork(nn.Module):
         self.min_selected_knots = int(min_selected_knots)
         self.initial_keep_fraction = float(initial_keep_fraction)
         self.count_structure_coupling = count_structure_coupling
+        self.keep_state_interaction = keep_state_interaction
         self.encoder = GeometryEncoder(point_dim, hidden_dim, encoder_layers)
         self.parameter_head = ParameterHead(
             hidden_dim, min_parameter_gap, "strict", "chord_residual",
@@ -154,6 +166,7 @@ class V16CandidateSelectionNetwork(nn.Module):
             hidden_dim, max_internal_knots, min_gap=min_knot_gap,
             attention_heads=attention_heads, local_attention_bandwidth=0.08,
             position_parameterization="bounded_anchor_residual",
+            global_interval_residual_limit=proposal_global_warp_limit,
         )
         self.tolerance_embedding = nn.Sequential(
             nn.Linear(1, hidden_dim), nn.GELU(), nn.Linear(hidden_dim, hidden_dim)
@@ -165,6 +178,11 @@ class V16CandidateSelectionNetwork(nn.Module):
         self.keep_head = nn.Linear(hidden_dim, 1)
         nn.init.normal_(self.keep_head.weight, std=0.005)
         nn.init.constant_(self.keep_head.bias, math.log(9.0))
+        if keep_state_interaction:
+            # Only opt-in models own these parameters.  Zero initialization
+            # preserves a migrated checkpoint's exact forward predictions.
+            self.keep_state_embedding = nn.Embedding(2, hidden_dim)
+            nn.init.zeros_(self.keep_state_embedding.weight)
         if one_shot_adaptive_threshold:
             self.adaptive_threshold_norm = nn.LayerNorm(hidden_dim)
             self.adaptive_threshold_head = nn.Sequential(
@@ -279,29 +297,22 @@ class V16CandidateSelectionNetwork(nn.Module):
         memory = local + KnotHead._sinusoidal_position_encoding(params, self.hidden_dim)
         tokens = (proposal["candidate_tokens"] + self.coverage_embedding(coverage)
                   + tolerance_features.unsqueeze(1))
+        preliminary_probabilities = None
+        if self.keep_state_interaction:
+            _, preliminary_importance, preliminary_threshold = self._keep_scores(
+                tokens, global_features, tolerance_features
+            )
+            # Keep beta's gradient reserved for Count calibration, including
+            # the indirect route through this preview's state-conditioned tokens.
+            preliminary_probabilities = (
+                preliminary_importance - preliminary_threshold.detach().unsqueeze(-1)
+            ).sigmoid()
+            tokens = tokens + self._soft_keep_state(preliminary_probabilities)
         for block in self.selection_blocks:
             tokens = block(tokens, memory)
-        raw_importance = self.keep_head(tokens).squeeze(-1)
-        if self.one_shot_adaptive_threshold:
-            centered_importance = raw_importance - raw_importance.mean(
-                dim=-1, keepdim=True
-            )
-            # Historical runs isolate Count from candidate ranking.  The
-            # opt-in coupled mode lets Count train the candidate scores and
-            # shared representation while leaving the deployed forward values
-            # (and the ranking/existence view below) unchanged.
-            threshold_features = (
-                tokens.mean(dim=1) + global_features + tolerance_features
-            )
-            if not self.count_structure_coupling:
-                threshold_features = threshold_features.detach()
-            threshold_context = self.adaptive_threshold_norm(threshold_features)
-            adaptive_threshold = self.adaptive_threshold_head(
-                threshold_context
-            ).squeeze(-1)
-        else:
-            centered_importance = raw_importance
-            adaptive_threshold = raw_importance.new_zeros(raw_importance.shape[0])
+        raw_importance, centered_importance, adaptive_threshold = self._keep_scores(
+            tokens, global_features, tolerance_features
+        )
         logits = centered_importance - adaptive_threshold.unsqueeze(-1)
         probabilities = logits.sigmoid()
         # Structure supervision never trains beta, preventing the existence
@@ -348,7 +359,7 @@ class V16CandidateSelectionNetwork(nn.Module):
             + self.one_shot_safety_sigma * count_uncertainty
             + self.one_shot_safety_knots
         )
-        return dict(
+        context = dict(
             points=points, proposal_params=params, proposal_internal_knots=knots,
             candidate_tokens=tokens, local_features=local,
             global_features=global_features, raw_keep_importance=raw_importance,
@@ -367,6 +378,34 @@ class V16CandidateSelectionNetwork(nn.Module):
             tolerance=tolerance,
             tolerance_features=tolerance_features,
         )
+        if preliminary_probabilities is not None:
+            context["preliminary_keep_probabilities"] = preliminary_probabilities
+        return context
+
+    def _keep_scores(
+        self, tokens: torch.Tensor, global_features: torch.Tensor,
+        tolerance_features: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        raw_importance = self.keep_head(tokens).squeeze(-1)
+        if not self.one_shot_adaptive_threshold:
+            return raw_importance, raw_importance, raw_importance.new_zeros(
+                raw_importance.shape[0]
+            )
+        centered_importance = raw_importance - raw_importance.mean(
+            dim=-1, keepdim=True
+        )
+        # Historical Count trains beta alone; the coupled mode also trains
+        # the shared representation, without changing either forward value.
+        threshold_features = tokens.mean(dim=1) + global_features + tolerance_features
+        if not self.count_structure_coupling:
+            threshold_features = threshold_features.detach()
+        threshold_context = self.adaptive_threshold_norm(threshold_features)
+        adaptive_threshold = self.adaptive_threshold_head(threshold_context).squeeze(-1)
+        return raw_importance, centered_importance, adaptive_threshold
+
+    def _soft_keep_state(self, probabilities: torch.Tensor) -> torch.Tensor:
+        dropped, retained = self.keep_state_embedding.weight.unbind(0)
+        return dropped + probabilities.unsqueeze(-1) * (retained - dropped)
 
     def _coverage_anchors(self, context: dict) -> torch.Tensor:
         probabilities = context["keep_probabilities"]
@@ -506,6 +545,13 @@ class V16CandidateSelectionNetwork(nn.Module):
             (kept_count.to(knots.dtype) / count).unsqueeze(-1).expand_as(knots),
         ], -1)
         subset_tokens = tokens + self.subset_geometry(geometry)
+        if self.keep_state_interaction:
+            # Discrete membership remains a genuine Boolean mask.  Confidence
+            # is an additional *forward-visible* continuous feature, not a
+            # straight-through derivative of the mask or the numerical solve.
+            hard_state = self.keep_state_embedding(keep_mask.to(torch.long))
+            soft_state = self._soft_keep_state(context["structure_keep_probabilities"])
+            subset_tokens = subset_tokens + hard_state + soft_state
         # The sentinel is visible ONLY for empty subsets. Unselected candidate
         # tokens can never serve as keys/values for the actual subset decoder.
         memory = torch.cat([subset_tokens, subset_tokens.new_zeros(batch, 1, self.hidden_dim)], 1)
