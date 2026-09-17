@@ -1,0 +1,153 @@
+{
+  "initialization_provenance": {
+    "mode": "full_model",
+    "source_checkpoint": "E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux_r2_joint_fast.pt",
+    "source_epoch": 70,
+    "source_stage": "joint",
+    "source_objective_version": "candidate_selection_counterfactual_bspline_v16",
+    "source_training_real_fraction": 0.35,
+    "source_initialization_provenance": null,
+    "current_training_real_fraction": 0.0,
+    "synthetic_only_model_lineage": false,
+    "optimizer_restored": false,
+    "history_restored": false,
+    "copied_tensor_count": 113,
+    "zero_initialized_extensions": [
+      "candidate_head.interval_warp_score.bias",
+      "candidate_head.interval_warp_score.weight",
+      "keep_state_embedding.weight"
+    ],
+    "configuration_changes": {
+      "count_structure_coupling": {
+        "source": false,
+        "target": true
+      },
+      "keep_state_interaction": {
+        "source": false,
+        "target": true
+      },
+      "proposal_global_warp_limit": {
+        "source": 0.0,
+        "target": 1.0
+      }
+    },
+    "ignored_initialization_settings": {
+      "initial_keep_fraction": {
+        "source_config": 0.5357142857142857,
+        "requested": 0.4166666666666667,
+        "reason": "Constructor initializer only; learned checkpoint tensors are preserved"
+      },
+      "relocation_blend": {
+        "source_config": 0.0,
+        "requested": 0.03,
+        "reason": "Constructor initializer only; learned checkpoint tensors are preserved"
+      }
+    }
+  },
+  "model_config": {
+    "point_dim": 2,
+    "degree": 3,
+    "hidden_dim": 128,
+    "encoder_layers": 3,
+    "max_internal_knots": 56,
+    "min_parameter_gap": 1e-05,
+    "min_knot_gap": 0.0001,
+    "attention_heads": 4,
+    "selector_layers": 2,
+    "mse_tolerance": 0.0001,
+    "parameter_residual_limit": 0.5,
+    "subset_parameter_residual_limit": 0.25,
+    "relocation_blend": 0.03,
+    "one_shot_selection_policy": "mass_topk",
+    "one_shot_adaptive_threshold": true,
+    "one_shot_safety_sigma": 0.03,
+    "one_shot_safety_knots": 0,
+    "one_shot_coverage_bins": 0,
+    "min_selected_knots": 4,
+    "initial_keep_fraction": 0.4166666666666667,
+    "count_structure_coupling": true,
+    "keep_state_interaction": true,
+    "proposal_global_warp_limit": 1.0,
+    "structure_mode": "candidate_pruning_one_shot"
+  },
+  "validation_metrics": {
+    "n": 64,
+    "dense_mse": 0.00023426112160513575,
+    "dense_pass_rate": 0.65625,
+    "deployment_mse": 0.00020418281088078522,
+    "deployment_pass_rate": 0.703125,
+    "deployment_mse_p95": 0.0009240573416019483,
+    "keep_count": 46.78125,
+    "keep_probability_mass": 46.45065163075924,
+    "adaptive_keep_threshold": -4.904763179831207,
+    "deployment_subset_cost": 1.5387391555249867,
+    "dense_subset_cost": 1.8220040270050983,
+    "supervised_count_n": 64,
+    "target_count_mean": 35.515625,
+    "count_mae": 11.265625,
+    "count_bias": 11.265625,
+    "over_count_mean": 11.265625,
+    "under_count_mean": 0.0,
+    "count_exact_rate": 0.140625,
+    "count_within_one_rate": 0.15625,
+    "parameter_rmse": 0.03372437201548247,
+    "knot_match_precision": 0.6760187040748163,
+    "knot_match_recall": 0.8904531456225253,
+    "knot_match_f1": 0.7685589519650654,
+    "knot_matched_mae": 0.004180997882358584,
+    "by_source": {
+      "Synthetic": {
+        "n": 64,
+        "dense_mse": 0.00023426112160513575,
+        "dense_pass_rate": 0.65625,
+        "deployment_mse": 0.00020418281088078522,
+        "deployment_pass_rate": 0.703125,
+        "deployment_mse_p95": 0.0009240573416019483,
+        "keep_count": 46.78125,
+        "keep_probability_mass": 46.45065163075924,
+        "adaptive_keep_threshold": -4.904763179831207,
+        "deployment_subset_cost": 1.5387391555249867,
+        "dense_subset_cost": 1.8220040270050983,
+        "supervised_count_n": 64,
+        "target_count_mean": 35.515625,
+        "count_mae": 11.265625,
+        "count_bias": 11.265625,
+        "over_count_mean": 11.265625,
+        "under_count_mean": 0.0,
+        "count_exact_rate": 0.140625,
+        "count_within_one_rate": 0.15625,
+        "parameter_rmse": 0.03372437201548247,
+        "knot_match_precision": 0.6760187040748163,
+        "knot_match_recall": 0.8904531456225253,
+        "knot_match_f1": 0.7685589519650654,
+        "knot_matched_mae": 0.004180997882358584
+      }
+    },
+    "worst_dense_pass_rate": 0.65625,
+    "worst_deployment_pass_rate": 0.703125,
+    "synthetic_count_mae": 11.265625,
+    "synthetic_count_bias": 11.265625,
+    "synthetic_knot_match_f1": 0.7685589519650654,
+    "synthetic_knot_match_recall": 0.8904531456225253,
+    "synthetic_knot_matched_mae": 0.004180997882358584,
+    "synthetic_parameter_rmse": 0.03372437201548247,
+    "synthetic_high_k_min_count": 45,
+    "synthetic_high_k_sample_count": 26,
+    "synthetic_high_k_dense_pass_rate": 0.15384615384615385,
+    "synthetic_high_k_deployment_pass_rate": 0.2692307692307692,
+    "synthetic_high_k_deployment_mse": 0.0004560400926360899,
+    "synthetic_high_k_keep_count": 56.0,
+    "synthetic_high_k_count_mae": 4.461538461538462,
+    "synthetic_high_k_knot_match_f1": 0.8884120171673818,
+    "synthetic_boundary_knot_count": 56,
+    "synthetic_boundary_sample_count": 9,
+    "synthetic_boundary_dense_pass_rate": 0.0,
+    "synthetic_boundary_deployment_pass_rate": 0.0,
+    "synthetic_boundary_count_mae": 0.0,
+    "synthetic_boundary_knot_match_f1": 0.9126984126984127,
+    "synthetic_boundary_knot_matched_mae": 0.003996616243007839,
+    "qualification_dense_pass_rate": 0.0,
+    "qualification_deployment_pass_rate": 0.0
+  },
+  "note": "Before updates, evaluated using this experiment's configured deployment settings"
+}

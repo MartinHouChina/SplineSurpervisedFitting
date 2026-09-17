@@ -21,11 +21,16 @@ VAL_SIZE=600
 REAL_VAL_SIZE=100
 PROPOSAL_HIGH_K_FRACTION=0.50
 PROPOSAL_HIGH_K_MIN_KNOTS=40
+JOINT_HIGH_K_FRACTION_OVERRIDE=""
+SYNTHETIC_HIGH_K_VAL_SIZE_OVERRIDE=""
 BATCH_SIZE=64
 FEASIBLE_TEACHER_BATCH_SIZE=8
 MAX_CONTROL_POINTS=60
 CANDIDATE_KNOTS=72
 BASELINE_CAP=56
+# Legacy profiles retain --min-knot-count 4 --max-knot-count 56.
+BENCHMARK_MAX_KNOTS=56
+INITIAL_COUNT_ARGS=(--initial-keep-fraction 0.4166666666666667)
 SYNTHETIC_BOUNDARY_VAL_SIZE=32
 SAFETY_SIGMA=0
 SAFETY_ANNEAL_EPOCHS=12
@@ -48,6 +53,7 @@ RESUME_RUN=0
 PILOT_KC56=0
 KEEP_SWAP_HIGHK72=0
 KEEP_STATE_RECOVERY=0
+SMALL_MEDIUM_K24=0
 RUN_PROFILE=default
 PREPARE_REAL_DATA=0
 DIAGNOSTIC=0
@@ -125,6 +131,35 @@ for option in "$@"; do
     COMPLEXITY_RAMP_EPOCHS=0
     BENCHMARK_PROFILE="quick"
     DIAGNOSTIC=1
+  elif [[ "$option" == "--small-medium-k24" ]]; then
+    SMALL_MEDIUM_K24=1
+    RUN_PROFILE=SMALL_MEDIUM_K24
+    RUN_NAME="candidate_selection_v16_mse1e-4_small_medium_sourcek20_kc24_linux_r1"
+    EPOCHS=48
+    PROPOSAL_EPOCHS=24
+    SELECTOR_WARMUP_EPOCHS=4
+    PROPOSAL_LR=2e-4
+    SELECTOR_LR=5e-5
+    DECODER_JOINT_LR=1e-5
+    TRAIN_SIZE=600
+    VAL_SIZE=160
+    REAL_VAL_SIZE=20
+    BATCH_SIZE=32
+    PROPOSAL_HIGH_K_FRACTION=0
+    PROPOSAL_HIGH_K_MIN_KNOTS=20
+    MAX_CONTROL_POINTS=24
+    CANDIDATE_KNOTS=24
+    BASELINE_CAP=24
+    BENCHMARK_MAX_KNOTS=20
+    INITIAL_COUNT_ARGS=(--initial-keep-fraction 0.5)
+    SYNTHETIC_BOUNDARY_VAL_SIZE=16
+    INIT_CHECKPOINT=""
+    INIT_FULL_CHECKPOINT=""
+    SAFETY_SIGMA=0.03
+    SAFETY_ANNEAL_EPOCHS=1
+    COMPLEXITY_RAMP_EPOCHS=0
+    BENCHMARK_PROFILE="quick"
+    DIAGNOSTIC=1
   fi
 done
 
@@ -151,6 +186,8 @@ Main options:
                                   real manifests are validation/test only.
   --proposal-high-k-fraction X   Proposal synthetic high-K share (default: 0.50)
   --proposal-high-k-min-knots N  High-K stratum begins here (default: 40)
+  --joint-high-k-fraction X      Override Joint high-K share (K24 requires 0)
+  --synthetic-high-k-val-size N  Override dedicated high-K validation size (K24 requires 0)
   --batch-size N                 Batch size (default: 64)
   --num-workers N                DataLoader workers (default: 4)
   --output-root PATH             Output root (default: repository outputs/)
@@ -171,6 +208,12 @@ Main options:
                                   source K=4..56, Kc=56, Proposal 8 + Joint 24,
                                   train/val=600/160, real-val=20, batch=32.
                                   Forces quick diagnostic; adds a paired 68-case check.
+  --small-medium-k24            Train from scratch for source K=4..20, Kc=24
+                                  (full cubic knot vector=32), numerical baselines cap=24.
+                                  Proposal 24 + Joint 24, train/val=600/160,
+                                  real-val=20, batch=32; no high-K strata.
+                                  Diagnostic only, even with --benchmark-profile full.
+                                  Initializers are rejected; --resume-run is supported.
   --prepare-real-data            Prepare missing UJI, Natural Earth, USGS and industrial-offset data
   --benchmark-profile quick|full Quick smoke benchmark or full comparison (default: full)
   --diagnostic                   Continue after a structural-integrity audit failure
@@ -178,7 +221,7 @@ Main options:
   -h, --help                     Show this help
 
 Evaluation-size options (override the selected profile):
-  --synthetic-samples-per-k N    Synthetic cases for each K=4..56
+  --synthetic-samples-per-k N    Cases per source K (4..20 for K24; otherwise 4..56)
   --real-samples-per-dataset N   Real benchmark cases per dataset
   --visual-samples-per-dataset N Real plotted cases per dataset
   --kang-admm-iterations N
@@ -216,6 +259,8 @@ while (($#)); do
     --real-val-size) need_value "$@"; REAL_VAL_SIZE="$2"; shift 2 ;;
     --proposal-high-k-fraction) need_value "$@"; PROPOSAL_HIGH_K_FRACTION="$2"; shift 2 ;;
     --proposal-high-k-min-knots) need_value "$@"; PROPOSAL_HIGH_K_MIN_KNOTS="$2"; shift 2 ;;
+    --joint-high-k-fraction) need_value "$@"; JOINT_HIGH_K_FRACTION_OVERRIDE="$2"; shift 2 ;;
+    --synthetic-high-k-val-size) need_value "$@"; SYNTHETIC_HIGH_K_VAL_SIZE_OVERRIDE="$2"; shift 2 ;;
     --batch-size) need_value "$@"; BATCH_SIZE="$2"; shift 2 ;;
     --num-workers) need_value "$@"; NUM_WORKERS="$2"; shift 2 ;;
     --synthetic-samples-per-k) need_value "$@"; SYNTHETIC_SAMPLES_PER_K="$2"; SYNTHETIC_SAMPLES_EXPLICIT=1; shift 2 ;;
@@ -236,6 +281,7 @@ while (($#)); do
     --pilot-kc56) shift ;;
     --keep-swap-highk72) shift ;;
     --keep-state-recovery) shift ;;
+    --small-medium-k24) shift ;;
     --prepare-real-data) PREPARE_REAL_DATA=1; shift ;;
     --benchmark-profile) need_value "$@"; BENCHMARK_PROFILE="$2"; shift 2 ;;
     --diagnostic) DIAGNOSTIC=1; shift ;;
@@ -245,13 +291,24 @@ while (($#)); do
   esac
 done
 
-((PILOT_KC56 + KEEP_SWAP_HIGHK72 + KEEP_STATE_RECOVERY <= 1)) || \
-  die "--pilot-kc56, --keep-swap-highk72 and --keep-state-recovery are mutually exclusive"
+((PILOT_KC56 + KEEP_SWAP_HIGHK72 + KEEP_STATE_RECOVERY + SMALL_MEDIUM_K24 <= 1)) || \
+  die "--pilot-kc56, --keep-swap-highk72, --keep-state-recovery and --small-medium-k24 are mutually exclusive"
 if ((KEEP_STATE_RECOVERY)); then
   BENCHMARK_PROFILE=quick
   DIAGNOSTIC=1
   [[ -n "$INIT_FULL_CHECKPOINT" || "$RESUME_RUN" == 1 ]] || \
     die "--keep-state-recovery requires a full initializer or --resume-run"
+fi
+if ((SMALL_MEDIUM_K24)); then
+  DIAGNOSTIC=1
+  [[ -z "$INIT_CHECKPOINT" && -z "$INIT_FULL_CHECKPOINT" ]] || \
+    die "--small-medium-k24 rejects --init-checkpoint and --init-full-checkpoint; train from scratch or --resume-run"
+  [[ "$PROPOSAL_HIGH_K_FRACTION" =~ ^0([.]0+)?$ ]] || \
+    die "--small-medium-k24 requires --proposal-high-k-fraction 0"
+  [[ -z "$JOINT_HIGH_K_FRACTION_OVERRIDE" || "$JOINT_HIGH_K_FRACTION_OVERRIDE" =~ ^0([.]0+)?$ ]] || \
+    die "--small-medium-k24 requires --joint-high-k-fraction 0"
+  [[ -z "$SYNTHETIC_HIGH_K_VAL_SIZE_OVERRIDE" || "$SYNTHETIC_HIGH_K_VAL_SIZE_OVERRIDE" =~ ^0+$ ]] || \
+    die "--small-medium-k24 requires --synthetic-high-k-val-size 0"
 fi
 
 [[ "$BENCHMARK_PROFILE" == "quick" || "$BENCHMARK_PROFILE" == "full" ]] || \
@@ -314,6 +371,13 @@ for item in \
 done
 nonnegative_integer "NUM_WORKERS" "$NUM_WORKERS"
 nonnegative_integer "SELECTOR_WARMUP_EPOCHS" "$SELECTOR_WARMUP_EPOCHS"
+if [[ -n "$SYNTHETIC_HIGH_K_VAL_SIZE_OVERRIDE" ]]; then
+  nonnegative_integer "SYNTHETIC_HIGH_K_VAL_SIZE_OVERRIDE" "$SYNTHETIC_HIGH_K_VAL_SIZE_OVERRIDE"
+fi
+if [[ -n "$JOINT_HIGH_K_FRACTION_OVERRIDE" ]]; then
+  [[ "$JOINT_HIGH_K_FRACTION_OVERRIDE" =~ ^(0([.][0-9]+)?|1([.]0+)?)$ ]] || \
+    die "joint high-K fraction must lie in [0,1]"
+fi
 positive_number "SELECTOR_LR" "$SELECTOR_LR"
 positive_number "PROPOSAL_LR" "$PROPOSAL_LR"
 nonnegative_number "PROPOSAL_JOINT_LR" "$PROPOSAL_JOINT_LR"
@@ -528,8 +592,8 @@ else
   printf 'Proposal synthetic high-K share=%s at K>=%s; Joint restores training source K=4..%s.\n' \
     "$PROPOSAL_HIGH_K_FRACTION" "$PROPOSAL_HIGH_K_MIN_KNOTS" "$SOURCE_MAX_KNOTS"
 fi
-printf 'Candidate redundancy: %s proposal slots for at most %s labelled source knots. Evaluation stress-tests K=4..56.\n' \
-  "$CANDIDATE_KNOTS" "$SOURCE_MAX_KNOTS"
+printf 'Candidate redundancy: %s proposal slots for at most %s labelled source knots. Synthetic evaluation K=4..%s.\n' \
+  "$CANDIDATE_KNOTS" "$SOURCE_MAX_KNOTS" "$BENCHMARK_MAX_KNOTS"
 if ((PILOT_KC56)); then
   printf 'PILOT ONLY: trained up to source K=%s but benchmark includes K=45..56 out-of-training-range stress cases; all outputs are diagnostic.\n' \
     "$SOURCE_MAX_KNOTS"
@@ -544,6 +608,11 @@ if ((KEEP_STATE_RECOVERY)); then
   printf 'KEEP-STATE RECOVERY: preserve all r2 learned weights; enable zero-initialized Keep embeddings and interval warp. Mixed-source warm-start provenance remains diagnostic.\n'
   printf 'Proposal LR=%s; Joint high-K share=0.40 at K>=45. Keep safety stays sigma=0.03, knots=0; no inactive schedule delays checkpoint selection.\n' "$PROPOSAL_LR"
   printf 'Paired check: identical 53 Synthetic + 3 real datasets x 5 curves; native one-shot deployment, no numerical repair.\n'
+fi
+if ((SMALL_MEDIUM_K24)); then
+  printf 'SMALL/MEDIUM DIAGNOSTIC: source K=4..20; 24 internal candidates, full cubic knot vector=32; baseline cap=24.\n'
+  printf 'Fresh initialization; Proposal and Joint high-K strata disabled, no dedicated high-K validation. The 16 boundary validation curves have source K=20.\n'
+  printf 'Keep-state interaction, global warp and boundary ranking remain enabled. Narrowing the range does not establish that Keep selection has been fixed or that pass rates improve.\n'
 fi
 printf 'Joint optimization: fixed Proposal/encoder/ParameterHead; %s selector/decoder warmup epochs; grouped LR selector=%s, proposal=%s, parameter=%s, decoder=%s.\n' \
   "$SELECTOR_WARMUP_EPOCHS" "$SELECTOR_LR" "$PROPOSAL_JOINT_LR" \
@@ -595,7 +664,7 @@ TRAIN_ARGS=(
   --proposal-parameter-warp-gradient-scale 0
   --joint-parameter-warp-gradient-scale 0.1
   --one-shot-selection-policy mass_topk
-  --initial-keep-fraction 0.4166666666666667
+  "${INITIAL_COUNT_ARGS[@]}"
   --joint-supervision offline_feasible_teacher
   --feasible-teacher-cache-dir "$TEACHER_DIRECTORY"
   --synthetic-count-role reference_only
@@ -656,6 +725,29 @@ if ((KEEP_STATE_RECOVERY)); then
     --count-structure-coupling
     --keep-boundary-ranking-weight 1.0
   )
+fi
+if ((SMALL_MEDIUM_K24)); then
+  TRAIN_ARGS+=(
+    --study-scope small_medium_k24
+    --joint-high-k-fraction 0
+    --joint-high-k-min-knots 20
+    --synthetic-high-k-val-size 0
+    --synthetic-high-k-val-min-knots 20
+    --feasible-teacher-strategy synthetic_anchor_counterfactual
+    --feasible-teacher-anchor-match-tolerance 0.02
+    --feasible-teacher-counterfactual-max-probes 8
+    --counterfactual-or-weight 1.0
+    --keep-state-interaction
+    --proposal-global-warp-limit 1.0
+    --count-structure-coupling
+    --keep-boundary-ranking-weight 1.0
+  )
+fi
+if [[ -n "$JOINT_HIGH_K_FRACTION_OVERRIDE" ]]; then
+  TRAIN_ARGS+=(--joint-high-k-fraction "$JOINT_HIGH_K_FRACTION_OVERRIDE")
+fi
+if [[ -n "$SYNTHETIC_HIGH_K_VAL_SIZE_OVERRIDE" ]]; then
+  TRAIN_ARGS+=(--synthetic-high-k-val-size "$SYNTHETIC_HIGH_K_VAL_SIZE_OVERRIDE")
 fi
 TRAIN_PHASE=train_fresh
 if ((RESUME_RUN)); then
@@ -766,7 +858,7 @@ run_logged benchmark_six_methods_plus_verified \
   --method-set published \
   --include-verified-ours \
   --samples-per-knot-count "$SYNTHETIC_SAMPLES_PER_K" \
-  --min-knot-count 4 --max-knot-count 56 \
+  --min-knot-count 4 --max-knot-count "$BENCHMARK_MAX_KNOTS" \
   "${STRESS_ARGS[@]}" \
   --real-samples-per-dataset "$REAL_SAMPLES_PER_DATASET" \
   --mse-tolerance 1e-4 \

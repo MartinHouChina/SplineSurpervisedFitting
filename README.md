@@ -1,12 +1,29 @@
 # Self-Supervised Spline Fitting（当前 v16 主线）
 
-当前推荐试验是 **v16 Keep 状态交互恢复档**：完整热启动旧 r2，使用 Kc=56、源 K=4..56，在 Proposal 中学习全局候选间隔调整，在 Joint 中用离线可行 Teacher 监督 KeepMask、数量和节点更新。部署仍是一次网络前向、一次选集、一次标准 B 样条 refit。改动及回滚失败原因见 [Keep 状态交互恢复说明](docs/v16_keep_state_recovery.md)。
+> 2026-09-17 本地实训验证：当前 Keep 状态恢复档尚未通过“达标且减少节点”的检查，暂不建议直接服务器长训。最佳检查点近乎全留，末轮减少节点后拟合退化。见 [实测结果与定位报告](docs/v16_local_self_validation.md)。
+
+当前新实验配置是 **v16 中小 K 档**：合成源内部 K=4..20、候选上限 Kc=24，完整三次节点向量最多 32 项，控制顶点最多 28 个。保留 Keep 状态交互、节点/参数更新和离线可行 Teacher，取消高 K 混合采样。采用独立数据协议，从零训练，旧模型与历史配置均保留。缩小范围尚不代表 Keep 排序问题已解决，见 [中小 K 配置与运行说明](docs/v16_small_medium_k24.md)。
+
+Linux/3090 一条龙诊断入口（Proposal 24 + Joint 24 代，训练 600、合成验证 160、batch 32；随后运行同容量六方法对比与案例图）：
+
+```bash
+bash scripts/run_v16_small_medium_k24_3090.sh \
+  --prepare-real-data \
+  --device cuda \
+  --run-name v16_small_medium_k24_r1
+```
+
+新档 MSE 阈值仍为 `1e-4`。真实数据只用于留出验证和测试，不能假定其复杂度都适合 24 个内部节点；超容量失败仍须计入结果。该入口输出诊断结果，不会绕过旧大范围实验的正式资格检查。
+
+## Kc56 恢复实验（历史诊断，未通过）
+
+此前 **v16 Keep 状态交互恢复档**完整热启动旧 r2，使用 Kc=56、源 K=4..56，在 Proposal 中学习全局候选间隔调整，在 Joint 中用离线可行 Teacher 监督 KeepMask、数量和节点更新。部署仍是一次网络前向、一次选集、一次标准 B 样条 refit。改动及回滚失败原因见 [Keep 状态交互恢复说明](docs/v16_keep_state_recovery.md)。
 
 > 本次微调只使用认证合成曲线，外部数据用于留出验证和测试。默认完整初始化的旧 r2 曾使用 35% 真实数据，模型来源会明确记录为 mixed-pretrained，不能把它报告成全程纯合成训练。Teacher 在冻结 Proposal 的预测参数/候选域中离线构建，不在部署时搜索。
 
 最近的 r2 短训只迁移了 Proposal，随机初始化 Selector/Decoder，并仅执行 60 次 Joint 更新；配对合成测试通过率由 83.0% 降到 1.9%。新恢复档保留全部旧权重、恢复显式保留状态嵌入、修正 Teacher 与 decoder 的参数域对齐，并增加筛选边界监督。新档效果须重新实测；旧 [Kc72 交换监督](docs/v16_keep_swap_highk.md) 和 [Kc56 pilot](docs/v16_kc56_fast_pilot.md) 保留作对照。
 
-新的 Linux/3090 一条龙诊断入口：
+历史恢复档 Linux/3090 入口（仅供复测，不是当前 Kc24 配置）：
 
 ```bash
 bash scripts/run_v16_mse1e-4_3090.sh \
@@ -47,7 +64,7 @@ bash scripts/run_v16_mse1e-4_3090.sh \
   -> 曲线、控制顶点、内部节点向量、MSE
 ```
 
-Proposal 阶段用真参数、真节点、有序一一匹配和多尺度 recall 监督候选位置。恢复档使用 56 个候选，允许正间隔全局重分配；能否覆盖高 K 曲线须检查 dense 指标。冻结 Proposal 后，在其预测参数/候选域中离线搜索 `MSE<=1e-4` 的删除方案。Joint 学习可行 KeepMask/K；节点监督先统一 Teacher 与 decoder 的参数域。真 `K*` 不强迫与预测域中的可行节点数相等。
+Proposal 阶段用真参数、真节点、有序一一匹配和多尺度 recall 监督候选位置。中小 K 档使用 24 个候选，历史恢复档使用 56 个；均允许正间隔全局重分配，并检查 dense 拟合指标。冻结 Proposal 后，在其预测参数/候选域中离线搜索 `MSE<=1e-4` 的删除方案。Joint 学习可行 KeepMask/K；节点监督先统一 Teacher 与 decoder 的参数域。真 `K*` 不强迫与预测域中的可行节点数相等。
 
 Joint 固定 GeometryEncoder、ParameterHead、CandidateKnotHead（含全局间隔调整），只更新 Selector/Count 校准、Keep 状态嵌入与 selected-only decoder。恢复档 warmup 为 4 代，固定安全余量，关闭不生效的复杂度日程。若 Proposal 在缓存生成后漂移，离线教师的槽位标签就会失配。
 

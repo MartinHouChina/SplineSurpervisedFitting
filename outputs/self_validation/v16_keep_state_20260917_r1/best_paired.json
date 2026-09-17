@@ -1,0 +1,966 @@
+{
+  "protocol": "native_one_shot_one_standard_bspline_refit_no_verified_or_hard_repair",
+  "mse_definition": "mean squared Euclidean distance at the observed ordered points",
+  "mse_tolerance": 0.0001,
+  "old_checkpoint": "E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux_r2_joint_fast.pt",
+  "new_checkpoint": "E:\\SelfSurpervisedSplineFitting\\outputs\\self_validation\\v16_keep_state_20260917_r1\\recovery.pt",
+  "synthetic_generator_checkpoint": "E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux_r2_joint_fast.pt",
+  "synthetic_source_k_range": [
+    4,
+    56
+  ],
+  "samples_per_k": 1,
+  "device": "cpu",
+  "summary": {
+    "synthetic_overall": {
+      "n": 53,
+      "old": {
+        "pass_rate": 0.8490566037735849,
+        "mse_mean": 8.403649206008694e-05,
+        "k_mean": 43.0
+      },
+      "new": {
+        "pass_rate": 0.8301886792452831,
+        "mse_mean": 7.922022318601561e-05,
+        "k_mean": 55.37735849056604
+      }
+    },
+    "synthetic_high_k_ge_45": {
+      "n": 12,
+      "old": {
+        "pass_rate": 0.3333333333333333,
+        "mse_mean": 0.0002453620862232639,
+        "k_mean": 56.0
+      },
+      "new": {
+        "pass_rate": 0.25,
+        "mse_mean": 0.0002840676141206481,
+        "k_mean": 56.0
+      }
+    },
+    "synthetic_k_56": {
+      "n": 1,
+      "old": {
+        "pass_rate": 0.0,
+        "mse_mean": 0.0009625442105996002,
+        "k_mean": 56.0
+      },
+      "new": {
+        "pass_rate": 0.0,
+        "mse_mean": 0.0009951544361516006,
+        "k_mean": 56.0
+      }
+    },
+    "real_by_dataset": {
+      "NaturalEarth": {
+        "n": 3,
+        "old": {
+          "pass_rate": 1.0,
+          "mse_mean": 2.709231958370235e-05,
+          "k_mean": 20.333333333333332
+        },
+        "new": {
+          "pass_rate": 1.0,
+          "mse_mean": 6.376432522377121e-06,
+          "k_mean": 54.333333333333336
+        }
+      },
+      "UJI": {
+        "n": 3,
+        "old": {
+          "pass_rate": 1.0,
+          "mse_mean": 2.5724657556581413e-05,
+          "k_mean": 15.0
+        },
+        "new": {
+          "pass_rate": 1.0,
+          "mse_mean": 4.870588209563602e-06,
+          "k_mean": 52.666666666666664
+        }
+      },
+      "USGS": {
+        "n": 3,
+        "old": {
+          "pass_rate": 1.0,
+          "mse_mean": 1.5095929677499733e-05,
+          "k_mean": 30.333333333333332
+        },
+        "new": {
+          "pass_rate": 1.0,
+          "mse_mean": 9.564214379096967e-06,
+          "k_mean": 54.666666666666664
+        }
+      }
+    }
+  },
+  "rows": [
+    {
+      "dataset": "Synthetic",
+      "case_id": "K4_seed9100000000",
+      "source_k": 4,
+      "synthetic_seed": 9100000000,
+      "old": {
+        "mse": 9.027170384825564e-06,
+        "k": 10
+      },
+      "new": {
+        "mse": 1.3810797245630032e-06,
+        "k": 53
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K5_seed9100100003",
+      "source_k": 5,
+      "synthetic_seed": 9100100003,
+      "old": {
+        "mse": 2.092037844653731e-05,
+        "k": 11
+      },
+      "new": {
+        "mse": 1.3006193597402087e-06,
+        "k": 53
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K6_seed9100200006",
+      "source_k": 6,
+      "synthetic_seed": 9100200006,
+      "old": {
+        "mse": 8.751755907950346e-05,
+        "k": 10
+      },
+      "new": {
+        "mse": 1.8791312769534848e-06,
+        "k": 53
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K7_seed9100300009",
+      "source_k": 7,
+      "synthetic_seed": 9100300009,
+      "old": {
+        "mse": 2.4788891910147498e-05,
+        "k": 14
+      },
+      "new": {
+        "mse": 1.6671855670078534e-06,
+        "k": 53
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K8_seed9100400012",
+      "source_k": 8,
+      "synthetic_seed": 9100400012,
+      "old": {
+        "mse": 8.928615771547313e-05,
+        "k": 14
+      },
+      "new": {
+        "mse": 1.7890053317458615e-06,
+        "k": 54
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K9_seed9100500015",
+      "source_k": 9,
+      "synthetic_seed": 9100500015,
+      "old": {
+        "mse": 1.7415527036366214e-05,
+        "k": 19
+      },
+      "new": {
+        "mse": 2.329933561482692e-06,
+        "k": 54
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K10_seed9100600018",
+      "source_k": 10,
+      "synthetic_seed": 9100600018,
+      "old": {
+        "mse": 3.8860904173223974e-05,
+        "k": 18
+      },
+      "new": {
+        "mse": 2.816251043881434e-06,
+        "k": 54
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K11_seed9100700021",
+      "source_k": 11,
+      "synthetic_seed": 9100700021,
+      "old": {
+        "mse": 4.741273709190491e-06,
+        "k": 25
+      },
+      "new": {
+        "mse": 2.3360720302041522e-06,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K12_seed9100800024",
+      "source_k": 12,
+      "synthetic_seed": 9100800024,
+      "old": {
+        "mse": 1.3200952838279805e-05,
+        "k": 25
+      },
+      "new": {
+        "mse": 3.88645993210942e-06,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K13_seed9100900027",
+      "source_k": 13,
+      "synthetic_seed": 9100900027,
+      "old": {
+        "mse": 2.0553663488542713e-05,
+        "k": 25
+      },
+      "new": {
+        "mse": 5.18522996984651e-06,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K14_seed9101000030",
+      "source_k": 14,
+      "synthetic_seed": 9101000030,
+      "old": {
+        "mse": 3.739270381821973e-05,
+        "k": 25
+      },
+      "new": {
+        "mse": 6.166435827449788e-06,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K15_seed9101100033",
+      "source_k": 15,
+      "synthetic_seed": 9101100033,
+      "old": {
+        "mse": 3.255416716561434e-05,
+        "k": 28
+      },
+      "new": {
+        "mse": 6.164925663992424e-06,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K16_seed9101200036",
+      "source_k": 16,
+      "synthetic_seed": 9101200036,
+      "old": {
+        "mse": 9.226318717239432e-06,
+        "k": 32
+      },
+      "new": {
+        "mse": 4.975851137959298e-06,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K17_seed9101300039",
+      "source_k": 17,
+      "synthetic_seed": 9101300039,
+      "old": {
+        "mse": 2.2096750461578026e-05,
+        "k": 33
+      },
+      "new": {
+        "mse": 5.7655386649061615e-06,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K18_seed9101400042",
+      "source_k": 18,
+      "synthetic_seed": 9101400042,
+      "old": {
+        "mse": 7.272264767733856e-05,
+        "k": 32
+      },
+      "new": {
+        "mse": 8.082982701788697e-06,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K19_seed9101500045",
+      "source_k": 19,
+      "synthetic_seed": 9101500045,
+      "old": {
+        "mse": 1.671847530299955e-05,
+        "k": 34
+      },
+      "new": {
+        "mse": 9.476325513180992e-06,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K20_seed9101600048",
+      "source_k": 20,
+      "synthetic_seed": 9101600048,
+      "old": {
+        "mse": 4.608759822085951e-05,
+        "k": 34
+      },
+      "new": {
+        "mse": 1.0730403880819585e-05,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K21_seed9101700051",
+      "source_k": 21,
+      "synthetic_seed": 9101700051,
+      "old": {
+        "mse": 3.435097061838734e-05,
+        "k": 39
+      },
+      "new": {
+        "mse": 1.5387268680346225e-05,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K22_seed9101800054",
+      "source_k": 22,
+      "synthetic_seed": 9101800054,
+      "old": {
+        "mse": 5.59785695413914e-05,
+        "k": 37
+      },
+      "new": {
+        "mse": 1.631853189303824e-05,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K23_seed9101900057",
+      "source_k": 23,
+      "synthetic_seed": 9101900057,
+      "old": {
+        "mse": 3.194508598220546e-05,
+        "k": 40
+      },
+      "new": {
+        "mse": 8.831803621828302e-06,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K24_seed9102000060",
+      "source_k": 24,
+      "synthetic_seed": 9102000060,
+      "old": {
+        "mse": 6.356741800771867e-05,
+        "k": 41
+      },
+      "new": {
+        "mse": 1.9010323518670904e-05,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K25_seed9102100063",
+      "source_k": 25,
+      "synthetic_seed": 9102100063,
+      "old": {
+        "mse": 3.3812552512610636e-05,
+        "k": 44
+      },
+      "new": {
+        "mse": 2.7131787565023002e-05,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K26_seed9102200066",
+      "source_k": 26,
+      "synthetic_seed": 9102200066,
+      "old": {
+        "mse": 3.4859461129088316e-05,
+        "k": 45
+      },
+      "new": {
+        "mse": 1.0270831981960025e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K27_seed9102300069",
+      "source_k": 27,
+      "synthetic_seed": 9102300069,
+      "old": {
+        "mse": 2.589187584088723e-05,
+        "k": 50
+      },
+      "new": {
+        "mse": 1.6770150228581813e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K28_seed9102400072",
+      "source_k": 28,
+      "synthetic_seed": 9102400072,
+      "old": {
+        "mse": 4.2993259162671914e-05,
+        "k": 46
+      },
+      "new": {
+        "mse": 2.138479892260252e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K29_seed9102500075",
+      "source_k": 29,
+      "synthetic_seed": 9102500075,
+      "old": {
+        "mse": 7.173676590825738e-05,
+        "k": 48
+      },
+      "new": {
+        "mse": 2.6498082273845186e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K30_seed9102600078",
+      "source_k": 30,
+      "synthetic_seed": 9102600078,
+      "old": {
+        "mse": 2.0988489711104472e-05,
+        "k": 53
+      },
+      "new": {
+        "mse": 1.886513356018277e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K31_seed9102700081",
+      "source_k": 31,
+      "synthetic_seed": 9102700081,
+      "old": {
+        "mse": 4.832068887950183e-05,
+        "k": 53
+      },
+      "new": {
+        "mse": 2.324624665908405e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K32_seed9102800084",
+      "source_k": 32,
+      "synthetic_seed": 9102800084,
+      "old": {
+        "mse": 6.531917121811849e-05,
+        "k": 52
+      },
+      "new": {
+        "mse": 2.470126153651672e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K33_seed9102900087",
+      "source_k": 33,
+      "synthetic_seed": 9102900087,
+      "old": {
+        "mse": 6.29287223494374e-05,
+        "k": 54
+      },
+      "new": {
+        "mse": 3.815213687430721e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K34_seed9103000090",
+      "source_k": 34,
+      "synthetic_seed": 9103000090,
+      "old": {
+        "mse": 2.048131239157346e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 2.576477485288092e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K35_seed9103100093",
+      "source_k": 35,
+      "synthetic_seed": 9103100093,
+      "old": {
+        "mse": 1.7886670684932777e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 3.1012716985138335e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K36_seed9103200096",
+      "source_k": 36,
+      "synthetic_seed": 9103200096,
+      "old": {
+        "mse": 3.075317373090434e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 3.989529877261672e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K37_seed9103300099",
+      "source_k": 37,
+      "synthetic_seed": 9103300099,
+      "old": {
+        "mse": 2.119932135597565e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 3.0850691799406976e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K38_seed9103400102",
+      "source_k": 38,
+      "synthetic_seed": 9103400102,
+      "old": {
+        "mse": 3.45952575661551e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 4.263847735022821e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K39_seed9103500105",
+      "source_k": 39,
+      "synthetic_seed": 9103500105,
+      "old": {
+        "mse": 3.429753053506859e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 3.651920355232891e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K40_seed9103600108",
+      "source_k": 40,
+      "synthetic_seed": 9103600108,
+      "old": {
+        "mse": 4.191114718754671e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 4.1297022719388445e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K41_seed9103700111",
+      "source_k": 41,
+      "synthetic_seed": 9103700111,
+      "old": {
+        "mse": 4.0341944642186514e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 4.4463738484543906e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K42_seed9103800114",
+      "source_k": 42,
+      "synthetic_seed": 9103800114,
+      "old": {
+        "mse": 4.3005751686239226e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 5.131860949782017e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K43_seed9103900117",
+      "source_k": 43,
+      "synthetic_seed": 9103900117,
+      "old": {
+        "mse": 3.3216387655657556e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 4.436164158873613e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K44_seed9104000120",
+      "source_k": 44,
+      "synthetic_seed": 9104000120,
+      "old": {
+        "mse": 3.6096376061880964e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 5.923649530434295e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K45_seed9104100123",
+      "source_k": 45,
+      "synthetic_seed": 9104100123,
+      "old": {
+        "mse": 6.804588658503568e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 8.515621194476536e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K46_seed9104200126",
+      "source_k": 46,
+      "synthetic_seed": 9104200126,
+      "old": {
+        "mse": 6.16314993464469e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 7.671775718378519e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K47_seed9104300129",
+      "source_k": 47,
+      "synthetic_seed": 9104300129,
+      "old": {
+        "mse": 8.379417512119455e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 9.37621788726929e-05,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K48_seed9104400132",
+      "source_k": 48,
+      "synthetic_seed": 9104400132,
+      "old": {
+        "mse": 0.00012809447258195497,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.00011298069837399864,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K49_seed9104500135",
+      "source_k": 49,
+      "synthetic_seed": 9104500135,
+      "old": {
+        "mse": 9.12364530781062e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0001079868164556777,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K50_seed9104600138",
+      "source_k": 50,
+      "synthetic_seed": 9104600138,
+      "old": {
+        "mse": 0.0001531649130488082,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.00014399343636638137,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K51_seed9104700141",
+      "source_k": 51,
+      "synthetic_seed": 9104700141,
+      "old": {
+        "mse": 0.00010153986771567128,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.00011367839882146563,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K52_seed9104800144",
+      "source_k": 52,
+      "synthetic_seed": 9104800144,
+      "old": {
+        "mse": 0.00017561082725735204,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.00044166982847614506,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K53_seed9104900147",
+      "source_k": 53,
+      "synthetic_seed": 9104900147,
+      "old": {
+        "mse": 0.00014854478403669176,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.00016545449472316046,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K54_seed9105000150",
+      "source_k": 54,
+      "synthetic_seed": 9105000150,
+      "old": {
+        "mse": 0.0005463923183212468,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0006106704980280729,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K55_seed9105100153",
+      "source_k": 55,
+      "synthetic_seed": 9105100153,
+      "old": {
+        "mse": 0.00042374562698705765,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0004615866140500311,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K56_seed9105200156",
+      "source_k": 56,
+      "synthetic_seed": 9105200156,
+      "old": {
+        "mse": 0.0009625442105996002,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0009951544361516006,
+        "k": 56
+      }
+    },
+    {
+      "dataset": "UJI",
+      "case_id": "uji2_06304_stroke_00",
+      "source_k": null,
+      "manifest": "E:\\SelfSurpervisedSplineFitting\\data\\splits\\uji_pen_v2.jsonl",
+      "old": {
+        "mse": 1.3821201347971318e-05,
+        "k": 16
+      },
+      "new": {
+        "mse": 1.0165810476109165e-05,
+        "k": 54
+      }
+    },
+    {
+      "dataset": "UJI",
+      "case_id": "uji2_02632_stroke_00",
+      "source_k": null,
+      "manifest": "E:\\SelfSurpervisedSplineFitting\\data\\splits\\uji_pen_v2.jsonl",
+      "old": {
+        "mse": 2.2897872655886142e-05,
+        "k": 11
+      },
+      "new": {
+        "mse": 8.778423723330014e-07,
+        "k": 51
+      }
+    },
+    {
+      "dataset": "UJI",
+      "case_id": "uji2_02990_stroke_00",
+      "source_k": null,
+      "manifest": "E:\\SelfSurpervisedSplineFitting\\data\\splits\\uji_pen_v2.jsonl",
+      "old": {
+        "mse": 4.0454898665886785e-05,
+        "k": 18
+      },
+      "new": {
+        "mse": 3.568111780248637e-06,
+        "k": 53
+      }
+    },
+    {
+      "dataset": "NaturalEarth",
+      "case_id": "natural_earth_10m_coastline_3968ebb9c6c1_w000_3968ebb9",
+      "source_k": null,
+      "manifest": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\natural_earth\\v5.1.2_10m_coastline\\manifest.jsonl",
+      "old": {
+        "mse": 1.549734976287181e-05,
+        "k": 17
+      },
+      "new": {
+        "mse": 4.724505652683763e-06,
+        "k": 53
+      }
+    },
+    {
+      "dataset": "NaturalEarth",
+      "case_id": "natural_earth_10m_coastline_87158938c2cd_w000_87158938",
+      "source_k": null,
+      "manifest": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\natural_earth\\v5.1.2_10m_coastline\\manifest.jsonl",
+      "old": {
+        "mse": 3.038604173859888e-05,
+        "k": 22
+      },
+      "new": {
+        "mse": 9.050368583593398e-06,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "NaturalEarth",
+      "case_id": "natural_earth_10m_coastline_2cba5cb6cc55_w000_2cba5cb6",
+      "source_k": null,
+      "manifest": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\natural_earth\\v5.1.2_10m_coastline\\manifest.jsonl",
+      "old": {
+        "mse": 3.539356724963636e-05,
+        "k": 22
+      },
+      "new": {
+        "mse": 5.354423330854201e-06,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "USGS",
+      "case_id": "usgs_tnm_contours_large_scale_2c44653fffbc_w000_5bf90cde",
+      "source_k": null,
+      "manifest": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\usgs_contours\\large_scale\\manifest.jsonl",
+      "old": {
+        "mse": 1.323462942630346e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 1.6208777739333077e-05,
+        "k": 55
+      }
+    },
+    {
+      "dataset": "USGS",
+      "case_id": "usgs_tnm_contours_large_scale_bbf98d323d7e_w000_bbf98d32",
+      "source_k": null,
+      "manifest": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\usgs_contours\\large_scale\\manifest.jsonl",
+      "old": {
+        "mse": 1.0956573487269066e-05,
+        "k": 17
+      },
+      "new": {
+        "mse": 2.409271091849746e-06,
+        "k": 54
+      }
+    },
+    {
+      "dataset": "USGS",
+      "case_id": "usgs_tnm_contours_large_scale_c6657b1a7ae8_w000_c6657b1a",
+      "source_k": null,
+      "manifest": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\usgs_contours\\large_scale\\manifest.jsonl",
+      "old": {
+        "mse": 2.1096586118926674e-05,
+        "k": 18
+      },
+      "new": {
+        "mse": 1.0074594306108075e-05,
+        "k": 55
+      }
+    }
+  ]
+}

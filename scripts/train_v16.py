@@ -61,6 +61,9 @@ from spline_fitting.training.v16_feasible_teacher import (
 
 V16_CHECKPOINT_SELECTION = V16_CHECKPOINT_SELECTION_CONTRACT
 V16_OFFLINE_LOSS_SEMANTICS_REVISION = "offline_teacher_proposal_frame_positions_v2"
+V16_SMALL_MEDIUM_SYNTHETIC_CONTRACT = (
+    "certified_source_subset_threshold_minimal_k4_20_kc24_span001_v1"
+)
 
 
 class IndexedTrainingDataset(Dataset):
@@ -80,6 +83,10 @@ class IndexedTrainingDataset(Dataset):
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument(
+        "--study-scope", choices=("legacy", "small_medium_k24"), default="legacy",
+        help="Use an explicit independent K=4..20, Kc=24 study contract",
+    )
     p.add_argument("--epochs", type=int, default=128, help="Total proposal plus joint epochs")
     p.add_argument(
         "--proposal-epochs", type=int, default=64,
@@ -512,6 +519,22 @@ def validate_args(args):
         > args.val_size
     ):
         raise ValueError("synthetic boundary and high-K validation samples exceed val-size")
+    if args.study_scope == "small_medium_k24":
+        if (args.min_control_points, args.max_control_points, args.candidate_knots) != (8, 24, 24):
+            raise ValueError(
+                "small_medium_k24 requires source control points 8..24 "
+                "(source K=4..20) and candidate-knots 24"
+            )
+        if (args.proposal_high_k_fraction != 0.0 or args.joint_high_k_fraction != 0.0
+                or args.synthetic_high_k_val_size != 0):
+            raise ValueError(
+                "small_medium_k24 requires proposal-high-k-fraction 0, "
+                "joint-high-k-fraction 0 and synthetic-high-k-val-size 0"
+            )
+        if args.knot_min_span != 0.01 or not args.certified_minimal_source:
+            raise ValueError(
+                "small_medium_k24 requires knot-min-span 0.01 and certified minimal sources"
+            )
     if not 1 <= args.candidate_knots <= args.num_points - 4:
         raise ValueError("candidate-knots must be between 1 and num-points - 4")
     if (
@@ -1748,6 +1771,15 @@ def training_update_budget(args, *, start_epoch=1):
     }
 
 
+def synthetic_data_contract(args):
+    """Keep this small/medium study distinct from the historical K=4..56 label."""
+    if not args.certified_minimal_source:
+        return "random_source_uncertified"
+    if args.study_scope == "small_medium_k24":
+        return V16_SMALL_MEDIUM_SYNTHETIC_CONTRACT
+    return V16_CERTIFIED_SYNTHETIC_CONTRACT
+
+
 def main(argv=None):
     p = parser()
     args = p.parse_args(argv)
@@ -1886,18 +1918,14 @@ def main(argv=None):
                 "resume checkpoint uses an older simplification contract; "
                 "start a new run or use --init-checkpoint"
             )
-        expected_synthetic_contract = (
-            V16_CERTIFIED_SYNTHETIC_CONTRACT
-            if args.certified_minimal_source
-            else "random_source_uncertified"
-        )
+        expected_synthetic_contract = synthetic_data_contract(args)
         if (
             resume_payload.get("synthetic_data_contract")
             != expected_synthetic_contract
         ):
             p.error(
-                "resume checkpoint uses an older synthetic source-range "
-                "contract; start a new K=4..56 run or use --init-checkpoint "
+                "resume checkpoint uses a different synthetic source-range "
+                "contract; start a new run in the requested study scope or use --init-checkpoint "
                 "for proposal-only transfer"
             )
         ignored = {"epochs", "resume", "init_checkpoint", "init_full_checkpoint", "output", "device", "num_workers",
@@ -1913,6 +1941,7 @@ def main(argv=None):
         # Perform this migration automatically so unattended/overnight resume
         # commands do not need to know which refinement fields postdate them.
         legacy_refinement_defaults = {
+            "study_scope": "legacy",
             "teacher_low_count_sweep": 0,
             "synthetic_count_role": "exact",
             "synthetic_geometry_oracle_teacher": False,
@@ -2373,6 +2402,7 @@ def main(argv=None):
         )
         initial_payload = dict(
             objective_version=run_objective_version,
+            study_scope=args.study_scope,
             loss_semantics_revision=run_loss_semantics_revision,
             loss_semantics_migration=loss_semantics_migration,
             model_config=model.get_config(),
@@ -2394,10 +2424,7 @@ def main(argv=None):
             optimizer_state_dict=optimizer.state_dict(),
             rng_state=torch.get_rng_state(),
             cuda_rng_state=(torch.cuda.get_rng_state_all() if device.type == "cuda" else []),
-            synthetic_data_contract=(
-                V16_CERTIFIED_SYNTHETIC_CONTRACT
-                if args.certified_minimal_source else "random_source_uncertified"
-            ),
+            synthetic_data_contract=synthetic_data_contract(args),
         )
         atomic_save(initial_payload, initial_path)
         initial_proposal_payload = dict(
@@ -2799,6 +2826,7 @@ def main(argv=None):
             tolerance=args.mse_tolerance,
         )
         payload = dict(objective_version=run_objective_version,
+            study_scope=args.study_scope,
             loss_semantics_revision=run_loss_semantics_revision,
             loss_semantics_migration=loss_semantics_migration,
             model_config=model.get_config(), model_state_dict={k:v.detach().cpu() for k,v in model.state_dict().items()},
@@ -2835,11 +2863,7 @@ def main(argv=None):
                 )
             ),
             real_data_provenance=provenance, validation_real_ids=validation.selected_real_ids,
-            synthetic_data_contract=(
-                V16_CERTIFIED_SYNTHETIC_CONTRACT
-                if args.certified_minimal_source
-                else "random_source_uncertified"
-            ),
+            synthetic_data_contract=synthetic_data_contract(args),
             validation_metrics=measured, train_metrics=train_metrics,
             best_joint_rank=best_rank, best_proposal_rank=proposal_rank, proposal_ready=proposal_ready,
             proposal_best_path=str(proposal_path),
