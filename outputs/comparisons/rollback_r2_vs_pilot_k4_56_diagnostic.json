@@ -1,0 +1,800 @@
+{
+  "protocol": "native_one_shot_one_standard_bspline_refit_no_verified_or_hard_repair",
+  "mse_definition": "mean squared Euclidean distance at the observed ordered points",
+  "mse_tolerance": 0.0001,
+  "old_checkpoint": "E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux_r2_joint_fast.pt",
+  "new_checkpoint": "E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse1e-4_pilot_sourcek44_kc56_linux_r1.pt",
+  "synthetic_generator_checkpoint": "E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16_mse1e-4_k56_ordered_highk_softcost_linux_r2_joint_fast.pt",
+  "synthetic_source_k_range": [
+    4,
+    56
+  ],
+  "samples_per_k": 1,
+  "device": "cpu",
+  "summary": {
+    "synthetic_overall": {
+      "n": 53,
+      "old": {
+        "pass_rate": 0.8301886792452831,
+        "mse_mean": 7.401485979982823e-05,
+        "k_mean": 43.0
+      },
+      "new": {
+        "pass_rate": 0.0,
+        "mse_mean": 0.001818617821759303,
+        "k_mean": 32.64150943396226
+      }
+    },
+    "synthetic_high_k_ge_45": {
+      "n": 12,
+      "old": {
+        "pass_rate": 0.25,
+        "mse_mean": 0.0002219859801542106,
+        "k_mean": 56.0
+      },
+      "new": {
+        "pass_rate": 0.0,
+        "mse_mean": 0.0023624943031783775,
+        "k_mean": 45.916666666666664
+      }
+    },
+    "synthetic_k_56": {
+      "n": 1,
+      "old": {
+        "pass_rate": 0.0,
+        "mse_mean": 0.0009754591915711354,
+        "k_mean": 56.0
+      },
+      "new": {
+        "pass_rate": 0.0,
+        "mse_mean": 0.0030431947303819658,
+        "k_mean": 47.0
+      }
+    },
+    "real_by_dataset": {}
+  },
+  "rows": [
+    {
+      "dataset": "Synthetic",
+      "case_id": "K4_seed9000000000",
+      "source_k": 4,
+      "synthetic_seed": 9000000000,
+      "old": {
+        "mse": 1.3843018943318025e-05,
+        "k": 12
+      },
+      "new": {
+        "mse": 0.0002550661658628898,
+        "k": 10
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K5_seed9000100003",
+      "source_k": 5,
+      "synthetic_seed": 9000100003,
+      "old": {
+        "mse": 1.8166976232703744e-05,
+        "k": 9
+      },
+      "new": {
+        "mse": 0.0005270527161180932,
+        "k": 12
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K6_seed9000200006",
+      "source_k": 6,
+      "synthetic_seed": 9000200006,
+      "old": {
+        "mse": 1.7123258320024857e-05,
+        "k": 12
+      },
+      "new": {
+        "mse": 0.0018162566240040063,
+        "k": 10
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K7_seed9000300009",
+      "source_k": 7,
+      "synthetic_seed": 9000300009,
+      "old": {
+        "mse": 1.3025425046597257e-05,
+        "k": 16
+      },
+      "new": {
+        "mse": 0.0008090336484223924,
+        "k": 12
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K8_seed9000400012",
+      "source_k": 8,
+      "synthetic_seed": 9000400012,
+      "old": {
+        "mse": 1.2040650041352375e-05,
+        "k": 16
+      },
+      "new": {
+        "mse": 0.001879155368252253,
+        "k": 11
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K9_seed9000500015",
+      "source_k": 9,
+      "synthetic_seed": 9000500015,
+      "old": {
+        "mse": 2.0308108568785177e-05,
+        "k": 15
+      },
+      "new": {
+        "mse": 0.001909426614472814,
+        "k": 15
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K10_seed9000600018",
+      "source_k": 10,
+      "synthetic_seed": 9000600018,
+      "old": {
+        "mse": 1.4251111590855511e-05,
+        "k": 19
+      },
+      "new": {
+        "mse": 0.0021055214128641877,
+        "k": 14
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K11_seed9000700021",
+      "source_k": 11,
+      "synthetic_seed": 9000700021,
+      "old": {
+        "mse": 1.673660224951478e-05,
+        "k": 22
+      },
+      "new": {
+        "mse": 0.0014948471358680116,
+        "k": 17
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K12_seed9000800024",
+      "source_k": 12,
+      "synthetic_seed": 9000800024,
+      "old": {
+        "mse": 2.482440989118808e-05,
+        "k": 22
+      },
+      "new": {
+        "mse": 0.002111688288729694,
+        "k": 17
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K13_seed9000900027",
+      "source_k": 13,
+      "synthetic_seed": 9000900027,
+      "old": {
+        "mse": 1.0477560293494919e-05,
+        "k": 26
+      },
+      "new": {
+        "mse": 0.002720421223397409,
+        "k": 19
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K14_seed9001000030",
+      "source_k": 14,
+      "synthetic_seed": 9001000030,
+      "old": {
+        "mse": 1.2964306639125053e-05,
+        "k": 29
+      },
+      "new": {
+        "mse": 0.0019121119082714964,
+        "k": 19
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K15_seed9001100033",
+      "source_k": 15,
+      "synthetic_seed": 9001100033,
+      "old": {
+        "mse": 2.6710616060122326e-05,
+        "k": 27
+      },
+      "new": {
+        "mse": 0.0021063015297027275,
+        "k": 22
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K16_seed9001200036",
+      "source_k": 16,
+      "synthetic_seed": 9001200036,
+      "old": {
+        "mse": 1.9194248816611882e-05,
+        "k": 31
+      },
+      "new": {
+        "mse": 0.0016928649669500494,
+        "k": 22
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K17_seed9001300039",
+      "source_k": 17,
+      "synthetic_seed": 9001300039,
+      "old": {
+        "mse": 2.2606417019941538e-05,
+        "k": 31
+      },
+      "new": {
+        "mse": 0.0018218897535933435,
+        "k": 23
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K18_seed9001400042",
+      "source_k": 18,
+      "synthetic_seed": 9001400042,
+      "old": {
+        "mse": 1.2666024067922773e-05,
+        "k": 34
+      },
+      "new": {
+        "mse": 0.0021411393635547087,
+        "k": 22
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K19_seed9001500045",
+      "source_k": 19,
+      "synthetic_seed": 9001500045,
+      "old": {
+        "mse": 2.7810249343668335e-05,
+        "k": 33
+      },
+      "new": {
+        "mse": 0.0016659872251256916,
+        "k": 25
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K20_seed9001600048",
+      "source_k": 20,
+      "synthetic_seed": 9001600048,
+      "old": {
+        "mse": 4.421712858606543e-05,
+        "k": 36
+      },
+      "new": {
+        "mse": 0.001867163902028737,
+        "k": 26
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K21_seed9001700051",
+      "source_k": 21,
+      "synthetic_seed": 9001700051,
+      "old": {
+        "mse": 5.0260485145346886e-05,
+        "k": 37
+      },
+      "new": {
+        "mse": 0.0023406547438509996,
+        "k": 26
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K22_seed9001800054",
+      "source_k": 22,
+      "synthetic_seed": 9001800054,
+      "old": {
+        "mse": 1.9035624991377235e-05,
+        "k": 39
+      },
+      "new": {
+        "mse": 0.002995575594124863,
+        "k": 22
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K23_seed9001900057",
+      "source_k": 23,
+      "synthetic_seed": 9001900057,
+      "old": {
+        "mse": 2.4121930930028585e-05,
+        "k": 43
+      },
+      "new": {
+        "mse": 0.0014928695568599756,
+        "k": 26
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K24_seed9002000060",
+      "source_k": 24,
+      "synthetic_seed": 9002000060,
+      "old": {
+        "mse": 2.472743336539325e-05,
+        "k": 42
+      },
+      "new": {
+        "mse": 0.0018239418435576874,
+        "k": 27
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K25_seed9002100063",
+      "source_k": 25,
+      "synthetic_seed": 9002100063,
+      "old": {
+        "mse": 1.7682059424359735e-05,
+        "k": 43
+      },
+      "new": {
+        "mse": 0.0020593225629334496,
+        "k": 29
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K26_seed9002200066",
+      "source_k": 26,
+      "synthetic_seed": 9002200066,
+      "old": {
+        "mse": 2.1759061631250535e-05,
+        "k": 45
+      },
+      "new": {
+        "mse": 0.0014880778675233047,
+        "k": 29
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K27_seed9002300069",
+      "source_k": 27,
+      "synthetic_seed": 9002300069,
+      "old": {
+        "mse": 2.849269536836419e-05,
+        "k": 48
+      },
+      "new": {
+        "mse": 0.001193275912057166,
+        "k": 33
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K28_seed9002400072",
+      "source_k": 28,
+      "synthetic_seed": 9002400072,
+      "old": {
+        "mse": 4.8810365901056045e-05,
+        "k": 48
+      },
+      "new": {
+        "mse": 0.001781154644609785,
+        "k": 34
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K29_seed9002500075",
+      "source_k": 29,
+      "synthetic_seed": 9002500075,
+      "old": {
+        "mse": 3.61152268021381e-05,
+        "k": 49
+      },
+      "new": {
+        "mse": 0.0017191361613239683,
+        "k": 33
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K30_seed9002600078",
+      "source_k": 30,
+      "synthetic_seed": 9002600078,
+      "old": {
+        "mse": 2.0303973144997092e-05,
+        "k": 53
+      },
+      "new": {
+        "mse": 0.0014865670409578945,
+        "k": 35
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K31_seed9002700081",
+      "source_k": 31,
+      "synthetic_seed": 9002700081,
+      "old": {
+        "mse": 6.994359520637993e-05,
+        "k": 51
+      },
+      "new": {
+        "mse": 0.002000732496549286,
+        "k": 37
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K32_seed9002800084",
+      "source_k": 32,
+      "synthetic_seed": 9002800084,
+      "old": {
+        "mse": 5.203296680419925e-05,
+        "k": 52
+      },
+      "new": {
+        "mse": 0.0016513959125454604,
+        "k": 36
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K33_seed9002900087",
+      "source_k": 33,
+      "synthetic_seed": 9002900087,
+      "old": {
+        "mse": 6.343433442074533e-05,
+        "k": 52
+      },
+      "new": {
+        "mse": 0.0014245797134951861,
+        "k": 39
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K34_seed9003000090",
+      "source_k": 34,
+      "synthetic_seed": 9003000090,
+      "old": {
+        "mse": 1.674728884076146e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0016825462587385168,
+        "k": 41
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K35_seed9003100093",
+      "source_k": 35,
+      "synthetic_seed": 9003100093,
+      "old": {
+        "mse": 3.659923869776767e-05,
+        "k": 55
+      },
+      "new": {
+        "mse": 0.0014610415353040293,
+        "k": 40
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K36_seed9003200096",
+      "source_k": 36,
+      "synthetic_seed": 9003200096,
+      "old": {
+        "mse": 2.4516776441020694e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0007325309217171288,
+        "k": 42
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K37_seed9003300099",
+      "source_k": 37,
+      "synthetic_seed": 9003300099,
+      "old": {
+        "mse": 3.3848482647129e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0011763999526332996,
+        "k": 43
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K38_seed9003400102",
+      "source_k": 38,
+      "synthetic_seed": 9003400102,
+      "old": {
+        "mse": 4.185186322773316e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0015454315269000883,
+        "k": 43
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K39_seed9003500105",
+      "source_k": 39,
+      "synthetic_seed": 9003500105,
+      "old": {
+        "mse": 4.099886909265647e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0013251533567468978,
+        "k": 44
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K40_seed9003600108",
+      "source_k": 40,
+      "synthetic_seed": 9003600108,
+      "old": {
+        "mse": 2.663883428453365e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.001574202293983169,
+        "k": 45
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K41_seed9003700111",
+      "source_k": 41,
+      "synthetic_seed": 9003700111,
+      "old": {
+        "mse": 5.937992253748951e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0017670772428868085,
+        "k": 44
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K42_seed9003800114",
+      "source_k": 42,
+      "synthetic_seed": 9003800114,
+      "old": {
+        "mse": 4.9965516009505246e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.001802361029867487,
+        "k": 42
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K43_seed9003900117",
+      "source_k": 43,
+      "synthetic_seed": 9003900117,
+      "old": {
+        "mse": 5.7090057502474235e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0013152147094121723,
+        "k": 47
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K44_seed9004000120",
+      "source_k": 44,
+      "synthetic_seed": 9004000120,
+      "old": {
+        "mse": 6.763309341236959e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.001361642189305406,
+        "k": 46
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K45_seed9004100123",
+      "source_k": 45,
+      "synthetic_seed": 9004100123,
+      "old": {
+        "mse": 6.219471388139499e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0015529566042187916,
+        "k": 46
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K46_seed9004200126",
+      "source_k": 46,
+      "synthetic_seed": 9004200126,
+      "old": {
+        "mse": 6.321979937242073e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0015066990490007204,
+        "k": 47
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K47_seed9004300129",
+      "source_k": 47,
+      "synthetic_seed": 9004300129,
+      "old": {
+        "mse": 8.169216862163944e-05,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0012597735496389186,
+        "k": 47
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K48_seed9004400132",
+      "source_k": 48,
+      "synthetic_seed": 9004400132,
+      "old": {
+        "mse": 0.00013352962172462007,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0025782648922244265,
+        "k": 44
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K49_seed9004500135",
+      "source_k": 49,
+      "synthetic_seed": 9004500135,
+      "old": {
+        "mse": 0.00012077452144015366,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.002179823900534198,
+        "k": 46
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K50_seed9004600138",
+      "source_k": 50,
+      "synthetic_seed": 9004600138,
+      "old": {
+        "mse": 0.0001563677387486497,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.002010883477026041,
+        "k": 48
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K51_seed9004700141",
+      "source_k": 51,
+      "synthetic_seed": 9004700141,
+      "old": {
+        "mse": 0.00020534413505999367,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0025983673511845444,
+        "k": 46
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K52_seed9004800144",
+      "source_k": 52,
+      "synthetic_seed": 9004800144,
+      "old": {
+        "mse": 0.0002469002389255004,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0027047488566811547,
+        "k": 45
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K53_seed9004900147",
+      "source_k": 53,
+      "synthetic_seed": 9004900147,
+      "old": {
+        "mse": 0.00013645116343493895,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.002613594201050544,
+        "k": 45
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K54_seed9005000150",
+      "source_k": 54,
+      "synthetic_seed": 9005000150,
+      "old": {
+        "mse": 0.00014905800126967223,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.003278800396388323,
+        "k": 44
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K55_seed9005100153",
+      "source_k": 55,
+      "synthetic_seed": 9005100153,
+      "old": {
+        "mse": 0.0003328404678004081,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0030228246298109017,
+        "k": 46
+      }
+    },
+    {
+      "dataset": "Synthetic",
+      "case_id": "K56_seed9005200156",
+      "source_k": 56,
+      "synthetic_seed": 9005200156,
+      "old": {
+        "mse": 0.0009754591915711354,
+        "k": 56
+      },
+      "new": {
+        "mse": 0.0030431947303819658,
+        "k": 47
+      }
+    }
+  ]
+}

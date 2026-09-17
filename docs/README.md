@@ -8,6 +8,7 @@
 
 1. [当前 v16 可行子集教师：数据流、训练、部署与 Linux 指令](v16_feasible_teacher_workflow.md)
 2. [KeepMask 交换监督与高 K 分层诊断：新 Linux 一条龙](v16_keep_swap_highk.md)
+   [历史 r2 同口径回退与短训验证](v16_r2_rollback_fast.md)是独立诊断，不替换当前主线。
 3. [Kc=56 快速诊断：短流程、超范围压力测试与命令](v16_kc56_fast_pilot.md)
 4. [算法与张量流](architecture.md)
 5. [数学定义](math_formulation.md)

@@ -9,6 +9,7 @@ outputs/v16_smoke/
 outputs/tmp/
 outputs/test_tmp*/
 outputs/archive/recoverable_cleanup_*/
+outputs/rollback_v16_r2_source/
 data/raw/
 data/processed/
 data/splits/*.jsonl

@@ -140,6 +140,7 @@ python scripts/fit_v16_point_cloud.py `
 
 - [当前 v16 可行教师工作流与 Linux 指令](docs/v16_feasible_teacher_workflow.md)
 - [KeepMask 交换监督与高 K 分层诊断](docs/v16_keep_swap_highk.md)
+- [历史 r2 同口径回退与短训验证](docs/v16_r2_rollback_fast.md)
 - [旧 supervised-only 训练流程](docs/training_pipeline.md)
 - [细粒度合成教师与新增监督](docs/v16_fine_grained_supervision.md)
 - [工业型线等距线数据集](docs/industrial_offset_dataset.md)
