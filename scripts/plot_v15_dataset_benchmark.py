@@ -80,7 +80,7 @@ def read_report(path: Path) -> dict:
         pairs.add(pair)
         if row["method"] not in METHODS:
             raise ValueError(f"Unsupported method: {row['method']}")
-        for key in ("mse_mean", "reference_mse_mean", "total_ms_mean", "network_ms_mean"):
+        for key in ("mse_mean", "reference_mse_mean", "final_k_mean", "canonical_k_mean", "total_ms_mean", "network_ms_mean"):
             value = row.get(key)
             if value is not None and (not math.isfinite(value) or value < 0):
                 raise ValueError(f"Invalid {key} for {pair}: {value}")
@@ -121,6 +121,13 @@ def _network_caption(index: dict, datasets: list[str]) -> str:
     )
 
 
+def _diagnostic_label(metadata: dict) -> str:
+    qualification = metadata.get("checkpoint_qualification") or {}
+    if metadata.get("configuration", {}).get("force_diagnostic") and qualification.get("formal_reporting_eligible"):
+        return "DIAGNOSTIC NOT FINAL — REDUCED BENCHMARK PROTOCOL"
+    return "DIAGNOSTIC NOT FINAL — CHECKPOINT / PROTOCOL NOT QUALIFIED"
+
+
 def render_report(report: dict, output_dir: Path, *, dpi: int = 220, reference: bool = False) -> Path | None:
     """Plot summary values without rescaling reported MSE or hiding failures."""
     metadata, rows = report["metadata"], report["summary"]
@@ -156,7 +163,7 @@ def render_report(report: dict, output_dir: Path, *, dpi: int = 220, reference: 
         fig.text(0.5, 0.914, subtitle, ha="center", fontsize=11.5, color="#444444")
         if diagnostic:
             fig.text(
-                0.5, 0.5, "DIAGNOSTIC NOT FINAL — UNQUALIFIED CHECKPOINT",
+                0.5, 0.5, _diagnostic_label(metadata),
                 ha="center", va="center", rotation=24, fontsize=30,
                 color="crimson", alpha=0.20, weight="bold", zorder=100,
             )

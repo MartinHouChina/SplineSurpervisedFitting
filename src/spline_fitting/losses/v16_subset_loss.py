@@ -113,6 +113,8 @@ class V16SubsetLoss(nn.Module):
         tail_weight: float = 0.5, tail_fraction: float = 0.2,
         solver_jitter: float = 1e-10, ranked_prefix_teacher: bool = True,
         teacher_prefix_search_steps: int = 7, knot_position_beta: float = 0.01,
+        teacher_refinement_steps: int = 0, teacher_refinement_candidates: int = 2,
+        boundary_ranking_weight: float = 0.0, boundary_ranking_candidates: int = 4,
     ) -> None:
         super().__init__()
         if not math.isfinite(mse_tolerance) or mse_tolerance <= 0:
@@ -120,6 +122,9 @@ class V16SubsetLoss(nn.Module):
         for name, value, minimum in (
             ("policy_samples", policy_samples, 2),
             ("counterfactual_edits", counterfactual_edits, 0),
+            ("teacher_refinement_steps", teacher_refinement_steps, 0),
+            ("teacher_refinement_candidates", teacher_refinement_candidates, 1),
+            ("boundary_ranking_candidates", boundary_ranking_candidates, 1),
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
                 raise ValueError(f"{name} must be an integer >= {minimum}")
@@ -127,6 +132,7 @@ class V16SubsetLoss(nn.Module):
             ("fit_weight", fit_weight), ("policy_weight", policy_weight),
             ("distillation_weight", distillation_weight), ("dense_weight", dense_weight),
             ("count_weight", count_weight), ("ranking_weight", ranking_weight),
+            ("boundary_ranking_weight", boundary_ranking_weight),
             ("supervised_count_weight", supervised_count_weight),
             ("supervised_over_count_weight", supervised_over_count_weight),
             ("true_parameter_weight", true_parameter_weight),
@@ -164,6 +170,9 @@ class V16SubsetLoss(nn.Module):
         self.ranked_prefix_teacher = ranked_prefix_teacher
         self.teacher_prefix_search_steps = teacher_prefix_search_steps
         self.knot_position_beta = float(knot_position_beta)
+        self.teacher_refinement_steps = teacher_refinement_steps
+        self.teacher_refinement_candidates = teacher_refinement_candidates
+        self.boundary_ranking_candidates = boundary_ranking_candidates
 
     @staticmethod
     def _validate_points(points: torch.Tensor, degree: int) -> None:
@@ -483,6 +492,168 @@ class V16SubsetLoss(nn.Module):
         best_mask = torch.where(any_feasible.unsqueeze(-1), selected, full_mask)
         best_mse = torch.where(any_feasible, selected_mse, full_mse)
         return best_mask, best_mse, any_feasible, len(evaluated_masks)
+
+    def _teacher_neighbor_masks(self, model, context, mask, probabilities, minimum):
+        """Bounded local edits of one frozen teacher, using actual constrained masks.
+
+        Each candidate rank supplies a removal, an addition and a genuine
+        equal-count swap. Unlike a removal, a swap is legal at minimum K.
+        This separate opt-in path leaves the historical counterfactual pool intact.
+        """
+        batch, capacity = mask.shape
+        columns = torch.arange(batch, device=mask.device)
+        counts = mask.sum(-1)
+        remove_order = probabilities.masked_fill(~mask, float("inf")).argsort(
+            dim=-1, stable=True,
+        )
+        add_order = probabilities.masked_fill(mask, -float("inf")).argsort(
+            dim=-1, descending=True, stable=True,
+        )
+        constrain = getattr(model, "constrain_selection_mask", None)
+        for rank in range(min(self.teacher_refinement_candidates, capacity)):
+            remove = remove_order[:, rank]
+            add = add_order[:, rank]
+            can_remove = mask[columns, remove]
+            can_add = ~mask[columns, add]
+            for kind in ("remove", "add", "swap"):
+                trial = mask.clone()
+                if kind == "remove":
+                    valid = can_remove & (counts > minimum)
+                    trial[columns[valid], remove[valid]] = False
+                elif kind == "add":
+                    trial[columns[can_add], add[can_add]] = True
+                else:
+                    valid = can_remove & can_add
+                    trial[columns[valid], remove[valid]] = False
+                    trial[columns[valid], add[valid]] = True
+                if callable(constrain):
+                    trial = constrain(context, trial)
+                if (
+                    not isinstance(trial, torch.Tensor)
+                    or trial.shape != mask.shape
+                    or trial.dtype != torch.bool
+                    or trial.device != mask.device
+                    or bool((trial.sum(-1) < minimum).any())
+                ):
+                    raise ValueError(
+                        "teacher refinement constraints must return boolean [B,K] "
+                        "masks respecting the deployment minimum"
+                    )
+                yield trial
+
+    @torch.no_grad()
+    def _refine_teacher(
+        self, model, context, best_mask, best_mse, probabilities,
+        points, degree, tolerance, minimum,
+    ):
+        """Refine a teacher with real subset decodes/refits, never policy draws.
+
+        A round compares all neighbors of its frozen incumbent, then accepts
+        only a feasible lexicographic (K, MSE) improvement. Infeasible fallback
+        rows retain their old teacher until a feasible alternative is found.
+        """
+        initial_mask = best_mask.clone()
+        initial_mse = best_mse.detach().clone()
+        best_mask = best_mask.detach()
+        best_mse = best_mse.detach()
+        evaluations = steps_used = 0
+        columns = torch.arange(best_mask.shape[0], device=best_mask.device)
+        for _ in range(self.teacher_refinement_steps):
+            compared_masks = [best_mask]
+            compared_mse = [best_mse]
+            for trial in self._teacher_neighbor_masks(
+                model, context, best_mask, probabilities.detach(), minimum,
+            ):
+                if any(torch.equal(trial, previous) for previous in compared_masks):
+                    continue
+                compared_masks.append(trial)
+                compared_mse.append(
+                    self._decode_mse(model, context, trial, points, degree)
+                )
+                evaluations += 1
+            if len(compared_masks) == 1:
+                break
+            steps_used += 1
+            masks = torch.stack(compared_masks)
+            mse = torch.stack(compared_mse)
+            selected, indices = select_best_subset(masks, mse, tolerance)
+            selected_mse = mse[indices, columns]
+            accept = (indices != 0) & (selected_mse <= tolerance)
+            if not bool(accept.any()):
+                break
+            best_mask = torch.where(accept.unsqueeze(-1), selected, best_mask)
+            best_mse = torch.where(accept, selected_mse, best_mse)
+        diagnostics = {
+            "teacher_refinement_evaluations": initial_mse.new_tensor(float(evaluations)),
+            "teacher_refinement_steps_used": initial_mse.new_tensor(float(steps_used)),
+            "teacher_refinement_improved_fraction": (
+                (best_mask != initial_mask).any(-1).double().mean()
+            ),
+            "teacher_refinement_count_reduction": (
+                initial_mask.sum(-1) - best_mask.sum(-1)
+            ).double().mean(),
+            "teacher_refinement_mse_gain": (initial_mse - best_mse).mean(),
+            "teacher_refinement_feasible_fraction": (best_mse <= tolerance).double().mean(),
+        }
+        return best_mask, best_mse, diagnostics
+
+    def _boundary_ranking_loss(self, logits, teacher_mask, teacher_feasible):
+        """Focus on the weakest kept and strongest rejected feasible-teacher slots.
+
+        This is ordinary differentiable ranking supervision of a real-refit
+        teacher, not a surrogate fit or a policy-gradient sample. The existing
+        all-pair objective remains unchanged. Infeasible full-set fallbacks
+        provide no reliable keep/reject boundary and are excluded.
+        """
+        candidates = min(self.boundary_ranking_candidates, logits.shape[1])
+        positive_indices = logits.detach().masked_fill(
+            ~teacher_mask, float("inf"),
+        ).argsort(dim=-1, stable=True)[:, :candidates]
+        negative_indices = logits.detach().masked_fill(
+            teacher_mask, -float("inf"),
+        ).argsort(dim=-1, descending=True, stable=True)[:, :candidates]
+        positive_logits = logits.gather(1, positive_indices)
+        negative_logits = logits.gather(1, negative_indices)
+        valid_pairs = (
+            teacher_mask.gather(1, positive_indices).unsqueeze(-1)
+            & ~teacher_mask.gather(1, negative_indices).unsqueeze(-2)
+            & teacher_feasible[:, None, None]
+        )
+        if not bool(valid_pairs.any()):
+            return logits.sum() * 0.0
+        penalties = F.softplus(
+            self.ranking_margin - positive_logits.unsqueeze(-1)
+            + negative_logits.unsqueeze(-2)
+        )
+        # Average per eligible curve so changing its teacher K does not change
+        # that curve's influence merely by changing the number of valid pairs.
+        pair_counts = valid_pairs.sum(dim=(-1, -2))
+        per_curve = (penalties * valid_pairs).sum(dim=(-1, -2)) / pair_counts.clamp_min(1)
+        return per_curve[pair_counts > 0].mean()
+
+    @staticmethod
+    def _teacher_match_metrics(mask, teacher_mask, teacher_feasible):
+        """Micro keep/reject agreement against feasible online teachers only."""
+        valid = teacher_feasible.unsqueeze(-1)
+        true_positive = (mask & teacher_mask & valid).sum().double()
+        predicted = (mask & valid).sum().double()
+        target = (teacher_mask & valid).sum().double()
+        one = true_positive.new_ones(())
+        zero = true_positive.new_zeros(())
+        eligible = teacher_feasible.any()
+        precision = torch.where(predicted > 0, true_positive / predicted.clamp_min(1), one)
+        recall = torch.where(target > 0, true_positive / target.clamp_min(1), one)
+        f1 = torch.where(
+            predicted + target > 0,
+            2 * true_positive / (predicted + target).clamp_min(1), one,
+        )
+        return {
+            "teacher_keep_precision": torch.where(eligible, precision, zero),
+            "teacher_keep_recall": torch.where(eligible, recall, zero),
+            "teacher_keep_f1": torch.where(eligible, f1, zero),
+            "teacher_false_remove_rate": torch.where(eligible, 1 - recall, zero),
+            "teacher_match_valid_fraction": teacher_feasible.double().mean(),
+        }
 
     @staticmethod
     def _supervised_counts(
@@ -836,6 +1007,21 @@ class V16SubsetLoss(nn.Module):
         dense_mse = self._fit(context["proposal_params"], proposals, torch.ones_like(proposals, dtype=torch.bool), points, degree)
         dense_penalty = self._tail_aware_mean(self._fit_penalty(dense_mse, tolerance))
         zero = dense_mse.new_zeros(())
+        boundary_ranking_loss = zero
+        refinement_metrics = {
+            name: zero for name in (
+                "teacher_refinement_evaluations", "teacher_refinement_steps_used",
+                "teacher_refinement_improved_fraction",
+                "teacher_refinement_count_reduction", "teacher_refinement_mse_gain",
+                "teacher_refinement_feasible_fraction",
+            )
+        }
+        teacher_match_metrics = {
+            name: zero for name in (
+                "teacher_keep_precision", "teacher_keep_recall", "teacher_keep_f1",
+                "teacher_false_remove_rate", "teacher_match_valid_fraction",
+            )
+        }
         if stage == "proposal":
             loss = (
                 self.fit_weight * dense_penalty
@@ -987,6 +1173,15 @@ class V16SubsetLoss(nn.Module):
                     prefix_search_evaluations = dense_mse.new_tensor(
                         float(len(compared_masks))
                     )
+                if self.teacher_refinement_steps:
+                    best_mask, searched_best_mse, refinement_metrics = self._refine_teacher(
+                        model, context, best_mask, searched_best_mse,
+                        probabilities.detach(), points, degree, tolerance, minimum,
+                    )
+                teacher_feasible = searched_best_mse <= tolerance
+                teacher_match_metrics = self._teacher_match_metrics(
+                    mask, best_mask, teacher_feasible,
+                )
             # Re-decode the actual chosen set with gradients. Targets are from
             # this model/context, so relocation is trained for the selected set.
             best_mse = self._decode_mse(model, context, best_mask, points, degree)
@@ -1027,6 +1222,10 @@ class V16SubsetLoss(nn.Module):
             ranking_loss = (
                 pair_penalty[pair_mask].mean() if bool(pair_mask.any()) else zero
             )
+            if self.boundary_ranking_weight:
+                boundary_ranking_loss = self._boundary_ranking_loss(
+                    logits, best_mask, teacher_feasible,
+                )
             entropy = -(probabilities * F.logsigmoid(logits) + (1 - probabilities) * F.logsigmoid(-logits)).mean()
             # Complexity is earned only with a strict feasibility margin.  The
             # trainer additionally ramps ``complexity_scale`` after validation
@@ -1172,6 +1371,8 @@ class V16SubsetLoss(nn.Module):
                     * proposal_knot_coverage_loss
                     + self.selected_knot_position_weight
                     * selected_knot_position_loss)
+            if self.boundary_ranking_weight:
+                loss = loss + self.boundary_ranking_weight * boundary_ranking_loss
         if not torch.isfinite(loss):
             raise RuntimeError("non-finite v16 subset objective")
         metrics = {
@@ -1201,6 +1402,7 @@ class V16SubsetLoss(nn.Module):
             "selected_knot_nearest_mae": selected_knot_nearest_mae,
             "selected_to_true_knot_mae": selected_to_true_knot_mae,
             "teacher_ranking_loss": ranking_loss,
+            "teacher_boundary_ranking_loss": boundary_ranking_loss,
             "proposal_feasible_fraction": (dense_mse <= tolerance).double().mean(),
             "subset_best_mse": best_mse.mean(), "subset_best_count": best_count.mean(),
             "subset_best_pass_rate": (best_mse <= tolerance).double().mean(),
@@ -1208,5 +1410,7 @@ class V16SubsetLoss(nn.Module):
             "prefix_teacher_fallback_fraction": prefix_fallback_fraction,
             "prefix_teacher_search_evaluations": prefix_search_evaluations,
             "mask_entropy": entropy, "feasible_complexity_loss": complexity,
+            **refinement_metrics,
+            **teacher_match_metrics,
         }
         return loss, {name: value.detach() for name, value in metrics.items()}

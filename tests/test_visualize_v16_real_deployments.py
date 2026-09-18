@@ -122,8 +122,8 @@ def test_non_v16_checkpoint_is_never_accepted_as_diagnostic():
 
 
 def test_four_methods_have_distinct_curve_colors():
-    assert set(entry.PLOT_COLORS) == set(entry.METHODS)
-    assert len(set(entry.PLOT_COLORS.values())) == len(entry.METHODS)
+    assert set(entry.PLOT_COLORS) == set(entry.METHODS) | set(entry.PUBLISHED_METHODS)
+    assert len(set(entry.PLOT_COLORS.values())) == len(entry.PLOT_COLORS)
 
 
 def simple_case_and_result():

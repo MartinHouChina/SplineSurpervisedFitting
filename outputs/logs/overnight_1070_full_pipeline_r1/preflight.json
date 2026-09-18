@@ -1,0 +1,110 @@
+{
+  "python": "3.11.5",
+  "torch": "2.11.0+cu126",
+  "scipy": "1.15.3",
+  "matplotlib": "3.10.0",
+  "requested_device": "cuda",
+  "gpu": "NVIDIA GeForce RTX 3090",
+  "datasets": {
+    "UJI": {
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl",
+      "sha256": "4898bb855a862826f323f223f74e19f18234be435d81d41e02676edb9efbd1e9",
+      "test_curves": 6093,
+      "test_groups": 20
+    },
+    "NaturalEarth": {
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl",
+      "sha256": "1b35d2f8ee0d460566a47d6a9a99a3fe18327a7b06f90b7762e89059aaa837c1",
+      "test_curves": 533,
+      "test_groups": 102
+    },
+    "USGS": {
+      "manifest": "/home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl",
+      "sha256": "2178fadc65804840ecc09bb251730ca4046ba99814cd0e66f6d333970e60863f",
+      "test_curves": 1420,
+      "test_groups": 3
+    }
+  },
+  "warm_start": {
+    "path": "/home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/candidate_selection_v16.proposal.pt",
+    "sha256": "0e432a5a00a70aea1099f6e49edd3155e163ab8f881af48793e78a9144c5b562",
+    "epoch": 59,
+    "stage": "proposal",
+    "objective_version": "candidate_selection_counterfactual_bspline_v16",
+    "training_config": {
+      "epochs": 140,
+      "proposal_epochs": 80,
+      "train_size": 4000,
+      "val_size": 1000,
+      "real_val_size": 100,
+      "real_manifest": [
+        "E:\\SelfSurpervisedSplineFitting\\data\\splits\\uji_pen_v2.jsonl",
+        "E:\\SelfSurpervisedSplineFitting\\data\\processed\\natural_earth\\v5.1.2_10m_coastline\\manifest.jsonl",
+        "E:\\SelfSurpervisedSplineFitting\\data\\processed\\usgs_contours\\large_scale\\manifest.jsonl"
+      ],
+      "real_fraction": 0.5,
+      "batch_size": 8,
+      "num_points": 192,
+      "point_dim": 2,
+      "min_control_points": 8,
+      "max_control_points": 24,
+      "candidate_knots": 64,
+      "hidden_dim": 128,
+      "encoder_layers": 3,
+      "attention_heads": 4,
+      "selector_layers": 2,
+      "noise_std": 0.001,
+      "mse_tolerance": 2.5e-05,
+      "tolerance_factor_min": 0.5,
+      "tolerance_factor_max": 2.0,
+      "proposal_pass_target": 0.97,
+      "deployment_pass_target": 0.97,
+      "allow_infeasible_proposals": false,
+      "policy_samples": 4,
+      "counterfactual_edits": 4,
+      "lr": 0.0002,
+      "joint_lr": 5e-05,
+      "weight_decay": 0.0001,
+      "grad_clip": 1.0,
+      "seed": 42,
+      "val_seed": 1000000,
+      "resample_train_each_epoch": true,
+      "num_workers": 0,
+      "torch_num_threads": 4,
+      "log_every_batches": 10,
+      "device": "cuda",
+      "init_checkpoint": null,
+      "resume": "E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16.last.pt",
+      "output": "E:\\SelfSurpervisedSplineFitting\\outputs\\checkpoints\\candidate_selection_v16.pt",
+      "train_seed": 42,
+      "train_seed_stride": 10000000
+    },
+    "real_data_provenance": [
+      {
+        "name": "uji_pen_characters_v2",
+        "manifest": "E:\\SelfSurpervisedSplineFitting\\data\\splits\\uji_pen_v2.jsonl",
+        "manifest_sha256": "4898bb855a862826f323f223f74e19f18234be435d81d41e02676edb9efbd1e9",
+        "train_size": 9670,
+        "val_size": 2456,
+        "test_size": 6093
+      },
+      {
+        "name": "natural_earth_10m_coastline",
+        "manifest": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\natural_earth\\v5.1.2_10m_coastline\\manifest.jsonl",
+        "manifest_sha256": "dc946753973b33cb77e9dee6679ffdcf99f6604f33329850fc76bea05fa6827e",
+        "train_size": 2625,
+        "val_size": 750,
+        "test_size": 533
+      },
+      {
+        "name": "usgs_tnm_contours_large_scale",
+        "manifest": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\usgs_contours\\large_scale\\manifest.jsonl",
+        "manifest_sha256": "776ea8ecc874141ef828b09e05ace434075af0ed2fab2ade2fecb1ab4a87f8b7",
+        "train_size": 427,
+        "val_size": 192,
+        "test_size": 201
+      }
+    ],
+    "note": "Warm-start source provenance; real_fraction=0 in the new run does not erase prior exposure."
+  }
+}

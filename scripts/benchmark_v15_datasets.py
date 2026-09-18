@@ -43,6 +43,14 @@ from compare_knot_methods import _select_indices
 from visualize_batch_comparison import _dataset_config_from_checkpoint
 
 METHODS = ("ours", *COMPARISON_BASELINE_METHODS)
+PUBLISHED_METHODS = (
+    "ours",
+    "park_dominant_point_2007_adaptation",
+    "liang_feature_iki_2017_adaptation",
+    "dung_direct_knot_2017_adaptation",
+    "kang_sparse_2015_adaptation",
+    "luo_linf_de_2022_adaptation",
+)
 LABELS = {
     "ours": "Ours v15 learned",
     "park_dominant_point_2007_adaptation": "Park & Lee 2007 (DOM adaptation)",
@@ -81,6 +89,10 @@ def parser(*, default_checkpoint: Path | None = None,
     p.add_argument("--manifest", action="append", default=[], metavar="NAME=PATH")
     p.add_argument("--skip-synthetic", action="store_true")
     p.add_argument("--skip-real", action="store_true")
+    p.add_argument(
+        "--method-set", choices=("published", "all"), default="all",
+        help="'published' runs Ours, Park, Liang, Dung, Kang, and Luo; 'all' keeps the historical eight methods",
+    )
     p.add_argument("--mse-tolerance", type=float, default=2.5e-5)
     p.add_argument("--max-internal-knots", type=int, default=None,
                    help="Numerical baseline cap; default 28 for v15, checkpoint candidate capacity for v16")
@@ -124,6 +136,10 @@ def parser(*, default_checkpoint: Path | None = None,
         "--allow-unqualified-diagnostic", action="store_true",
         help=("Permit a proposal-stage or target-not-met v16 checkpoint for visibly "
               "marked troubleshooting only"),
+    )
+    p.add_argument(
+        "--force-diagnostic", action="store_true",
+        help="Mark a quick/reduced benchmark protocol as diagnostic, without bypassing checkpoint or structure checks",
     )
     p.add_argument("--resume", action="store_true", help="Reuse completed rows only when the experiment fingerprint matches.")
     return p
@@ -536,9 +552,12 @@ def summarize(rows: list[dict]) -> list[dict]:
     for (dataset, method), values in groups.items():
         valid = [r for r in values if r["status"] == "ok"]
         refs = [r for r in valid if r["reference_mse"] is not None]
-        knot_labels = [r for r in valid if r.get("canonical_k") is not None]
+        # Ground truth belongs to the paired cases, not to a method's successes.
+        # A failed solver must not alter the synthetic reference K.
+        knot_labels = [r for r in values if r.get("canonical_k") is not None]
         count_errors = [
             r["final_k"] - r["canonical_k"] for r in knot_labels
+            if r["status"] == "ok" and r["final_k"] is not None
         ]
         def mean(field, items=valid):
             return statistics.fmean(r[field] for r in items) if items else None
@@ -547,9 +566,9 @@ def summarize(rows: list[dict]) -> list[dict]:
             "failed": len(values) - len(valid),
             "mse_mean": mean("mse"),
             "mse_p95": float(torch.quantile(torch.tensor([r["mse"] for r in valid], dtype=torch.float64), .95)) if valid else None,
-            "fit_pass_rate": sum(r["fit_pass"] for r in values) / len(values),
+            "fit_pass_rate": sum(bool(r["fit_pass"]) for r in valid) / len(values),
             "reference_mse_mean": mean("reference_mse", refs),
-            "reference_pass_rate": sum(bool(r["reference_pass"]) for r in values) / len(values) if any(r.get("has_reference", r["reference_mse"] is not None) for r in values) else None,
+            "reference_pass_rate": sum(bool(r["reference_pass"]) for r in valid) / len(values) if any(r.get("has_reference", r["reference_mse"] is not None) for r in values) else None,
             "final_k_mean": mean("final_k"),
             "canonical_k_mean": (
                 statistics.fmean(r["canonical_k"] for r in knot_labels)
@@ -626,11 +645,13 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
         "|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     if metadata.get("diagnostic_not_final"):
-        reasons = metadata.get("checkpoint_qualification", {}).get("reasons", [])
+        reasons = metadata.get("diagnostic_reasons") or (
+            metadata.get("checkpoint_qualification") or {}
+        ).get("reasons", [])
         lines[2:2] = [
-            "**DIAGNOSTIC NOT FINAL — UNQUALIFIED CHECKPOINT**",
+            "**DIAGNOSTIC NOT FINAL**",
             "",
-            "资格检查：" + ("；".join(reasons) if reasons else "未通过正式资格检查。"),
+            "诊断原因：" + ("；".join(reasons) if reasons else "未通过正式报告资格检查。"),
             "",
         ]
 
@@ -657,11 +678,11 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
         "|---|---|---:|---:|",
     ]
     for s in summary:
-        if s["reference_mse_mean"] is not None:
+        if s["reference_pass_rate"] is not None:
             lines.append(
                 f"| {s['dataset']} | {labels[s['method']]} | "
                 f"{s['reference_pass_rate']:.1%} | "
-                f"{s['reference_mse_mean']:.3e} |"
+                f"{fmt(s['reference_mse_mean'], '.3e')} |"
             )
     lines += [
         "",
@@ -673,7 +694,7 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
             "逐位一致。"
         ),
         (
-            "失败样本计入通过率分母；无有限解时 MSE 均值只含成功样本，failed 列"
+            "失败样本计入通过率分母和耗时均值；MSE 与保留内部节点 K 均值只含有有限解的样本（不要求达标），failed 列"
             "单独保存。小样本结果仅用于初步比较；同一 writer/tile 的相关性会降低"
             "真实数据的有效独立样本数。完整逐样本记录与配置保存在 comparison.json。"
         ),
@@ -697,6 +718,7 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
     p = parser(default_checkpoint=default_checkpoint,
                default_output_dir=default_output_dir)
     args = p.parse_args(argv)
+    methods = PUBLISHED_METHODS if args.method_set == "published" else METHODS
     if not math.isfinite(args.mse_tolerance) or args.mse_tolerance <= 0:
         p.error("--mse-tolerance must be finite and positive")
     for name in (
@@ -744,10 +766,13 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
         )
     except ValueError as error:
         p.error(str(error))
+    diagnostic_reasons = list((qualification or {}).get("reasons", []))
+    if args.force_diagnostic:
+        diagnostic = True
+        diagnostic_reasons.append("Forced diagnostic: quick or reduced benchmark protocol")
     if diagnostic:
         print(
-            "DIAGNOSTIC NOT FINAL — unqualified v16 checkpoint: "
-            + "; ".join(qualification["reasons"]),
+            "DIAGNOSTIC NOT FINAL — " + "; ".join(diagnostic_reasons),
             flush=True,
         )
     model, model_config, _ = build_model_from_checkpoint(checkpoint)
@@ -790,8 +815,11 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                 "checkpoint_quality": checkpoint.get("checkpoint_quality"),
                 "checkpoint_qualification": qualification,
                 "diagnostic_not_final": diagnostic,
+                "diagnostic_reasons": diagnostic_reasons,
                 "model_version": version,
-                "method_labels": {**LABELS, "ours": f"Ours {version} learned"},
+                "method_set": args.method_set,
+                "methods": list(methods),
+                "method_labels": {method: f"Ours {version} learned" if method == "ours" else LABELS[method] for method in methods},
                 "network_tolerance_conditioned": objective_version == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
                 "knot_capacities": capacities,
                 "num_points": int(cases[0]["points"].shape[0]),
@@ -815,23 +843,23 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
     else:
         metadata_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
     done = {(r["dataset"], r["sample_id"], r["method"]) for r in rows}
-    expected = {(c["dataset"], c["sample_id"], m) for c in cases for m in METHODS}
+    expected = {(c["dataset"], c["sample_id"], m) for c in cases for m in methods}
     if len(done) != len(rows) or not done.issubset(expected):
         p.error("Journal contains duplicate or unexpected experiment records")
     if done != expected:
         print("Warming numerical solvers (excluded from timing)...", flush=True)
         t = torch.linspace(0, 1, 32, dtype=torch.float64)
         warm_points = torch.stack((t, t.square()), dim=-1)
-        for method in METHODS[1:]:
+        for method in methods[1:]:
             run_published_baseline(
                 method,
                 warm_points,
                 **published_baseline_kwargs(args, degree=model.degree, warmup=True),
             )
-    print(f"{len(cases)} curves x {len(METHODS)} methods; device={device}; MSE tolerance={args.mse_tolerance:g}", flush=True)
+    print(f"{len(cases)} curves x {len(methods)} methods; device={device}; MSE tolerance={args.mse_tolerance:g}", flush=True)
     with journal.open("a", encoding="utf-8") as handle:
         for i, case in enumerate(cases, 1):
-            for method in METHODS:
+            for method in methods:
                 if (case["dataset"], case["sample_id"], method) in done:
                     continue
                 row = {"dataset": case["dataset"], "sample_id": case["sample_id"], "group_id": case["group_id"],

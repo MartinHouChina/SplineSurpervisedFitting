@@ -1,6 +1,6 @@
 """Visualize v16 deployments and independent baselines on held-out curves.
 
-Each PNG uses the same normalized ordered observations for all four methods.
+Each PNG uses the same normalized ordered observations for all selected methods.
 The plotted curve is the final endpoint-constrained, unregularized standard
 B-spline fit.  Original reference observations are evaluation-only and never
 participate in a refit.  ``--ours-only`` produces paper-ready single-method
@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from benchmark_v15_datasets import (  # noqa: E402
     LABELS,
     measure_ours,
+    measure_numerical_baseline,
     prepare_cases,
     reference_mse,
     resolve_comparison_capacities,
@@ -39,13 +40,11 @@ from spline_fitting.checkpointing import (  # noqa: E402
     assess_v16_checkpoint,
     build_model_from_checkpoint,
 )
-from spline_fitting.evaluation.published_baselines import (  # noqa: E402
-    run_published_baseline,
-)
+from plot_v16_method_comparison import PUBLISHED_METHODS  # noqa: E402
 
 
-# This per-curve diagnostic deliberately remains a legible 2x2 view.  The
-# dataset benchmark and its three-metric figure include every published method.
+# Keep the legacy four-method default; --method-set published selects the six
+# methods used by the overnight benchmark and its four-metric figure.
 METHODS = (
     "ours",
     "kang_sparse_2015_adaptation",
@@ -85,6 +84,18 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--paper-admm-iterations", type=int, default=400)
     result.add_argument("--paper-lambda-bisections", type=int, default=8)
     result.add_argument("--paper-relocation-iterations", type=int, default=8)
+    result.add_argument("--method-set", choices=("legacy", "published"), default="legacy")
+    result.add_argument("--force-diagnostic", action="store_true",
+                        help="Mark reduced-budget case studies as diagnostic")
+    for option, kind, default in (
+        ("park-shape-weight", float, 0.8), ("liang-dense-knots", int, None),
+        ("liang-initial-knots", int, 4), ("liang-curvature-weight", float, 0.5),
+        ("liang-feature-samples", int, 1025), ("dung-max-error", float, None),
+        ("dung-scan-intervals", int, 10), ("dung-optimization-iterations", int, 10),
+        ("luo-eta", float, 0.5), ("luo-de-population", int, 10),
+        ("luo-de-iterations", int, 50), ("luo-seed", int, 2022),
+    ):
+        result.add_argument("--" + option, type=kind, default=default)
     result.add_argument("--network-warmups", type=int, default=1)
     result.add_argument("--network-repeats", type=int, default=3)
     result.add_argument("--end-to-end-repeats", type=int, default=1)
@@ -95,7 +106,7 @@ def parser() -> argparse.ArgumentParser:
         "--ours-only", action="store_true",
         help=(
             "Draw one detailed Ours-only PNG per case instead of the compact "
-            "four-method diagnostic; the JSON still records every plotted value."
+            "multi-method diagnostic; the JSON still records every plotted value."
         ),
     )
     result.add_argument(
@@ -173,12 +184,20 @@ PLOT_LABELS = {
     "kang_sparse_2015_adaptation": "Kang 2015 adaptation",
     "yeh_feature_cdf_2020": "Yeh 2020 adaptation",
     "uniform_gradient_pruning": "Uniform Kmax greedy + relocation",
+    "park_dominant_point_2007_adaptation": "Park & Lee 2007 adaptation",
+    "liang_feature_iki_2017_adaptation": "Liang et al. 2017 adaptation",
+    "dung_direct_knot_2017_adaptation": "Dung & Tjahjowidodo 2017 adaptation",
+    "luo_linf_de_2022_adaptation": "Luo et al. 2022 adaptation",
 }
 PLOT_COLORS = {
     "ours": "#128a73",
     "kang_sparse_2015_adaptation": "#7a55a3",
     "yeh_feature_cdf_2020": "#3976b7",
     "uniform_gradient_pruning": "#cb4f4b",
+    "park_dominant_point_2007_adaptation": "#d89423",
+    "liang_feature_iki_2017_adaptation": "#536eb5",
+    "dung_direct_knot_2017_adaptation": "#a45d91",
+    "luo_linf_de_2022_adaptation": "#8b6b4f",
 }
 
 
@@ -192,23 +211,8 @@ def _run_method(method, *, model, points, case, device, args, objective_version)
             objective_version=objective_version,
         )
     else:
-        result = run_published_baseline(
-            method,
-            points.double().cpu(),
-            mse_tolerance=args.mse_tolerance,
-            max_internal_knots=args.max_internal_knots,
-            degree=model.degree,
-            gradient_steps=args.gradient_steps,
-            paper_initial_knots=args.paper_initial_knots,
-            paper_admm_iterations=args.paper_admm_iterations,
-            paper_lambda_bisections=args.paper_lambda_bisections,
-            paper_relocation_iterations=args.paper_relocation_iterations,
-        )
-        fit, parameters = result.fit, result.parameters
-        total_ms, network_ms, diagnostics = (
-            result.elapsed_ms,
-            None,
-            result.diagnostics,
+        fit, parameters, total_ms, network_ms, diagnostics = measure_numerical_baseline(
+            method, points.double().cpu(), args, degree=model.degree,
         )
     mse = float(fit.fit_mse)
     dense_reference_mse = reference_mse(fit, parameters, case)
@@ -383,7 +387,9 @@ def plot_ours_case(
 ) -> None:
     """Render one paper-ready Ours deployment with explicit spline structure."""
     if result.get("status") != "ok":
-        raise ValueError("an Ours-only case cannot be plotted from a failed result")
+        plot_case(path, case=case, results=[result], tolerance=tolerance,
+                  diagnostic=diagnostic, dpi=dpi)
+        return
     dimension = int(case["points"].shape[-1])
     figure = plt.figure(figsize=(11.5, 9.0), constrained_layout=True)
     layout = figure.add_gridspec(2, 1, height_ratios=(5.0, 1.45))
@@ -414,7 +420,7 @@ def plot_ours_case(
     )
     if diagnostic:
         figure.text(
-            0.5, 0.5, "DIAGNOSTIC NOT FINAL - UNQUALIFIED CHECKPOINT",
+            0.5, 0.5, "DIAGNOSTIC NOT FINAL - CHECKPOINT / PROTOCOL NOT QUALIFIED",
             ha="center", va="center", rotation=24, fontsize=30,
             color="crimson", alpha=0.22, weight="bold", zorder=100,
         )
@@ -436,8 +442,6 @@ def plot_ours_overview(
     figure = plt.figure(figsize=(6.2 * columns, 4.4 * rows + 0.8))
     legend_handles = legend_labels = None
     for index, (case, result) in enumerate(items, 1):
-        if result.get("status") != "ok":
-            raise ValueError("the Ours overview cannot include a failed result")
         dimension = int(case["points"].shape[-1])
         axis = figure.add_subplot(
             rows, columns, index, projection="3d" if dimension == 3 else None,
@@ -446,14 +450,16 @@ def plot_ours_overview(
             axis, case=case, result=result, color=PLOT_COLORS["ours"],
             ours_label=True,
         )
-        status = "PASS" if result["fit_pass"] else "FAIL"
+        status = "PASS" if result.get("fit_pass") else "FAIL"
+        detail = (f"K={result['final_k']} | MSE={result['mse']:.2e} | {status}"
+                  if result.get("status") == "ok" else f"FAILED: {result.get('error', 'no fit')}")
         axis.set_title(
-            f"{case['dataset']} / {case['sample_id']}\n"
-            f"K={result['final_k']} | MSE={result['mse']:.2e} | {status}",
+            f"{case['dataset']} / {case['sample_id']}\n{detail}",
             fontsize=9,
         )
-        if legend_handles is None:
-            legend_handles, legend_labels = axis.get_legend_handles_labels()
+        handles, labels = axis.get_legend_handles_labels()
+        if legend_handles is None or len(handles) > len(legend_handles):
+            legend_handles, legend_labels = handles, labels
     for index in range(len(items) + 1, rows * columns + 1):
         blank = figure.add_subplot(rows, columns, index)
         blank.set_axis_off()
@@ -468,7 +474,7 @@ def plot_ours_overview(
     figure.tight_layout(rect=(0.0, 0.075, 1.0, 0.96))
     if diagnostic:
         figure.text(
-            0.5, 0.5, "DIAGNOSTIC NOT FINAL - UNQUALIFIED CHECKPOINT",
+            0.5, 0.5, "DIAGNOSTIC NOT FINAL - CHECKPOINT / PROTOCOL NOT QUALIFIED",
             ha="center", va="center", rotation=24, fontsize=32,
             color="crimson", alpha=0.22, weight="bold", zorder=100,
         )
@@ -479,10 +485,13 @@ def plot_ours_overview(
 def plot_case(path: Path, *, case: dict, results: list[dict],
               tolerance: float, diagnostic: bool, dpi: int) -> None:
     dimension = int(case["points"].shape[-1])
-    figure = plt.figure(figsize=(14, 11), constrained_layout=True)
+    columns = 3 if len(results) > 4 else min(2, len(results))
+    rows = math.ceil(len(results) / columns)
+    figure = plt.figure(figsize=(6.4 * columns, 5.1 * rows + 0.5), constrained_layout=True)
+    has_fit_legend = False
     for index, result in enumerate(results, 1):
         axis = figure.add_subplot(
-            2, 2, index, projection="3d" if dimension == 3 else None
+            rows, columns, index, projection="3d" if dimension == 3 else None
         )
         color = PLOT_COLORS[result["method"]]
         _plot_geometry(axis, case=case, result=result, color=color)
@@ -507,8 +516,9 @@ def plot_case(path: Path, *, case: dict, results: list[dict],
             f"K={result['final_k']} | MSE={result['mse']:.2e}{ref_text}\n"
             f"{timing}"
             , fontsize=9)
-        if index == 1:
+        if not has_fit_legend:
             axis.legend(loc="best", fontsize=7)
+            has_fit_legend = True
     title = (
         f"Held-out real curve: {case['dataset']} / {case['sample_id']}\n"
         f"shared MSE tolerance={tolerance:.3e}; endpoint-constrained, "
@@ -517,7 +527,7 @@ def plot_case(path: Path, *, case: dict, results: list[dict],
     figure.suptitle(title, fontsize=15)
     if diagnostic:
         figure.text(
-            0.5, 0.5, "DIAGNOSTIC NOT FINAL — UNQUALIFIED CHECKPOINT",
+            0.5, 0.5, "DIAGNOSTIC NOT FINAL — CHECKPOINT / PROTOCOL NOT QUALIFIED",
             ha="center", va="center", rotation=24, fontsize=32,
             color="crimson", alpha=0.22, weight="bold", zorder=100,
         )
@@ -536,6 +546,8 @@ def run(args: argparse.Namespace) -> dict:
         raise ValueError("mse-tolerance must be finite and positive")
     if args.dpi < 50:
         raise ValueError("dpi must be at least 50")
+    if min(args.network_repeats, args.end_to_end_repeats, args.torch_num_threads) < 1:
+        raise ValueError("timing repeats and torch-num-threads must be positive")
     if args.device == "cuda" and not torch.cuda.is_available():
         raise ValueError("CUDA was requested but is not available")
     report_path = args.output_dir / "deployment_visualizations.json"
@@ -555,6 +567,7 @@ def run(args: argparse.Namespace) -> dict:
         allow_unqualified_diagnostic=args.allow_unqualified_diagnostic,
         required_mse_tolerance=args.mse_tolerance,
     )
+    diagnostic = diagnostic or args.force_diagnostic
     qualification = assess_v16_checkpoint(
         checkpoint,
         required_pass_rate=V16_FORMAL_PASS_RATE,
@@ -585,7 +598,8 @@ def run(args: argparse.Namespace) -> dict:
         raise ValueError("selected manifests contain no held-out test curves")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    plotted_methods = ("ours",) if args.ours_only else METHODS
+    plotted_methods = (("ours",) if args.ours_only else
+                       PUBLISHED_METHODS if args.method_set == "published" else METHODS)
     records = []
     overview_items: list[tuple[dict, dict]] = []
     for index, case in enumerate(cases, 1):
@@ -695,7 +709,8 @@ def run(args: argparse.Namespace) -> dict:
             "mse_definition": (
                 "mean(sum((prediction-observation)^2, coordinates)); no square root"
             ),
-            "visualization_mode": "ours_only" if args.ours_only else "four_method",
+            "visualization_mode": ("ours_only" if args.ours_only else
+                                   "six_method" if args.method_set == "published" else "four_method"),
             "overview_image": None,
             "method_order": list(plotted_methods),
             "knot_capacities": capacities,

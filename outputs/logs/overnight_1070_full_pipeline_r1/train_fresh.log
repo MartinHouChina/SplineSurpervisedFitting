@@ -1,0 +1,713 @@
+
+[train_fresh] python scripts/train_v16.py --epochs 64 --proposal-epochs 4 --train-size 1500 --val-size 500 --batch-size 32 --num-points 192 --min-control-points 8 --max-control-points 28 --candidate-knots 64 --mse-tolerance 5e-5 --real-fraction 0 --proposal-pass-target 0.90 --deployment-pass-target 0.90 --policy-samples 2 --counterfactual-edits 2 --teacher-prefix-search-steps 6 --one-shot-safety-sigma 0.2 --safety-anneal-epochs 8 --complexity-ramp-epochs 8 --no-resample-train-each-epoch --num-workers 0 --torch-num-threads 4 --device cuda --output /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_1070_full_pipeline_r1.pt --init-checkpoint /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/candidate_selection_v16.proposal.pt
+Checking real manifests and train/val/test group separation...
+Transferred 42 encoder/parameter/proposal tensors; selector and subset decoder start fresh.
+v16 adaptive mass_topk: cuda, Kc=64 internal (full cubic knot vector at all-keep=72), MSE tolerance=5e-05; 1500 train draws, 500 validation curves; real sources=0
+Synthetic source contract: clean source-subset threshold-minimal certificate at RMS=0.00707107, margin=20%, audit_points=512
+Simplification curriculum: training-only ranked-prefix teacher steps=6; certified over-count weight=1, symmetric true-count weight=1; complexity multiplier 0..4; safety 2+0.2sigma -> 0+0.05sigma. Deployment still uses one network forward and one final refit.
+Validation checkpoint quality uses the worst source pass rate. Additional subset fits run only during training.
+Epoch 001/64 proposal [........................] 1/47 MSE=3.443e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 001/64 proposal [=====...................] 10/47 MSE=1.350e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 001/64 proposal [==========..............] 20/47 MSE=1.638e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 001/64 proposal [===============.........] 30/47 MSE=1.213e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 001/64 proposal [====================....] 40/47 MSE=1.261e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 001/64 proposal [========================] 47/47 MSE=1.075e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 001 val dense=100.0% deployment=100.0% worst-source=100.0% MSE=1.205e-06 K=64.00 mass=60.74 beta=-2.92 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic: dense=100.0%, deployment=100.0%, MSE=1.205e-06, K=64.00, targetK=14.22, count_MAE=49.78, bias=+49.78, knot_F1@0.01=0.359, param_RMSE=4.487e-02
+Epoch 002/64 proposal [........................] 1/47 MSE=1.244e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 002/64 proposal [=====...................] 10/47 MSE=1.206e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 002/64 proposal [==========..............] 20/47 MSE=1.320e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 002/64 proposal [===============.........] 30/47 MSE=1.065e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 002/64 proposal [====================....] 40/47 MSE=1.164e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 002/64 proposal [========================] 47/47 MSE=1.140e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 002 val dense=100.0% deployment=100.0% worst-source=100.0% MSE=1.118e-06 K=64.00 mass=60.74 beta=-2.92 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic: dense=100.0%, deployment=100.0%, MSE=1.118e-06, K=64.00, targetK=14.22, count_MAE=49.78, bias=+49.78, knot_F1@0.01=0.360, param_RMSE=4.406e-02
+Epoch 003/64 proposal [........................] 1/47 MSE=1.219e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 003/64 proposal [=====...................] 10/47 MSE=1.026e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 003/64 proposal [==========..............] 20/47 MSE=1.200e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 003/64 proposal [===============.........] 30/47 MSE=9.343e-07 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 003/64 proposal [====================....] 40/47 MSE=1.120e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 003/64 proposal [========================] 47/47 MSE=1.130e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 003 val dense=100.0% deployment=100.0% worst-source=100.0% MSE=1.072e-06 K=64.00 mass=60.73 beta=-2.92 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic: dense=100.0%, deployment=100.0%, MSE=1.072e-06, K=64.00, targetK=14.22, count_MAE=49.78, bias=+49.78, knot_F1@0.01=0.359, param_RMSE=4.414e-02
+Epoch 004/64 proposal [........................] 1/47 MSE=9.840e-07 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 004/64 proposal [=====...................] 10/47 MSE=1.300e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 004/64 proposal [==========..............] 20/47 MSE=9.475e-07 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 004/64 proposal [===============.........] 30/47 MSE=9.760e-07 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 004/64 proposal [====================....] 40/47 MSE=1.002e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 004/64 proposal [========================] 47/47 MSE=1.019e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 004 val dense=100.0% deployment=100.0% worst-source=100.0% MSE=1.032e-06 K=64.00 mass=60.74 beta=-2.92 complexity=0.00->0.00 safety=2+0.20sigma scale=1.00->1.00 target_met=False
+  Synthetic: dense=100.0%, deployment=100.0%, MSE=1.032e-06, K=64.00, targetK=14.22, count_MAE=49.78, bias=+49.78, knot_F1@0.01=0.359, param_RMSE=4.449e-02
+Epoch 005/64 joint [........................] 1/47 MSE=1.071e-06 pass=100.0% K=64.0 teacherK=50.1 countMAE=49.16
+Epoch 005/64 joint [=====...................] 10/47 MSE=9.681e-07 pass=100.0% K=63.0 teacherK=47.2 countMAE=49.56
+Epoch 005/64 joint [==========..............] 20/47 MSE=1.085e-06 pass=100.0% K=63.0 teacherK=49.2 countMAE=49.78
+Epoch 005/64 joint [===============.........] 30/47 MSE=1.260e-06 pass=100.0% K=63.0 teacherK=55.8 countMAE=47.12
+Epoch 005/64 joint [====================....] 40/47 MSE=1.064e-06 pass=100.0% K=63.0 teacherK=53.6 countMAE=49.59
+Epoch 005/64 joint [========================] 47/47 MSE=1.481e-06 pass=100.0% K=63.2 teacherK=53.4 countMAE=48.04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 005 val dense=100.0% deployment=100.0% worst-source=100.0% MSE=1.287e-06 K=63.19 mass=60.37 beta=-2.83 complexity=0.00->0.12 safety=2+0.20sigma scale=1.00->0.88 target_met=True
+  Synthetic: dense=100.0%, deployment=100.0%, MSE=1.287e-06, K=63.19, targetK=14.22, count_MAE=48.97, bias=+48.97, knot_F1@0.01=0.358, param_RMSE=4.626e-02
+Epoch 006/64 joint [........................] 1/47 MSE=1.132e-06 pass=100.0% K=63.0 teacherK=52.9 countMAE=50.25
+Epoch 006/64 joint [=====...................] 10/47 MSE=1.596e-06 pass=100.0% K=63.3 teacherK=55.5 countMAE=48.31
+Epoch 006/64 joint [==========..............] 20/47 MSE=1.267e-06 pass=100.0% K=63.3 teacherK=52.3 countMAE=50.09
+Epoch 006/64 joint [===============.........] 30/47 MSE=1.399e-06 pass=100.0% K=63.1 teacherK=51.5 countMAE=49.31
+Epoch 006/64 joint [====================....] 40/47 MSE=1.479e-06 pass=100.0% K=62.8 teacherK=52.8 countMAE=49.75
+Epoch 006/64 joint [========================] 47/47 MSE=1.513e-06 pass=100.0% K=62.8 teacherK=53.2 countMAE=48.07
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 006 val dense=100.0% deployment=100.0% worst-source=100.0% MSE=1.548e-06 K=62.68 mass=59.87 beta=-2.89 complexity=0.12->0.25 safety=2+0.18sigma scale=0.88->0.75 target_met=True
+  Synthetic: dense=100.0%, deployment=100.0%, MSE=1.548e-06, K=62.68, targetK=14.22, count_MAE=48.46, bias=+48.46, knot_F1@0.01=0.350, param_RMSE=5.195e-02
+Epoch 007/64 joint [........................] 1/47 MSE=1.633e-06 pass=100.0% K=62.6 teacherK=52.2 countMAE=48.06
+Epoch 007/64 joint [=====...................] 10/47 MSE=1.801e-06 pass=100.0% K=62.7 teacherK=54.8 countMAE=47.00
+Epoch 007/64 joint [==========..............] 20/47 MSE=1.568e-06 pass=100.0% K=62.4 teacherK=53.2 countMAE=47.69
+Epoch 007/64 joint [===============.........] 30/47 MSE=1.715e-06 pass=100.0% K=61.6 teacherK=51.3 countMAE=48.03
+Epoch 007/64 joint [====================....] 40/47 MSE=1.737e-06 pass=100.0% K=61.2 teacherK=51.2 countMAE=48.12
+Epoch 007/64 joint [========================] 47/47 MSE=1.881e-06 pass=100.0% K=61.0 teacherK=51.6 countMAE=46.79
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 007 val dense=100.0% deployment=100.0% worst-source=100.0% MSE=1.949e-06 K=61.01 mass=58.24 beta=-2.80 complexity=0.25->0.38 safety=2+0.16sigma scale=0.75->0.62 target_met=True
+  Synthetic: dense=100.0%, deployment=100.0%, MSE=1.949e-06, K=61.01, targetK=14.22, count_MAE=46.79, bias=+46.79, knot_F1@0.01=0.355, param_RMSE=5.694e-02
+Epoch 008/64 joint [........................] 1/47 MSE=2.199e-06 pass=100.0% K=61.2 teacherK=53.0 countMAE=45.38
+Epoch 008/64 joint [=====...................] 10/47 MSE=2.510e-06 pass=100.0% K=60.9 teacherK=52.8 countMAE=45.62
+Epoch 008/64 joint [==========..............] 20/47 MSE=1.940e-06 pass=100.0% K=59.9 teacherK=48.4 countMAE=46.59
+Epoch 008/64 joint [===============.........] 30/47 MSE=2.234e-06 pass=100.0% K=59.3 teacherK=49.2 countMAE=45.59
+Epoch 008/64 joint [====================....] 40/47 MSE=2.960e-06 pass=100.0% K=58.4 teacherK=48.6 countMAE=44.72
+Epoch 008/64 joint [========================] 47/47 MSE=5.587e-06 pass=96.4% K=58.3 teacherK=50.1 countMAE=44.04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 008 val dense=100.0% deployment=100.0% worst-source=100.0% MSE=3.517e-06 K=58.12 mass=55.30 beta=-2.57 complexity=0.38->0.50 safety=2+0.14sigma scale=0.62->0.50 target_met=True
+  Synthetic: dense=100.0%, deployment=100.0%, MSE=3.517e-06, K=58.12, targetK=14.22, count_MAE=43.90, bias=+43.90, knot_F1@0.01=0.354, param_RMSE=6.061e-02
+Epoch 009/64 joint [........................] 1/47 MSE=4.702e-06 pass=100.0% K=57.7 teacherK=51.7 countMAE=42.19
+Epoch 009/64 joint [=====...................] 10/47 MSE=4.041e-06 pass=100.0% K=56.2 teacherK=47.7 countMAE=42.34
+Epoch 009/64 joint [==========..............] 20/47 MSE=3.513e-06 pass=100.0% K=56.2 teacherK=48.9 countMAE=41.59
+Epoch 009/64 joint [===============.........] 30/47 MSE=6.674e-06 pass=96.9% K=54.6 teacherK=47.3 countMAE=40.34
+Epoch 009/64 joint [====================....] 40/47 MSE=5.231e-06 pass=100.0% K=51.8 teacherK=43.8 countMAE=38.72
+Epoch 009/64 joint [========================] 47/47 MSE=4.387e-06 pass=100.0% K=51.8 teacherK=44.8 countMAE=38.96
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 009 val dense=100.0% deployment=99.4% worst-source=99.4% MSE=6.192e-06 K=52.44 mass=50.62 beta=-2.16 complexity=0.50->0.62 safety=1+0.12sigma scale=0.50->0.38 target_met=True
+  Synthetic: dense=100.0%, deployment=99.4%, MSE=6.192e-06, K=52.44, targetK=14.22, count_MAE=38.22, bias=+38.22, knot_F1@0.01=0.360, param_RMSE=6.591e-02
+Epoch 010/64 joint [........................] 1/47 MSE=6.012e-06 pass=100.0% K=52.2 teacherK=46.1 countMAE=37.53
+Epoch 010/64 joint [=====...................] 10/47 MSE=4.881e-06 pass=100.0% K=51.5 teacherK=43.5 countMAE=37.53
+Epoch 010/64 joint [==========..............] 20/47 MSE=4.599e-06 pass=100.0% K=49.6 teacherK=43.5 countMAE=36.56
+Epoch 010/64 joint [===============.........] 30/47 MSE=7.439e-06 pass=100.0% K=49.8 teacherK=44.0 countMAE=35.53
+Epoch 010/64 joint [====================....] 40/47 MSE=7.886e-06 pass=100.0% K=47.5 teacherK=40.7 countMAE=34.66
+Epoch 010/64 joint [========================] 47/47 MSE=5.261e-06 pass=100.0% K=50.0 teacherK=42.9 countMAE=35.93
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 010 val dense=100.0% deployment=99.6% worst-source=99.6% MSE=6.154e-06 K=50.06 mass=48.31 beta=-2.01 complexity=0.62->0.75 safety=1+0.11sigma scale=0.38->0.25 target_met=True
+  Synthetic: dense=100.0%, deployment=99.6%, MSE=6.154e-06, K=50.06, targetK=14.22, count_MAE=35.84, bias=+35.84, knot_F1@0.01=0.381, param_RMSE=6.663e-02
+Epoch 011/64 joint [........................] 1/47 MSE=6.159e-06 pass=100.0% K=47.8 teacherK=40.6 countMAE=34.84
+Epoch 011/64 joint [=====...................] 10/47 MSE=8.396e-06 pass=96.9% K=47.9 teacherK=42.1 countMAE=33.88
+Epoch 011/64 joint [==========..............] 20/47 MSE=1.646e-05 pass=93.8% K=48.5 teacherK=43.2 countMAE=33.28
+Epoch 011/64 joint [===============.........] 30/47 MSE=1.011e-05 pass=100.0% K=48.1 teacherK=43.2 countMAE=33.44
+Epoch 011/64 joint [====================....] 40/47 MSE=1.028e-05 pass=96.9% K=47.1 teacherK=41.8 countMAE=33.25
+Epoch 011/64 joint [========================] 47/47 MSE=1.528e-05 pass=96.4% K=47.9 teacherK=43.0 countMAE=33.21
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 011 val dense=100.0% deployment=98.8% worst-source=98.8% MSE=1.015e-05 K=46.90 mass=45.20 beta=-1.76 complexity=0.75->0.88 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=98.8%, MSE=1.015e-05, K=46.90, targetK=14.22, count_MAE=32.69, bias=+32.69, knot_F1@0.01=0.384, param_RMSE=6.831e-02
+Epoch 012/64 joint [........................] 1/47 MSE=7.615e-06 pass=100.0% K=45.7 teacherK=39.8 countMAE=32.03
+Epoch 012/64 joint [=====...................] 10/47 MSE=1.055e-05 pass=100.0% K=43.8 teacherK=38.6 countMAE=31.44
+Epoch 012/64 joint [==========..............] 20/47 MSE=8.608e-06 pass=100.0% K=46.8 teacherK=41.4 countMAE=32.34
+Epoch 012/64 joint [===============.........] 30/47 MSE=1.210e-05 pass=96.9% K=45.2 teacherK=40.4 countMAE=30.81
+Epoch 012/64 joint [====================....] 40/47 MSE=7.791e-06 pass=100.0% K=46.7 teacherK=41.7 countMAE=32.25
+Epoch 012/64 joint [========================] 47/47 MSE=1.138e-05 pass=96.4% K=42.8 teacherK=37.5 countMAE=30.82
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 012 val dense=100.0% deployment=98.6% worst-source=98.6% MSE=1.136e-05 K=45.92 mass=44.25 beta=-1.69 complexity=0.88->1.00 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=98.6%, MSE=1.136e-05, K=45.92, targetK=14.22, count_MAE=31.70, bias=+31.70, knot_F1@0.01=0.387, param_RMSE=6.751e-02
+Epoch 013/64 joint [........................] 1/47 MSE=1.335e-05 pass=96.9% K=45.5 teacherK=40.7 countMAE=30.50
+Epoch 013/64 joint [=====...................] 10/47 MSE=1.279e-05 pass=100.0% K=45.1 teacherK=40.6 countMAE=31.12
+Epoch 013/64 joint [==========..............] 20/47 MSE=1.880e-05 pass=93.8% K=45.3 teacherK=42.1 countMAE=30.16
+Epoch 013/64 joint [===============.........] 30/47 MSE=1.270e-05 pass=96.9% K=42.6 teacherK=38.5 countMAE=29.47
+Epoch 013/64 joint [====================....] 40/47 MSE=2.219e-05 pass=93.8% K=42.9 teacherK=39.8 countMAE=29.31
+Epoch 013/64 joint [========================] 47/47 MSE=1.475e-05 pass=96.4% K=43.1 teacherK=38.6 countMAE=29.57
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 013 val dense=100.0% deployment=96.8% worst-source=96.8% MSE=1.625e-05 K=43.99 mass=43.36 beta=-1.69 complexity=1.00->1.12 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=96.8%, MSE=1.625e-05, K=43.99, targetK=14.22, count_MAE=29.77, bias=+29.77, knot_F1@0.01=0.380, param_RMSE=6.868e-02
+Epoch 014/64 joint [........................] 1/47 MSE=2.458e-05 pass=87.5% K=44.2 teacherK=40.9 countMAE=30.03
+Epoch 014/64 joint [=====...................] 10/47 MSE=2.564e-05 pass=90.6% K=41.2 teacherK=37.7 countMAE=28.84
+Epoch 014/64 joint [==========..............] 20/47 MSE=1.340e-05 pass=100.0% K=44.2 teacherK=40.3 countMAE=29.47
+Epoch 014/64 joint [===============.........] 30/47 MSE=1.463e-05 pass=96.9% K=41.9 teacherK=37.1 countMAE=29.06
+Epoch 014/64 joint [====================....] 40/47 MSE=1.441e-05 pass=96.9% K=42.5 teacherK=38.2 countMAE=28.12
+Epoch 014/64 joint [========================] 47/47 MSE=1.533e-05 pass=89.3% K=44.7 teacherK=41.3 countMAE=29.36
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 014 val dense=100.0% deployment=94.4% worst-source=94.4% MSE=2.082e-05 K=42.56 mass=41.95 beta=-1.57 complexity=1.12->1.25 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=94.4%, MSE=2.082e-05, K=42.56, targetK=14.22, count_MAE=28.34, bias=+28.34, knot_F1@0.01=0.361, param_RMSE=6.758e-02
+Epoch 015/64 joint [........................] 1/47 MSE=2.185e-05 pass=87.5% K=41.5 teacherK=38.3 countMAE=27.56
+Epoch 015/64 joint [=====...................] 10/47 MSE=1.409e-05 pass=96.9% K=43.7 teacherK=40.2 countMAE=29.12
+Epoch 015/64 joint [==========..............] 20/47 MSE=2.852e-05 pass=84.4% K=43.0 teacherK=39.8 countMAE=28.50
+Epoch 015/64 joint [===============.........] 30/47 MSE=2.943e-05 pass=81.2% K=42.8 teacherK=40.7 countMAE=27.47
+Epoch 015/64 joint [====================....] 40/47 MSE=1.455e-05 pass=100.0% K=45.4 teacherK=41.8 countMAE=29.69
+Epoch 015/64 joint [========================] 47/47 MSE=1.985e-05 pass=89.3% K=40.7 teacherK=37.7 countMAE=27.43
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 015 val dense=100.0% deployment=92.8% worst-source=92.8% MSE=2.330e-05 K=42.08 mass=41.47 beta=-1.61 complexity=1.25->1.38 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=92.8%, MSE=2.330e-05, K=42.08, targetK=14.22, count_MAE=27.86, bias=+27.86, knot_F1@0.01=0.360, param_RMSE=6.723e-02
+Epoch 016/64 joint [........................] 1/47 MSE=2.125e-05 pass=93.8% K=39.8 teacherK=36.6 countMAE=27.38
+Epoch 016/64 joint [=====...................] 10/47 MSE=2.568e-05 pass=90.6% K=44.1 teacherK=41.1 countMAE=28.22
+Epoch 016/64 joint [==========..............] 20/47 MSE=1.718e-05 pass=100.0% K=43.0 teacherK=39.6 countMAE=28.38
+Epoch 016/64 joint [===============.........] 30/47 MSE=1.896e-05 pass=93.8% K=40.8 teacherK=37.1 countMAE=27.31
+Epoch 016/64 joint [====================....] 40/47 MSE=2.156e-05 pass=93.8% K=44.3 teacherK=40.8 countMAE=27.94
+Epoch 016/64 joint [========================] 47/47 MSE=2.103e-05 pass=89.3% K=40.1 teacherK=36.5 countMAE=26.96
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 016 val dense=100.0% deployment=92.4% worst-source=92.4% MSE=2.185e-05 K=41.28 mass=40.68 beta=-1.44 complexity=1.38->1.50 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=92.4%, MSE=2.185e-05, K=41.28, targetK=14.22, count_MAE=27.06, bias=+27.06, knot_F1@0.01=0.354, param_RMSE=6.537e-02
+Epoch 017/64 joint [........................] 1/47 MSE=2.018e-05 pass=96.9% K=41.6 teacherK=37.9 countMAE=27.25
+Epoch 017/64 joint [=====...................] 10/47 MSE=1.519e-05 pass=100.0% K=41.6 teacherK=38.2 countMAE=27.03
+Epoch 017/64 joint [==========..............] 20/47 MSE=1.743e-05 pass=100.0% K=40.4 teacherK=37.0 countMAE=25.84
+Epoch 017/64 joint [===============.........] 30/47 MSE=1.872e-05 pass=90.6% K=36.9 teacherK=33.5 countMAE=24.44
+Epoch 017/64 joint [====================....] 40/47 MSE=2.274e-05 pass=84.4% K=37.7 teacherK=35.1 countMAE=24.25
+Epoch 017/64 joint [========================] 47/47 MSE=1.648e-05 pass=100.0% K=36.2 teacherK=32.8 countMAE=23.50
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 017 val dense=100.0% deployment=93.2% worst-source=93.2% MSE=2.387e-05 K=39.43 mass=38.84 beta=-1.24 complexity=1.50->1.62 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=93.2%, MSE=2.387e-05, K=39.43, targetK=14.22, count_MAE=25.21, bias=+25.21, knot_F1@0.01=0.342, param_RMSE=6.409e-02
+Epoch 018/64 joint [........................] 1/47 MSE=1.406e-05 pass=100.0% K=40.5 teacherK=36.5 countMAE=26.09
+Epoch 018/64 joint [=====...................] 10/47 MSE=1.635e-05 pass=100.0% K=39.1 teacherK=35.3 countMAE=25.75
+Epoch 018/64 joint [==========..............] 20/47 MSE=1.905e-05 pass=90.6% K=37.5 teacherK=33.9 countMAE=24.06
+Epoch 018/64 joint [===============.........] 30/47 MSE=3.312e-05 pass=81.2% K=39.2 teacherK=36.6 countMAE=24.16
+Epoch 018/64 joint [====================....] 40/47 MSE=1.999e-05 pass=96.9% K=39.2 teacherK=35.7 countMAE=24.53
+Epoch 018/64 joint [========================] 47/47 MSE=2.520e-05 pass=89.3% K=36.6 teacherK=32.8 countMAE=23.18
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 018 val dense=100.0% deployment=95.0% worst-source=95.0% MSE=2.232e-05 K=39.44 mass=38.83 beta=-1.26 complexity=1.62->1.75 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=95.0%, MSE=2.232e-05, K=39.44, targetK=14.22, count_MAE=25.22, bias=+25.22, knot_F1@0.01=0.341, param_RMSE=6.196e-02
+Epoch 019/64 joint [........................] 1/47 MSE=1.749e-05 pass=96.9% K=38.6 teacherK=34.2 countMAE=24.94
+Epoch 019/64 joint [=====...................] 10/47 MSE=2.460e-05 pass=90.6% K=39.4 teacherK=36.1 countMAE=24.97
+Epoch 019/64 joint [==========..............] 20/47 MSE=2.127e-05 pass=93.8% K=36.8 teacherK=33.9 countMAE=22.88
+Epoch 019/64 joint [===============.........] 30/47 MSE=3.283e-05 pass=84.4% K=35.2 teacherK=33.4 countMAE=21.91
+Epoch 019/64 joint [====================....] 40/47 MSE=1.888e-05 pass=93.8% K=38.8 teacherK=35.9 countMAE=24.00
+Epoch 019/64 joint [========================] 47/47 MSE=2.014e-05 pass=96.4% K=36.8 teacherK=33.9 countMAE=22.32
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 019 val dense=100.0% deployment=85.8% worst-source=85.8% MSE=3.353e-05 K=36.51 mass=35.91 beta=-0.92 complexity=1.75->1.50 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=85.8%, MSE=3.353e-05, K=36.51, targetK=14.22, count_MAE=22.30, bias=+22.30, knot_F1@0.01=0.324, param_RMSE=5.710e-02
+Epoch 020/64 joint [........................] 1/47 MSE=2.021e-05 pass=93.8% K=39.2 teacherK=36.3 countMAE=24.09
+Epoch 020/64 joint [=====...................] 10/47 MSE=1.896e-05 pass=90.6% K=37.5 teacherK=34.2 countMAE=23.53
+Epoch 020/64 joint [==========..............] 20/47 MSE=2.354e-05 pass=90.6% K=37.9 teacherK=34.3 countMAE=23.50
+Epoch 020/64 joint [===============.........] 30/47 MSE=1.265e-05 pass=96.9% K=39.3 teacherK=35.1 countMAE=24.69
+Epoch 020/64 joint [====================....] 40/47 MSE=2.500e-05 pass=87.5% K=39.8 teacherK=36.2 countMAE=24.34
+Epoch 020/64 joint [========================] 47/47 MSE=1.263e-05 pass=100.0% K=36.2 teacherK=31.7 countMAE=22.57
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 020 val dense=100.0% deployment=94.8% worst-source=94.8% MSE=2.093e-05 K=37.11 mass=35.45 beta=-0.91 complexity=1.50->1.62 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=94.8%, MSE=2.093e-05, K=37.11, targetK=14.22, count_MAE=22.89, bias=+22.89, knot_F1@0.01=0.334, param_RMSE=5.372e-02
+Epoch 021/64 joint [........................] 1/47 MSE=1.868e-05 pass=96.9% K=38.6 teacherK=34.3 countMAE=23.91
+Epoch 021/64 joint [=====...................] 10/47 MSE=1.953e-05 pass=96.9% K=41.2 teacherK=36.3 countMAE=25.12
+Epoch 021/64 joint [==========..............] 20/47 MSE=1.657e-05 pass=100.0% K=38.2 teacherK=33.6 countMAE=23.56
+Epoch 021/64 joint [===============.........] 30/47 MSE=1.963e-05 pass=90.6% K=35.6 teacherK=30.7 countMAE=22.41
+Epoch 021/64 joint [====================....] 40/47 MSE=2.386e-05 pass=84.4% K=39.1 teacherK=35.4 countMAE=23.53
+Epoch 021/64 joint [========================] 47/47 MSE=1.845e-05 pass=96.4% K=39.0 teacherK=34.4 countMAE=23.79
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 021 val dense=100.0% deployment=95.6% worst-source=95.6% MSE=1.865e-05 K=36.74 mass=35.12 beta=-0.81 complexity=1.62->1.75 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=95.6%, MSE=1.865e-05, K=36.74, targetK=14.22, count_MAE=22.52, bias=+22.52, knot_F1@0.01=0.330, param_RMSE=5.183e-02
+Epoch 022/64 joint [........................] 1/47 MSE=2.509e-05 pass=84.4% K=36.2 teacherK=32.9 countMAE=21.94
+Epoch 022/64 joint [=====...................] 10/47 MSE=1.938e-05 pass=96.9% K=34.6 teacherK=30.6 countMAE=20.78
+Epoch 022/64 joint [==========..............] 20/47 MSE=2.437e-05 pass=90.6% K=31.3 teacherK=28.4 countMAE=18.75
+Epoch 022/64 joint [===============.........] 30/47 MSE=1.944e-05 pass=93.8% K=32.5 teacherK=28.8 countMAE=19.62
+Epoch 022/64 joint [====================....] 40/47 MSE=1.874e-05 pass=100.0% K=35.5 teacherK=31.0 countMAE=21.25
+Epoch 022/64 joint [========================] 47/47 MSE=2.265e-05 pass=85.7% K=35.0 teacherK=31.9 countMAE=20.29
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 022 val dense=100.0% deployment=90.8% worst-source=90.8% MSE=2.611e-05 K=34.08 mass=33.51 beta=-0.54 complexity=1.75->1.81 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=90.8%, MSE=2.611e-05, K=34.08, targetK=14.22, count_MAE=19.86, bias=+19.86, knot_F1@0.01=0.318, param_RMSE=5.209e-02
+Epoch 023/64 joint [........................] 1/47 MSE=2.414e-05 pass=87.5% K=32.6 teacherK=28.9 countMAE=19.28
+Epoch 023/64 joint [=====...................] 10/47 MSE=2.726e-05 pass=81.2% K=32.3 teacherK=30.7 countMAE=18.41
+Epoch 023/64 joint [==========..............] 20/47 MSE=2.243e-05 pass=90.6% K=28.2 teacherK=24.7 countMAE=17.03
+Epoch 023/64 joint [===============.........] 30/47 MSE=2.871e-05 pass=84.4% K=33.9 teacherK=31.2 countMAE=19.34
+Epoch 023/64 joint [====================....] 40/47 MSE=3.582e-05 pass=87.5% K=35.1 teacherK=32.9 countMAE=19.50
+Epoch 023/64 joint [========================] 47/47 MSE=1.950e-05 pass=100.0% K=31.9 teacherK=28.8 countMAE=18.32
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 023 val dense=100.0% deployment=87.4% worst-source=87.4% MSE=2.884e-05 K=32.09 mass=31.49 beta=-0.33 complexity=1.81->1.56 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=87.4%, MSE=2.884e-05, K=32.09, targetK=14.22, count_MAE=17.87, bias=+17.87, knot_F1@0.01=0.324, param_RMSE=4.820e-02
+Epoch 024/64 joint [........................] 1/47 MSE=1.949e-05 pass=96.9% K=33.1 teacherK=29.8 countMAE=18.66
+Epoch 024/64 joint [=====...................] 10/47 MSE=2.186e-05 pass=87.5% K=30.7 teacherK=26.3 countMAE=17.84
+Epoch 024/64 joint [==========..............] 20/47 MSE=1.230e-05 pass=100.0% K=34.4 teacherK=28.7 countMAE=20.78
+Epoch 024/64 joint [===============.........] 30/47 MSE=1.930e-05 pass=93.8% K=35.3 teacherK=30.6 countMAE=20.09
+Epoch 024/64 joint [====================....] 40/47 MSE=1.844e-05 pass=100.0% K=31.0 teacherK=26.9 countMAE=17.78
+Epoch 024/64 joint [========================] 47/47 MSE=1.867e-05 pass=96.4% K=32.2 teacherK=27.7 countMAE=18.32
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 024 val dense=100.0% deployment=91.4% worst-source=91.4% MSE=2.520e-05 K=32.05 mass=30.41 beta=-0.22 complexity=1.56->1.62 safety=1+0.09sigma scale=0.25->0.19 target_met=True
+  Synthetic: dense=100.0%, deployment=91.4%, MSE=2.520e-05, K=32.05, targetK=14.22, count_MAE=17.83, bias=+17.83, knot_F1@0.01=0.326, param_RMSE=4.660e-02
+Epoch 025/64 joint [........................] 1/47 MSE=2.277e-05 pass=93.8% K=34.4 teacherK=31.3 countMAE=18.97
+Epoch 025/64 joint [=====...................] 10/47 MSE=1.660e-05 pass=100.0% K=32.8 teacherK=28.4 countMAE=19.00
+Epoch 025/64 joint [==========..............] 20/47 MSE=1.462e-05 pass=100.0% K=32.8 teacherK=27.5 countMAE=19.38
+Epoch 025/64 joint [===============.........] 30/47 MSE=2.325e-05 pass=96.9% K=32.3 teacherK=28.9 countMAE=17.59
+Epoch 025/64 joint [====================....] 40/47 MSE=1.646e-05 pass=100.0% K=33.3 teacherK=29.2 countMAE=18.94
+Epoch 025/64 joint [========================] 47/47 MSE=2.115e-05 pass=96.4% K=32.2 teacherK=28.8 countMAE=17.64
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 025 val dense=100.0% deployment=94.6% worst-source=94.6% MSE=2.115e-05 K=32.14 mass=30.51 beta=-0.15 complexity=1.62->1.75 safety=1+0.08sigma scale=0.19->0.06 target_met=True
+  Synthetic: dense=100.0%, deployment=94.6%, MSE=2.115e-05, K=32.14, targetK=14.22, count_MAE=17.92, bias=+17.92, knot_F1@0.01=0.330, param_RMSE=4.545e-02
+Epoch 026/64 joint [........................] 1/47 MSE=1.834e-05 pass=96.9% K=29.6 teacherK=25.8 countMAE=16.97
+Epoch 026/64 joint [=====...................] 10/47 MSE=2.237e-05 pass=93.8% K=29.3 teacherK=25.8 countMAE=16.88
+Epoch 026/64 joint [==========..............] 20/47 MSE=1.801e-05 pass=96.9% K=34.5 teacherK=29.8 countMAE=19.62
+Epoch 026/64 joint [===============.........] 30/47 MSE=1.618e-05 pass=96.9% K=35.5 teacherK=30.9 countMAE=20.31
+Epoch 026/64 joint [====================....] 40/47 MSE=1.642e-05 pass=93.8% K=29.8 teacherK=25.0 countMAE=17.38
+Epoch 026/64 joint [========================] 47/47 MSE=1.715e-05 pass=96.4% K=31.7 teacherK=27.2 countMAE=18.18
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 026 val dense=100.0% deployment=97.4% worst-source=97.4% MSE=1.865e-05 K=32.77 mass=31.19 beta=-0.22 complexity=1.75->1.88 safety=1+0.06sigma scale=0.06->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=97.4%, MSE=1.865e-05, K=32.77, targetK=14.22, count_MAE=18.55, bias=+18.55, knot_F1@0.01=0.346, param_RMSE=4.621e-02
+Epoch 027/64 joint [........................] 1/47 MSE=2.437e-05 pass=96.9% K=32.4 teacherK=29.0 countMAE=17.91
+Epoch 027/64 joint [=====...................] 10/47 MSE=2.200e-05 pass=93.8% K=32.9 teacherK=29.8 countMAE=17.50
+Epoch 027/64 joint [==========..............] 20/47 MSE=2.806e-05 pass=84.4% K=29.3 teacherK=27.0 countMAE=15.56
+Epoch 027/64 joint [===============.........] 30/47 MSE=2.451e-05 pass=90.6% K=32.6 teacherK=29.6 countMAE=17.25
+Epoch 027/64 joint [====================....] 40/47 MSE=3.329e-05 pass=81.2% K=27.1 teacherK=25.0 countMAE=14.28
+Epoch 027/64 joint [========================] 47/47 MSE=2.213e-05 pass=92.9% K=32.5 teacherK=29.8 countMAE=17.39
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 027 val dense=100.0% deployment=93.8% worst-source=93.8% MSE=2.262e-05 K=30.65 mass=30.06 beta=-0.09 complexity=1.88->2.00 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=93.8%, MSE=2.262e-05, K=30.65, targetK=14.22, count_MAE=16.43, bias=+16.43, knot_F1@0.01=0.336, param_RMSE=4.632e-02
+Epoch 028/64 joint [........................] 1/47 MSE=2.090e-05 pass=96.9% K=33.9 teacherK=30.3 countMAE=18.06
+Epoch 028/64 joint [=====...................] 10/47 MSE=1.988e-05 pass=96.9% K=32.9 teacherK=29.7 countMAE=17.53
+Epoch 028/64 joint [==========..............] 20/47 MSE=2.188e-05 pass=93.8% K=30.9 teacherK=28.3 countMAE=16.25
+Epoch 028/64 joint [===============.........] 30/47 MSE=2.716e-05 pass=90.6% K=30.6 teacherK=28.4 countMAE=15.66
+Epoch 028/64 joint [====================....] 40/47 MSE=1.906e-05 pass=100.0% K=28.4 teacherK=25.4 countMAE=15.28
+Epoch 028/64 joint [========================] 47/47 MSE=2.763e-05 pass=89.3% K=29.6 teacherK=27.6 countMAE=15.04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 028 val dense=100.0% deployment=86.6% worst-source=86.6% MSE=3.036e-05 K=28.82 mass=28.26 beta=0.09 complexity=2.00->1.75 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=86.6%, MSE=3.036e-05, K=28.82, targetK=14.22, count_MAE=14.60, bias=+14.60, knot_F1@0.01=0.338, param_RMSE=4.665e-02
+Epoch 029/64 joint [........................] 1/47 MSE=2.266e-05 pass=96.9% K=31.8 teacherK=29.0 countMAE=16.50
+Epoch 029/64 joint [=====...................] 10/47 MSE=2.380e-05 pass=96.9% K=31.9 teacherK=28.0 countMAE=16.88
+Epoch 029/64 joint [==========..............] 20/47 MSE=1.757e-05 pass=96.9% K=24.9 teacherK=21.0 countMAE=14.12
+Epoch 029/64 joint [===============.........] 30/47 MSE=1.728e-05 pass=100.0% K=32.7 teacherK=28.7 countMAE=17.78
+Epoch 029/64 joint [====================....] 40/47 MSE=1.685e-05 pass=100.0% K=31.7 teacherK=27.7 countMAE=17.34
+Epoch 029/64 joint [========================] 47/47 MSE=2.087e-05 pass=100.0% K=29.6 teacherK=26.2 countMAE=15.57
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 029 val dense=100.0% deployment=91.4% worst-source=91.4% MSE=2.690e-05 K=29.12 mass=27.49 beta=0.23 complexity=1.75->1.81 safety=1+0.09sigma scale=0.25->0.19 target_met=True
+  Synthetic: dense=100.0%, deployment=91.4%, MSE=2.690e-05, K=29.12, targetK=14.22, count_MAE=14.90, bias=+14.90, knot_F1@0.01=0.343, param_RMSE=4.612e-02
+Epoch 030/64 joint [........................] 1/47 MSE=2.909e-05 pass=81.2% K=27.6 teacherK=26.5 countMAE=14.22
+Epoch 030/64 joint [=====...................] 10/47 MSE=2.112e-05 pass=93.8% K=28.8 teacherK=25.3 countMAE=15.59
+Epoch 030/64 joint [==========..............] 20/47 MSE=1.858e-05 pass=96.9% K=29.8 teacherK=26.2 countMAE=16.19
+Epoch 030/64 joint [===============.........] 30/47 MSE=1.859e-05 pass=93.8% K=30.8 teacherK=27.1 countMAE=16.72
+Epoch 030/64 joint [====================....] 40/47 MSE=1.590e-05 pass=100.0% K=32.3 teacherK=28.5 countMAE=17.16
+Epoch 030/64 joint [========================] 47/47 MSE=1.776e-05 pass=100.0% K=30.0 teacherK=26.4 countMAE=15.68
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 030 val dense=100.0% deployment=94.6% worst-source=94.6% MSE=2.238e-05 K=29.86 mass=28.25 beta=0.13 complexity=1.81->1.94 safety=1+0.08sigma scale=0.19->0.06 target_met=True
+  Synthetic: dense=100.0%, deployment=94.6%, MSE=2.238e-05, K=29.86, targetK=14.22, count_MAE=15.64, bias=+15.64, knot_F1@0.01=0.347, param_RMSE=4.546e-02
+Epoch 031/64 joint [........................] 1/47 MSE=2.123e-05 pass=90.6% K=31.0 teacherK=27.9 countMAE=16.34
+Epoch 031/64 joint [=====...................] 10/47 MSE=1.876e-05 pass=93.8% K=30.5 teacherK=27.3 countMAE=16.59
+Epoch 031/64 joint [==========..............] 20/47 MSE=1.785e-05 pass=100.0% K=28.9 teacherK=24.8 countMAE=15.75
+Epoch 031/64 joint [===============.........] 30/47 MSE=1.878e-05 pass=93.8% K=29.9 teacherK=26.8 countMAE=15.75
+Epoch 031/64 joint [====================....] 40/47 MSE=2.100e-05 pass=93.8% K=30.2 teacherK=26.8 countMAE=15.62
+Epoch 031/64 joint [========================] 47/47 MSE=1.608e-05 pass=96.4% K=27.7 teacherK=24.3 countMAE=15.07
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 031 val dense=100.0% deployment=98.0% worst-source=98.0% MSE=1.831e-05 K=30.37 mass=28.79 beta=0.10 complexity=1.94->2.06 safety=1+0.06sigma scale=0.06->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=98.0%, MSE=1.831e-05, K=30.37, targetK=14.22, count_MAE=16.15, bias=+16.15, knot_F1@0.01=0.350, param_RMSE=4.547e-02
+Epoch 032/64 joint [........................] 1/47 MSE=1.850e-05 pass=96.9% K=30.2 teacherK=26.7 countMAE=15.81
+Epoch 032/64 joint [=====...................] 10/47 MSE=2.056e-05 pass=93.8% K=30.5 teacherK=26.9 countMAE=15.91
+Epoch 032/64 joint [==========..............] 20/47 MSE=2.698e-05 pass=84.4% K=21.2 teacherK=19.9 countMAE=10.53
+Epoch 032/64 joint [===============.........] 30/47 MSE=2.650e-05 pass=90.6% K=29.2 teacherK=26.9 countMAE=14.38
+Epoch 032/64 joint [====================....] 40/47 MSE=2.916e-05 pass=84.4% K=30.2 teacherK=28.0 countMAE=14.88
+Epoch 032/64 joint [========================] 47/47 MSE=3.809e-05 pass=67.9% K=25.5 teacherK=25.1 countMAE=12.32
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 032 val dense=100.0% deployment=82.8% worst-source=82.8% MSE=3.216e-05 K=27.52 mass=26.96 beta=0.29 complexity=2.06->1.81 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=82.8%, MSE=3.216e-05, K=27.52, targetK=14.22, count_MAE=13.30, bias=+13.30, knot_F1@0.01=0.347, param_RMSE=4.699e-02
+Epoch 033/64 joint [........................] 1/47 MSE=2.072e-05 pass=100.0% K=27.8 teacherK=25.3 countMAE=14.16
+Epoch 033/64 joint [=====...................] 10/47 MSE=2.239e-05 pass=93.8% K=28.2 teacherK=25.6 countMAE=14.25
+Epoch 033/64 joint [==========..............] 20/47 MSE=1.829e-05 pass=96.9% K=30.2 teacherK=26.2 countMAE=16.06
+Epoch 033/64 joint [===============.........] 30/47 MSE=1.609e-05 pass=100.0% K=27.7 teacherK=23.7 countMAE=15.12
+Epoch 033/64 joint [====================....] 40/47 MSE=1.826e-05 pass=100.0% K=30.4 teacherK=26.7 countMAE=15.69
+Epoch 033/64 joint [========================] 47/47 MSE=1.552e-05 pass=100.0% K=29.5 teacherK=24.9 countMAE=15.68
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 033 val dense=100.0% deployment=96.4% worst-source=96.4% MSE=1.918e-05 K=29.64 mass=28.03 beta=0.18 complexity=1.81->1.94 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=96.4%, MSE=1.918e-05, K=29.64, targetK=14.22, count_MAE=15.42, bias=+15.42, knot_F1@0.01=0.348, param_RMSE=4.583e-02
+Epoch 034/64 joint [........................] 1/47 MSE=1.545e-05 pass=100.0% K=29.2 teacherK=24.8 countMAE=15.56
+Epoch 034/64 joint [=====...................] 10/47 MSE=1.728e-05 pass=100.0% K=29.9 teacherK=26.4 countMAE=15.59
+Epoch 034/64 joint [==========..............] 20/47 MSE=2.098e-05 pass=93.8% K=29.9 teacherK=27.3 countMAE=14.84
+Epoch 034/64 joint [===============.........] 30/47 MSE=3.099e-05 pass=81.2% K=28.2 teacherK=26.2 countMAE=14.09
+Epoch 034/64 joint [====================....] 40/47 MSE=1.667e-05 pass=100.0% K=28.1 teacherK=24.1 countMAE=14.78
+Epoch 034/64 joint [========================] 47/47 MSE=1.975e-05 pass=92.9% K=28.1 teacherK=25.1 countMAE=14.61
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 034 val dense=100.0% deployment=96.0% worst-source=96.0% MSE=2.211e-05 K=28.86 mass=27.29 beta=0.30 complexity=1.94->2.06 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=96.0%, MSE=2.211e-05, K=28.86, targetK=14.22, count_MAE=14.64, bias=+14.64, knot_F1@0.01=0.355, param_RMSE=4.620e-02
+Epoch 035/64 joint [........................] 1/47 MSE=2.342e-05 pass=100.0% K=27.2 teacherK=25.2 countMAE=13.50
+Epoch 035/64 joint [=====...................] 10/47 MSE=1.525e-05 pass=100.0% K=24.3 teacherK=20.9 countMAE=13.12
+Epoch 035/64 joint [==========..............] 20/47 MSE=2.090e-05 pass=96.9% K=28.8 teacherK=26.3 countMAE=14.62
+Epoch 035/64 joint [===============.........] 30/47 MSE=2.215e-05 pass=93.8% K=26.9 teacherK=24.1 countMAE=13.84
+Epoch 035/64 joint [====================....] 40/47 MSE=2.304e-05 pass=96.9% K=30.5 teacherK=28.0 countMAE=15.16
+Epoch 035/64 joint [========================] 47/47 MSE=2.179e-05 pass=96.4% K=23.8 teacherK=21.4 countMAE=11.82
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 035 val dense=100.0% deployment=89.4% worst-source=89.4% MSE=2.784e-05 K=27.20 mass=26.63 beta=0.39 complexity=2.06->1.81 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=89.4%, MSE=2.784e-05, K=27.20, targetK=14.22, count_MAE=12.98, bias=+12.98, knot_F1@0.01=0.344, param_RMSE=4.704e-02
+Epoch 036/64 joint [........................] 1/47 MSE=2.096e-05 pass=100.0% K=30.0 teacherK=26.9 countMAE=15.06
+Epoch 036/64 joint [=====...................] 10/47 MSE=1.656e-05 pass=100.0% K=29.2 teacherK=25.2 countMAE=15.12
+Epoch 036/64 joint [==========..............] 20/47 MSE=1.449e-05 pass=100.0% K=28.2 teacherK=24.3 countMAE=14.88
+Epoch 036/64 joint [===============.........] 30/47 MSE=1.645e-05 pass=96.9% K=29.6 teacherK=25.7 countMAE=15.50
+Epoch 036/64 joint [====================....] 40/47 MSE=1.543e-05 pass=100.0% K=28.5 teacherK=24.3 countMAE=14.88
+Epoch 036/64 joint [========================] 47/47 MSE=1.743e-05 pass=100.0% K=27.2 teacherK=24.2 countMAE=13.64
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 036 val dense=100.0% deployment=96.4% worst-source=96.4% MSE=2.065e-05 K=28.47 mass=26.87 beta=0.38 complexity=1.81->1.94 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=96.4%, MSE=2.065e-05, K=28.47, targetK=14.22, count_MAE=14.25, bias=+14.25, knot_F1@0.01=0.354, param_RMSE=4.709e-02
+Epoch 037/64 joint [........................] 1/47 MSE=1.756e-05 pass=100.0% K=29.3 teacherK=26.1 countMAE=14.81
+Epoch 037/64 joint [=====...................] 10/47 MSE=2.172e-05 pass=90.6% K=25.8 teacherK=23.1 countMAE=12.94
+Epoch 037/64 joint [==========..............] 20/47 MSE=2.114e-05 pass=93.8% K=29.9 teacherK=27.0 countMAE=14.88
+Epoch 037/64 joint [===============.........] 30/47 MSE=2.012e-05 pass=96.9% K=28.5 teacherK=25.7 countMAE=14.09
+Epoch 037/64 joint [====================....] 40/47 MSE=2.191e-05 pass=93.8% K=28.6 teacherK=26.1 countMAE=14.28
+Epoch 037/64 joint [========================] 47/47 MSE=2.213e-05 pass=96.4% K=29.2 teacherK=26.1 countMAE=14.50
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 037 val dense=100.0% deployment=95.0% worst-source=95.0% MSE=2.235e-05 K=28.20 mass=26.60 beta=0.40 complexity=1.94->2.06 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=95.0%, MSE=2.235e-05, K=28.20, targetK=14.22, count_MAE=13.98, bias=+13.98, knot_F1@0.01=0.354, param_RMSE=4.660e-02
+Epoch 038/64 joint [........................] 1/47 MSE=2.855e-05 pass=90.6% K=28.2 teacherK=26.7 countMAE=13.34
+Epoch 038/64 joint [=====...................] 10/47 MSE=1.759e-05 pass=96.9% K=26.5 teacherK=23.8 countMAE=13.28
+Epoch 038/64 joint [==========..............] 20/47 MSE=2.021e-05 pass=93.8% K=29.4 teacherK=26.8 countMAE=15.06
+Epoch 038/64 joint [===============.........] 30/47 MSE=2.595e-05 pass=87.5% K=29.1 teacherK=27.5 countMAE=13.97
+Epoch 038/64 joint [====================....] 40/47 MSE=2.288e-05 pass=93.8% K=25.4 teacherK=23.8 countMAE=12.41
+Epoch 038/64 joint [========================] 47/47 MSE=2.332e-05 pass=92.9% K=28.1 teacherK=25.9 countMAE=13.61
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 038 val dense=100.0% deployment=88.0% worst-source=88.0% MSE=3.037e-05 K=26.76 mass=26.20 beta=0.56 complexity=2.06->1.81 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=88.0%, MSE=3.037e-05, K=26.76, targetK=14.22, count_MAE=12.55, bias=+12.55, knot_F1@0.01=0.349, param_RMSE=4.663e-02
+Epoch 039/64 joint [........................] 1/47 MSE=2.046e-05 pass=93.8% K=28.5 teacherK=25.8 countMAE=14.38
+Epoch 039/64 joint [=====...................] 10/47 MSE=1.387e-05 pass=100.0% K=28.8 teacherK=24.9 countMAE=15.09
+Epoch 039/64 joint [==========..............] 20/47 MSE=1.734e-05 pass=100.0% K=29.4 teacherK=26.0 countMAE=15.00
+Epoch 039/64 joint [===============.........] 30/47 MSE=1.653e-05 pass=100.0% K=31.1 teacherK=27.3 countMAE=15.69
+Epoch 039/64 joint [====================....] 40/47 MSE=1.889e-05 pass=96.9% K=26.0 teacherK=22.8 countMAE=13.28
+Epoch 039/64 joint [========================] 47/47 MSE=2.014e-05 pass=96.4% K=27.8 teacherK=24.6 countMAE=14.04
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 039 val dense=100.0% deployment=94.2% worst-source=94.2% MSE=2.302e-05 K=28.11 mass=26.51 beta=0.31 complexity=1.81->1.94 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=94.2%, MSE=2.302e-05, K=28.11, targetK=14.22, count_MAE=13.89, bias=+13.89, knot_F1@0.01=0.361, param_RMSE=4.550e-02
+Epoch 040/64 joint [........................] 1/47 MSE=2.088e-05 pass=100.0% K=28.3 teacherK=25.4 countMAE=14.22
+Epoch 040/64 joint [=====...................] 10/47 MSE=1.835e-05 pass=96.9% K=27.6 teacherK=24.1 countMAE=14.09
+Epoch 040/64 joint [==========..............] 20/47 MSE=1.566e-05 pass=100.0% K=29.7 teacherK=25.8 countMAE=15.38
+Epoch 040/64 joint [===============.........] 30/47 MSE=1.479e-05 pass=96.9% K=28.7 teacherK=24.5 countMAE=14.94
+Epoch 040/64 joint [====================....] 40/47 MSE=1.664e-05 pass=100.0% K=25.3 teacherK=22.2 countMAE=13.12
+Epoch 040/64 joint [========================] 47/47 MSE=1.977e-05 pass=96.4% K=31.9 teacherK=28.8 countMAE=15.57
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 040 val dense=100.0% deployment=96.8% worst-source=96.8% MSE=2.033e-05 K=28.07 mass=26.49 beta=0.40 complexity=1.94->2.06 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=96.8%, MSE=2.033e-05, K=28.07, targetK=14.22, count_MAE=13.85, bias=+13.85, knot_F1@0.01=0.359, param_RMSE=4.550e-02
+Epoch 041/64 joint [........................] 1/47 MSE=2.348e-05 pass=96.9% K=27.7 teacherK=25.6 countMAE=13.31
+Epoch 041/64 joint [=====...................] 10/47 MSE=2.189e-05 pass=93.8% K=27.2 teacherK=24.9 countMAE=13.28
+Epoch 041/64 joint [==========..............] 20/47 MSE=1.908e-05 pass=100.0% K=27.0 teacherK=24.6 countMAE=13.09
+Epoch 041/64 joint [===============.........] 30/47 MSE=2.283e-05 pass=90.6% K=29.1 teacherK=27.1 countMAE=13.84
+Epoch 041/64 joint [====================....] 40/47 MSE=2.965e-05 pass=81.2% K=25.6 teacherK=24.2 countMAE=11.81
+Epoch 041/64 joint [========================] 47/47 MSE=1.984e-05 pass=92.9% K=25.1 teacherK=22.6 countMAE=12.36
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 041 val dense=100.0% deployment=96.8% worst-source=96.8% MSE=2.249e-05 K=27.50 mass=26.96 beta=0.33 complexity=2.06->2.19 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=96.8%, MSE=2.249e-05, K=27.50, targetK=14.22, count_MAE=13.29, bias=+13.29, knot_F1@0.01=0.343, param_RMSE=4.740e-02
+Epoch 042/64 joint [........................] 1/47 MSE=1.894e-05 pass=96.9% K=25.2 teacherK=22.4 countMAE=12.41
+Epoch 042/64 joint [=====...................] 10/47 MSE=2.168e-05 pass=93.8% K=26.7 teacherK=24.3 countMAE=13.03
+Epoch 042/64 joint [==========..............] 20/47 MSE=1.949e-05 pass=96.9% K=27.7 teacherK=24.8 countMAE=13.44
+Epoch 042/64 joint [===============.........] 30/47 MSE=2.396e-05 pass=93.8% K=27.7 teacherK=25.9 countMAE=12.88
+Epoch 042/64 joint [====================....] 40/47 MSE=2.632e-05 pass=93.8% K=26.2 teacherK=25.0 countMAE=12.03
+Epoch 042/64 joint [========================] 47/47 MSE=2.117e-05 pass=89.3% K=25.9 teacherK=23.8 countMAE=12.54
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 042 val dense=100.0% deployment=97.0% worst-source=97.0% MSE=2.097e-05 K=27.68 mass=27.12 beta=0.38 complexity=2.19->2.31 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=97.0%, MSE=2.097e-05, K=27.68, targetK=14.22, count_MAE=13.46, bias=+13.46, knot_F1@0.01=0.357, param_RMSE=4.607e-02
+Epoch 043/64 joint [........................] 1/47 MSE=1.841e-05 pass=96.9% K=26.0 teacherK=23.3 countMAE=12.81
+Epoch 043/64 joint [=====...................] 10/47 MSE=2.587e-05 pass=84.4% K=26.1 teacherK=24.7 countMAE=12.19
+Epoch 043/64 joint [==========..............] 20/47 MSE=2.270e-05 pass=93.8% K=23.7 teacherK=22.1 countMAE=11.44
+Epoch 043/64 joint [===============.........] 30/47 MSE=3.307e-05 pass=84.4% K=26.7 teacherK=25.8 countMAE=11.97
+Epoch 043/64 joint [====================....] 40/47 MSE=3.160e-05 pass=78.1% K=27.2 teacherK=26.2 countMAE=12.09
+Epoch 043/64 joint [========================] 47/47 MSE=1.823e-05 pass=96.4% K=25.3 teacherK=22.2 countMAE=12.82
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 043 val dense=100.0% deployment=98.2% worst-source=98.2% MSE=1.985e-05 K=27.92 mass=27.35 beta=0.32 complexity=2.31->2.44 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=98.2%, MSE=1.985e-05, K=27.92, targetK=14.22, count_MAE=13.71, bias=+13.71, knot_F1@0.01=0.358, param_RMSE=4.690e-02
+Epoch 044/64 joint [........................] 1/47 MSE=1.789e-05 pass=100.0% K=28.8 teacherK=25.8 countMAE=14.16
+Epoch 044/64 joint [=====...................] 10/47 MSE=1.516e-05 pass=100.0% K=29.9 teacherK=26.9 countMAE=14.69
+Epoch 044/64 joint [==========..............] 20/47 MSE=1.829e-05 pass=96.9% K=27.2 teacherK=24.6 countMAE=12.97
+Epoch 044/64 joint [===============.........] 30/47 MSE=2.029e-05 pass=100.0% K=27.6 teacherK=25.3 countMAE=13.03
+Epoch 044/64 joint [====================....] 40/47 MSE=2.310e-05 pass=93.8% K=26.6 teacherK=24.8 countMAE=12.50
+Epoch 044/64 joint [========================] 47/47 MSE=1.848e-05 pass=100.0% K=27.0 teacherK=24.6 countMAE=13.00
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 044 val dense=100.0% deployment=93.2% worst-source=93.2% MSE=2.466e-05 K=26.97 mass=26.42 beta=0.47 complexity=2.44->2.56 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=93.2%, MSE=2.466e-05, K=26.97, targetK=14.22, count_MAE=12.75, bias=+12.75, knot_F1@0.01=0.360, param_RMSE=4.773e-02
+Epoch 045/64 joint [........................] 1/47 MSE=2.185e-05 pass=93.8% K=23.9 teacherK=21.8 countMAE=11.47
+Epoch 045/64 joint [=====...................] 10/47 MSE=1.934e-05 pass=100.0% K=25.8 teacherK=23.7 countMAE=12.34
+Epoch 045/64 joint [==========..............] 20/47 MSE=1.606e-05 pass=96.9% K=27.7 teacherK=24.7 countMAE=13.44
+Epoch 045/64 joint [===============.........] 30/47 MSE=1.694e-05 pass=100.0% K=27.6 teacherK=24.6 countMAE=13.66
+Epoch 045/64 joint [====================....] 40/47 MSE=2.029e-05 pass=100.0% K=30.8 teacherK=28.2 countMAE=14.78
+Epoch 045/64 joint [========================] 47/47 MSE=2.877e-05 pass=82.1% K=23.9 teacherK=23.4 countMAE=10.89
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 045 val dense=100.0% deployment=91.2% worst-source=91.2% MSE=2.782e-05 K=26.08 mass=25.53 beta=0.66 complexity=2.56->2.62 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=91.2%, MSE=2.782e-05, K=26.08, targetK=14.22, count_MAE=11.87, bias=+11.87, knot_F1@0.01=0.347, param_RMSE=4.745e-02
+Epoch 046/64 joint [........................] 1/47 MSE=2.423e-05 pass=93.8% K=27.7 teacherK=25.9 countMAE=12.66
+Epoch 046/64 joint [=====...................] 10/47 MSE=1.662e-05 pass=100.0% K=26.5 teacherK=23.4 countMAE=13.12
+Epoch 046/64 joint [==========..............] 20/47 MSE=2.330e-05 pass=84.4% K=27.6 teacherK=25.7 countMAE=13.00
+Epoch 046/64 joint [===============.........] 30/47 MSE=2.050e-05 pass=96.9% K=28.6 teacherK=25.7 countMAE=13.56
+Epoch 046/64 joint [====================....] 40/47 MSE=2.510e-05 pass=78.1% K=26.4 teacherK=24.9 countMAE=12.19
+Epoch 046/64 joint [========================] 47/47 MSE=2.164e-05 pass=96.4% K=26.0 teacherK=24.1 countMAE=12.29
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 046 val dense=100.0% deployment=91.4% worst-source=91.4% MSE=2.689e-05 K=26.26 mass=25.71 beta=0.54 complexity=2.62->2.69 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=91.4%, MSE=2.689e-05, K=26.26, targetK=14.22, count_MAE=12.05, bias=+12.05, knot_F1@0.01=0.352, param_RMSE=4.627e-02
+Epoch 047/64 joint [........................] 1/47 MSE=2.386e-05 pass=90.6% K=25.7 teacherK=23.6 countMAE=12.00
+Epoch 047/64 joint [=====...................] 10/47 MSE=1.636e-05 pass=96.9% K=26.7 teacherK=23.2 countMAE=13.47
+Epoch 047/64 joint [==========..............] 20/47 MSE=2.261e-05 pass=96.9% K=26.4 teacherK=23.9 countMAE=12.47
+Epoch 047/64 joint [===============.........] 30/47 MSE=1.911e-05 pass=96.9% K=29.4 teacherK=27.1 countMAE=14.03
+Epoch 047/64 joint [====================....] 40/47 MSE=2.057e-05 pass=96.9% K=25.3 teacherK=23.1 countMAE=12.00
+Epoch 047/64 joint [========================] 47/47 MSE=2.435e-05 pass=89.3% K=25.6 teacherK=23.7 countMAE=11.96
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 047 val dense=100.0% deployment=91.2% worst-source=91.2% MSE=2.758e-05 K=25.99 mass=25.44 beta=0.62 complexity=2.69->2.75 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=91.2%, MSE=2.758e-05, K=25.99, targetK=14.22, count_MAE=11.77, bias=+11.77, knot_F1@0.01=0.361, param_RMSE=4.609e-02
+Epoch 048/64 joint [........................] 1/47 MSE=2.061e-05 pass=96.9% K=29.8 teacherK=27.6 countMAE=13.69
+Epoch 048/64 joint [=====...................] 10/47 MSE=2.593e-05 pass=93.8% K=24.2 teacherK=22.9 countMAE=11.03
+Epoch 048/64 joint [==========..............] 20/47 MSE=2.213e-05 pass=96.9% K=25.9 teacherK=23.9 countMAE=12.06
+Epoch 048/64 joint [===============.........] 30/47 MSE=2.978e-05 pass=75.0% K=27.3 teacherK=26.0 countMAE=12.50
+Epoch 048/64 joint [====================....] 40/47 MSE=2.596e-05 pass=90.6% K=27.2 teacherK=25.7 countMAE=12.44
+Epoch 048/64 joint [========================] 47/47 MSE=2.616e-05 pass=92.9% K=27.2 teacherK=25.5 countMAE=12.36
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 048 val dense=100.0% deployment=92.8% worst-source=92.8% MSE=2.532e-05 K=26.10 mass=25.56 beta=0.67 complexity=2.75->2.88 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=92.8%, MSE=2.532e-05, K=26.10, targetK=14.22, count_MAE=11.88, bias=+11.88, knot_F1@0.01=0.361, param_RMSE=4.626e-02
+Epoch 049/64 joint [........................] 1/47 MSE=2.454e-05 pass=87.5% K=25.1 teacherK=23.2 countMAE=11.53
+Epoch 049/64 joint [=====...................] 10/47 MSE=2.679e-05 pass=87.5% K=24.4 teacherK=22.7 countMAE=11.25
+Epoch 049/64 joint [==========..............] 20/47 MSE=2.284e-05 pass=90.6% K=29.2 teacherK=27.1 countMAE=13.59
+Epoch 049/64 joint [===============.........] 30/47 MSE=1.807e-05 pass=100.0% K=26.0 teacherK=23.1 countMAE=12.62
+Epoch 049/64 joint [====================....] 40/47 MSE=1.321e-05 pass=100.0% K=27.0 teacherK=23.2 countMAE=13.69
+Epoch 049/64 joint [========================] 47/47 MSE=2.777e-05 pass=92.9% K=24.3 teacherK=23.4 countMAE=10.79
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 049 val dense=100.0% deployment=81.6% worst-source=81.6% MSE=3.423e-05 K=25.19 mass=24.63 beta=0.86 complexity=2.88->2.62 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=81.6%, MSE=3.423e-05, K=25.19, targetK=14.22, count_MAE=10.97, bias=+10.97, knot_F1@0.01=0.352, param_RMSE=4.610e-02
+Epoch 050/64 joint [........................] 1/47 MSE=2.301e-05 pass=96.9% K=26.2 teacherK=24.3 countMAE=12.16
+Epoch 050/64 joint [=====...................] 10/47 MSE=2.119e-05 pass=100.0% K=24.6 teacherK=22.2 countMAE=11.66
+Epoch 050/64 joint [==========..............] 20/47 MSE=1.876e-05 pass=93.8% K=26.4 teacherK=23.5 countMAE=12.91
+Epoch 050/64 joint [===============.........] 30/47 MSE=1.924e-05 pass=100.0% K=29.4 teacherK=26.4 countMAE=13.97
+Epoch 050/64 joint [====================....] 40/47 MSE=1.593e-05 pass=100.0% K=29.7 teacherK=26.2 countMAE=14.56
+Epoch 050/64 joint [========================] 47/47 MSE=1.687e-05 pass=96.4% K=24.9 teacherK=21.9 countMAE=12.14
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 050 val dense=100.0% deployment=98.2% worst-source=98.2% MSE=1.897e-05 K=27.24 mass=25.66 beta=0.76 complexity=2.62->2.75 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=98.2%, MSE=1.897e-05, K=27.24, targetK=14.22, count_MAE=13.02, bias=+13.02, knot_F1@0.01=0.368, param_RMSE=4.498e-02
+Epoch 051/64 joint [........................] 1/47 MSE=2.047e-05 pass=93.8% K=27.9 teacherK=25.3 countMAE=13.41
+Epoch 051/64 joint [=====...................] 10/47 MSE=1.905e-05 pass=96.9% K=25.9 teacherK=23.5 countMAE=12.22
+Epoch 051/64 joint [==========..............] 20/47 MSE=1.798e-05 pass=100.0% K=27.3 teacherK=24.4 countMAE=13.19
+Epoch 051/64 joint [===============.........] 30/47 MSE=1.917e-05 pass=100.0% K=28.6 teacherK=26.2 countMAE=13.59
+Epoch 051/64 joint [====================....] 40/47 MSE=2.011e-05 pass=93.8% K=29.0 teacherK=26.7 countMAE=13.44
+Epoch 051/64 joint [========================] 47/47 MSE=1.937e-05 pass=92.9% K=27.8 teacherK=25.0 countMAE=13.21
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 051 val dense=100.0% deployment=98.0% worst-source=98.0% MSE=1.954e-05 K=26.96 mass=25.39 beta=0.81 complexity=2.75->2.88 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=98.0%, MSE=1.954e-05, K=26.96, targetK=14.22, count_MAE=12.74, bias=+12.74, knot_F1@0.01=0.369, param_RMSE=4.507e-02
+Epoch 052/64 joint [........................] 1/47 MSE=2.366e-05 pass=96.9% K=27.3 teacherK=25.4 countMAE=12.34
+Epoch 052/64 joint [=====...................] 10/47 MSE=1.938e-05 pass=96.9% K=27.1 teacherK=24.2 countMAE=13.06
+Epoch 052/64 joint [==========..............] 20/47 MSE=1.676e-05 pass=100.0% K=25.3 teacherK=22.4 countMAE=12.28
+Epoch 052/64 joint [===============.........] 30/47 MSE=2.079e-05 pass=100.0% K=25.0 teacherK=22.5 countMAE=11.91
+Epoch 052/64 joint [====================....] 40/47 MSE=2.591e-05 pass=93.8% K=27.1 teacherK=25.6 countMAE=12.09
+Epoch 052/64 joint [========================] 47/47 MSE=2.654e-05 pass=89.3% K=26.3 teacherK=25.0 countMAE=11.61
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 052 val dense=100.0% deployment=86.0% worst-source=86.0% MSE=3.106e-05 K=25.39 mass=24.82 beta=0.75 complexity=2.88->2.62 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=86.0%, MSE=3.106e-05, K=25.39, targetK=14.22, count_MAE=11.17, bias=+11.17, knot_F1@0.01=0.355, param_RMSE=4.561e-02
+Epoch 053/64 joint [........................] 1/47 MSE=2.305e-05 pass=93.8% K=29.1 teacherK=26.6 countMAE=13.44
+Epoch 053/64 joint [=====...................] 10/47 MSE=1.667e-05 pass=96.9% K=26.0 teacherK=22.9 countMAE=12.53
+Epoch 053/64 joint [==========..............] 20/47 MSE=1.546e-05 pass=100.0% K=24.6 teacherK=21.7 countMAE=12.06
+Epoch 053/64 joint [===============.........] 30/47 MSE=1.871e-05 pass=100.0% K=26.3 teacherK=23.2 countMAE=12.66
+Epoch 053/64 joint [====================....] 40/47 MSE=1.533e-05 pass=100.0% K=27.5 teacherK=23.9 countMAE=13.66
+Epoch 053/64 joint [========================] 47/47 MSE=1.921e-05 pass=100.0% K=24.2 teacherK=21.9 countMAE=11.39
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 053 val dense=100.0% deployment=96.6% worst-source=96.6% MSE=2.283e-05 K=26.18 mass=24.58 beta=0.91 complexity=2.62->2.75 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=96.6%, MSE=2.283e-05, K=26.18, targetK=14.22, count_MAE=11.96, bias=+11.96, knot_F1@0.01=0.361, param_RMSE=4.513e-02
+Epoch 054/64 joint [........................] 1/47 MSE=2.058e-05 pass=96.9% K=26.7 teacherK=24.2 countMAE=12.25
+Epoch 054/64 joint [=====...................] 10/47 MSE=1.731e-05 pass=100.0% K=27.0 teacherK=23.8 countMAE=12.94
+Epoch 054/64 joint [==========..............] 20/47 MSE=2.033e-05 pass=100.0% K=28.2 teacherK=25.7 countMAE=13.06
+Epoch 054/64 joint [===============.........] 30/47 MSE=1.688e-05 pass=96.9% K=27.4 teacherK=24.2 countMAE=13.19
+Epoch 054/64 joint [====================....] 40/47 MSE=1.652e-05 pass=100.0% K=25.0 teacherK=22.0 countMAE=12.09
+Epoch 054/64 joint [========================] 47/47 MSE=2.070e-05 pass=100.0% K=30.1 teacherK=27.0 countMAE=14.18
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 054 val dense=100.0% deployment=98.2% worst-source=98.2% MSE=1.927e-05 K=27.21 mass=25.63 beta=0.77 complexity=2.75->2.88 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=98.2%, MSE=1.927e-05, K=27.21, targetK=14.22, count_MAE=12.99, bias=+12.99, knot_F1@0.01=0.381, param_RMSE=4.464e-02
+Epoch 055/64 joint [........................] 1/47 MSE=2.077e-05 pass=93.8% K=27.1 teacherK=24.8 countMAE=12.53
+Epoch 055/64 joint [=====...................] 10/47 MSE=2.243e-05 pass=96.9% K=27.7 teacherK=25.8 countMAE=12.44
+Epoch 055/64 joint [==========..............] 20/47 MSE=1.536e-05 pass=100.0% K=27.9 teacherK=24.5 countMAE=13.22
+Epoch 055/64 joint [===============.........] 30/47 MSE=1.663e-05 pass=100.0% K=25.6 teacherK=22.8 countMAE=12.34
+Epoch 055/64 joint [====================....] 40/47 MSE=2.250e-05 pass=100.0% K=28.2 teacherK=25.9 countMAE=12.84
+Epoch 055/64 joint [========================] 47/47 MSE=2.179e-05 pass=92.9% K=24.9 teacherK=23.1 countMAE=10.93
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 055 val dense=100.0% deployment=90.4% worst-source=90.4% MSE=2.936e-05 K=24.99 mass=24.45 beta=0.92 complexity=2.88->2.94 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=90.4%, MSE=2.936e-05, K=24.99, targetK=14.22, count_MAE=10.77, bias=+10.77, knot_F1@0.01=0.370, param_RMSE=4.585e-02
+Epoch 056/64 joint [........................] 1/47 MSE=2.422e-05 pass=90.6% K=26.2 teacherK=24.6 countMAE=11.44
+Epoch 056/64 joint [=====...................] 10/47 MSE=2.004e-05 pass=100.0% K=24.6 teacherK=22.3 countMAE=11.34
+Epoch 056/64 joint [==========..............] 20/47 MSE=1.966e-05 pass=96.9% K=25.9 teacherK=23.5 countMAE=12.00
+Epoch 056/64 joint [===============.........] 30/47 MSE=2.178e-05 pass=96.9% K=24.5 teacherK=22.4 countMAE=11.31
+Epoch 056/64 joint [====================....] 40/47 MSE=2.384e-05 pass=90.6% K=23.4 teacherK=22.1 countMAE=10.53
+Epoch 056/64 joint [========================] 47/47 MSE=1.952e-05 pass=96.4% K=29.3 teacherK=27.0 countMAE=13.11
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 056 val dense=100.0% deployment=96.0% worst-source=96.0% MSE=2.392e-05 K=25.73 mass=25.18 beta=0.84 complexity=2.94->3.06 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=96.0%, MSE=2.392e-05, K=25.73, targetK=14.22, count_MAE=11.51, bias=+11.51, knot_F1@0.01=0.367, param_RMSE=4.615e-02
+Epoch 057/64 joint [........................] 1/47 MSE=1.873e-05 pass=100.0% K=27.4 teacherK=25.1 countMAE=12.47
+Epoch 057/64 joint [=====...................] 10/47 MSE=2.026e-05 pass=93.8% K=25.1 teacherK=23.1 countMAE=11.66
+Epoch 057/64 joint [==========..............] 20/47 MSE=1.825e-05 pass=100.0% K=24.7 teacherK=22.3 countMAE=11.66
+Epoch 057/64 joint [===============.........] 30/47 MSE=2.544e-05 pass=93.8% K=26.6 teacherK=24.6 countMAE=11.88
+Epoch 057/64 joint [====================....] 40/47 MSE=2.300e-05 pass=96.9% K=26.9 teacherK=25.2 countMAE=12.09
+Epoch 057/64 joint [========================] 47/47 MSE=1.901e-05 pass=100.0% K=28.4 teacherK=25.2 countMAE=13.25
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 057 val dense=100.0% deployment=97.6% worst-source=97.6% MSE=2.069e-05 K=26.43 mass=25.89 beta=0.62 complexity=3.06->3.19 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=97.6%, MSE=2.069e-05, K=26.43, targetK=14.22, count_MAE=12.21, bias=+12.21, knot_F1@0.01=0.380, param_RMSE=4.543e-02
+Epoch 058/64 joint [........................] 1/47 MSE=1.968e-05 pass=100.0% K=26.0 teacherK=23.3 countMAE=12.31
+Epoch 058/64 joint [=====...................] 10/47 MSE=2.023e-05 pass=96.9% K=26.8 teacherK=24.7 countMAE=12.25
+Epoch 058/64 joint [==========..............] 20/47 MSE=2.005e-05 pass=100.0% K=25.9 teacherK=23.7 countMAE=11.97
+Epoch 058/64 joint [===============.........] 30/47 MSE=1.923e-05 pass=96.9% K=28.3 teacherK=25.7 countMAE=12.81
+Epoch 058/64 joint [====================....] 40/47 MSE=2.318e-05 pass=96.9% K=22.2 teacherK=20.2 countMAE=10.25
+Epoch 058/64 joint [========================] 47/47 MSE=2.171e-05 pass=92.9% K=26.0 teacherK=24.2 countMAE=11.54
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 058 val dense=100.0% deployment=88.6% worst-source=88.6% MSE=3.035e-05 K=25.04 mass=24.49 beta=0.78 complexity=3.19->2.94 safety=0+0.05sigma scale=0.00->0.25 target_met=False
+  Synthetic: dense=100.0%, deployment=88.6%, MSE=3.035e-05, K=25.04, targetK=14.22, count_MAE=10.82, bias=+10.82, knot_F1@0.01=0.359, param_RMSE=4.533e-02
+Epoch 059/64 joint [........................] 1/47 MSE=1.825e-05 pass=100.0% K=26.6 teacherK=23.8 countMAE=12.31
+Epoch 059/64 joint [=====...................] 10/47 MSE=1.800e-05 pass=96.9% K=28.6 teacherK=25.5 countMAE=13.44
+Epoch 059/64 joint [==========..............] 20/47 MSE=1.551e-05 pass=100.0% K=26.1 teacherK=22.6 countMAE=12.50
+Epoch 059/64 joint [===============.........] 30/47 MSE=1.551e-05 pass=96.9% K=25.6 teacherK=22.8 countMAE=12.03
+Epoch 059/64 joint [====================....] 40/47 MSE=1.820e-05 pass=96.9% K=28.3 teacherK=25.4 countMAE=13.12
+Epoch 059/64 joint [========================] 47/47 MSE=1.611e-05 pass=100.0% K=25.4 teacherK=22.8 countMAE=11.86
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 059 val dense=100.0% deployment=96.6% worst-source=96.6% MSE=2.219e-05 K=26.04 mass=24.43 beta=0.90 complexity=2.94->3.06 safety=1+0.09sigma scale=0.25->0.12 target_met=True
+  Synthetic: dense=100.0%, deployment=96.6%, MSE=2.219e-05, K=26.04, targetK=14.22, count_MAE=11.82, bias=+11.82, knot_F1@0.01=0.379, param_RMSE=4.646e-02
+Epoch 060/64 joint [........................] 1/47 MSE=2.580e-05 pass=87.5% K=25.0 teacherK=23.1 countMAE=11.38
+Epoch 060/64 joint [=====...................] 10/47 MSE=1.597e-05 pass=100.0% K=26.0 teacherK=23.0 countMAE=12.47
+Epoch 060/64 joint [==========..............] 20/47 MSE=1.751e-05 pass=100.0% K=26.4 teacherK=23.6 countMAE=12.41
+Epoch 060/64 joint [===============.........] 30/47 MSE=1.476e-05 pass=100.0% K=22.5 teacherK=19.7 countMAE=10.84
+Epoch 060/64 joint [====================....] 40/47 MSE=1.971e-05 pass=100.0% K=26.4 teacherK=23.2 countMAE=12.59
+Epoch 060/64 joint [========================] 47/47 MSE=1.743e-05 pass=100.0% K=26.9 teacherK=23.7 countMAE=12.75
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 060 val dense=100.0% deployment=98.6% worst-source=98.6% MSE=1.815e-05 K=27.08 mass=25.52 beta=0.70 complexity=3.06->3.19 safety=1+0.07sigma scale=0.12->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=98.6%, MSE=1.815e-05, K=27.08, targetK=14.22, count_MAE=12.86, bias=+12.86, knot_F1@0.01=0.374, param_RMSE=4.537e-02
+Epoch 061/64 joint [........................] 1/47 MSE=2.076e-05 pass=93.8% K=28.5 teacherK=26.0 countMAE=13.16
+Epoch 061/64 joint [=====...................] 10/47 MSE=1.928e-05 pass=100.0% K=26.0 teacherK=23.6 countMAE=11.97
+Epoch 061/64 joint [==========..............] 20/47 MSE=2.884e-05 pass=90.6% K=29.2 teacherK=28.0 countMAE=12.62
+Epoch 061/64 joint [===============.........] 30/47 MSE=2.177e-05 pass=93.8% K=25.4 teacherK=23.8 countMAE=11.50
+Epoch 061/64 joint [====================....] 40/47 MSE=1.871e-05 pass=96.9% K=24.3 teacherK=22.6 countMAE=10.97
+Epoch 061/64 joint [========================] 47/47 MSE=2.381e-05 pass=92.9% K=25.2 teacherK=23.5 countMAE=11.07
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 061 val dense=100.0% deployment=94.4% worst-source=94.4% MSE=2.502e-05 K=25.23 mass=24.68 beta=0.85 complexity=3.19->3.31 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=94.4%, MSE=2.502e-05, K=25.23, targetK=14.22, count_MAE=11.01, bias=+11.01, knot_F1@0.01=0.365, param_RMSE=4.617e-02
+Epoch 062/64 joint [........................] 1/47 MSE=2.610e-05 pass=93.8% K=25.8 teacherK=24.1 countMAE=11.28
+Epoch 062/64 joint [=====...................] 10/47 MSE=2.044e-05 pass=100.0% K=27.6 teacherK=25.8 countMAE=12.22
+Epoch 062/64 joint [==========..............] 20/47 MSE=1.929e-05 pass=100.0% K=29.5 teacherK=27.2 countMAE=13.12
+Epoch 062/64 joint [===============.........] 30/47 MSE=1.848e-05 pass=100.0% K=22.8 teacherK=20.2 countMAE=10.75
+Epoch 062/64 joint [====================....] 40/47 MSE=1.666e-05 pass=100.0% K=26.0 teacherK=23.0 countMAE=12.22
+Epoch 062/64 joint [========================] 47/47 MSE=1.923e-05 pass=96.4% K=25.1 teacherK=23.0 countMAE=11.29
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 062 val dense=100.0% deployment=95.6% worst-source=95.6% MSE=2.359e-05 K=25.48 mass=24.92 beta=0.78 complexity=3.31->3.44 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=95.6%, MSE=2.359e-05, K=25.48, targetK=14.22, count_MAE=11.26, bias=+11.26, knot_F1@0.01=0.374, param_RMSE=4.540e-02
+Epoch 063/64 joint [........................] 1/47 MSE=2.357e-05 pass=93.8% K=29.8 teacherK=27.8 countMAE=13.22
+Epoch 063/64 joint [=====...................] 10/47 MSE=2.338e-05 pass=100.0% K=24.8 teacherK=23.3 countMAE=10.78
+Epoch 063/64 joint [==========..............] 20/47 MSE=2.451e-05 pass=84.4% K=21.7 teacherK=20.4 countMAE=9.56
+Epoch 063/64 joint [===============.........] 30/47 MSE=2.661e-05 pass=87.5% K=21.6 teacherK=20.5 countMAE=9.16
+Epoch 063/64 joint [====================....] 40/47 MSE=2.625e-05 pass=90.6% K=23.7 teacherK=22.3 countMAE=10.44
+Epoch 063/64 joint [========================] 47/47 MSE=1.701e-05 pass=100.0% K=24.6 teacherK=22.5 countMAE=11.14
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 063 val dense=100.0% deployment=94.0% worst-source=94.0% MSE=2.445e-05 K=25.31 mass=24.75 beta=0.87 complexity=3.44->3.56 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=94.0%, MSE=2.445e-05, K=25.31, targetK=14.22, count_MAE=11.09, bias=+11.09, knot_F1@0.01=0.373, param_RMSE=4.549e-02
+Epoch 064/64 joint [........................] 1/47 MSE=2.329e-05 pass=96.9% K=25.7 teacherK=24.0 countMAE=11.16
+Epoch 064/64 joint [=====...................] 10/47 MSE=2.414e-05 pass=93.8% K=27.2 teacherK=25.3 countMAE=12.03
+Epoch 064/64 joint [==========..............] 20/47 MSE=1.701e-05 pass=100.0% K=26.0 teacherK=23.3 countMAE=11.91
+Epoch 064/64 joint [===============.........] 30/47 MSE=2.378e-05 pass=93.8% K=24.5 teacherK=23.0 countMAE=10.59
+Epoch 064/64 joint [====================....] 40/47 MSE=2.041e-05 pass=100.0% K=24.1 teacherK=22.0 countMAE=10.88
+Epoch 064/64 joint [========================] 47/47 MSE=2.523e-05 pass=96.4% K=27.0 teacherK=25.8 countMAE=11.57
+  validation [=.......................] 1/16 
+  validation [===============.........] 10/16 
+  validation [========================] 16/16 
+Epoch 064 val dense=100.0% deployment=94.8% worst-source=94.8% MSE=2.538e-05 K=25.25 mass=24.69 beta=0.92 complexity=3.56->3.69 safety=0+0.05sigma scale=0.00->0.00 target_met=True
+  Synthetic: dense=100.0%, deployment=94.8%, MSE=2.538e-05, K=25.25, targetK=14.22, count_MAE=11.03, bias=+11.03, knot_F1@0.01=0.365, param_RMSE=4.594e-02
+Saved best v16: /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_1070_full_pipeline_r1.pt; quality=deployment_target_met. Last/resume: /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_1070_full_pipeline_r1.last.pt

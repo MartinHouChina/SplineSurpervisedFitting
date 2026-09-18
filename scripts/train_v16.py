@@ -1,7 +1,10 @@
 """Train v16 dense feasibility, then online counterfactual subset selection."""
+# Imports below the local src bootstrap are intentional for direct script use.
+# ruff: noqa: E402
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import random
@@ -40,6 +43,19 @@ from spline_fitting.evaluation.knot_diagnostics import (
 )
 from spline_fitting.losses.v16_subset_loss import V16SubsetLoss
 from spline_fitting.models.v16_network import V16CandidateSelectionNetwork
+
+
+# Missing entries in historical checkpoints mean these opt-in features were off.
+ENHANCED_TRAINING_DEFAULTS = {
+    "teacher_refinement_steps": 0,
+    "teacher_refinement_candidates": 2,
+    "boundary_ranking_weight": 0.0,
+    "boundary_ranking_candidates": 4,
+    "joint_proposal_lr_scale": 1.0,
+    "joint_decoder_lr_scale": 1.0,
+    "joint_final_lr_ratio": 1.0,
+    "warm_start_checkpoint": None,
+}
 
 
 def parser():
@@ -114,6 +130,13 @@ def parser():
         help=("Training-only ranked-prefix feasibility search depth; seven "
               "steps resolve a Kc=96 count boundary without deployment search"),
     )
+    p.add_argument("--teacher-refinement-steps", type=int, default=0,
+                   help="Opt-in training-only greedy deletion rounds after the online teacher")
+    p.add_argument("--teacher-refinement-candidates", type=int, default=2,
+                   help="Maximum deletion candidates tested per teacher refinement round")
+    p.add_argument("--boundary-ranking-weight", type=float, default=0.0,
+                   help="Opt-in online teacher keep/remove boundary ranking loss weight")
+    p.add_argument("--boundary-ranking-candidates", type=int, default=4)
     p.add_argument("--count-weight", type=float, default=2.0)
     p.add_argument("--supervised-count-weight", type=float, default=1.0)
     p.add_argument("--supervised-over-count-weight", type=float, default=1.0)
@@ -150,6 +173,12 @@ def parser():
     p.add_argument("--complexity-pass-margin", type=float, default=0.02)
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--joint-lr", type=float, default=5e-5)
+    p.add_argument("--joint-proposal-lr-scale", type=float, default=1.0,
+                   help="Joint-stage encoder/parameter/proposal LR multiplier")
+    p.add_argument("--joint-decoder-lr-scale", type=float, default=1.0,
+                   help="Joint-stage subset decoder LR multiplier; selector stays at joint-lr")
+    p.add_argument("--joint-final-lr-ratio", type=float, default=1.0,
+                   help="Cosine joint LR end/start ratio in (0,1]; 1 preserves constant LR")
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--grad-clip", type=float, default=1.0)
     p.add_argument("--seed", type=int, default=42)
@@ -168,6 +197,11 @@ def parser():
         "--resume", type=Path,
         help=("Resume .last.pt with the original data/targets/output; only total epochs, "
               "runtime options, and an unfinished proposal-stage end may be extended"),
+    )
+    p.add_argument(
+        "--warm-start-checkpoint", type=Path,
+        help=("Strictly copy all compatible native-v16 weights into a fresh run; "
+              "reset optimizer/history/controllers and recheck the proposal gate"),
     )
     p.add_argument("--output", type=Path, default=Path("outputs/checkpoints/candidate_selection_v16.pt"))
     return p
@@ -198,10 +232,14 @@ def validate_args(args):
         "min_selected_knots", "complexity_ramp_epochs", "final_safety_knots",
         "safety_anneal_epochs", "teacher_prefix_search_steps",
         "minimality_max_attempts",
+        "teacher_refinement_steps",
     ):
         value = getattr(args, key)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError(f"{key} must be a non-negative integer")
+    for key in ("teacher_refinement_candidates", "boundary_ranking_candidates"):
+        if getattr(args, key) < 1:
+            raise ValueError(f"{key} must be positive")
     if not 4 <= args.min_control_points <= args.max_control_points:
         raise ValueError("control-point range must satisfy 4 <= min <= max")
     if not 1 <= args.candidate_knots <= args.num_points - 4:
@@ -231,6 +269,7 @@ def validate_args(args):
     for key in (
         "mse_tolerance", "knot_match_tolerance", "lr", "joint_lr",
         "grad_clip", "tolerance_factor_min", "tolerance_factor_max",
+        "joint_proposal_lr_scale", "joint_decoder_lr_scale", "joint_final_lr_ratio",
     ):
         if not math.isfinite(getattr(args, key)) or getattr(args, key) <= 0:
             raise ValueError(f"{key} must be finite and positive")
@@ -242,9 +281,12 @@ def validate_args(args):
         "true_parameter_weight", "proposal_knot_coverage_weight",
         "selected_knot_position_weight", "knot_position_beta",
         "complexity_max_scale",
+        "boundary_ranking_weight",
     ):
         if not math.isfinite(getattr(args, key)) or getattr(args, key) < 0:
             raise ValueError(f"{key} must be finite and nonnegative")
+    if args.joint_final_lr_ratio > 1:
+        raise ValueError("joint-final-lr-ratio must lie in (0,1]")
     if args.minimality_max_attempts < 1:
         raise ValueError("minimality-max-attempts must be positive")
     if args.minimality_audit_points not in (0,) and args.minimality_audit_points < 2:
@@ -272,8 +314,10 @@ def validate_args(args):
         raise ValueError("relocation-blend must lie in [0,1]")
     if args.deployment_pass_target + args.complexity_pass_margin > 1:
         raise ValueError("deployment-pass-target + complexity-pass-margin cannot exceed one")
-    if args.resume and args.init_checkpoint:
-        raise ValueError("resume and init-checkpoint are mutually exclusive")
+    if sum(bool(value) for value in (
+        args.resume, args.init_checkpoint, args.warm_start_checkpoint,
+    )) > 1:
+        raise ValueError("resume, init-checkpoint and warm-start-checkpoint are mutually exclusive")
     if args.train_size >= EPOCH_SEED_STRIDE:
         raise ValueError("train-size exceeds epoch seed stride")
     for epoch in range(args.epochs if args.resample_train_each_epoch else 1):
@@ -612,7 +656,57 @@ def checkpoint_rank(
 def serial_args(args):
     return {key: ([str(v.resolve()) for v in value] if isinstance(value, list) else
                   str(value.resolve()) if isinstance(value, Path) else value)
-            for key, value in vars(args).items()}
+            for key, value in vars(args).items()
+            if key not in ENHANCED_TRAINING_DEFAULTS
+            or value != ENHANCED_TRAINING_DEFAULTS[key]}
+
+
+def training_config_changes(current, previous, ignored):
+    """Compare optional settings symmetrically, including legacy absent defaults."""
+    normalized_current = {**ENHANCED_TRAINING_DEFAULTS, **current}
+    normalized_previous = {**ENHANCED_TRAINING_DEFAULTS, **previous}
+    return [key for key, value in normalized_current.items()
+            if key not in ignored and normalized_previous.get(key) != value]
+
+
+def build_optimizer(model, args, *, stage):
+    """Keep the historical one-group layout unless differential LRs are requested."""
+    lr = args.lr if stage == "proposal" else args.joint_lr
+    if stage == "proposal" or (
+        args.joint_proposal_lr_scale == 1.0 and args.joint_decoder_lr_scale == 1.0
+    ):
+        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=args.weight_decay)
+    proposal_prefixes = ("encoder.", "parameter_head.", "candidate_head.")
+    decoder_prefixes = (
+        "subset_geometry.", "survivor_attention.", "parameter_attention.",
+        "survivor_norm.", "parameter_norm.", "parameter_update.",
+        "relocation_update.", "relocation_blend_logit",
+    )
+    groups = {"proposal": [], "selector": [], "decoder": []}
+    for name, parameter in model.named_parameters():
+        group = ("proposal" if name.startswith(proposal_prefixes) else
+                 "decoder" if name.startswith(decoder_prefixes) else "selector")
+        groups[group].append(parameter)
+    scales = {"proposal": args.joint_proposal_lr_scale, "selector": 1.0,
+              "decoder": args.joint_decoder_lr_scale}
+    return torch.optim.AdamW([
+        {"params": parameters, "lr": lr * scales[name],
+         "group_name": name, "lr_scale": scales[name]}
+        for name, parameters in groups.items()
+    ], lr=lr, weight_decay=args.weight_decay)
+
+
+def apply_joint_learning_rate(optimizer, args, *, epoch, end_epoch):
+    """Epoch-based cosine decay; extensions retain the original decay horizon."""
+    first_joint = args.proposal_epochs + 1
+    progress_fraction = min(1.0, max(0.0,
+        (epoch - first_joint) / max(1, end_epoch - first_joint)))
+    ratio = args.joint_final_lr_ratio + (1.0 - args.joint_final_lr_ratio) * (
+        1.0 + math.cos(math.pi * progress_fraction)
+    ) / 2.0
+    for group in optimizer.param_groups:
+        group["lr"] = args.joint_lr * group.get("lr_scale", 1.0) * ratio
+    return ratio
 
 
 def synthetic_dataset_config(args):
@@ -661,6 +755,42 @@ def transfer_proposal_weights(model, checkpoint):
     return tuple(sorted(copied))
 
 
+def transfer_all_weights(model, checkpoint):
+    """Strict full-model transfer, allowing only the new safety curriculum reset."""
+    contracts = {
+        "objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+        "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
+        "simplification_contract": V16_SIMPLIFICATION_CONTRACT,
+    }
+    for name, expected in contracts.items():
+        if checkpoint.get(name) != expected:
+            raise ValueError(f"full warm start requires matching native v16 {name}")
+    source_model, _, _ = build_model_from_checkpoint(checkpoint)
+    source_config, target_config = source_model.get_config(), model.get_config()
+    controlled_safety = {"one_shot_safety_sigma", "one_shot_safety_knots"}
+    changed = [key for key in set(source_config) | set(target_config)
+               if key not in controlled_safety
+               and source_config.get(key) != target_config.get(key)]
+    if changed:
+        raise ValueError(f"full warm-start model configuration mismatch: {sorted(changed)}")
+    model.load_state_dict(source_model.state_dict(), strict=True)
+    return tuple(sorted(source_model.state_dict()))
+
+
+def initializer_record(path, checkpoint, *, mode, copied):
+    with path.open("rb") as handle:
+        digest = hashlib.file_digest(handle, "sha256").hexdigest()
+    return dict(
+        mode=mode, path=str(path.resolve()), sha256=digest,
+        epoch=checkpoint.get("epoch"), stage=checkpoint.get("stage"),
+        copied_tensor_count=len(copied),
+        training_config=checkpoint.get("training_config", {}),
+        real_data_provenance=checkpoint.get("real_data_provenance", []),
+        ancestor_initializer_provenance=checkpoint.get("initializer_provenance"),
+        note="Weights only; fresh optimizer, history and validation controllers. Ancestor exposure is retained.",
+    )
+
+
 def main(argv=None):
     p = parser()
     args = p.parse_args(argv)
@@ -672,10 +802,16 @@ def main(argv=None):
     last_path = output.with_name(output.stem + ".last.pt")
     proposal_path = output.with_name(output.stem + ".proposal.pt")
     history_path = output.with_suffix(".history.json")
+    if args.warm_start_checkpoint and args.warm_start_checkpoint.resolve() in {
+        output, last_path, proposal_path,
+    }:
+        p.error("warm-start checkpoint must be a different experiment from the new output")
     if not args.resume and any(path.exists() for path in (output, last_path, proposal_path, history_path)):
         p.error("output artifacts already exist; choose a new output or explicitly --resume the .last.pt")
     torch.set_num_threads(args.torch_num_threads)
-    random.seed(args.seed); np.random.seed(args.seed); torch.manual_seed(args.seed)
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
     device = torch.device("cuda" if args.device == "auto" and torch.cuda.is_available() else
                           "cpu" if args.device == "auto" else args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
@@ -710,6 +846,8 @@ def main(argv=None):
     history, start_epoch, best_rank, proposal_rank, proposal_ready = [], 1, None, None, False
     complexity_scale, feasible_streak = 0.0, 0
     selection_safety_scale = 1.0
+    initializer_provenance = None
+    joint_schedule_end_epoch = args.epochs
     resume_payload = None
     if args.resume:
         resume_payload = torch.load(args.resume, map_location="cpu", weights_only=True)
@@ -725,7 +863,7 @@ def main(argv=None):
                 "resume checkpoint uses an older simplification contract; "
                 "start a new run or use --init-checkpoint"
             )
-        ignored = {"epochs", "resume", "init_checkpoint", "output", "device", "num_workers",
+        ignored = {"epochs", "resume", "init_checkpoint", "warm_start_checkpoint", "output", "device", "num_workers",
                    "torch_num_threads", "log_every_batches"}
         previous_config = resume_payload["training_config"]
         if Path(previous_config["output"]).resolve() != output:
@@ -733,7 +871,7 @@ def main(argv=None):
         if (resume_payload.get("stage") == "proposal"
                 and args.proposal_epochs >= previous_config["proposal_epochs"]):
             ignored.add("proposal_epochs")
-        changed = [k for k, v in current_config.items() if k not in ignored and previous_config.get(k) != v]
+        changed = training_config_changes(current_config, previous_config, ignored)
         if changed or resume_payload.get("real_data_provenance") != provenance:
             p.error(f"resume data/training configuration mismatch: {changed or 'manifest fingerprints'}")
         model, _, _ = build_model_from_checkpoint(resume_payload)
@@ -747,6 +885,10 @@ def main(argv=None):
         selection_safety_scale = float(
             resume_payload.get("next_selection_safety_scale", 1.0)
         )
+        initializer_provenance = resume_payload.get("initializer_provenance")
+        joint_schedule_end_epoch = int(resume_payload.get(
+            "training_schedule", {},
+        ).get("joint_end_epoch", previous_config["epochs"]))
         if not 0 <= complexity_scale <= args.complexity_max_scale:
             p.error("resume checkpoint has an invalid complexity controller state")
         if not 0 <= selection_safety_scale <= 1:
@@ -755,6 +897,17 @@ def main(argv=None):
             p.error("checkpoint already completed the requested epochs")
         if not proposal_path.exists() or (resume_payload.get("stage") == "joint" and not output.exists()):
             p.error("resume requires the saved best proposal and, for joint training, the best model artifact")
+    elif args.warm_start_checkpoint:
+        source_checkpoint = torch.load(args.warm_start_checkpoint, map_location="cpu", weights_only=True)
+        try:
+            copied = transfer_all_weights(model, source_checkpoint)
+        except (KeyError, TypeError, ValueError, RuntimeError) as error:
+            p.error(str(error))
+        initializer_provenance = initializer_record(
+            args.warm_start_checkpoint, source_checkpoint, mode="full_model", copied=copied,
+        )
+        print(f"Transferred all {len(copied)} model tensors including selector/decoder; "
+              "fresh optimizer, history, safety curriculum and proposal gate.", flush=True)
     elif args.init_checkpoint:
         source_checkpoint = torch.load(args.init_checkpoint, map_location="cpu", weights_only=True)
         try:
@@ -763,8 +916,11 @@ def main(argv=None):
             p.error(str(error))
         print(f"Transferred {len(copied)} encoder/parameter/proposal tensors; "
               "selector and subset decoder start fresh.", flush=True)
+        initializer_provenance = initializer_record(
+            args.init_checkpoint, source_checkpoint, mode="proposal_only", copied=copied,
+        )
     model.to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = build_optimizer(model, args, stage=resume_payload["stage"] if resume_payload else "proposal")
     if resume_payload:
         optimizer.load_state_dict(resume_payload["optimizer_state_dict"])
         torch.set_rng_state(resume_payload["rng_state"])
@@ -775,6 +931,10 @@ def main(argv=None):
         policy_samples=args.policy_samples,
         counterfactual_edits=args.counterfactual_edits,
         teacher_prefix_search_steps=args.teacher_prefix_search_steps,
+        teacher_refinement_steps=args.teacher_refinement_steps,
+        teacher_refinement_candidates=args.teacher_refinement_candidates,
+        boundary_ranking_weight=args.boundary_ranking_weight,
+        boundary_ranking_candidates=args.boundary_ranking_candidates,
         count_weight=args.count_weight,
         supervised_count_weight=args.supervised_count_weight,
         supervised_over_count_weight=args.supervised_over_count_weight,
@@ -819,6 +979,14 @@ def main(argv=None):
         flush=True,
     )
     print("Validation checkpoint quality uses the worst source pass rate. Additional subset fits run only during training.", flush=True)
+    if args.teacher_refinement_steps or args.boundary_ranking_weight:
+        print(
+            f"Online teacher refinement: {args.teacher_refinement_steps} rounds x "
+            f"{args.teacher_refinement_candidates} deletion candidates; boundary ranking "
+            f"weight={args.boundary_ranking_weight:g}, candidates={args.boundary_ranking_candidates}. "
+            "Teacher mask agreement below is a training signal, not ground-truth knot F1.",
+            flush=True,
+        )
     for epoch in range(start_epoch, args.epochs + 1):
         stage = "proposal" if epoch <= args.proposal_epochs else "joint"
         applied_safety_scale = selection_safety_scale
@@ -839,7 +1007,13 @@ def main(argv=None):
                       f"{proposal_gate:.1%} in every source. "
                       f"Inspect {history_path}; increase proposal training/candidate budget before simplification.", flush=True)
                 return 2
-            optimizer = torch.optim.AdamW(model.parameters(), lr=args.joint_lr, weight_decay=args.weight_decay)
+            optimizer = build_optimizer(model, args, stage="joint")
+        if stage == "joint":
+            apply_joint_learning_rate(
+                optimizer, args, epoch=epoch, end_epoch=joint_schedule_end_epoch,
+            )
+        learning_rates = {group.get("group_name", "all"): group["lr"]
+                          for group in optimizer.param_groups}
         train_data = MixedTrainingCurves(dataset_config, sources, size=args.train_size, seed=args.seed,
             real_fraction=args.real_fraction, epoch=epoch-1, resample=args.resample_train_each_epoch)
         loader_generator = torch.Generator().manual_seed(args.seed + epoch)
@@ -847,7 +1021,9 @@ def main(argv=None):
             train_data, batch_size=args.batch_size, shuffle=True,
             generator=loader_generator, **loader_runtime,
         )
-        model.train(); started = time.perf_counter(); total, samples = defaultdict(float), 0
+        model.train()
+        started = time.perf_counter()
+        total, samples = defaultdict(float), 0
         for step, batch in enumerate(train_loader, 1):
             points = batch["points"].to(device, non_blocking=device.type == "cuda")
             lower, upper = math.log(args.tolerance_factor_min), math.log(args.tolerance_factor_max)
@@ -878,7 +1054,8 @@ def main(argv=None):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip, error_if_nonfinite=True)
             optimizer.step()
-            size = len(points); samples += size
+            size = len(points)
+            samples += size
             for key, value in metrics.items():
                 total[key] += float(value)*size
             progress(step, len(train_loader), f"Epoch {epoch:03}/{args.epochs} {stage}",
@@ -910,6 +1087,7 @@ def main(argv=None):
             )
         entry = dict(
             epoch=epoch, stage=stage, train=train_metrics, validation=measured,
+            learning_rates=learning_rates,
             applied_complexity_scale=applied_complexity_scale,
             next_complexity_scale=complexity_scale,
             applied_selection_safety_scale=applied_safety_scale,
@@ -948,6 +1126,9 @@ def main(argv=None):
             model_config=model.get_config(), model_state_dict={k:v.detach().cpu() for k,v in model.state_dict().items()},
             optimizer_state_dict=optimizer.state_dict(), epoch=epoch, stage=stage,
             training_config=current_config, dataset_config=dataset_config, history=history,
+            training_schedule=dict(joint_end_epoch=joint_schedule_end_epoch,
+                                   joint_final_lr_ratio=args.joint_final_lr_ratio),
+            initializer_provenance=initializer_provenance,
             dataset_type=(
                 (
                     "certified_synthetic_geometry_and_real_unlabeled"
@@ -1006,6 +1187,9 @@ def main(argv=None):
             rng_state=torch.get_rng_state(), cuda_rng_state=torch.cuda.get_rng_state_all() if device.type == "cuda" else [],
             loss_config=dict(policy_samples=args.policy_samples, counterfactual_edits=args.counterfactual_edits,
                              teacher_prefix_search_steps=args.teacher_prefix_search_steps,
+                             teacher_refinement_steps=args.teacher_refinement_steps,
+                             teacher_refinement_candidates=args.teacher_refinement_candidates,
+                             boundary_ranking_candidates=args.boundary_ranking_candidates,
                              ranked_prefix_teacher=objective.ranked_prefix_teacher,
                              knot_position_beta=objective.knot_position_beta,
                              mse_tolerance=args.mse_tolerance, solver_jitter=objective.solver_jitter,
@@ -1017,7 +1201,7 @@ def main(argv=None):
                                   "supervised_count_weight",
                                   "supervised_over_count_weight", "true_parameter_weight",
                                   "proposal_knot_coverage_weight",
-                                  "selected_knot_position_weight")}))
+                                  "selected_knot_position_weight", "boundary_ranking_weight")}))
         payload["qualification"] = assess_v16_checkpoint(
             payload,
             required_pass_rate=V16_FORMAL_PASS_RATE,
@@ -1035,6 +1219,24 @@ def main(argv=None):
               f"safety={safety_knots}+{safety_sigma:.2f}sigma "
               f"scale={applied_safety_scale:.2f}->{selection_safety_scale:.2f} "
               f"target_met={accepted}", flush=True)
+        if (args.joint_proposal_lr_scale != 1.0 or args.joint_decoder_lr_scale != 1.0
+                or args.joint_final_lr_ratio != 1.0):
+            print("  learning rates: " + ", ".join(
+                f"{name}={value:.3e}" for name, value in learning_rates.items()
+            ), flush=True)
+        if stage == "joint" and (args.teacher_refinement_steps or args.boundary_ranking_weight):
+            print(
+                f"  training teacher: keep_P/R/F1="
+                f"{train_metrics['teacher_keep_precision']:.3f}/"
+                f"{train_metrics['teacher_keep_recall']:.3f}/"
+                f"{train_metrics['teacher_keep_f1']:.3f}, "
+                f"false_remove={train_metrics['teacher_false_remove_rate']:.1%}, "
+                f"refinement_delta_K={train_metrics['teacher_refinement_count_reduction']:.3f}, "
+                f"improved={train_metrics['teacher_refinement_improved_fraction']:.1%}, "
+                f"extra_fits={train_metrics['teacher_refinement_evaluations']:.1f}, "
+                f"boundary_loss={train_metrics['teacher_boundary_ranking_loss']:.4f}",
+                flush=True,
+            )
         for name, values in measured["by_source"].items():
             count_detail = (
                 f", targetK={values['target_count_mean']:.2f}, "

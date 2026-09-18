@@ -1,0 +1,6 @@
+
+[check_data_and_provenance] python scripts/overnight_linux_preflight.py --data-root /home/feng/HouCode/SplineSurpervisedFitting/data --device cuda --mse-tolerance 5e-5 --initializer /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/candidate_selection_v16.proposal.pt --output /home/feng/HouCode/SplineFitting_1070_overnight/outputs/logs/overnight_1070_full_pipeline_r1/preflight.json
+UJI: 6093 held-out test curves; point paths checked
+NaturalEarth: 533 held-out test curves; point paths checked
+USGS: 1420 held-out test curves; point paths checked
+Warm-start provenance recorded; this is not a from-scratch study.

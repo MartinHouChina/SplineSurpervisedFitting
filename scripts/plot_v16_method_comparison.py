@@ -7,12 +7,13 @@ input must be the ``comparison.json`` written by ``benchmark_v16_datasets.py``.
 from __future__ import annotations
 
 import argparse
-from collections import Counter
+from collections import Counter, defaultdict
 import copy
 import hashlib
 import json
 import math
 from pathlib import Path
+import statistics
 
 import matplotlib
 
@@ -28,6 +29,7 @@ from plot_v15_dataset_benchmark import (
     DATASET_LABELS,
     DATASET_ORDER,
     METHODS,
+    _diagnostic_label,
     _network_caption,
     _num_points,
     model_version,
@@ -74,7 +76,7 @@ def validate_v16_benchmark(
         raise ValueError("The publication plot requires a native v16 benchmark report")
     if metadata.get("diagnostic_not_final") and not allow_unqualified_diagnostic:
         raise ValueError(
-            "The report uses an unqualified checkpoint; pass "
+            "The report uses an unqualified checkpoint or diagnostic protocol; pass "
             "--allow-unqualified-diagnostic only for visibly watermarked debugging"
         )
     fingerprint = metadata.get("fingerprint")
@@ -93,10 +95,20 @@ def validate_v16_benchmark(
     if len(identities) != len(set(identities)):
         raise ValueError("The benchmark contains duplicate per-curve measurements")
     measured_counts = Counter((dataset, method) for dataset, _, method in identities)
+    measured_groups = defaultdict(list)
+    for row in measurements:
+        measured_groups[(row["dataset"], row["method"])].append(row)
 
     summary = report["summary"]
     summary_index = {(row["dataset"], row["method"]): row for row in summary}
-    datasets = sorted({row["dataset"] for row in summary})
+    if len(summary_index) != len(summary):
+        raise ValueError("The benchmark contains duplicate summary rows")
+    declared = {row["dataset"]: row for row in metadata.get("datasets", [])}
+    datasets = sorted(
+        {row["dataset"] for row in summary}
+        | {row["dataset"] for row in measurements}
+        | set(declared)
+    )
     missing = [
         (dataset, method)
         for dataset in datasets
@@ -106,12 +118,62 @@ def validate_v16_benchmark(
     if missing:
         raise ValueError(f"The benchmark is incomplete; missing summary rows: {missing}")
     for dataset in datasets:
+        paired_ids = None
         for method in methods:
             row = summary_index[(dataset, method)]
-            if int(row["n"]) != measured_counts[(dataset, method)]:
+            count = measured_counts[(dataset, method)]
+            if count == 0 or int(row["n"]) != count:
                 raise ValueError(
                     f"Summary count does not match measurements for {(dataset, method)}"
                 )
+            expected_count = declared.get(dataset, {}).get("selected_count")
+            if expected_count is not None and count != expected_count:
+                raise ValueError(f"Incomplete selected cases for {(dataset, method)}")
+            values = measured_groups[(dataset, method)]
+            sample_ids = {value["sample_id"] for value in values}
+            if paired_ids is not None and sample_ids != paired_ids:
+                raise ValueError(f"Unpaired sample identities for {(dataset, method)}")
+            paired_ids = sample_ids
+            valid = [value for value in values if value["status"] == "ok"]
+            if row.get("failed") != count - len(valid):
+                raise ValueError(f"Failed count does not match measurements for {(dataset, method)}")
+            # Audit the means and pass-rate denominator against source records;
+            # a renderer must never silently drop failures or fabricate bars.
+            if all("fit_pass" in value for value in values):
+                expected_pass = sum(bool(value["fit_pass"]) for value in valid) / count
+                if not math.isclose(row["fit_pass_rate"], expected_pass, abs_tol=1e-12):
+                    raise ValueError(f"fit_pass_rate excludes failures or differs from measurements for {(dataset, method)}")
+            if all("reference_pass" in value for value in values):
+                has_reference = any(value.get("has_reference", value.get("reference_mse") is not None) for value in values)
+                expected_reference_pass = (
+                    sum(bool(value["reference_pass"]) for value in valid) / count
+                    if has_reference else None
+                )
+                actual_reference_pass = row.get("reference_pass_rate")
+                if (actual_reference_pass is None) != (expected_reference_pass is None) or (
+                    actual_reference_pass is not None
+                    and not math.isclose(actual_reference_pass, expected_reference_pass, abs_tol=1e-12)
+                ):
+                    raise ValueError(f"reference_pass_rate excludes failures or differs from measurements for {(dataset, method)}")
+            for field, summary_key, population in (
+                ("mse", "mse_mean", valid),
+                ("reference_mse", "reference_mse_mean", valid),
+                ("final_k", "final_k_mean", valid),
+                ("total_ms", "total_ms_mean", values),
+                ("canonical_k", "canonical_k_mean", values),
+            ):
+                # Early native reports may omit optional record fields. When
+                # present, nullable values remain missing rather than zeros.
+                if not all(field in value for value in values):
+                    continue
+                observed = [value[field] for value in population if value[field] is not None]
+                expected_value = statistics.fmean(observed) if observed else None
+                actual_value = row.get(summary_key)
+                if (actual_value is None) != (expected_value is None) or (
+                    actual_value is not None
+                    and not math.isclose(actual_value, expected_value, rel_tol=1e-10, abs_tol=1e-12)
+                ):
+                    raise ValueError(f"{summary_key} differs from measurements for {(dataset, method)}")
             final_k = row.get("final_k_mean")
             if final_k is not None and (
                 not isinstance(final_k, (int, float))
@@ -218,7 +280,7 @@ def render_comparison(
     metrics = (
         (mse_key, "(a) Mean squared Euclidean error", "MSE", True),
         (pass_key, "(b) Threshold-satisfied curves", "Pass rate", False),
-        ("final_k_mean", "(c) Final internal-knot count", "Mean final K", False),
+        ("final_k_mean", "(c) Retained internal-knot count", "Mean retained internal K", False),
         ("total_ms_mean", "(d) Complete algorithm time", "Mean time per curve (ms)", True),
     )
     x = np.arange(len(datasets), dtype=float)
@@ -295,7 +357,7 @@ def render_comparison(
             fig.text(
                 0.5,
                 0.5,
-                "DIAGNOSTIC NOT FINAL — UNQUALIFIED CHECKPOINT",
+                _diagnostic_label(metadata),
                 ha="center",
                 va="center",
                 rotation=24,
@@ -329,6 +391,8 @@ def render_comparison(
             ]
             if key == mse_key:
                 values.append(tolerance)
+            if key == "final_k_mean" and canonical_k is not None and "Synthetic" in datasets:
+                values.append(canonical_k)
             floor = min(values) / 2.0 if values else 1e-12
             if log_axis:
                 ceiling = max(values) * 2.0 if values else 1.0
@@ -441,11 +505,16 @@ def render_comparison(
         )
         if failures:
             detail += f" Failed runs: {failures}; pass rates include them as failures."
-        fig.text(0.07, 0.054, detail, fontsize=9.1, color="#765097")
+        fig.text(0.07, 0.060, detail, fontsize=9.1, color="#765097", wrap=True)
+        fig.text(
+            0.07, 0.041,
+            "MSE / retained K means use runs with finite fits (including threshold misses); time includes failed attempts. N/A means no finite fit.",
+            fontsize=9.1, color="#555555",
+        )
         checkpoint = Path(str(metadata.get("checkpoint", "unknown"))).name
         fig.text(
             0.07,
-            0.025,
+            0.019,
             (
                 f"Source: comparison.json | checkpoint: {checkpoint} | "
                 f"experiment fingerprint: {metadata['fingerprint'][:12]}…"

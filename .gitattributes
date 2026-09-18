@@ -1,0 +1,2 @@
+# Keep Linux entry points executable by Bash after Windows checkouts/uploads.
+*.sh text eol=lf

@@ -1,0 +1,45 @@
+
+[plot_six_method_real_cases] python scripts/visualize_v16_real_deployments.py --checkpoint /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_plus_3090_r1.pt --real-samples-per-dataset 2 --selection-seed 20260909 --mse-tolerance 5e-5 --manifest UJI=/home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl --manifest NaturalEarth=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl --manifest USGS=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl --max-internal-knots 64 --paper-initial-knots 64 --liang-dense-knots 64 --gradient-steps 12 --paper-admm-iterations 400 --paper-lambda-bisections 8 --paper-relocation-iterations 8 --liang-feature-samples 1025 --dung-scan-intervals 10 --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations 50 --network-warmups 3 --network-repeats 100 --end-to-end-repeats 3 --torch-num-threads 4 --device cuda --dpi 240 --allow-unqualified-diagnostic --method-set published --output-dir /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_plus_3090_r1/six_method_real_cases
+[1/6] UJI / uji2_07455_stroke_00
+  Ours v16: MSE=1.131e-05, K=19, time=8.22 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.206e-05, K=10, time=12.67 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.680e-05, K=8, time=8.49 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation): MSE=3.407e-04, K=4, time=104.16 ms
+  Kang 2015 (ADMM adaptation): MSE=2.260e-05, K=10, time=1214.99 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation): MSE=4.903e-05, K=6, time=3076.81 ms
+[2/6] UJI / uji2_05088_stroke_00
+  Ours v16: MSE=1.247e-05, K=22, time=8.22 ms
+  Park & Lee 2007 (DOM adaptation): MSE=3.406e-05, K=26, time=33.61 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=1.544e-05, K=18, time=18.94 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation): MSE=1.426e-03, K=5, time=135.41 ms
+  Kang 2015 (ADMM adaptation): MSE=1.974e-04, K=10, time=1164.75 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation): MSE=1.268e-03, K=6, time=2935.83 ms
+[3/6] NaturalEarth / natural_earth_10m_coastline_6f39c8d2074b_w000_6f39c8d2
+  Ours v16: MSE=5.698e-05, K=24, time=8.20 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.969e-05, K=20, time=24.71 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=3.475e-05, K=16, time=16.73 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation): MSE=6.918e-04, K=9, time=256.72 ms
+  Kang 2015 (ADMM adaptation): MSE=1.058e-04, K=13, time=1094.93 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation): MSE=8.296e-03, K=2, time=3200.76 ms
+[4/6] NaturalEarth / natural_earth_10m_coastline_08e9fecdd118_w000_08e9fecd
+  Ours v16: MSE=5.560e-04, K=35, time=8.28 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.122e-04, K=64, time=111.27 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=9.019e-05, K=64, time=86.76 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation): MSE=1.082e-03, K=30, time=791.10 ms
+  Kang 2015 (ADMM adaptation): MSE=4.898e-02, K=1, time=16.22 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation): MSE=9.912e-03, K=10, time=748.19 ms
+[5/6] USGS / usgs_tnm_contours_large_scale_3eb19dbb6d67_w000_3eb19dbb
+  Ours v16: MSE=7.709e-05, K=22, time=8.26 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.126e-05, K=15, time=18.38 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=3.855e-05, K=9, time=9.36 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation): MSE=6.471e-04, K=4, time=102.68 ms
+  Kang 2015 (ADMM adaptation): MSE=1.968e-05, K=8, time=1321.41 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation): MSE=1.557e-05, K=7, time=2985.77 ms
+[6/6] USGS / usgs_tnm_contours_large_scale_2cadfb668fb4_w000_2cadfb66
+  Ours v16: MSE=2.928e-05, K=12, time=7.88 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.945e-05, K=3, time=5.19 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=2.437e-05, K=4, time=4.24 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation): MSE=2.022e-04, K=2, time=39.84 ms
+  Kang 2015 (ADMM adaptation): MSE=3.169e-04, K=1, time=993.71 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation): MSE=4.629e-05, K=3, time=3190.41 ms
+Saved 6 PNG files and /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_plus_3090_r1/six_method_real_cases/deployment_visualizations.json
