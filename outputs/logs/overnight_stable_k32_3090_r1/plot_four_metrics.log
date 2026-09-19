@@ -1,0 +1,6 @@
+
+[plot_four_metrics] python scripts/plot_v16_method_comparison.py --input /home/feng/HouCode/SplineFitting_1070_overnight/outputs/comparisons/overnight_stable_k32_3090_r1/comparison.json --output-dir /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_stable_k32_3090_r1/four_metrics --method-set published --dpi 300 --reference --allow-unqualified-diagnostic
+/home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_stable_k32_3090_r1/four_metrics/v16_published_methods_input.png
+/home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_stable_k32_3090_r1/four_metrics/v16_published_methods_five_metrics_input.png
+/home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_stable_k32_3090_r1/four_metrics/v16_published_methods_reference.png
+/home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_stable_k32_3090_r1/four_metrics/v16_published_methods_five_metrics_reference.png

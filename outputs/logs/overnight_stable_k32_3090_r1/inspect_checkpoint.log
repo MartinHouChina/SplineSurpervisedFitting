@@ -1,0 +1,48 @@
+
+[inspect_checkpoint] python scripts/inspect_v16_checkpoint.py --checkpoint /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_stable_k32_3090_r1.pt --mse-tolerance 5e-5
+v16 checkpoint inspection
+  checkpoint: /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_stable_k32_3090_r1.pt
+  stage: joint
+  epoch: 14
+Selection architecture
+  revision: v16_ranked_prefix_count_coupled_mass_topk
+  policy: mass_topk
+  internal candidate capacity: 32
+  full knot-vector size at all-keep: 40
+  adaptive beta: True
+  simplification contract: ranked_prefix_certified_cardinality_adaptive_complexity_v1
+  simplification curriculum mature: False
+Synthetic data contract
+  revision: source_subset_threshold_minimal_v1
+  certified minimal source: True
+  certificate RMS tolerance: 7.071068e-03
+Configured targets
+  proposal pass: 90.000% (0.900000)
+  deployment pass: 90.000% (0.900000)
+  recorded MSE tolerance: 5.000000e-05
+Observed validation
+  overall dense: 85.403% (0.854027)
+  overall deployment: 59.228% (0.592282)
+  worst-source dense: 84.375% (0.843750)
+  worst-source deployment: 40.625% (0.406250)
+  certified synthetic count MAE: 11.38
+  certified synthetic knot F1 / matched MAE: 0.394314 / 5.215850e-03
+  by source:
+    Synthetic: dense=84.600% (0.846000), deployment=57.000% (0.570000), dense_MSE=2.597187e-05, deployment_MSE=6.906045e-05, K=25.598, target_K=14.218, count_MAE=11.38, count_bias=11.38, knot_F1=0.394314, matched_MAE=5.215850e-03
+    natural_earth_10m_coastline: dense=84.375% (0.843750), deployment=40.625% (0.406250), dense_MSE=8.670266e-05, deployment_MSE=1.261580e-04, K=25.4688
+    uji_pen_characters_v2: dense=100.000% (1.000000), deployment=93.750% (0.937500), dense_MSE=3.912420e-06, deployment_MSE=1.476644e-05, K=19.4375
+    usgs_tnm_contours_large_scale: dense=84.375% (0.843750), deployment=78.125% (0.781250), dense_MSE=3.262464e-05, deployment_MSE=4.648127e-05, K=24.9375
+Formal qualification
+  required pass rate: 90.000% (0.900000)
+  required MSE tolerance: 5.000000e-05
+  Synthetic count MAE <= 2, knot F1 >= 0.6, matched MAE <= 5.000000e-03
+  eligible: NO
+  reasons:
+    - joint simplification curriculum was not mature when saved
+    - certified synthetic count MAE exceeds the formal limit 2
+    - certified synthetic knot-match F1 is below the formal minimum 0.6
+    - certified synthetic matched-knot MAE exceeds the formal limit 0.005
+    - observed worst-source deployment pass rate 40.625% is below the required 90.000%
+    - observed worst-source dense proposal pass rate 84.375% is below the required 90.000%
+    - proposal feasibility gate was not satisfied
+    - infeasible-proposal ablation was enabled

@@ -1,0 +1,83 @@
+{
+  "name": "overnight_k32_linux_update",
+  "date": "2026-09-19",
+  "base_commit": "a6a1ed96fecabac9c21fa372092afc9d73aac77e",
+  "branch": "experiment/v16-1070-overnight-3090",
+  "package_type": "source-only incremental update; not a full repository; no data/checkpoints/plots",
+  "changes": {
+    "capacity": "explicit --candidate-knots 32; all six methods share capacity; legacy default64 preserved",
+    "warm_start": "explicit query interpolation 64->32, fresh optimizer/history; retraining required",
+    "error": "maximum observed point squared Euclidean residual; pass criterion remains MSE"
+  },
+  "verification": {
+    "related_tests_passed": 329,
+    "actual_k32_smoke_training_epochs": 2,
+    "actual_six_method_benchmark_records": 150,
+    "pngs": 13,
+    "all_measured_internal_knots_at_most": 32,
+    "full_k32_training_performed": false,
+    "smoke_checkpoint_qualified": false
+  },
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "36cb022fbca12e81859406bafd65e755fceca1b08e46a4e5b7712881f7e5635e"
+    },
+    {
+      "path": "docs/overnight_k32.md",
+      "sha256": "7ad6852773bce03863c8263ebb7b483c0ea5bc929ff1b9a6fa8c4a6287b8b0e2"
+    },
+    {
+      "path": "docs/README.md",
+      "sha256": "f2a9db882cd85ac4b9cc736859323cef8352a07553204f7ff262915b9f7f8058"
+    },
+    {
+      "path": "README.md",
+      "sha256": "d7b50e09729155068a9378f4a1a9b6197003ad790073a671a248fd7a80177da5"
+    },
+    {
+      "path": "scripts/benchmark_v15_datasets.py",
+      "sha256": "ebad22c94307b4b5c520fd249ec54dbc37f6a13a657273f241a8d14efe49e908"
+    },
+    {
+      "path": "scripts/overnight_linux_preflight.py",
+      "sha256": "8ba47c52ea34316b8df1caea96daf0d9a1635f326110a16d72cf42858775283a"
+    },
+    {
+      "path": "scripts/plot_v16_method_comparison.py",
+      "sha256": "891c8a9123771a0ff952557136de700f69b6b1117e34587aaad58f13fec75a8a"
+    },
+    {
+      "path": "scripts/run_v16_1070_overnight_linux.sh",
+      "sha256": "9332fc1f201f25268ae354d9139e8e50da5822bdab0c54134bfe33ca2d3569aa"
+    },
+    {
+      "path": "scripts/train_v16.py",
+      "sha256": "65250d428eb65aea08738b91038311b7d82bb4f436438d7728e72fcc174bf54a"
+    },
+    {
+      "path": "scripts/visualize_v16_real_deployments.py",
+      "sha256": "90f5ae000c4ed297810c83dbb7888642ad160aac08e5ae0b7a131aff9f671e8e"
+    },
+    {
+      "path": "tests/test_benchmark_v15_datasets.py",
+      "sha256": "fc6740b20e0990ec2d22d61242eb9045098c388235f068f091d8d76f88a623f8"
+    },
+    {
+      "path": "tests/test_plot_v16_method_comparison.py",
+      "sha256": "3ee7e24d4214002ff74cc1d9acc8291b4782197c6f91370738a12911980caff6"
+    },
+    {
+      "path": "tests/test_run_v16_k32_linux.py",
+      "sha256": "1ed4678a09f0318c5841fb65fbb8d2765bb2d00497437546377598647ad512b5"
+    },
+    {
+      "path": "tests/test_train_v16_capacity_transfer.py",
+      "sha256": "2a155f1d8bbc4290e43091baa41c6b1646eae1f784d2b9ffaed5df6238d405be"
+    },
+    {
+      "path": "tests/test_visualize_v16_six_methods.py",
+      "sha256": "c1efded1d931b5d591c63185e1b7800323bea274362da65889cf094445a3557d"
+    }
+  ]
+}

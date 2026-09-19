@@ -1,0 +1,3 @@
+
+[check_environment] python scripts/overnight_linux_preflight.py --runtime-only --device cuda
+{"python": "3.11.5", "torch": "2.11.0+cu126", "scipy": "1.15.3", "matplotlib": "3.10.0", "requested_device": "cuda", "gpu": "NVIDIA GeForce RTX 3090"}

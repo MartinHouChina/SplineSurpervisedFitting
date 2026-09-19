@@ -1,0 +1,51 @@
+
+[plot_ours_cases] python scripts/visualize_v16_ours_cases.py --checkpoint /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_stable_k32_3090_r1.pt --real-samples-per-dataset 6 --selection-seed 20260909 --mse-tolerance 5e-5 --manifest UJI=/home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl --manifest NaturalEarth=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl --manifest USGS=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl --manifest IndustrialOffset=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/industrial_offsets/v1/manifest.jsonl --max-internal-knots 32 --paper-initial-knots 32 --liang-dense-knots 32 --gradient-steps 12 --paper-admm-iterations 400 --paper-lambda-bisections 8 --paper-relocation-iterations 8 --liang-feature-samples 1025 --dung-scan-intervals 10 --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations 50 --published-feasibility-safeguard --network-warmups 3 --network-repeats 100 --end-to-end-repeats 3 --torch-num-threads 4 --device cuda --dpi 240 --allow-unqualified-diagnostic --output-dir /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_stable_k32_3090_r1/ours_cases
+[1/24] UJI / uji2_07455_stroke_00
+  Ours v16: MSE=1.575e-05, max SE=3.646e-04, K=19, time=9.10 ms
+[2/24] UJI / uji2_05088_stroke_00
+  Ours v16: MSE=4.860e-06, max SE=6.924e-05, K=22, time=9.05 ms
+[3/24] UJI / uji2_07958_stroke_00
+  Ours v16: MSE=1.782e-05, max SE=1.077e-04, K=22, time=9.06 ms
+[4/24] UJI / uji2_10873_stroke_00
+  Ours v16: MSE=1.981e-05, max SE=1.327e-04, K=25, time=9.08 ms
+[5/24] UJI / uji2_10402_stroke_02
+  Ours v16: MSE=9.512e-06, max SE=1.074e-04, K=16, time=8.88 ms
+[6/24] UJI / uji2_02386_stroke_01
+  Ours v16: MSE=1.821e-05, max SE=1.357e-04, K=14, time=8.82 ms
+[7/24] NaturalEarth / natural_earth_10m_coastline_6f39c8d2074b_w000_6f39c8d2
+  Ours v16: MSE=3.474e-05, max SE=2.418e-04, K=26, time=9.07 ms
+[8/24] NaturalEarth / natural_earth_10m_coastline_08e9fecdd118_w000_08e9fecd
+  Ours v16: MSE=7.251e-04, max SE=4.958e-03, K=32, time=9.10 ms
+[9/24] NaturalEarth / natural_earth_10m_coastline_8a97d7af70b1_w000_8a97d7af
+  Ours v16: MSE=2.170e-05, max SE=1.951e-04, K=22, time=8.99 ms
+[10/24] NaturalEarth / natural_earth_10m_coastline_48ef53b7a2ac_w000_48ef53b7
+  Ours v16: MSE=9.316e-05, max SE=9.387e-04, K=30, time=9.12 ms
+[11/24] NaturalEarth / natural_earth_10m_coastline_e798af85b73b_w000_e798af85
+  Ours v16: MSE=4.191e-05, max SE=2.895e-04, K=24, time=9.13 ms
+[12/24] NaturalEarth / natural_earth_10m_coastline_933eab98f709_w000_933eab98
+  Ours v16: MSE=4.021e-05, max SE=2.487e-04, K=22, time=9.03 ms
+[13/24] USGS / usgs_tnm_contours_large_scale_3eb19dbb6d67_w000_3eb19dbb
+  Ours v16: MSE=1.489e-05, max SE=1.215e-04, K=28, time=9.14 ms
+[14/24] USGS / usgs_tnm_contours_large_scale_2cadfb668fb4_w000_2cadfb66
+  Ours v16: MSE=1.005e-05, max SE=1.042e-04, K=18, time=8.89 ms
+[15/24] USGS / usgs_tnm_contours_large_scale_ddfe427e4dda_w000_ddfe427e
+  Ours v16: MSE=1.262e-05, max SE=9.049e-05, K=21, time=9.11 ms
+[16/24] USGS / usgs_tnm_contours_large_scale_8e652f54e742_w000_8e652f54
+  Ours v16: MSE=3.122e-05, max SE=2.199e-04, K=31, time=9.12 ms
+[17/24] USGS / usgs_tnm_contours_large_scale_f0e01325c640_w002_0eb6b787
+  Ours v16: MSE=7.304e-05, max SE=3.545e-04, K=31, time=9.12 ms
+[18/24] USGS / usgs_tnm_contours_large_scale_f25cc5317711_w000_f25cc531
+  Ours v16: MSE=3.301e-05, max SE=2.287e-04, K=32, time=9.13 ms
+[19/24] IndustrialOffset / industrial_offset_keyway_bore_v007_o01_m0p0400
+  Ours v16: MSE=1.545e-05, max SE=2.861e-04, K=24, time=9.08 ms
+[20/24] IndustrialOffset / industrial_offset_elliptic_bore_v008_o03_p0p0200
+  Ours v16: MSE=3.405e-07, max SE=2.799e-06, K=16, time=8.90 ms
+[21/24] IndustrialOffset / industrial_offset_keyway_bore_v008_o03_p0p0200
+  Ours v16: MSE=1.118e-05, max SE=2.304e-04, K=24, time=9.10 ms
+[22/24] IndustrialOffset / industrial_offset_naca_airfoil_v005_o04_p0p0400
+  Ours v16: MSE=3.131e-06, max SE=1.269e-04, K=18, time=8.97 ms
+[23/24] IndustrialOffset / industrial_offset_lobed_rotor_v001_o00_m0p0800
+  Ours v16: MSE=1.626e-04, max SE=1.734e-03, K=19, time=9.05 ms
+[24/24] IndustrialOffset / industrial_offset_naca_airfoil_v011_o03_p0p0200
+  Ours v16: MSE=5.933e-06, max SE=2.746e-04, K=19, time=9.04 ms
+Saved 25 PNG files and /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_stable_k32_3090_r1/ours_cases/deployment_visualizations.json
