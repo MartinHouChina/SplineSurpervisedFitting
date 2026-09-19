@@ -16,6 +16,7 @@ from spline_fitting.data.synthetic import (
     generate_cubic_bspline_sample,
 )
 from spline_fitting.evaluation.knot_diagnostics import build_open_knot_vector
+from spline_fitting.evaluation.bspline_inference import refit_bspline_control_points
 from spline_fitting.evaluation.sparse_knot_paper import (
     _relocate_clusters,
     fit_sparse_knots_paper,
@@ -154,6 +155,56 @@ class SparseKnotPaperTests(unittest.TestCase):
             float((starting - true_knot).abs()),
         )
 
+    def test_algorithm4_can_retain_a_double_knot(self) -> None:
+        parameters = torch.linspace(0.0, 1.0, 101, dtype=self.dtype)
+        true_knots = torch.tensor([0.5, 0.5], dtype=self.dtype)
+        controls = torch.tensor(
+            [
+                [0.0, 0.0],
+                [0.15, 0.9],
+                [0.35, -0.8],
+                [0.65, 0.8],
+                [0.85, -0.9],
+                [1.0, 0.0],
+            ],
+            dtype=self.dtype,
+        )
+        points = evaluate_bspline_curve(
+            parameters,
+            controls,
+            build_open_knot_vector(true_knots, degree=3),
+            degree=3,
+        )
+
+        relocated, refits = _relocate_clusters(
+            parameters,
+            points,
+            [torch.tensor([0.4, 0.6], dtype=self.dtype)],
+            degree=3,
+            initial_spacing=0.1,
+            tolerance=1e-4,
+            max_iterations=12,
+        )
+
+        self.assertEqual(relocated.numel(), 2)
+        torch.testing.assert_close(relocated[0], relocated[1])
+        self.assertLess(float((relocated - 0.5).abs().max()), 1e-3)
+        self.assertGreater(refits, 2)
+
+        deployed = refit_bspline_control_points(
+            parameters,
+            points,
+            relocated,
+            degree=3,
+            smoothness_weight=0.0,
+            control_ridge=0.0,
+            interpolate_endpoints=True,
+        )
+        # Multiplicity is part of spline complexity: it must survive the
+        # common refit and count as two knot-vector entries / two basis DOFs.
+        torch.testing.assert_close(deployed.internal_knots, relocated)
+        self.assertEqual(deployed.control_points.shape[0], relocated.numel() + 4)
+
     def test_knots_are_ordered_bounded_and_thresholded(self) -> None:
         parameters = torch.linspace(0.0, 1.0, 65, dtype=self.dtype)
         points = torch.stack(
@@ -182,8 +233,8 @@ class SparseKnotPaperTests(unittest.TestCase):
             low.jump_norms > low.effective_jump_threshold,
         )
 
-    def test_numerical_jump_floor_and_post_merge_repair(self) -> None:
-        """Exercise the dense-active-cluster failure seen in comparison runs."""
+    def test_long_active_runs_skip_algorithm4_instead_of_collapsing(self) -> None:
+        """General-data runs must not be forced through the cluster shortcut."""
         sample = generate_cubic_bspline_sample(
             num_points=48,
             min_control_points=8,  # source K = 4
@@ -213,11 +264,14 @@ class SparseKnotPaperTests(unittest.TestCase):
         )
 
         # Tiny ADMM residual jumps make every candidate look active under the
-        # legacy absolute threshold.  The repair must still restore the final
-        # exact-refit bound after that cluster is merged.
+        # legacy absolute threshold.  Kang et al. reserve Algorithm 4 for
+        # obvious compact groups; a length-12 run is retained instead of being
+        # misclassified as one source knot and collapsed to one/two entries.
         self.assertEqual(absolute_only.active_count, 12)
-        self.assertTrue(absolute_only.repair_used)
-        self.assertGreater(absolute_only.repair_refit_count, 1)
+        self.assertFalse(absolute_only.repair_used)
+        self.assertEqual(absolute_only.local_refit_count, 0)
+        self.assertEqual(absolute_only.relocated_internal_knots.numel(), 12)
+        self.assertIn("skipped", absolute_only.relocation_method)
         self.assertTrue(absolute_only.final_threshold_satisfied)
         self.assertEqual(absolute_only.effective_jump_threshold, 1e-7)
         self.assertGreater(relative.effective_jump_threshold, 1e-7)

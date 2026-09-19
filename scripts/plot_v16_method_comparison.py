@@ -33,6 +33,8 @@ from plot_v15_dataset_benchmark import (
     _network_caption,
     _num_points,
     model_version,
+    published_method_labels,
+    published_protocol_caption,
     read_report,
 )
 
@@ -269,6 +271,7 @@ def render_comparison(
 ) -> Path | None:
     """Render measured MSE, pass rate, final K, and complete wall time."""
     metadata, rows = report["metadata"], report["summary"]
+    labels = published_method_labels(metadata, SHORT_LABELS)
     datasets = _ordered_datasets(rows, reference=reference)
     if not datasets:
         return None
@@ -328,7 +331,7 @@ def render_comparison(
                 facecolor=COLORS[method],
                 edgecolor="white",
                 hatch=HATCHES[i],
-                label=SHORT_LABELS[method],
+                label=labels[method],
             )
             for i, method in enumerate(methods)
         ]
@@ -499,16 +502,14 @@ def render_comparison(
             for method in methods
         )
         detail = (
-            "Published-method results are disclosed repository adaptations under the same MSE/refit "
-            "protocol, not bit-exact reproductions of authors' software. Synthetic alone shows "
-            "canonical reference K; real datasets have no knot-count ground truth."
+            published_protocol_caption(metadata)
         )
         if failures:
             detail += f" Failed runs: {failures}; pass rates include them as failures."
         fig.text(0.07, 0.060, detail, fontsize=9.1, color="#765097", wrap=True)
         fig.text(
             0.07, 0.041,
-            "MSE / retained K means use runs with finite fits (including threshold misses); time includes failed attempts. N/A means no finite fit.",
+            "MSE / K means include finite threshold misses; time includes failed attempts. Only synthetic has canonical ground-truth K. N/A: no finite fit.",
             fontsize=9.1, color="#555555",
         )
         checkpoint = Path(str(metadata.get("checkpoint", "unknown"))).name

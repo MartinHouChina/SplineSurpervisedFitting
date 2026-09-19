@@ -128,11 +128,44 @@ def _diagnostic_label(metadata: dict) -> str:
     return "DIAGNOSTIC NOT FINAL — CHECKPOINT / PROTOCOL NOT QUALIFIED"
 
 
+def published_safeguard_mode(metadata: dict) -> bool | None:
+    """Missing historical metadata is unknown, never an enabled repair."""
+    protocol = metadata.get("published_baseline_protocol", {})
+    recorded = protocol.get("feasibility_safeguard_enabled")
+    configured = metadata.get("configuration", {}).get("published_feasibility_safeguard")
+    if recorded is not None and configured is not None and recorded != configured:
+        raise ValueError("Published feasibility safeguard metadata/configuration mismatch")
+    value = recorded if recorded is not None else configured
+    return value if isinstance(value, bool) else None
+
+
+def published_method_labels(metadata: dict, labels: dict) -> dict:
+    labels = dict(labels)
+    if published_safeguard_mode(metadata) is True:
+        for method in ("dung_direct_knot_2017_adaptation", "kang_sparse_2015_adaptation",
+                       "luo_linf_de_2022_adaptation"):
+            if method in labels:
+                labels[method] += " [threshold-safe]"
+    return labels
+
+
+def published_protocol_caption(metadata: dict) -> str:
+    mode = published_safeguard_mode(metadata)
+    if mode is True:
+        return ("Dung/Kang/Luo: threshold-safe adaptations, not paper-original algorithms; "
+                "extra repair refits included in total time. Native/final K, MSE and refits: native_baseline_summary.csv.")
+    if mode is False:
+        return ("Published methods: disclosed native repository adaptations; common-MSE safeguard disabled; "
+                "Kang long-cluster correction retained. Not exact paper reproductions.")
+    return ("Published methods: disclosed repository adaptations, not exact paper reproductions. "
+            "Historical report does not record a feasibility-safeguard policy.")
+
+
 def render_report(report: dict, output_dir: Path, *, dpi: int = 220, reference: bool = False) -> Path | None:
     """Plot summary values without rescaling reported MSE or hiding failures."""
     metadata, rows = report["metadata"], report["summary"]
     version = model_version(metadata)
-    labels = {**LABELS, "ours": f"Ours {version}"}
+    labels = published_method_labels(metadata, {**LABELS, "ours": f"Ours {version}"})
     datasets = _datasets(rows, reference)
     if not datasets:
         return None
@@ -253,7 +286,7 @@ def render_report(report: dict, output_dir: Path, *, dpi: int = 220, reference: 
             fig.text(
                 0.065,
                 0.018,
-                "Published-method bars are disclosed repository adaptations under one shared MSE/refit protocol; they do not claim bit-exact reproduction of the authors' software.",
+                published_protocol_caption(metadata),
                 fontsize=9.3,
                 color="#765097",
             )

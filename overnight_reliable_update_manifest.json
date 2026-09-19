@@ -1,0 +1,124 @@
+{
+  "base_commit": "d473159b426c591c58a658d23c37ce99949b8cc7",
+  "branch": "experiment/overnight-reliable",
+  "profile": "--reliable-selection",
+  "purpose": "Source-only update for the overnight branch; no checkpoints or datasets",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "36cb022fbca12e81859406bafd65e755fceca1b08e46a4e5b7712881f7e5635e"
+    },
+    {
+      "path": "docs/overnight_reliable.md",
+      "sha256": "06f6b0f2737e5ba591baf3e6ca8000375a8c85869388dcd2e502aa6d8987ae33"
+    },
+    {
+      "path": "docs/published_knot_methods_reproduction.md",
+      "sha256": "181154f12b1e6f375fa0337cd24d86420bdbd5bef468ed04680536404b196048"
+    },
+    {
+      "path": "docs/README.md",
+      "sha256": "49dbdd7a1a8446243ba32a468fda0a81654401a99fc96b54223ea4a731de8762"
+    },
+    {
+      "path": "README.md",
+      "sha256": "982a5689f1b71e2c75bedc0546097039a43f479af99841b9dd71e75c855968de"
+    },
+    {
+      "path": "scripts/benchmark_v15_datasets.py",
+      "sha256": "5bef5dd29aaa9303ee53de6940ff7ed45747e84e75a0083e8de1c40a32f57bba"
+    },
+    {
+      "path": "scripts/overnight_linux_preflight.py",
+      "sha256": "a1d82a9f50a68a235b26a782f4f0817d3ccf9ce3a1e7a93cd9b0ff50e44ff710"
+    },
+    {
+      "path": "scripts/plot_v15_dataset_benchmark.py",
+      "sha256": "d4e63b8c4fa8e25a63d26fb887149975923cf7c5cc95cf89bb193077dc37dca8"
+    },
+    {
+      "path": "scripts/plot_v16_method_comparison.py",
+      "sha256": "f0e8f5ab65443bd0ed4af2074adeec002983c764c0d36eae5f4dc97cf110d668"
+    },
+    {
+      "path": "scripts/run_v16_1070_overnight_linux.sh",
+      "sha256": "674db8b088c6d4888dfb03fd1a9b05feb74928e02308654c427238e91a573f2c"
+    },
+    {
+      "path": "scripts/train_v16.py",
+      "sha256": "ad4d7e62b1083c857d7b73bc116055614497a36dfc7f2ca7ca7b1bd9e40a6e57"
+    },
+    {
+      "path": "scripts/visualize_v16_real_deployments.py",
+      "sha256": "42e204976bcefb6db6c650cd39de24769eaa1f6e6e36628da821728baa34c3a0"
+    },
+    {
+      "path": "src/spline_fitting/evaluation/dung_direct_knot.py",
+      "sha256": "a99f3300f44518d16d3ccee24201f479e962e3e48d9efdc072fa64bb6d1703de"
+    },
+    {
+      "path": "src/spline_fitting/evaluation/luo_linf_de.py",
+      "sha256": "9fec6149a2b36ad52c0d7aae9ff11b40c2275e9c9e3be1f52832e9126437edc3"
+    },
+    {
+      "path": "src/spline_fitting/evaluation/published_baselines.py",
+      "sha256": "cb37a544c6d46ce81949e4a5538cf50e49293494bffdb3c9836329aec27d26e2"
+    },
+    {
+      "path": "src/spline_fitting/evaluation/sparse_knot_paper.py",
+      "sha256": "e26b1acc357c3238178bb10946f9f2a9d0f64714993a670bc4c7dc86abd1de4b"
+    },
+    {
+      "path": "src/spline_fitting/losses/deployment_bspline_loss.py",
+      "sha256": "298ae11343b673d614523e643fd46de9d30a7e8221fdda5f9b11b6b7e0c06446"
+    },
+    {
+      "path": "src/spline_fitting/losses/v16_subset_loss.py",
+      "sha256": "9c1037199b6b13bad9ba8b721ddf9fb756e2ecccad2d867ffbac79b1f0802453"
+    },
+    {
+      "path": "src/spline_fitting/models/v16_network.py",
+      "sha256": "cb48df3920a17d1cb882db15d899fd27dca9d2b9d71a5e2bd9cce5fefab6f92e"
+    },
+    {
+      "path": "tests/test_luo_linf_de.py",
+      "sha256": "1f6747ea7c18b113e346ffdcb0e31f41d7596b222a605d357398634f0b6582cb"
+    },
+    {
+      "path": "tests/test_published_baselines.py",
+      "sha256": "249b382215e03758bbf05aefac4620fc3a2d6744560eb7835c3ab28a648234a2"
+    },
+    {
+      "path": "tests/test_published_feasibility_safeguard.py",
+      "sha256": "b872b30c068a0fecb45f922ee16dbbffa46cd90ada364889a22b5918eaa34e83"
+    },
+    {
+      "path": "tests/test_published_safeguard_reporting.py",
+      "sha256": "8ed78f0d55fc0618033131846be319922439ff7473e9dece31cc1fadcea4dea1"
+    },
+    {
+      "path": "tests/test_run_v16_1070_overnight_linux.py",
+      "sha256": "89b2a7c8e137143c779036b58b6513672ff958c1ec3f16e04c86188309f44a06"
+    },
+    {
+      "path": "tests/test_run_v16_reliable_linux.py",
+      "sha256": "6833393b75ddc0491b2eaba8114b37c7fac49fb5376881cd7ff4c77aca0c0ac8"
+    },
+    {
+      "path": "tests/test_sparse_knot_paper.py",
+      "sha256": "8bd0b10e604d23a0f2839a7112375590730107523182bee81a5b8f47bc3dc3f7"
+    },
+    {
+      "path": "tests/test_train_v16_reliable.py",
+      "sha256": "90f28d59e819ff5c3f95a791852fb254603cc861fa79b616eccb5d2f991de913"
+    },
+    {
+      "path": "tests/test_v16_overnight_loss.py",
+      "sha256": "8fda894b653270a6143ee26e9b9aabb0d8316755b5d22b9f7fe87666a1d64fff"
+    },
+    {
+      "path": "tests/test_v16_parameter_trust.py",
+      "sha256": "d45790e66ca7753a3621c1dcd75380be588b882d1841c1133664660f83bd9f29"
+    }
+  ]
+}

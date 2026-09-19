@@ -1,0 +1,28 @@
+
+[check_data_and_provenance] python scripts/overnight_linux_preflight.py --data-root /home/feng/HouCode/SplineSurpervisedFitting/data --device cuda --mse-tolerance 5e-5 --validate-real-splits --warm-start-checkpoint /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_plus_3090_r1.pt --output /home/feng/HouCode/SplineFitting_1070_overnight/outputs/logs/overnight_reliable_3090_r1/preflight.json
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl
+  Checking groups/files: 2000/18219
+  Checking groups/files: 4000/18219
+  Checking groups/files: 6000/18219
+  Checking groups/files: 8000/18219
+  Checking groups/files: 10000/18219
+  Checking groups/files: 12000/18219
+  Checking groups/files: 14000/18219
+  Checking groups/files: 16000/18219
+  Checking groups/files: 18000/18219
+  Checking groups/files: 18219/18219
+  Ready uji_pen_characters_v2: train=9670, val=2456 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl
+  Checking groups/files: 2000/3908
+  Checking groups/files: 3908/3908
+  Ready natural_earth_10m_coastline: train=2625, val=750 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl
+  Checking groups/files: 2000/6654
+  Checking groups/files: 4000/6654
+  Checking groups/files: 6000/6654
+  Checking groups/files: 6654/6654
+  Ready usgs_tnm_contours_large_scale: train=4024, val=1210 (test excluded from training)
+UJI: 6093 held-out test curves; point paths checked
+NaturalEarth: 533 held-out test curves; point paths checked
+USGS: 1420 held-out test curves; point paths checked
+Full-model initialization provenance recorded; strict configuration checks follow in training.

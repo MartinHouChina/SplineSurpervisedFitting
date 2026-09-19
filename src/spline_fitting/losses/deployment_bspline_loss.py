@@ -52,6 +52,7 @@ def differentiable_hard_gated_bspline_fit(
     mask = hard_keep_mask.to(torch.bool)
     per_sample_mse: list[torch.Tensor] = []
     per_sample_coordinate_mse: list[torch.Tensor] = []
+    per_point_squared_error: list[torch.Tensor] = []
     retained_counts: list[torch.Tensor] = []
 
     for batch_index in range(points.shape[0]):
@@ -144,6 +145,7 @@ def differentiable_hard_gated_bspline_fit(
         )
         reconstructed = basis @ controls
         squared = (reconstructed - sample_points).square()
+        per_point_squared_error.append(squared.sum(dim=-1))
         per_sample_mse.append(squared.sum(dim=-1).mean())
         per_sample_coordinate_mse.append(squared.mean())
         retained_counts.append(
@@ -154,6 +156,7 @@ def differentiable_hard_gated_bspline_fit(
     coordinate_mse = torch.stack(per_sample_coordinate_mse)
     return {
         "per_sample_mse": mse,
+        "per_point_squared_error": torch.stack(per_point_squared_error),
         "fit_mse": mse.mean(),
         "per_sample_rms": mse.clamp_min(0.0).sqrt(),
         "coordinate_mse": coordinate_mse.mean(),

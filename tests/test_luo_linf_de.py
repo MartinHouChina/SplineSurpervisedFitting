@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from spline_fitting.evaluation.luo_linf_de import (  # noqa: E402
+    _local_maximum_candidates,
     _prox_linf_rows,
     fit_luo_linf_de,
 )
@@ -33,6 +34,21 @@ def test_linf_prox_obeys_moreau_decomposition() -> None:
     assert torch.all(l1_projection.abs().sum(dim=-1) <= 1.0 + 1e-12)
     torch.testing.assert_close(prox[1], torch.zeros(2, dtype=torch.float64))
     torch.testing.assert_close(prox[0], torch.tensor([2.0, -1.0], dtype=torch.float64))
+
+
+def test_candidate_window_matches_algorithm31_interior_index_range() -> None:
+    knots = torch.linspace(0.1, 0.9, 5, dtype=torch.float64)
+    jumps = torch.tensor(
+        [[10.0, 0.0], [8.0, 0.0], [9.0, 0.0], [8.0, 0.0], [10.0, 0.0]],
+        dtype=torch.float64,
+    )
+
+    indices, candidates, _ = _local_maximum_candidates(knots, jumps, eta=0.5)
+
+    # Luo--Kang--Yang Algorithm 3.1 uses only complete length-three windows;
+    # the two boundary jump entries are not one-sided candidates.
+    torch.testing.assert_close(indices, torch.tensor([2]))
+    torch.testing.assert_close(candidates, knots[2:3])
 
 
 def test_luo_two_stage_adaptation_is_deterministic_and_refits_endpoints() -> None:

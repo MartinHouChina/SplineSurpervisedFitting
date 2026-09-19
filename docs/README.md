@@ -1,5 +1,7 @@
 # 文档索引
 
+[Overnight Reliable：短程改进与独立真实验证](overnight_reliable.md)：推荐的 `--reliable-selection` 入口；参数 trust gate、几何教师、32-epoch warm-start、六方法四指标与案例图，以及修复前后对照口径。
+
 [1070 历史架构的 Linux 一键训练与六方法比较](overnight_1070_linux.md)：独立 warm-start 新实验、四指标图、Ours 和六方法真实案例；与主线离线 teacher 流程分开使用。
 
 [Overnight Plus 增强训练与全模型 warm-start](overnight_plus.md)：可选 `--enhanced-selection`，保留历史架构，增强在线 teacher、边界排序和 Joint 学习率；含服务器一条龙与续跑命令。

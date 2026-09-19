@@ -9,11 +9,13 @@ figures with indexed control vertices and an explicit internal-knot strip.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import platform
 import re
 import sys
+import textwrap
 from pathlib import Path
 
 import matplotlib
@@ -28,11 +30,15 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from benchmark_v15_datasets import (  # noqa: E402
     LABELS,
+    SAFEGUARDED_PUBLISHED_METHODS,
     measure_ours,
     measure_numerical_baseline,
+    native_baseline_audit,
+    published_baseline_protocol,
     prepare_cases,
     reference_mse,
     resolve_comparison_capacities,
+    sha256_file,
 )
 from spline_fitting.checkpointing import (  # noqa: E402
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
@@ -85,6 +91,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--paper-lambda-bisections", type=int, default=8)
     result.add_argument("--paper-relocation-iterations", type=int, default=8)
     result.add_argument("--method-set", choices=("legacy", "published"), default="legacy")
+    result.add_argument(
+        "--published-feasibility-safeguard", action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable disclosed threshold-safe Dung/Kang/Luo adaptations; include every repair refit in complete timing",
+    )
     result.add_argument("--force-diagnostic", action="store_true",
                         help="Mark reduced-budget case studies as diagnostic")
     for option, kind, default in (
@@ -173,10 +184,11 @@ def _serializable(value):
     return value
 
 
-def _method_label(method: str) -> str:
+def _method_label(method: str, *, safeguard_enabled: bool = False) -> str:
     if method == "ours":
         return "Ours v16"
-    return LABELS[method]
+    suffix = " [threshold-safe adaptation]" if safeguard_enabled and method in SAFEGUARDED_PUBLISHED_METHODS else ""
+    return LABELS[method] + suffix
 
 
 PLOT_LABELS = {
@@ -222,7 +234,8 @@ def _run_method(method, *, model, points, case, device, args, objective_version)
         raise RuntimeError("method produced a non-finite fit metric")
     return {
         "method": method,
-        "label": _method_label(method),
+        "label": _method_label(method, safeguard_enabled=getattr(args, "published_feasibility_safeguard", True)),
+        "published_feasibility_safeguard": getattr(args, "published_feasibility_safeguard", True),
         "fit": fit,
         "parameters": parameters,
         "mse": mse,
@@ -494,10 +507,13 @@ def plot_case(path: Path, *, case: dict, results: list[dict],
             rows, columns, index, projection="3d" if dimension == 3 else None
         )
         color = PLOT_COLORS[result["method"]]
+        label = PLOT_LABELS[result["method"]]
+        if result.get("published_feasibility_safeguard") and result["method"] in SAFEGUARDED_PUBLISHED_METHODS:
+            label += " [threshold-safe adaptation]"
         _plot_geometry(axis, case=case, result=result, color=color)
         if result.get("status") != "ok":
             axis.set_title(
-                f"{PLOT_LABELS[result['method']]} — FAILED\n{result['error']}",
+                f"{label} — FAILED\n{result['error']}",
                 fontsize=9,
             )
             axis.legend(loc="best", fontsize=7)
@@ -511,10 +527,17 @@ def plot_case(path: Path, *, case: dict, results: list[dict],
             if result["network_ms"] is not None
             else f"complete={result['total_ms']:.2f} ms"
         )
+        native = result.get("diagnostics", {})
+        native_mse = native.get("comparison_feasibility_native_mse")
+        native_text = (
+            f"\nnative K={native['comparison_feasibility_native_k']} | MSE={native_mse:.2e} | "
+            f"extra refits={native['comparison_feasibility_refit_count']}"
+            if native_mse is not None else ""
+        )
         axis.set_title(
-            f"{PLOT_LABELS[result['method']]}\n"
+            f"{label}\n"
             f"K={result['final_k']} | MSE={result['mse']:.2e}{ref_text}\n"
-            f"{timing}"
+            f"{timing}{native_text}"
             , fontsize=9)
         if not has_fit_legend:
             axis.legend(loc="best", fontsize=7)
@@ -524,6 +547,9 @@ def plot_case(path: Path, *, case: dict, results: list[dict],
         f"shared MSE tolerance={tolerance:.3e}; endpoint-constrained, "
         "unregularized standard B-spline fits"
     )
+    if any(result.get("published_feasibility_safeguard") and result["method"] in SAFEGUARDED_PUBLISHED_METHODS for result in results):
+        title += "\nThreshold-safe adaptations: repair refits included in complete time; not paper-original algorithms."
+    title = "\n".join(textwrap.fill(line, width=56 * columns) for line in title.splitlines())
     figure.suptitle(title, fontsize=15)
     if diagnostic:
         figure.text(
@@ -601,6 +627,24 @@ def run(args: argparse.Namespace) -> dict:
     plotted_methods = (("ours",) if args.ours_only else
                        PUBLISHED_METHODS if args.method_set == "published" else METHODS)
     records = []
+    code_paths = sorted(set((ROOT / "src").rglob("*.py")) | {
+        Path(__file__), ROOT / "scripts/benchmark_v15_datasets.py",
+    })
+    comparison_provenance = {
+        "checkpoint_sha256": sha256_file(args.checkpoint),
+        "published_baseline_protocol": published_baseline_protocol(args),
+        "code_sha256": {str(path.relative_to(ROOT)): sha256_file(path) for path in code_paths},
+        "configuration": {key: _serializable(value) for key, value in vars(args).items()},
+        "dataset_provenance": provenance,
+        "sample_content_sha256": [
+            hashlib.sha256(case["points"].numpy().tobytes() + (
+                case["reference"].numpy().tobytes() if case["reference"] is not None else b""
+            )).hexdigest() for case in cases
+        ],
+    }
+    comparison_fingerprint = hashlib.sha256(
+        json.dumps(comparison_provenance, sort_keys=True).encode()
+    ).hexdigest()
     overview_items: list[tuple[dict, dict]] = []
     for index, case in enumerate(cases, 1):
         print(
@@ -624,7 +668,8 @@ def run(args: argparse.Namespace) -> dict:
             except (RuntimeError, ValueError) as error:
                 result = {
                     "method": method,
-                    "label": _method_label(method),
+                    "label": _method_label(method, safeguard_enabled=getattr(args, "published_feasibility_safeguard", True)),
+                    "published_feasibility_safeguard": getattr(args, "published_feasibility_safeguard", True),
                     "status": "failed",
                     "error": f"{type(error).__name__}: {error}",
                     "fit": None,
@@ -698,6 +743,9 @@ def run(args: argparse.Namespace) -> dict:
             })) for result in results],
         })
         partial = {
+            "comparison_provenance": comparison_provenance,
+            "comparison_fingerprint": comparison_fingerprint,
+            "published_baseline_protocol": comparison_provenance["published_baseline_protocol"],
             "checkpoint": str(args.checkpoint.resolve()),
             "objective_version": checkpoint["objective_version"],
             "checkpoint_epoch": checkpoint.get("epoch"),
@@ -734,8 +782,12 @@ def run(args: argparse.Namespace) -> dict:
             "timing_note": (
                 "Ours reports device-resident network median and normalized-input "
                 "end-to-end median separately; numerical baselines report their "
-                "complete algorithm time. Plotting and metrics are excluded."
+                "complete algorithm time including every safeguard refit. Plotting and metrics are excluded."
             ),
+            "native_baseline_summary": native_baseline_audit([
+                dict(method, dataset=record["dataset"], sample_id=record["sample_id"])
+                for record in records for method in record["methods"]
+            ]),
             "records": records,
         }
         report_path.write_text(

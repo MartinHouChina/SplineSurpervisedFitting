@@ -55,6 +55,12 @@ ENHANCED_TRAINING_DEFAULTS = {
     "joint_decoder_lr_scale": 1.0,
     "joint_final_lr_ratio": 1.0,
     "warm_start_checkpoint": None,
+    "parameter_trust_enabled": False,
+    "parameter_trust_initial": 0.25,
+    "parameter_counterfactual_weight": 0.0,
+    "teacher_geometry_candidates": 0,
+    "local_fit_weight": 0.0,
+    "proposal_ordered_weight": 0.0,
 }
 
 
@@ -137,6 +143,17 @@ def parser():
     p.add_argument("--boundary-ranking-weight", type=float, default=0.0,
                    help="Opt-in online teacher keep/remove boundary ranking loss weight")
     p.add_argument("--boundary-ranking-candidates", type=int, default=4)
+    p.add_argument("--parameter-trust-enabled", action="store_true",
+                   help="Learn bounded chord/proposal parameter update gates (opt-in)")
+    p.add_argument("--parameter-trust-initial", type=float, default=0.25)
+    p.add_argument("--parameter-counterfactual-weight", type=float, default=0.0,
+                   help="Training-only same-mask chord comparison; no inference search")
+    p.add_argument("--teacher-geometry-candidates", type=int, default=0,
+                   help="Bounded student-ranking-independent teacher proposals per joint step")
+    p.add_argument("--local-fit-weight", type=float, default=0.0,
+                   help="Auxiliary local/endpoint residual supervision")
+    p.add_argument("--proposal-ordered-weight", type=float, default=0.0,
+                   help="Additional ordered one-to-one candidate supervision")
     p.add_argument("--count-weight", type=float, default=2.0)
     p.add_argument("--supervised-count-weight", type=float, default=1.0)
     p.add_argument("--supervised-over-count-weight", type=float, default=1.0)
@@ -233,6 +250,7 @@ def validate_args(args):
         "safety_anneal_epochs", "teacher_prefix_search_steps",
         "minimality_max_attempts",
         "teacher_refinement_steps",
+        "teacher_geometry_candidates",
     ):
         value = getattr(args, key)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -282,6 +300,7 @@ def validate_args(args):
         "selected_knot_position_weight", "knot_position_beta",
         "complexity_max_scale",
         "boundary_ranking_weight",
+        "parameter_counterfactual_weight", "local_fit_weight", "proposal_ordered_weight",
     ):
         if not math.isfinite(getattr(args, key)) or getattr(args, key) < 0:
             raise ValueError(f"{key} must be finite and nonnegative")
@@ -293,6 +312,8 @@ def validate_args(args):
         raise ValueError("minimality-audit-points must be 0 or at least 2")
     if not math.isfinite(args.oscillation_amplitude) or args.oscillation_amplitude <= 0:
         raise ValueError("oscillation-amplitude must be finite and positive")
+    if not math.isfinite(args.parameter_trust_initial) or not 0 < args.parameter_trust_initial < 1:
+        raise ValueError("parameter-trust-initial must be strictly between zero and one")
     if args.safety_anneal_epochs < 1:
         raise ValueError("safety-anneal-epochs must be positive")
     if args.teacher_prefix_search_steps < 1:
@@ -418,6 +439,11 @@ def summarize(rows, tolerance):
             keep_probability_mass=statistics.fmean(r["probability_mass"] for r in values),
             adaptive_keep_threshold=statistics.fmean(r["adaptive_threshold"] for r in values),
         )
+        for field in ("proposal_parameter_trust", "subset_parameter_trust"):
+            gates = [r[field] for r in values if field in r]
+            if gates:
+                result.update({field + "_mean": statistics.fmean(gates),
+                               field + "_min": min(gates), field + "_max": max(gates)})
         supervised = [r for r in values if r.get("target_k") is not None]
         if supervised:
             errors = [r["k"] - r["target_k"] for r in supervised]
@@ -497,6 +523,11 @@ def validate(
             output_masks_cpu = output["learned_keep_mask"].cpu()
         probability_mass_cpu = context["one_shot_probability_mass"].cpu()
         adaptive_threshold_cpu = context["adaptive_keep_threshold"].cpu()
+        trust_values = {}
+        if getattr(model, "parameter_trust_enabled", False):
+            trust_values["proposal_parameter_trust"] = context["proposal_parameter_trust"].cpu()
+            if output is not None:
+                trust_values["subset_parameter_trust"] = output["subset_parameter_trust"].cpu()
         target_count = batch.get("target_internal_knot_count")
         target_valid = batch.get("target_internal_knot_count_valid")
         target_params = batch.get("target_params")
@@ -547,6 +578,7 @@ def validate(
                 probability_mass=float(probability_mass_cpu[i]),
                 adaptive_threshold=float(adaptive_threshold_cpu[i]),
             )
+            row.update({key: float(value[i].reshape(())) for key, value in trust_values.items()})
             if (
                 target_params is not None
                 and target_knots is not None
@@ -653,6 +685,32 @@ def checkpoint_rank(
     return (0, metrics["worst_deployment_pass_rate"], -tail, -metrics["deployment_mse"])
 
 
+_TRAINING_TRUST_EXTREMA = {
+    f"{gate}_{statistic}": reducer
+    for gate in ("proposal_parameter_trust", "subset_parameter_trust")
+    for statistic, reducer in (("min", min), ("max", max))
+}
+
+
+def accumulate_training_metrics(total, metrics, sample_count):
+    """Accumulate sample-weighted means and true cross-batch gate extrema."""
+    for key, value in metrics.items():
+        numeric = float(value)
+        reducer = _TRAINING_TRUST_EXTREMA.get(key)
+        if reducer is not None:
+            total[key] = reducer(total.get(key, numeric), numeric)
+        else:
+            total[key] = total.get(key, 0.0) + numeric * sample_count
+
+
+def finalize_training_metrics(total, sample_count):
+    """Normalize mean metrics only; extrema already describe the whole epoch."""
+    if sample_count <= 0:
+        raise ValueError("training metric aggregation requires at least one sample")
+    return {key: value if key in _TRAINING_TRUST_EXTREMA else value / sample_count
+            for key, value in total.items()}
+
+
 def serial_args(args):
     return {key: ([str(v.resolve()) for v in value] if isinstance(value, list) else
                   str(value.resolve()) if isinstance(value, Path) else value)
@@ -676,11 +734,13 @@ def build_optimizer(model, args, *, stage):
         args.joint_proposal_lr_scale == 1.0 and args.joint_decoder_lr_scale == 1.0
     ):
         return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=args.weight_decay)
-    proposal_prefixes = ("encoder.", "parameter_head.", "candidate_head.")
+    proposal_prefixes = ("encoder.", "parameter_head.", "candidate_head.",
+                         "proposal_parameter_trust_head.")
     decoder_prefixes = (
         "subset_geometry.", "survivor_attention.", "parameter_attention.",
         "survivor_norm.", "parameter_norm.", "parameter_update.",
         "relocation_update.", "relocation_blend_logit",
+        "subset_parameter_trust_head.",
     )
     groups = {"proposal": [], "selector": [], "decoder": []}
     for name, parameter in model.named_parameters():
@@ -756,7 +816,7 @@ def transfer_proposal_weights(model, checkpoint):
 
 
 def transfer_all_weights(model, checkpoint):
-    """Strict full-model transfer, allowing only the new safety curriculum reset."""
+    """Transfer all old tensors; only explicit off->on trust migration adds weights."""
     contracts = {
         "objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
@@ -768,13 +828,26 @@ def transfer_all_weights(model, checkpoint):
     source_model, _, _ = build_model_from_checkpoint(checkpoint)
     source_config, target_config = source_model.get_config(), model.get_config()
     controlled_safety = {"one_shot_safety_sigma", "one_shot_safety_knots"}
+    add_trust = (not source_config.get("parameter_trust_enabled", False)
+                 and target_config.get("parameter_trust_enabled", False))
+    if add_trust:
+        controlled_safety |= {"parameter_trust_enabled", "parameter_trust_initial"}
     changed = [key for key in set(source_config) | set(target_config)
                if key not in controlled_safety
                and source_config.get(key) != target_config.get(key)]
     if changed:
         raise ValueError(f"full warm-start model configuration mismatch: {sorted(changed)}")
-    model.load_state_dict(source_model.state_dict(), strict=True)
-    return tuple(sorted(source_model.state_dict()))
+    source_state = source_model.state_dict()
+    target_state = model.state_dict()
+    missing = set(target_state) - set(source_state)
+    trust_prefixes = ("proposal_parameter_trust_head.", "subset_parameter_trust_head.")
+    if set(source_state) - set(target_state) or (
+        missing and not (add_trust and all(key.startswith(trust_prefixes) for key in missing))
+    ):
+        raise ValueError("full warm start has unexpected missing or extra state tensors")
+    target_state.update(source_state)
+    model.load_state_dict(target_state, strict=True)
+    return tuple(sorted(source_state))
 
 
 def initializer_record(path, checkpoint, *, mode, copied):
@@ -837,6 +910,8 @@ def main(argv=None):
         encoder_layers=args.encoder_layers, max_internal_knots=args.candidate_knots,
         attention_heads=args.attention_heads, selector_layers=args.selector_layers,
         mse_tolerance=args.mse_tolerance, relocation_blend=args.relocation_blend,
+        parameter_trust_enabled=args.parameter_trust_enabled,
+        parameter_trust_initial=args.parameter_trust_initial,
         one_shot_selection_policy=args.one_shot_selection_policy,
         one_shot_adaptive_threshold=True,
         one_shot_safety_sigma=args.one_shot_safety_sigma,
@@ -906,8 +981,11 @@ def main(argv=None):
         initializer_provenance = initializer_record(
             args.warm_start_checkpoint, source_checkpoint, mode="full_model", copied=copied,
         )
+        initializer_provenance["initialized_tensor_names"] = sorted(set(model.state_dict()) - set(copied))
         print(f"Transferred all {len(copied)} model tensors including selector/decoder; "
               "fresh optimizer, history, safety curriculum and proposal gate.", flush=True)
+        if initializer_provenance["initialized_tensor_names"]:
+            print("Initialized new parameter trust gates; this migration changes the forward function.", flush=True)
     elif args.init_checkpoint:
         source_checkpoint = torch.load(args.init_checkpoint, map_location="cpu", weights_only=True)
         try:
@@ -935,6 +1013,10 @@ def main(argv=None):
         teacher_refinement_candidates=args.teacher_refinement_candidates,
         boundary_ranking_weight=args.boundary_ranking_weight,
         boundary_ranking_candidates=args.boundary_ranking_candidates,
+        parameter_counterfactual_weight=args.parameter_counterfactual_weight,
+        teacher_geometry_candidates=args.teacher_geometry_candidates,
+        local_fit_weight=args.local_fit_weight,
+        proposal_ordered_weight=args.proposal_ordered_weight,
         count_weight=args.count_weight,
         supervised_count_weight=args.supervised_count_weight,
         supervised_over_count_weight=args.supervised_over_count_weight,
@@ -979,6 +1061,8 @@ def main(argv=None):
         flush=True,
     )
     print("Validation checkpoint quality uses the worst source pass rate. Additional subset fits run only during training.", flush=True)
+    if sources and args.real_fraction == 0:
+        print("Real sources are VALIDATION ONLY; training uses synthetic labels, and test splits are excluded from model selection.", flush=True)
     if args.teacher_refinement_steps or args.boundary_ranking_weight:
         print(
             f"Online teacher refinement: {args.teacher_refinement_steps} rounds x "
@@ -1056,8 +1140,7 @@ def main(argv=None):
             optimizer.step()
             size = len(points)
             samples += size
-            for key, value in metrics.items():
-                total[key] += float(value)*size
+            accumulate_training_metrics(total, metrics, size)
             progress(step, len(train_loader), f"Epoch {epoch:03}/{args.epochs} {stage}",
                      f"MSE={metrics['deployment_mse']:.3e} pass={metrics['deployment_pass_rate']:.1%} "
                      f"K={metrics['keep_count']:.1f} teacherK={metrics['subset_best_count']:.1f} "
@@ -1069,7 +1152,7 @@ def main(argv=None):
             knot_match_tolerance=args.knot_match_tolerance,
             log_every=args.log_every_batches,
         )
-        train_metrics = {k: v/samples for k, v in total.items()}
+        train_metrics = finalize_training_metrics(total, samples)
         applied_complexity_scale = complexity_scale
         if stage == "joint":
             observed_pass = measured["worst_deployment_pass_rate"]
@@ -1135,7 +1218,7 @@ def main(argv=None):
                     if args.certified_minimal_source
                     else "uncertified_synthetic_and_real_unlabeled"
                 )
-                if sources
+                if sources and args.real_fraction > 0
                 else (
                     "certified_synthetic_open_cubic_bspline"
                     if args.certified_minimal_source
@@ -1143,6 +1226,8 @@ def main(argv=None):
                 )
             ),
             real_data_provenance=provenance, validation_real_ids=validation.selected_real_ids,
+            real_data_role=("training_and_validation" if args.real_fraction > 0 and sources
+                            else "validation_only" if sources else "not_used"),
             synthetic_data_contract=(
                 V16_CERTIFIED_SYNTHETIC_CONTRACT
                 if args.certified_minimal_source
@@ -1189,6 +1274,7 @@ def main(argv=None):
                              teacher_prefix_search_steps=args.teacher_prefix_search_steps,
                              teacher_refinement_steps=args.teacher_refinement_steps,
                              teacher_refinement_candidates=args.teacher_refinement_candidates,
+                             teacher_geometry_candidates=args.teacher_geometry_candidates,
                              boundary_ranking_candidates=args.boundary_ranking_candidates,
                              ranked_prefix_teacher=objective.ranked_prefix_teacher,
                              knot_position_beta=objective.knot_position_beta,
@@ -1201,7 +1287,9 @@ def main(argv=None):
                                   "supervised_count_weight",
                                   "supervised_over_count_weight", "true_parameter_weight",
                                   "proposal_knot_coverage_weight",
-                                  "selected_knot_position_weight", "boundary_ranking_weight")}))
+                                  "selected_knot_position_weight", "boundary_ranking_weight",
+                                  "parameter_counterfactual_weight", "local_fit_weight",
+                                  "proposal_ordered_weight")}))
         payload["qualification"] = assess_v16_checkpoint(
             payload,
             required_pass_rate=V16_FORMAL_PASS_RATE,
@@ -1237,6 +1325,13 @@ def main(argv=None):
                 f"boundary_loss={train_metrics['teacher_boundary_ranking_loss']:.4f}",
                 flush=True,
             )
+        if args.parameter_trust_enabled or args.parameter_counterfactual_weight or args.local_fit_weight:
+            print(
+                f"  parameter/local: counterfactual={train_metrics['parameter_counterfactual_loss']:.4f}, "
+                f"local={train_metrics['local_fit_loss']:.4f}, "
+                f"geometry_teacher_delta_K={train_metrics['teacher_geometry_count_reduction']:.3f}, "
+                f"geometry_fits={train_metrics['teacher_geometry_evaluations']:.1f}", flush=True,
+            )
         for name, values in measured["by_source"].items():
             count_detail = (
                 f", targetK={values['target_count_mean']:.2f}, "
@@ -1249,9 +1344,15 @@ def main(argv=None):
                 f"{values['parameter_rmse']:.3e}"
                 if "knot_match_f1" in values else ""
             )
+            trust_detail = (
+                f", trust_proposal={values['proposal_parameter_trust_mean']:.3f}"
+                if "proposal_parameter_trust_mean" in values else ""
+            )
+            if "subset_parameter_trust_mean" in values:
+                trust_detail += f", trust_subset={values['subset_parameter_trust_mean']:.3f}"
             print(f"  {name}: dense={values['dense_pass_rate']:.1%}, deployment={values['deployment_pass_rate']:.1%}, "
                   f"MSE={values['deployment_mse']:.3e}, K={values['keep_count']:.2f}"
-                  f"{count_detail}{position_detail}", flush=True)
+                  f"{count_detail}{position_detail}{trust_detail}", flush=True)
     best = torch.load(output, map_location="cpu", weights_only=True)
     print(f"Saved best v16: {output}; quality={best['checkpoint_quality']}. "
           f"Last/resume: {last_path}", flush=True)

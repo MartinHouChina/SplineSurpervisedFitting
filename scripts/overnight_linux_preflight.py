@@ -76,7 +76,7 @@ with the historical trainer even when training has already finished.
     expected_last = output.with_name(output.stem + ".last.pt")
     if source != expected_last or args.resume is None or args.resume.resolve() != source:
         raise ValueError("resume status requires this output's original .last.pt and matching --resume")
-    if args.candidate_knots != 64 or args.real_manifest or args.real_fraction != 0:
+    if args.candidate_knots != 64 or args.real_fraction != 0:
         raise ValueError("overnight resume requires Kc64 and the original synthetic-only training run")
     current = serial_args(args)
     current.update(train_seed=args.seed, train_seed_stride=EPOCH_SEED_STRIDE)
@@ -105,8 +105,22 @@ with the historical trainer even when training has already finished.
             raise ValueError("resume must use the original absolute --output; relocated Windows checkpoints cannot resume")
         if previous.get("mse_tolerance") != args.mse_tolerance:
             raise ValueError("resume checkpoint MSE tolerance does not match the requested run")
-        if payload.get("real_data_provenance") != []:
-            raise ValueError("resume real-data provenance differs from this synthetic-only run")
+        records = payload.get("real_data_provenance", [])
+        expected_manifests = {str(path.resolve()) for path in args.real_manifest}
+        if not isinstance(records, list) or any(
+            not isinstance(record, Mapping)
+            or not isinstance(record.get("manifest"), str)
+            or not isinstance(record.get("manifest_sha256"), str)
+            for record in records
+        ):
+            raise ValueError("resume real-data provenance is malformed")
+        if {
+            str(Path(record["manifest"]).resolve()) for record in records
+        } != expected_manifests:
+            raise ValueError("resume real-data provenance differs from the requested validation sources")
+        for record in records:
+            if file_hash(record["manifest"]) != record["manifest_sha256"]:
+                raise ValueError("resume validation manifest changed since the saved experiment")
         model_config = payload.get("model_config", {})
         if (not isinstance(model_config, Mapping)
                 or model_config.get("max_internal_knots") != 64):
@@ -150,6 +164,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cuda")
     parser.add_argument("--runtime-only", action="store_true")
+    parser.add_argument("--validate-real-splits", action="store_true",
+                        help="Check nonempty disjoint train/val/test manifests before reliable training")
     parser.add_argument("--resume-status", action="store_true",
                         help="Validate --checkpoint as same-run .last.pt; print completed or needed")
     parser.add_argument("--data-root", type=Path, default=ROOT / "data")
@@ -201,6 +217,14 @@ def main(argv=None):
         "USGS": args.data_root / "processed/usgs_contours/large_scale/manifest.jsonl",
     }
     record["datasets"] = {}
+    if args.validate_real_splits:
+        from spline_fitting.data.v16_mixed import load_real_sources
+        _, provenance = load_real_sources(
+            list(manifests.values()), num_points=192, point_dim=2,
+            progress=lambda message: print(message, flush=True),
+        )
+        record["validation_provenance"] = provenance
+        record["real_data_role"] = "validation_only; held-out test excluded from model selection"
     for name, manifest in manifests.items():
         rows = read_curve_manifest(manifest, split="test")
         if not rows:

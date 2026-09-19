@@ -54,6 +54,11 @@ _TIMING_SCOPE = (
     "complete numerical method: chord parameterization, knot selection/relocation, "
     "and final endpoint-constrained refit"
 )
+_SAFEGUARD_METHODS = frozenset({
+    "dung_direct_knot_2017_adaptation",
+    "kang_sparse_2015_adaptation",
+    "luo_linf_de_2022_adaptation",
+})
 
 
 @dataclass(frozen=True)
@@ -68,6 +73,220 @@ class PublishedBaselineResult:
 def _integer_bound(value: int, name: str, minimum: int) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
         raise ValueError(f"{name} must be an integer >= {minimum}")
+
+
+def _ordered_unique_candidates(
+    preferred: torch.Tensor,
+    uniform: torch.Tensor,
+) -> torch.Tensor:
+    """Return a deterministic candidate pool without near-duplicate locations.
+
+    Paper-derived candidates are inserted first for deterministic tie-breaking.
+    The uniform capacity grid supplies locations discarded by native compression. The
+    tolerance prevents an accidental pair of almost-identical *simple* knots;
+    deliberate multiplicities already present in the native result are left
+    untouched.
+    """
+
+    joined = torch.cat((preferred.flatten(), uniform.flatten()))
+    accepted: list[torch.Tensor] = []
+    tolerance = max(128.0 * torch.finfo(joined.dtype).eps, 1e-10)
+    for candidate in joined:
+        if not math.isfinite(float(candidate)) or not 0.0 < float(candidate) < 1.0:
+            continue
+        if accepted and min(abs(float(candidate - item)) for item in accepted) <= tolerance:
+            continue
+        accepted.append(candidate)
+    if not accepted:
+        return joined.new_empty(0)
+    return torch.stack(accepted)
+
+
+def _common_mse_feasibility_safeguard(
+    parameters: torch.Tensor,
+    points: torch.Tensor,
+    native_fit: BSplineLeastSquaresFit,
+    *,
+    preferred_candidates: torch.Tensor,
+    max_internal_knots: int,
+    degree: int,
+    mse_tolerance: float,
+) -> tuple[BSplineLeastSquaresFit, dict[str, object]]:
+    """Repair a collapsed adaptation under the shared comparison constraint.
+
+    Dung's serial pieces, Kang's active-cluster compression, and Luo's local
+    jump maxima can each be feasible in their native intermediate objective but
+    infeasible after the benchmark's common endpoint-constrained B-spline
+    refit.  Silently reporting that collapsed geometry conflates an adaptation
+    mismatch with the source paper.  This *comparison-only* wrapper therefore:
+
+    1. keeps a feasible native result unchanged;
+    2. otherwise adds at most one simple knot per round near the largest
+       residual, drawing from paper-derived and uniform-capacity candidates and
+       evaluating the three nearest available locations exactly;
+    3. if that path exhausts the capacity, compares it with the full uniform
+       capacity fit and keeps the lower-MSE result.
+
+    It uses no network, labels, ground-truth parameters, or hidden fallback.
+    Every refit is timed by the caller and exposed in diagnostics.  This is not
+    claimed as an operation from any cited paper.
+    """
+
+    _integer_bound(max_internal_knots, "max_internal_knots", 0)
+    native_mse = float(native_fit.fit_mse)
+    native_knots = native_fit.internal_knots.detach().clone().sort().values
+    if not math.isfinite(native_mse):
+        raise ValueError("the native common-refit MSE must be finite")
+    if native_knots.numel() > max_internal_knots:
+        raise ValueError("native result exceeds the declared method knot capacity")
+    common: dict[str, object] = {
+        "comparison_feasibility_safeguard_version": "bounded_common_mse_v1",
+        "comparison_feasibility_safeguard_enabled": True,
+        "comparison_feasibility_safeguard_used": False,
+        "comparison_feasibility_safeguard_attempted": False,
+        "comparison_feasibility_safeguard_role": (
+            "repository comparison wrapper; not part of the cited method"
+        ),
+        "comparison_feasibility_native_mse": native_mse,
+        "comparison_feasibility_native_k": int(native_knots.numel()),
+        "comparison_feasibility_native_threshold_satisfied": native_mse <= mse_tolerance,
+        "comparison_feasibility_native_knots": tuple(
+            float(value) for value in native_knots
+        ),
+        "comparison_feasibility_added_knots": (),
+        "comparison_feasibility_added_knots_scope": (
+            "residual-guided path; final_knots are authoritative after any uniform fallback"
+        ),
+        "comparison_feasibility_refit_count": 0,
+        "comparison_feasibility_final_source": "native",
+        "comparison_feasibility_final_mse": native_mse,
+        "comparison_feasibility_final_k": int(native_knots.numel()),
+        "comparison_feasibility_final_knots": tuple(float(value) for value in native_knots),
+        "comparison_feasibility_threshold_satisfied": native_mse <= mse_tolerance,
+        "comparison_feasibility_status": "native_feasible",
+        "comparison_feasibility_dense_capacity_mse": None,
+        "comparison_feasibility_dense_capacity_threshold_satisfied": None,
+        "comparison_feasibility_capacity": int(max_internal_knots),
+    }
+    if native_mse <= mse_tolerance:
+        return native_fit, common
+
+    uniform = (
+        torch.linspace(
+            0.0,
+            1.0,
+            max_internal_knots + 2,
+            dtype=parameters.dtype,
+            device=parameters.device,
+        )[1:-1]
+        if max_internal_knots
+        else parameters.new_empty(0)
+    )
+    pool = _ordered_unique_candidates(preferred_candidates, uniform)
+    current_fit = native_fit
+    current_knots = native_knots
+    best_fit = native_fit
+    source = "native_after_failed_safeguard"
+    added: list[float] = []
+    refit_count = 0
+    near_tolerance = max(128.0 * torch.finfo(parameters.dtype).eps, 1e-10)
+
+    while (
+        float(current_fit.fit_mse) > mse_tolerance
+        and int(current_knots.numel()) < max_internal_knots
+    ):
+        if current_knots.numel():
+            available = pool[
+                ~torch.isclose(
+                    pool[:, None],
+                    current_knots[None, :],
+                    rtol=0.0,
+                    atol=near_tolerance,
+                ).any(dim=-1)
+            ]
+        else:
+            available = pool
+        if available.numel() == 0:
+            break
+
+        residual = (
+            current_fit.reconstructed_points - points
+        ).square().sum(dim=-1)
+        target = parameters[int(residual.argmax())]
+        nearest = torch.argsort((available - target).abs())[: min(3, available.numel())]
+        round_fit: BSplineLeastSquaresFit | None = None
+        round_candidate: torch.Tensor | None = None
+        for candidate in available[nearest]:
+            trial_knots = torch.sort(
+                torch.cat((current_knots, candidate.reshape(1)))
+            ).values
+            trial_fit = refit_bspline_control_points(
+                parameters,
+                points,
+                trial_knots,
+                degree=degree,
+                smoothness_weight=0.0,
+                control_ridge=0.0,
+                interpolate_endpoints=True,
+            )
+            refit_count += 1
+            if round_fit is None or float(trial_fit.fit_mse) < float(round_fit.fit_mse):
+                round_fit = trial_fit
+                round_candidate = candidate
+        if round_fit is None or round_candidate is None:
+            break
+        current_fit = round_fit
+        current_knots = round_fit.internal_knots
+        added.append(float(round_candidate))
+        if float(current_fit.fit_mse) < float(best_fit.fit_mse):
+            best_fit = current_fit
+            source = "residual_guided_augmentation"
+
+    if (
+        max_internal_knots
+        and float(best_fit.fit_mse) > mse_tolerance
+    ):
+        dense_fit = refit_bspline_control_points(
+            parameters,
+            points,
+            uniform,
+            degree=degree,
+            smoothness_weight=0.0,
+            control_ridge=0.0,
+            interpolate_endpoints=True,
+        )
+        refit_count += 1
+        common["comparison_feasibility_dense_capacity_mse"] = float(dense_fit.fit_mse)
+        common["comparison_feasibility_dense_capacity_threshold_satisfied"] = (
+            float(dense_fit.fit_mse) <= mse_tolerance
+        )
+        # The residual-guided path is preferred on a tie because it generally
+        # uses fewer knots.  The dense fit is an explicit last-resort capacity
+        # reference and never exceeds the advertised baseline budget.
+        if float(dense_fit.fit_mse) < float(best_fit.fit_mse):
+            best_fit = dense_fit
+            source = "uniform_capacity_fallback"
+
+    common.update({
+        "comparison_feasibility_safeguard_used": refit_count > 0,
+        "comparison_feasibility_safeguard_attempted": True,
+        "comparison_feasibility_added_knots": tuple(added),
+        "comparison_feasibility_refit_count": refit_count,
+        "comparison_feasibility_final_source": source,
+        "comparison_feasibility_final_mse": float(best_fit.fit_mse),
+        "comparison_feasibility_final_k": int(best_fit.internal_knots.numel()),
+        "comparison_feasibility_final_knots": tuple(
+            float(value) for value in best_fit.internal_knots
+        ),
+        "comparison_feasibility_threshold_satisfied": (
+            float(best_fit.fit_mse) <= mse_tolerance
+        ),
+        "comparison_feasibility_status": (
+            "repaired_feasible" if float(best_fit.fit_mse) <= mse_tolerance
+            else "budget_exhausted_without_feasible_fit"
+        ),
+    })
+    return best_fit, common
 
 
 def run_published_baseline(
@@ -94,6 +313,7 @@ def run_published_baseline(
     luo_de_population: int = 10,
     luo_de_iterations: int = 50,
     luo_seed: int = 2022,
+    published_feasibility_safeguard: bool = True,
 ) -> PublishedBaselineResult:
     """Run a baseline on a single already-normalized ordered CPU float64 curve.
 
@@ -105,6 +325,12 @@ def run_published_baseline(
     sparse stage use ``liang_dense_knots`` and ``paper_initial_knots``
     respectively.  Input normalization/resampling is a shared dataset operation
     and must be performed before this call.
+
+    The optional common-MSE safeguard is a disclosed repository adaptation,
+    not a cited paper stage. It is timed, retains an already feasible result,
+    and respects each method's declared capacity (``paper_initial_knots`` for
+    Kang/Luo, otherwise ``max_internal_knots``). Comparisons must set these
+    capacities identically; the distinct historical API meanings are retained.
     """
     if method not in COMPARISON_BASELINE_METHODS:
         raise ValueError(f"unknown baseline method: {method!r}")
@@ -127,6 +353,8 @@ def run_published_baseline(
     _integer_bound(luo_de_population, "luo_de_population", 5)
     _integer_bound(luo_de_iterations, "luo_de_iterations", 0)
     _integer_bound(luo_seed, "luo_seed", 0)
+    if not isinstance(published_feasibility_safeguard, bool):
+        raise ValueError("published_feasibility_safeguard must be boolean")
     if not math.isfinite(mse_tolerance) or mse_tolerance < 0.0:
         raise ValueError("mse_tolerance must be finite and non-negative")
     for value, name in (
@@ -168,7 +396,11 @@ def run_published_baseline(
         "smoothness_weight": 0.0,
         "control_ridge": 0.0,
         "interpolate_endpoints": True,
+        "declared_max_internal_knots": max_internal_knots,
+        "declared_paper_initial_knots": paper_initial_knots,
     }
+    safeguard_candidates = observed.new_empty(0)
+    safeguard_capacity = max_internal_knots
 
     if method == "uniform_gradient_pruning":
         # The baseline computes chord parameters internally.  Enable gradients
@@ -273,6 +505,7 @@ def run_published_baseline(
         )
         parameters = result.parameters
         fit = result.final_fit
+        safeguard_candidates = result.coarse_breaks
         diagnostics.update(result.diagnostics)
         diagnostics.update({
             "method_fidelity": (
@@ -280,6 +513,9 @@ def run_published_baseline(
                 "multiplicity classification are not reproduced"
             ),
             "threshold_satisfied_native_max_error": (
+                result.native_max_error <= result.native_max_error_tolerance
+            ),
+            "threshold_satisfied_common_max_error_before_safeguard": (
                 result.final_max_error <= result.native_max_error_tolerance
             ),
         })
@@ -312,14 +548,48 @@ def run_published_baseline(
                 control_ridge=0.0,
                 interpolate_endpoints=True,
             )
+            safeguard_candidates = torch.cat((
+                result.active_internal_knots,
+                result.initial_internal_knots,
+            ))
+            safeguard_capacity = paper_initial_knots
             diagnostics.update({
                 "initial_internal_knot_count": int(result.initial_internal_knots.numel()),
                 "dense_initial_fit_mse": float(result.dense_initial_fit_mse),
                 "dense_initial_threshold_satisfied": result.dense_initial_threshold_satisfied,
                 "active_internal_knot_count": result.active_count,
                 "cluster_sizes": result.cluster_sizes,
+                "active_cluster_count": len(result.cluster_sizes),
+                "relocated_internal_knot_count": int(
+                    result.relocated_internal_knots.numel()
+                ),
+                "relocated_unique_knot_count": int(
+                    torch.unique_consecutive(
+                        result.relocated_internal_knots
+                    ).numel()
+                ),
+                "relocated_knot_multiplicities": tuple(
+                    int(value)
+                    for value in torch.unique_consecutive(
+                        result.relocated_internal_knots,
+                        return_counts=True,
+                    )[1].tolist()
+                ),
+                "active_to_relocated_compression_ratio": (
+                    float(result.relocated_internal_knots.numel())
+                    / max(1, result.active_count)
+                ),
                 "sparse_stage_mse": float(result.sparse_fit_mse),
                 "sparse_stage_threshold_satisfied": result.threshold_satisfied,
+                # The sparse-stage value belongs to Kang's native ADMM fit,
+                # whereas ``fit`` is the shared endpoint-constrained standard
+                # refit. Record the transition without attributing the whole
+                # difference to relocation alone.
+                "native_sparse_feasible_final_common_refit_failed": (
+                    result.threshold_satisfied
+                    and float(fit.fit_mse) > mse_tolerance + 1e-12
+                ),
+                "sparse_and_final_mse_are_directly_comparable": False,
                 "sparse_iterations": result.sparse_iterations,
                 "sparse_solver_seconds": result.sparse_solver_seconds,
                 "relocation_seconds": result.relocation_seconds,
@@ -328,6 +598,10 @@ def run_published_baseline(
                 "paper_feasibility_repair_added_count": int(result.repair_added_knots.numel()),
                 "local_refit_count": result.local_refit_count,
                 "method_note": result.method,
+                "relocation_method": result.relocation_method,
+                "algorithm4_cluster_relocation_applied": (
+                    result.local_refit_count > 0
+                ),
                 "absolute_jump_threshold": result.jump_threshold,
                 "relative_jump_threshold": result.relative_jump_threshold,
                 "effective_jump_threshold": result.effective_jump_threshold,
@@ -350,23 +624,53 @@ def run_published_baseline(
                 seed=luo_seed,
             )
             fit = result.final_fit
+            priority = torch.argsort(result.jump_values, descending=True)
+            safeguard_candidates = torch.cat((
+                result.candidate_knots,
+                result.initial_internal_knots[priority],
+            ))
+            safeguard_capacity = paper_initial_knots
             diagnostics.update({
                 "reference_doi": "10.4208/jcm.2012-m2020-0203",
                 "variant": "linf1_jump_sparsity_plus_differential_evolution",
                 "initial_internal_knot_count": int(
                     result.initial_internal_knots.numel()
                 ),
+                "dense_initial_fit_mse": result.dense_initial_fit_mse,
+                "dense_initial_threshold_satisfied": (
+                    result.dense_initial_threshold_satisfied
+                ),
                 "selected_regularization": result.selected_regularization,
                 "sparse_stage_mse": result.sparse_fit_mse,
+                "sparse_stage_threshold_satisfied": (
+                    result.sparse_fit_mse <= mse_tolerance + 1e-12
+                ),
                 "jump_local_maximum_eta": luo_eta,
                 "candidate_internal_knot_count": int(
                     result.candidate_knots.numel()
+                ),
+                "initial_to_candidate_compression_ratio": (
+                    float(result.candidate_knots.numel())
+                    / max(1, result.initial_internal_knots.numel())
+                ),
+                "candidate_refit_mse_before_de": result.candidate_refit_mse,
+                "candidate_refit_threshold_satisfied_before_de": (
+                    result.candidate_refit_mse <= mse_tolerance + 1e-12
+                ),
+                "candidate_selection_lost_sparse_feasibility": (
+                    result.sparse_fit_mse <= mse_tolerance + 1e-12
+                    and result.candidate_refit_mse > mse_tolerance + 1e-12
                 ),
                 "de_population": result.de_population,
                 "de_iterations": result.de_iterations,
                 "de_evaluations": result.de_evaluations,
                 "de_initial_max_error": result.de_initial_max_error,
                 "de_final_max_error": result.de_final_max_error,
+                "de_restored_common_mse_feasibility": (
+                    result.candidate_refit_mse > mse_tolerance + 1e-12
+                    and float(result.final_fit.fit_mse)
+                    <= mse_tolerance + 1e-12
+                ),
                 "paper_native_objective": (
                     "nonsquared Frobenius data term plus l-infinity,1 derivative-jump "
                     "penalty; DE minimizes maximum Euclidean error"
@@ -406,6 +710,47 @@ def run_published_baseline(
                 "max_internal_knots": max_internal_knots,
             })
 
+    if method in _SAFEGUARD_METHODS:
+        diagnostics.update({
+            "native_common_refit_mse": float(fit.fit_mse),
+            "native_common_refit_k": int(fit.internal_knots.numel()),
+            "native_common_refit_threshold_satisfied": float(fit.fit_mse) <= mse_tolerance,
+            "comparison_method_capacity": safeguard_capacity,
+        })
+        if published_feasibility_safeguard:
+            fit, safeguard_diagnostics = _common_mse_feasibility_safeguard(
+                parameters,
+                observed,
+                fit,
+                preferred_candidates=safeguard_candidates,
+                max_internal_knots=safeguard_capacity,
+                degree=degree,
+                mse_tolerance=mse_tolerance,
+            )
+            diagnostics.update(safeguard_diagnostics)
+        else:
+            diagnostics.update({
+                "comparison_feasibility_safeguard_enabled": False,
+                "comparison_feasibility_safeguard_used": False,
+                "comparison_feasibility_safeguard_attempted": False,
+                "comparison_feasibility_safeguard_role": (
+                    "disabled; native disclosed adaptation is reported"
+                ),
+                "comparison_feasibility_native_mse": float(fit.fit_mse),
+                "comparison_feasibility_native_k": int(fit.internal_knots.numel()),
+                "comparison_feasibility_final_mse": float(fit.fit_mse),
+                "comparison_feasibility_final_k": int(fit.internal_knots.numel()),
+                "comparison_feasibility_refit_count": 0,
+                "comparison_feasibility_added_knots": (),
+                "comparison_feasibility_final_source": "native",
+                "comparison_feasibility_capacity": safeguard_capacity,
+                "comparison_feasibility_threshold_satisfied": float(fit.fit_mse) <= mse_tolerance,
+                "comparison_feasibility_status": "disabled",
+            })
+        diagnostics["comparison_method_label"] = (
+            "threshold-safe adaptation" if published_feasibility_safeguard
+            else "native disclosed adaptation"
+        )
     diagnostics["threshold_satisfied"] = float(fit.fit_mse) <= mse_tolerance
     elapsed_ms = (time.perf_counter() - started) * 1000.0
     return PublishedBaselineResult(

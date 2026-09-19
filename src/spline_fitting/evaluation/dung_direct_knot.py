@@ -504,6 +504,19 @@ def fit_dung_direct_knots(
         "native_final_mse": float(native_fit.fit_mse),
         "common_final_max_error": final_maximum,
         "common_final_mse": float(final_fit.fit_mse),
+        "all_local_segments_native_feasible": all(
+            error <= epsilon for error in segment_errors
+        ),
+        "local_piecewise_feasible_global_common_refit_failed": (
+            all(error <= epsilon for error in segment_errors)
+            and float(final_fit.fit_mse) > mse_tolerance
+        ),
+        "native_global_max_error_threshold_satisfied": native_maximum <= epsilon,
+        "native_global_common_mse_threshold_satisfied": float(final_fit.fit_mse) <= mse_tolerance,
+        "native_global_internal_knot_count": int(knots.numel()),
+        "common_final_metrics_scope": (
+            "native adaptation before any optional comparison feasibility safeguard"
+        ),
         "segments": segments,
         "segment_max_errors": segment_errors,
         "coarse_break_indices": coarse_break_indices,

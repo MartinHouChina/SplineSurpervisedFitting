@@ -127,6 +127,11 @@ def parser(*, default_checkpoint: Path | None = None,
     p.add_argument("--luo-de-population", type=int, default=10)
     p.add_argument("--luo-de-iterations", type=int, default=50)
     p.add_argument("--luo-seed", type=int, default=2022)
+    p.add_argument(
+        "--published-feasibility-safeguard", action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable disclosed, capacity-bounded common-MSE repair for Dung/Kang/Luo; complete timing includes every repair refit",
+    )
     p.add_argument("--network-warmups", type=int, default=3)
     p.add_argument("--network-repeats", type=int, default=10)
     p.add_argument("--end-to-end-repeats", type=int, default=3)
@@ -269,8 +274,59 @@ def published_baseline_kwargs(args, *, degree: int, warmup: bool = False) -> dic
         "luo_de_population": 5 if warmup else args.luo_de_population,
         "luo_de_iterations": 1 if warmup else args.luo_de_iterations,
         "luo_seed": args.luo_seed,
+        "published_feasibility_safeguard": getattr(args, "published_feasibility_safeguard", True),
     }
     return values
+
+
+SAFEGUARDED_PUBLISHED_METHODS = (
+    "dung_direct_knot_2017_adaptation", "kang_sparse_2015_adaptation",
+    "luo_linf_de_2022_adaptation",
+)
+
+
+def published_baseline_protocol(args) -> dict:
+    """Fingerprint the disclosed comparison wrapper and its implementation."""
+    enabled = bool(getattr(args, "published_feasibility_safeguard", True))
+    return {
+        "feasibility_safeguard_enabled": enabled,
+        "feasibility_safeguard_version": "bounded_common_mse_v1",
+        "methods": list(SAFEGUARDED_PUBLISHED_METHODS),
+        "label": "threshold-safe adaptation" if enabled else "native disclosed adaptation",
+        "native_definition": "corrected repository adaptation before the optional common-MSE safeguard; not an exact paper reproduction",
+        "repair": "only when native common refit misses tolerance; bounded residual-guided augmentation and uniform-capacity fallback; preserve best fit",
+        "capacity": "Dung: max_internal_knots; Kang/Luo: paper_initial_knots; neither cap is exceeded",
+        "timing": "all native algorithm work and safeguard refits included in complete time; Ours network-only remains separate",
+        "kang_long_cluster_correction_always_enabled": True,
+        "evaluation_code_sha256": {
+            str(path.relative_to(ROOT)): sha256_file(path)
+            for path in sorted((ROOT / "src/spline_fitting/evaluation").glob("*.py"))
+        },
+    }
+
+
+def native_baseline_audit(rows: list[dict]) -> list[dict]:
+    """Keep per-case native and final measurements visible, including misses."""
+    audit = []
+    for row in rows:
+        if row["method"] not in SAFEGUARDED_PUBLISHED_METHODS:
+            continue
+        diagnostic = row.get("diagnostics") or {}
+        audit.append({
+            "dataset": row.get("dataset"), "sample_id": row.get("sample_id"),
+            "method": row["method"], "status": row.get("status"),
+            "safeguard_enabled": diagnostic.get("comparison_feasibility_safeguard_enabled"),
+            "safeguard_used": diagnostic.get("comparison_feasibility_safeguard_used"),
+            "native_k": diagnostic.get("comparison_feasibility_native_k"),
+            "native_mse": diagnostic.get("comparison_feasibility_native_mse"),
+            "final_k": row.get("final_k"), "final_mse": row.get("mse"),
+            "extra_refit_count": diagnostic.get("comparison_feasibility_refit_count"),
+            "final_source": diagnostic.get("comparison_feasibility_final_source"),
+            "repair_status": diagnostic.get("comparison_feasibility_status"),
+            "capacity": diagnostic.get("comparison_feasibility_capacity"),
+            "complete_ms": row.get("total_ms"),
+        })
+    return audit
 
 
 def known_synthetic_seed_ranges(checkpoint: dict) -> list[dict]:
@@ -597,12 +653,15 @@ def summarize(rows: list[dict]) -> list[dict]:
 
 def write_reports(directory: Path, metadata: dict, rows: list[dict]):
     summary = summarize(rows)
-    report = {"metadata": metadata, "summary": summary, "measurements": rows}
+    audit = native_baseline_audit(rows)
+    report = {"metadata": metadata, "summary": summary, "measurements": rows,
+              "native_baseline_summary": audit}
     (directory / "comparison.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False),
         encoding="utf-8",
     )
-    for filename, items in (("summary.csv", summary), ("measurements.csv", rows)):
+    for filename, items in (("summary.csv", summary), ("measurements.csv", rows),
+                            ("native_baseline_summary.csv", audit)):
         if not items:
             continue
         with (directory / filename).open("w", encoding="utf-8-sig", newline="") as handle:
@@ -611,6 +670,11 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
             writer.writerows(items)
     version = OBJECTIVE_LABELS[metadata["objective_version"]]
     labels = {**LABELS, "ours": f"Ours {version} learned"}
+    protocol = metadata.get("published_baseline_protocol", {})
+    safeguarded = protocol.get("feasibility_safeguard_enabled") is True
+    if safeguarded:
+        for method in SAFEGUARDED_PUBLISHED_METHODS:
+            labels[method] += " [threshold-safe adaptation]"
     lines = [
         f"# {version} 多数据集配对测试",
         "",
@@ -640,6 +704,13 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
             f"{metadata.get('knot_capacities', '见 experiment.json configuration')}。"
         ),
         f"设备：{metadata['hardware']}。",
+        (
+            "数值基线协议：**threshold-safe adaptation**。Dung/Kang/Luo 在原生公共 refit "
+            "未达阈值时可执行有界修复；保留最佳拟合但不保证容量内必然可行。所有额外 refit "
+            "计入完整耗时；这不是原文算法步骤。"
+            if safeguarded else
+            "数值基线协议：未启用或历史报告未记录公共可行性修复；不将结果标为 threshold-safe adaptation。"
+        ),
         "",
         "| 数据集 | 方法 | n | 拟合通过率 | 最终 MSE | 平均 K | 完整耗时 ms | 网络 ms |",
         "|---|---|---:|---:|---:|---:|---:|---:|",
@@ -666,6 +737,27 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
             f"{fmt(s['total_ms_mean'], '.2f')} | "
             f"{fmt(s['network_ms_mean'], '.2f')} |"
         )
+    if audit:
+        lines += [
+            "", "## 原生适配与最终结果审计", "",
+            "native 指修正后的仓库适配在公共可行性修复前的端点约束 refit，非作者原版复现。"
+            "下表均值仅对有记录值计算；逐样本 native/final K、MSE、修复动作、额外 refit 次数和完整耗时见 "
+            "`native_baseline_summary.csv`（旧记录缺少原生信息时留空，不补造）。",
+            "",
+            "| 数据集 | 方法 | native K | final K | native MSE | final MSE | 平均额外 refit | 使用修复的样本 |",
+            "|---|---|---:|---:|---:|---:|---:|---:|",
+        ]
+        for dataset, method in sorted({(item["dataset"], item["method"]) for item in audit}):
+            items = [item for item in audit if (item["dataset"], item["method"]) == (dataset, method)]
+            def audit_mean(key):
+                values = [item[key] for item in items if item[key] is not None]
+                return statistics.mean(values) if values else None
+            lines.append(
+                f"| {dataset} | {labels[method]} | {fmt(audit_mean('native_k'), '.2f')} | "
+                f"{fmt(audit_mean('final_k'), '.2f')} | {fmt(audit_mean('native_mse'), '.3e')} | "
+                f"{fmt(audit_mean('final_mse'), '.3e')} | {fmt(audit_mean('extra_refit_count'), '.2f')} | "
+                f"{sum(item['safeguard_used'] is True for item in items)}/{len(items)} |"
+            )
     lines += [
         "",
         (
@@ -819,11 +911,12 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                 "model_version": version,
                 "method_set": args.method_set,
                 "methods": list(methods),
-                "method_labels": {method: f"Ours {version} learned" if method == "ours" else LABELS[method] for method in methods},
+                "method_labels": {method: f"Ours {version} learned" if method == "ours" else LABELS[method] + (" [threshold-safe adaptation]" if args.published_feasibility_safeguard and method in SAFEGUARDED_PUBLISHED_METHODS else "") for method in methods},
+                "published_baseline_protocol": published_baseline_protocol(args),
                 "network_tolerance_conditioned": objective_version == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
                 "knot_capacities": capacities,
                 "num_points": int(cases[0]["points"].shape[0]),
-                "timing_protocol": "global numerical-backend warmup; every method uses the configured repeated complete-run median per curve; Ours additionally reports a separately warmed network-only median; dataset summary averages per-curve medians",
+                "timing_protocol": "global numerical-backend warmup; every method uses the configured repeated complete-run median per curve, including all feasibility-safeguard work; Ours additionally reports a separately warmed network-only median; dataset summary averages per-curve medians",
                 "mse_tolerance": args.mse_tolerance, "configuration": config, "hardware": hardware,
                 "datasets": provenance, "code_sha256": {str(p.relative_to(ROOT)): sha256_file(p) for p in code_paths},
                 "sample_content_sha256": [hashlib.sha256(c["points"].numpy().tobytes() + (c["reference"].numpy().tobytes() if c["reference"] is not None else b"")).hexdigest() for c in cases]}

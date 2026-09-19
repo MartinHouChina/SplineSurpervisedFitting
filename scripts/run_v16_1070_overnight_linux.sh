@@ -17,6 +17,9 @@ INIT_CHECKPOINT=outputs/checkpoints/candidate_selection_v16.proposal.pt
 INIT_SPECIFIED=0
 WARM_START_CHECKPOINT=""
 ENHANCED_SELECTION=0
+RELIABLE_SELECTION=0
+REAL_VAL_SIZE=32
+NATIVE_BASELINES=0
 CHECKPOINT=""
 DATA_ROOT=""
 OUTPUT_ROOT=""
@@ -43,6 +46,11 @@ No current K24/K48 or offline-teacher model code is used.
   --epochs N --proposal-epochs N   Total/Proposal epochs (64/4; Joint=60)
   --enhanced-selection            Stronger online Teacher + boundary ranking;
                                   defaults to 96/12 epochs, new run name
+  --reliable-selection            Parameter trust + geometry Teacher + local loss;
+                                  defaults to 32/4 epochs, real validation only
+  --real-val-size N               Reliable profile: val curves per real source (32)
+  --native-baselines              Disable explicit MSE repair for Dung/Kang/Luo;
+                                  corrected Kang clustering remains enabled
   --train-size N --val-size N      Synthetic training/validation (1500/500)
   --batch-size N --num-workers N   Default 32/0
   --mse-tolerance X                Shared MSE threshold, not RMS (5e-5)
@@ -81,6 +89,9 @@ while (($#)); do
     --epochs) need_value "$@"; EPOCHS="$2"; shift 2 ;;
     --proposal-epochs) need_value "$@"; PROPOSAL_EPOCHS="$2"; shift 2 ;;
     --enhanced-selection) ENHANCED_SELECTION=1; shift ;;
+    --reliable-selection) RELIABLE_SELECTION=1; shift ;;
+    --real-val-size) need_value "$@"; REAL_VAL_SIZE="$2"; shift 2 ;;
+    --native-baselines) NATIVE_BASELINES=1; shift ;;
     --train-size) need_value "$@"; TRAIN_SIZE="$2"; shift 2 ;;
     --val-size) need_value "$@"; VAL_SIZE="$2"; shift 2 ;;
     --batch-size) need_value "$@"; BATCH_SIZE="$2"; shift 2 ;;
@@ -105,7 +116,19 @@ while (($#)); do
     *) die "unknown option: $1" ;;
   esac
 done
-if ((ENHANCED_SELECTION)); then
+((ENHANCED_SELECTION == 0 || RELIABLE_SELECTION == 0)) || die "choose only one of --enhanced-selection and --reliable-selection"
+if ((RELIABLE_SELECTION)); then
+  RUN_NAME=${RUN_NAME:-overnight_reliable_3090_r1}
+  EPOCHS=${EPOCHS:-32}
+  PROPOSAL_EPOCHS=${PROPOSAL_EPOCHS:-4}
+  LEARNING_ARGS=(--policy-samples 2 --counterfactual-edits 4 --teacher-prefix-search-steps 6
+    --lr 5e-5 --joint-lr 5e-5 --teacher-refinement-steps 1 --teacher-refinement-candidates 3
+    --boundary-ranking-weight 0.5 --boundary-ranking-candidates 4
+    --joint-proposal-lr-scale 0.25 --joint-decoder-lr-scale 0.5 --joint-final-lr-ratio 0.25
+    --parameter-trust-enabled --parameter-trust-initial 0.25
+    --parameter-counterfactual-weight 0.25 --teacher-geometry-candidates 4
+    --local-fit-weight 0.1 --proposal-ordered-weight 0.5 --allow-infeasible-proposals)
+elif ((ENHANCED_SELECTION)); then
   RUN_NAME=${RUN_NAME:-overnight_plus_3090_r1}
   EPOCHS=${EPOCHS:-96}
   PROPOSAL_EPOCHS=${PROPOSAL_EPOCHS:-12}
@@ -151,7 +174,7 @@ else
   LUO_ITERATIONS=50
 fi
 for number in "$EPOCHS" "$PROPOSAL_EPOCHS" "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE" \
-  "$SYNTHETIC_SAMPLES" "$REAL_SAMPLES" "$VISUAL_SAMPLES" "$NETWORK_REPEATS" "$END_TO_END_REPEATS"; do
+  "$REAL_VAL_SIZE" "$SYNTHETIC_SAMPLES" "$REAL_SAMPLES" "$VISUAL_SAMPLES" "$NETWORK_REPEATS" "$END_TO_END_REPEATS"; do
   [[ "$number" =~ ^[1-9][0-9]*$ ]] || die "sizes, epochs and repeats must be positive integers"
 done
 ((PROPOSAL_EPOCHS < EPOCHS)) || die "Proposal epochs must be less than total epochs"
@@ -216,6 +239,10 @@ printf 'Historical overnight: online Teacher; Kc=64; source K=4..24; MSE=%s.\n' 
 if ((ENHANCED_SELECTION)); then
   printf 'Enhanced selection: feasible teacher remove/add/swap refinement + boundary ranking; unchanged one-shot deployment.\n'
 fi
+if ((RELIABLE_SELECTION)); then
+  printf 'Reliable selection: trust gates, ranking-independent Teacher, local fit and ordered coverage; one-shot deployment.\n'
+  printf 'Real data: validation-only (%s/source); synthetic-only training; held-out test for comparison.\n' "$REAL_VAL_SIZE"
+fi
 printf 'Proposal %s + Joint %s = %s epochs; train/val=%s/%s, batch=%s.\n' \
   "$PROPOSAL_EPOCHS" "$((EPOCHS-PROPOSAL_EPOCHS))" "$EPOCHS" "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
 printf 'Six methods, four datasets. Profile=%s (full is an experimental budget, not a claim of qualification).\n' "$BENCHMARK_PROFILE"
@@ -248,6 +275,7 @@ if ((DRY_RUN == 0)); then
 fi
 STAMP="$(date -u +%Y%m%d_%H%M%S)_$$"
 PREFLIGHT_ARGS=(--data-root "$DATA_ROOT" --device "$DEVICE" --mse-tolerance "$MSE_TOLERANCE")
+if ((RELIABLE_SELECTION)); then PREFLIGHT_ARGS+=(--validate-real-splits); fi
 if [[ "$CHECKPOINT" != "$TRAIN_OUTPUT" ]]; then
   PREFLIGHT_ARGS+=(--checkpoint "$CHECKPOINT")
 elif [[ -n "$INIT_CHECKPOINT" && "$RESUME" == 0 ]]; then
@@ -269,6 +297,10 @@ if [[ "$CHECKPOINT" == "$TRAIN_OUTPUT" ]]; then
     --one-shot-safety-sigma 0.2 --safety-anneal-epochs 8
     --complexity-ramp-epochs 8 --no-resample-train-each-epoch --num-workers "$NUM_WORKERS"
     --torch-num-threads 4 --device "$DEVICE" --output "$TRAIN_OUTPUT")
+  if ((RELIABLE_SELECTION)); then
+    TRAIN_ARGS+=(--real-val-size "$REAL_VAL_SIZE"
+      --real-manifest "$UJI" --real-manifest "$NATURAL" --real-manifest "$USGS")
+  fi
   if ((RESUME)); then
     TRAIN_ARGS+=(--resume "$LAST_PATH")
     run_logged check_resume_status "$PYTHON_BIN" scripts/overnight_linux_preflight.py \
@@ -306,6 +338,11 @@ BASELINE_ARGS=(--max-internal-knots 64 --paper-initial-knots 64 --liang-dense-kn
   --gradient-steps 12 --paper-admm-iterations "$KANG_ITERATIONS" --paper-lambda-bisections 8
   --paper-relocation-iterations 8 --liang-feature-samples 1025 --dung-scan-intervals 10
   --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations "$LUO_ITERATIONS")
+if ((NATIVE_BASELINES)); then
+  BASELINE_ARGS+=(--no-published-feasibility-safeguard)
+else
+  BASELINE_ARGS+=(--published-feasibility-safeguard)
+fi
 TIMING_ARGS=(--network-warmups 3 --network-repeats "$NETWORK_REPEATS"
   --end-to-end-repeats "$END_TO_END_REPEATS" --torch-num-threads 4 --device "$DEVICE")
 BENCHMARK_RESUME=()

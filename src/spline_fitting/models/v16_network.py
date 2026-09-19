@@ -62,6 +62,8 @@ class V16CandidateSelectionNetwork(nn.Module):
         one_shot_coverage_bins: int = 0,
         min_selected_knots: int = 0,
         structure_mode: str = "candidate_pruning_one_shot",
+        parameter_trust_enabled: bool = False,
+        parameter_trust_initial: float = 0.25,
     ) -> None:
         super().__init__()
         if point_dim < 1 or degree < 1 or hidden_dim < 4:
@@ -89,6 +91,14 @@ class V16CandidateSelectionNetwork(nn.Module):
             )
         if not isinstance(one_shot_adaptive_threshold, bool):
             raise ValueError("one_shot_adaptive_threshold must be Boolean")
+        if not isinstance(parameter_trust_enabled, bool):
+            raise ValueError("parameter_trust_enabled must be Boolean")
+        if (
+            isinstance(parameter_trust_initial, bool)
+            or not math.isfinite(parameter_trust_initial)
+            or not 0 < parameter_trust_initial < 1
+        ):
+            raise ValueError("parameter_trust_initial must lie strictly in (0,1)")
         if not math.isfinite(one_shot_safety_sigma) or one_shot_safety_sigma < 0:
             raise ValueError("one_shot_safety_sigma must be finite and non-negative")
         for name, value in {
@@ -120,6 +130,8 @@ class V16CandidateSelectionNetwork(nn.Module):
             one_shot_coverage_bins=one_shot_coverage_bins,
             min_selected_knots=min_selected_knots,
             structure_mode=structure_mode,
+            parameter_trust_enabled=parameter_trust_enabled,
+            parameter_trust_initial=parameter_trust_initial,
         )
         self.point_dim, self.degree, self.hidden_dim = point_dim, degree, hidden_dim
         self.max_internal_knots = max_internal_knots
@@ -132,6 +144,7 @@ class V16CandidateSelectionNetwork(nn.Module):
         self.one_shot_safety_knots = int(one_shot_safety_knots)
         self.one_shot_coverage_bins = int(one_shot_coverage_bins)
         self.min_selected_knots = int(min_selected_knots)
+        self.parameter_trust_enabled = parameter_trust_enabled
         self.encoder = GeometryEncoder(point_dim, hidden_dim, encoder_layers)
         self.parameter_head = ParameterHead(
             hidden_dim, min_parameter_gap, "strict", "chord_residual",
@@ -184,6 +197,42 @@ class V16CandidateSelectionNetwork(nn.Module):
         self.relocation_blend_logit = nn.Parameter(torch.tensor(
             math.log(clipped_blend / (1 - clipped_blend))
         ))
+        # Opt-in only: legacy checkpoints keep their exact parameter layout
+        # and initialization. A single curve-level gate forms a convex blend
+        # of two strictly monotone parameter vectors; per-point gates would
+        # not preserve their ordering. These heads add no deployment search.
+        if parameter_trust_enabled:
+            self.proposal_parameter_trust_head = self._make_parameter_trust_head(
+                hidden_dim, parameter_trust_initial,
+            )
+            self.subset_parameter_trust_head = self._make_parameter_trust_head(
+                hidden_dim, parameter_trust_initial,
+            )
+
+    @staticmethod
+    def _make_parameter_trust_head(width: int, initial: float) -> nn.Sequential:
+        head = nn.Sequential(
+            nn.LayerNorm(width), nn.Linear(width, width // 2), nn.GELU(),
+            nn.Linear(width // 2, 1),
+        )
+        nn.init.zeros_(head[-1].weight)
+        nn.init.constant_(head[-1].bias, math.log(initial / (1 - initial)))
+        return head
+
+    def _strict_chord_reference(self, chord: torch.Tensor) -> torch.Tensor:
+        """Project degenerate chord gaps to the same simplex as ParameterHead."""
+        gap_count = chord.shape[1] - 1
+        free = (chord.diff(dim=-1) - self.min_parameter_gap).clamp_min(0)
+        free = torch.where(
+            free.sum(-1, keepdim=True) <= 1e-12, torch.ones_like(free), free,
+        )
+        gaps = self.min_parameter_gap + (
+            1 - self.min_parameter_gap * gap_count
+        ) * free / free.sum(-1, keepdim=True).clamp_min(1e-12)
+        return torch.cat([
+            gaps.new_zeros(gaps.shape[0], 1), gaps.cumsum(-1)[:, :-1],
+            gaps.new_ones(gaps.shape[0], 1),
+        ], dim=-1)
 
     def get_config(self) -> dict:
         # Selection safety is validation-controlled during joint training.  A
@@ -244,7 +293,18 @@ class V16CandidateSelectionNetwork(nn.Module):
             (lengths / lengths.sum(-1, keepdim=True)).cumsum(-1),
         ], dim=-1)
         chord = torch.cat([chord[:, :-1], chord.new_ones(chord.shape[0], 1)], -1)
-        params = self.parameter_head(local, global_features, reference_params=chord)["params"]
+        ungated_params = self.parameter_head(
+            local, global_features, reference_params=chord,
+        )["params"]
+        chord_params = self._strict_chord_reference(chord)
+        proposal_trust = chord.new_ones(chord.shape[0], 1)
+        if self.parameter_trust_enabled:
+            proposal_trust = self.proposal_parameter_trust_head(
+                global_features + local.mean(dim=1),
+            ).sigmoid()
+            params = chord_params + proposal_trust * (ungated_params - chord_params)
+        else:
+            params = ungated_params
         proposal = self.candidate_head(global_features, local, params)
         knots = proposal["candidate_knots"]
         boundaries = torch.cat([knots.new_zeros(knots.shape[0], 1), knots,
@@ -286,6 +346,8 @@ class V16CandidateSelectionNetwork(nn.Module):
         )
         return dict(
             points=points, proposal_params=params, proposal_internal_knots=knots,
+            chord_params=chord_params, ungated_proposal_params=ungated_params,
+            proposal_parameter_trust=proposal_trust,
             candidate_tokens=tokens, local_features=local,
             global_features=global_features, raw_keep_importance=raw_importance,
             centered_keep_importance=centered_importance,
@@ -458,7 +520,20 @@ class V16CandidateSelectionNetwork(nn.Module):
         weights = free * correction.exp()
         weights = weights / weights.sum(-1, keepdim=True).clamp_min(torch.finfo(weights.dtype).tiny)
         gaps = self.min_parameter_gap + (1 - self.min_parameter_gap * free.shape[1]) * weights
-        params = torch.cat([gaps.new_zeros(batch, 1), gaps.cumsum(-1)[:, :-1], gaps.new_ones(batch, 1)], -1)
+        ungated_params = torch.cat([gaps.new_zeros(batch, 1), gaps.cumsum(-1)[:, :-1], gaps.new_ones(batch, 1)], -1)
+        subset_trust = knots.new_ones(batch, 1)
+        if self.parameter_trust_enabled:
+            survivor_summary = (
+                survivors * keep_mask.unsqueeze(-1)
+            ).sum(dim=1) / kept_count.clamp_min(1).unsqueeze(-1)
+            subset_trust = self.subset_parameter_trust_head(
+                survivor_summary + context["global_features"]
+                + context["tolerance_features"],
+            ).sigmoid()
+            params = old_params + subset_trust * (ungated_params - old_params)
+            gaps = params.diff(dim=-1)
+        else:
+            params = ungated_params
         warped = self._warp_knots(knots, old_params, params)
         residual = self.relocation_update(survivors)
         blend = (self.relocation_blend_logit + residual[..., 1]).sigmoid()
@@ -498,6 +573,11 @@ class V16CandidateSelectionNetwork(nn.Module):
             mse_tolerance=context["tolerance"],
             parameter_gaps=gaps, warped_proposal_internal_knots=warped,
             relocation_blend=blend,
+            chord_params=context["chord_params"],
+            ungated_proposal_params=context["ungated_proposal_params"],
+            proposal_parameter_trust=context["proposal_parameter_trust"],
+            ungated_subset_params=ungated_params,
+            subset_parameter_trust=subset_trust,
         )
 
     def forward_deployment(self, points: torch.Tensor, mse_tolerance=None) -> dict:

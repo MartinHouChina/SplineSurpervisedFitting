@@ -23,6 +23,23 @@ def _points() -> torch.Tensor:
     return torch.stack([t, 0.15 * torch.sin(2.0 * torch.pi * t)], dim=-1)
 
 
+def _collapse_regression_points() -> torch.Tensor:
+    """Coastline-like curve whose native compression can retain 1--4 knots."""
+
+    parameter = torch.linspace(0.0, 1.0, 96, dtype=torch.float64)
+    points = torch.stack(
+        [
+            parameter,
+            0.18 * torch.sin(4.0 * torch.pi * parameter)
+            + 0.045 * torch.sin(17.0 * torch.pi * parameter),
+        ],
+        dim=-1,
+    )
+    lower = points.amin(dim=0)
+    scale = (points.amax(dim=0) - lower).max()
+    return (points - lower) / scale
+
+
 def _run(method: str, **kwargs: object) -> baselines.PublishedBaselineResult:
     options = dict(
         mse_tolerance=1e-4,
@@ -71,6 +88,27 @@ def test_baselines_report_common_endpoint_refit_and_euclidean_mse(method: str) -
         assert result.diagnostics["paper_feasibility_repair_used"] is False
         assert "native_final_fit_mse_without_endpoint_constraint" in result.diagnostics
         assert result.diagnostics["native_endpoint_constrained_mse"] == float(fit.fit_mse)
+        assert result.diagnostics["relocated_internal_knot_count"] == sum(
+            result.diagnostics["relocated_knot_multiplicities"]
+        )
+        assert result.diagnostics["relocated_unique_knot_count"] == len(
+            result.diagnostics["relocated_knot_multiplicities"]
+        )
+        assert (
+            result.diagnostics[
+                "native_sparse_feasible_final_common_refit_failed"
+            ]
+            == (
+                result.diagnostics["sparse_stage_threshold_satisfied"]
+                and not result.diagnostics["threshold_satisfied"]
+            )
+        )
+        assert result.diagnostics[
+            "sparse_and_final_mse_are_directly_comparable"
+        ] is False
+    if method == "luo_linf_de_2022_adaptation":
+        assert "dense_initial_fit_mse" in result.diagnostics
+        assert "candidate_refit_mse_before_de" in result.diagnostics
     knot_cap = (
         3
         if method
@@ -158,6 +196,7 @@ def test_gradient_baseline_still_optimizes_inside_inference_mode() -> None:
         {"luo_de_population": 4},
         {"luo_de_iterations": -1},
         {"luo_seed": -1},
+        {"published_feasibility_safeguard": 1},
     ],
 )
 def test_invalid_configuration_is_rejected(kwargs: dict[str, object]) -> None:
@@ -168,6 +207,75 @@ def test_invalid_configuration_is_rejected(kwargs: dict[str, object]) -> None:
 def test_liang_initial_knots_cannot_exceed_dispatcher_cap() -> None:
     with pytest.raises(ValueError, match="must not exceed"):
         _run("liang_feature_iki_2017_adaptation", liang_initial_knots=3)
+
+
+@pytest.mark.parametrize(
+    "method",
+    (
+        "dung_direct_knot_2017_adaptation",
+        "luo_linf_de_2022_adaptation",
+    ),
+)
+def test_common_safeguard_recovers_collapsed_published_adaptations(
+    method: str,
+) -> None:
+    points = _collapse_regression_points()
+    options = dict(
+        mse_tolerance=1e-4,
+        max_internal_knots=28,
+        paper_initial_knots=28,
+        paper_admm_iterations=15,
+        paper_lambda_bisections=1,
+        paper_relocation_iterations=1,
+        dung_scan_intervals=2,
+        dung_optimization_iterations=1,
+        luo_de_population=5,
+        luo_de_iterations=1,
+    )
+    native = baselines.run_published_baseline(
+        method,
+        points,
+        published_feasibility_safeguard=False,
+        **options,
+    )
+    safeguarded = baselines.run_published_baseline(method, points, **options)
+
+    assert float(native.fit.fit_mse) > options["mse_tolerance"]
+    assert float(safeguarded.fit.fit_mse) <= options["mse_tolerance"] + 1e-12
+    assert native.fit.internal_knots.numel() < safeguarded.fit.internal_knots.numel()
+    assert safeguarded.fit.internal_knots.numel() <= options["paper_initial_knots"]
+    assert safeguarded.diagnostics["comparison_feasibility_safeguard_used"] is True
+    assert safeguarded.diagnostics["comparison_feasibility_native_k"] == int(
+        native.fit.internal_knots.numel()
+    )
+    assert safeguarded.diagnostics["comparison_feasibility_native_mse"] == pytest.approx(
+        float(native.fit.fit_mse)
+    )
+    assert safeguarded.diagnostics["comparison_feasibility_refit_count"] > 0
+    assert "not part of the cited method" in safeguarded.diagnostics[
+        "comparison_feasibility_safeguard_role"
+    ]
+
+
+def test_kang_general_data_skips_invalid_cluster_collapse() -> None:
+    points = _collapse_regression_points()
+    result = baselines.run_published_baseline(
+        "kang_sparse_2015_adaptation",
+        points,
+        mse_tolerance=1e-4,
+        max_internal_knots=28,
+        paper_initial_knots=28,
+        paper_admm_iterations=15,
+        paper_lambda_bisections=1,
+        paper_relocation_iterations=1,
+    )
+
+    assert result.diagnostics["cluster_sizes"] == (28,)
+    assert result.diagnostics["algorithm4_cluster_relocation_applied"] is False
+    assert "skipped" in result.diagnostics["relocation_method"]
+    assert result.diagnostics["comparison_feasibility_safeguard_used"] is False
+    assert result.fit.internal_knots.numel() == 28
+    assert float(result.fit.fit_mse) <= 1e-4
 
 
 def test_unknown_method_and_wrong_numeric_dtype_are_rejected() -> None:

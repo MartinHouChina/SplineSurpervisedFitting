@@ -1,0 +1,15 @@
+
+[plot_ours_cases] python scripts/visualize_v16_ours_cases.py --checkpoint /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_reliable_3090_r1.pt --real-samples-per-dataset 2 --selection-seed 20260909 --mse-tolerance 5e-5 --manifest UJI=/home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl --manifest NaturalEarth=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl --manifest USGS=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl --max-internal-knots 64 --paper-initial-knots 64 --liang-dense-knots 64 --gradient-steps 12 --paper-admm-iterations 400 --paper-lambda-bisections 8 --paper-relocation-iterations 8 --liang-feature-samples 1025 --dung-scan-intervals 10 --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations 50 --published-feasibility-safeguard --network-warmups 3 --network-repeats 100 --end-to-end-repeats 3 --torch-num-threads 4 --device cuda --dpi 240 --allow-unqualified-diagnostic --output-dir /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_reliable_3090_r1/ours_cases
+[1/6] UJI / uji2_07455_stroke_00
+  Ours v16: MSE=3.573e-06, K=24, time=8.83 ms
+[2/6] UJI / uji2_05088_stroke_00
+  Ours v16: MSE=8.650e-06, K=27, time=8.86 ms
+[3/6] NaturalEarth / natural_earth_10m_coastline_6f39c8d2074b_w000_6f39c8d2
+  Ours v16: MSE=1.985e-05, K=30, time=8.83 ms
+[4/6] NaturalEarth / natural_earth_10m_coastline_08e9fecdd118_w000_08e9fecd
+  Ours v16: MSE=4.228e-04, K=43, time=8.99 ms
+[5/6] USGS / usgs_tnm_contours_large_scale_3eb19dbb6d67_w000_3eb19dbb
+  Ours v16: MSE=2.239e-05, K=28, time=8.81 ms
+[6/6] USGS / usgs_tnm_contours_large_scale_2cadfb668fb4_w000_2cadfb66
+  Ours v16: MSE=6.542e-06, K=17, time=8.58 ms
+Saved 7 PNG files and /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_reliable_3090_r1/ours_cases/deployment_visualizations.json

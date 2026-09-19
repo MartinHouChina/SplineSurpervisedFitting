@@ -1,5 +1,7 @@
 # 论文节点方法的简化复现与统一对比协议
 
+Overnight Reliable 的当前运行参数为 `Kc=64`、source `K=4..24`、`MSE=5e-5`，一条龙见[专用说明](overnight_reliable.md)。下面较早的 Kc96 示例属于独立历史配置，不应混入同一比较；此次对照修正详见第2.1节。
+
 ## 1. 复现范围
 
 本仓库新增的是**可审计的算法适配**，不是作者原始代码的逐语句复刻。各方法接收同一条归一化有序曲线，只使用观测点，不读取真实节点；最终都交给同一个 CPU `float64` 标准 B 样条最小二乘求解器重新计算控制顶点。
@@ -10,17 +12,17 @@
 | [Liang et al., 2017](https://doi.org/10.1088/1361-6501/aa6a05) | 先用密集均匀节点拟合参考曲线，由弧长和弯曲特征构造单调特征积分；按等特征积分放置初始节点，再执行 iterative knot insertion（IKI）直至满足误差界。 | `liang_feature_iki_2017_adaptation` | **feature-integral + IKI 适配**：特征为归一化累计弧长与累计绝对转角的加权和，默认曲率权重 `0.5`；在最大采样残差所在节点区间插入区间中点。由于全文中的特征组合常数与全部 IKI 细节无法完整核验，不能标为精确复现。 |
 | [Dung & Tjahjowidodo, 2017](https://doi.org/10.1371/journal.pone.0173857) | 以最大误差约束串行/并行二分数据，得到粗节点；再通过局部两段 B 样条非线性最小二乘优化节点位置和连续性阶数，最后求控制顶点。 | `dung_direct_knot_2017_adaptation` | 仅复现串行二分和局部节点位置优化；默认原生最大距离阈值为 `sqrt(MSE tolerance)`。**只处理平滑单节点，不复现重节点/连续性分类，也不复现并行 split–join–shift**；容量超限时确定性均匀抽取粗分界。 |
 | [Luo–Kang–Yang, 2022](https://doi.org/10.4208/jcm.2012-m2020-0203) | 两阶段优化：先求解 `||P-AC||_F + λ||DC||_{∞,1}`，从导数跳跃的局部峰值确定候选数目；再用 Differential Evolution（DE）全局更新固定数量的节点位置。 | `luo_linf_de_2022_adaptation` | 指定复现的是 **`l_inf,1 + DE` 论文，而不是同年的 DNN 论文**。用 ADMM 求稀疏阶段，并按公共 MSE 预算搜索 `λ`；峰值阈值默认 `eta=0.5`；DE 优化最大采样距离，最后仍按公共 MSE 报告。论文逐例选择 `λ`，本仓库的自动搜索属于对比适配。 |
-| [Kang et al., 2015](https://doi.org/10.1016/j.cad.2014.08.022) | 在密集初始节点上用稀疏优化确定活跃节点，再删除冗余节点并调整位置，同时兼顾拟合质量和节点数。 | `kang_sparse_2015_adaptation` | 二维 group-L1/ADMM、跳跃聚类和局部位置调整；不声称复现作者的 CVX 数值路径。正式比较关闭额外 feasibility repair，避免给该基线加入论文之外的补救优势。 |
+| [Kang et al., 2015](https://doi.org/10.1016/j.cad.2014.08.022) | 在密集初始节点上用稀疏优化确定活跃节点，再删除冗余节点并调整位置，同时兼顾拟合质量和节点数。 | `kang_sparse_2015_adaptation` | 二维 group-L1/ADMM、跳跃聚类和局部位置调整；不声称复现作者的 CVX 数值路径。已修复长活跃簇被全部压成一个节点的问题。论文适配内部的额外 repair 仍关闭；新版可显式增加独立的公共 MSE 可行性包装层，修复前后分别记录，不能将包装层冒充原论文步骤。 |
 | Ours v16 | 在给定 MSE 阈值下，先学习高可行率的密集候选，再用在线随机子集和反事实编辑学习最少可行 KeepMask；存活节点、节点位置和参数在一次解码中联动。 | `ours`；checkpoint objective 为 `candidate_selection_counterfactual_bspline_v16` | 无离线硬剪枝标签。部署只执行一次网络前向、一次离散选集和一次标准 B 样条 refit。候选容量必须与 checkpoint 一致。 |
 
 `yeh_feature_cdf_2020` 是另一项论文方法适配；`uniform_gradient_pruning` 是本仓库的传统数值控制组，不属于论文方法。代码分别暴露 `PUBLISHED_ADAPTATION_METHODS` 与 `NUMERICAL_BASELINE_METHODS`，统一 benchmark 使用二者的并集，避免将仓库基线误标成已发表方法。
 
 ## 2. 公平协议
 
-1. **配对数据**：所有方法处理完全相同的归一化有序点。合成测试按源内部节点数 `K=4..20` 分层；真实测试使用 UJI Pen、Natural Earth 海岸线和 USGS 等高线的 test split。同一 writer/tile 不跨 train、validation、test。
+1. **配对数据**：所有方法处理完全相同的归一化有序点。合成测试按源内部节点数分层：当前 Overnight Reliable 为 `K=4..24`，下方历史示例为 `K=4..20`，以实际命令和报告配置为准；真实测试使用 UJI Pen、Natural Earth 海岸线和 USGS 等高线的 test split。同一 writer/tile 不跨 train、validation、test。
 2. **参数域**：所有路径均以弦长参数为共同参考。所有传统数值基线固定使用弦长参数；Ours 的 ParameterHead 以弦长参数为 reference，学习有界 residual，并在所选子集上再更新。因此主实验比较的是各方法的完整能力，而不是“最终参数完全相同”的纯节点消融。若要单独研究节点选择，应另报固定弦长参数的 Ours 消融，不能把两种口径混在一列。
 3. **统一最终拟合**：三次开区间 B 样条、CPU `float64`、无平滑项、无控制点 ridge，并严格插值两个端点。所有表格中的最终误差均来自这次标准 refit，而不是网络 surrogate、ADMM 内部目标或 DE 适应度。
-4. **统一误差**：`MSE = mean_i ||C(t_i)-Q_i||_2^2`，不取平方根，也不除以坐标维数。默认通过条件为 `MSE <= 2.5e-5`。Dung 的原生分段仍由最大欧氏距离控制；该值和公共 MSE 必须分别保存。
+4. **统一误差**：`MSE = mean_i ||C(t_i)-Q_i||_2^2`，不取平方根，也不除以坐标维数。当前 Overnight Reliable 通过条件为 `MSE <= 5e-5`；下方历史示例使用 `2.5e-5`，不能混表。Dung 的原生分段仍由最大欧氏距离控制；该值和公共 MSE 必须分别保存。
 5. **节点数**：报告最终 refit 实际使用的内部节点数。合成数据的 source K 只是生成复杂度，不自动等于给定阈值下的全局最小 K；真实数据没有节点真值，不能计算节点 precision/recall。
 6. **时间**：公共 `total_ms` 从已归一化的 CPU 点开始，包含参数化、方法本身以及最终 refit，不包含文件读取和绘图。Ours 另外报告同步后的 `network_ms`，但它不能与传统方法的完整 `total_ms` 直接当成端到端加速比。
 7. **失败样本**：异常或非有限解保留为失败并计入通过率分母，不能静默删除。`comparison.json` 保存逐曲线记录、配置、checkpoint/代码指纹和硬件信息。
@@ -28,6 +30,28 @@
 v16 benchmark 默认拒绝与 checkpoint `Kc` 不一致的数值容量。只有明确的容量消融才可使用 `--allow-unequal-capacity`，且不能把该结果放入同容量主表。
 
 主表至少同时报告：平均 MSE、P95 MSE、通过率、平均最终内部节点数和完整耗时；Ours 另列网络前向耗时。只比较平均 MSE 会掩盖少量严重失败曲线。
+
+### 2.1 Overnight Reliable 的对照组修正
+
+旧 overnight 对照曾出现：Dung 局部分段通过但整体简单节点样条失败；Kang 长活跃簇过度合并；Luo 峰值筛选后固定节点数不足、DE 只能移动而不能补点。这些是当前适配的数值/协议问题，不能解释为原论文方法天然劣于 Ours。
+
+Kang 的长簇压缩错误作为实现修复始终生效。另为 Dung、Kang、Luo 提供公开的公共误差包装层：若原生适配经统一端点约束 refit 后已达标，保持原结果；否则在残差大处，从论文候选及均匀容量候选中有限补点，逐次做实际标准 refit。若仍不可行，再比较同容量的均匀节点参考拟合。所有路径遵守同一内部节点上限，不能保证每条曲线达标，也不是全局最小节点算法。
+
+新版一条龙默认启用该包装层，图表必须标为 **threshold-safe adaptation**；`--native-baselines` 关闭包装层，并标为 **native disclosed adaptation**。两者均不是作者原始实现。关闭包装层不恢复 Kang 的旧错误，也不表示补齐了 Dung 重节点/连续性分类等尚未复现的原论文步骤。
+
+逐曲线结果同时保留：
+
+| 字段/记录 | 含义 |
+|---|---|
+| `native_common_refit_mse/k/threshold_satisfied` | 原生适配在共同最终 refit 口径下的误差、内部节点数和通过状态 |
+| `comparison_feasibility_native_*` | 修复入口的原生 MSE、节点数及节点位置等诊断 |
+| `comparison_feasibility_final_*` | 包装层后的实际最终 MSE、节点数、节点向量及来源 |
+| `comparison_feasibility_refit_count`、`...added_knots` | 修复额外求解次数及补点轨迹；若启用均匀参考回退，以 final knots 为最终结果 |
+| `comparison_feasibility_safeguard_used`、`...threshold_satisfied` | 是否做过修复以及最终是否真正达到公共阈值 |
+
+修复的所有搜索、补点和 refit 均计入基线完整耗时。主表报告当前选择模式的最终指标，同时保留原生/修复诊断；若需要分别比较耗时，用两个独立 run 分别启用/关闭包装层，不把完整耗时误标为纯原论文耗时。失败仍计入通过率分母，不能把不可行少节点解作为更优压缩。
+
+旧结果与修复版结果不可复用同一实验缓存或不加说明地拼表。若比较 Ours 新旧权重，应使用同一测试样本、同一修复模式、同一容量和迭代预算重评；无需因此重训 Ours。
 
 ## 3. 快速联调命令
 

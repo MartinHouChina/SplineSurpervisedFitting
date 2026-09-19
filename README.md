@@ -1,5 +1,7 @@
 # Minimum-Complexity B-Spline Fitting
 
+当前短程改进实验见 [Overnight Reliable](docs/overnight_reliable.md)：保留一夜版流程，新增参数 trust gate、排序之外的教师候选与独立真实验证；`--reliable-selection` 提供 32-epoch warm-start 及六方法四指标一条龙。对照组采用明确标注的 threshold-safe adaptation，保留原生结果和修复代价。下面的主线历史参数不覆盖该档配置。
+
 1070 历史架构的 Linux 一键训练、六方法四指标比较及案例图入口见 [Linux 历史配置流程](docs/overnight_1070_linux.md)。这是独立 warm-start 新实验，不是旧 epoch 17 精确续训，也不是当前主线的离线 teacher 流程。
 
 可选的 [Overnight Plus 增强训练](docs/overnight_plus.md) 保留同一网络结构，用 `--enhanced-selection` 加强在线 teacher 与节点选择，并支持从已训练 overnight 模型完整迁移权重到新实验；不加开关仍为原历史配置。

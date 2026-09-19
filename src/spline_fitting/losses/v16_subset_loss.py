@@ -115,6 +115,9 @@ class V16SubsetLoss(nn.Module):
         teacher_prefix_search_steps: int = 7, knot_position_beta: float = 0.01,
         teacher_refinement_steps: int = 0, teacher_refinement_candidates: int = 2,
         boundary_ranking_weight: float = 0.0, boundary_ranking_candidates: int = 4,
+        parameter_counterfactual_weight: float = 0.0,
+        teacher_geometry_candidates: int = 0, local_fit_weight: float = 0.0,
+        proposal_ordered_weight: float = 0.0,
     ) -> None:
         super().__init__()
         if not math.isfinite(mse_tolerance) or mse_tolerance <= 0:
@@ -125,6 +128,7 @@ class V16SubsetLoss(nn.Module):
             ("teacher_refinement_steps", teacher_refinement_steps, 0),
             ("teacher_refinement_candidates", teacher_refinement_candidates, 1),
             ("boundary_ranking_candidates", boundary_ranking_candidates, 1),
+            ("teacher_geometry_candidates", teacher_geometry_candidates, 0),
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
                 raise ValueError(f"{name} must be an integer >= {minimum}")
@@ -133,6 +137,9 @@ class V16SubsetLoss(nn.Module):
             ("distillation_weight", distillation_weight), ("dense_weight", dense_weight),
             ("count_weight", count_weight), ("ranking_weight", ranking_weight),
             ("boundary_ranking_weight", boundary_ranking_weight),
+            ("parameter_counterfactual_weight", parameter_counterfactual_weight),
+            ("local_fit_weight", local_fit_weight),
+            ("proposal_ordered_weight", proposal_ordered_weight),
             ("supervised_count_weight", supervised_count_weight),
             ("supervised_over_count_weight", supervised_over_count_weight),
             ("true_parameter_weight", true_parameter_weight),
@@ -173,6 +180,7 @@ class V16SubsetLoss(nn.Module):
         self.teacher_refinement_steps = teacher_refinement_steps
         self.teacher_refinement_candidates = teacher_refinement_candidates
         self.boundary_ranking_candidates = boundary_ranking_candidates
+        self.teacher_geometry_candidates = teacher_geometry_candidates
 
     @staticmethod
     def _validate_points(points: torch.Tensor, degree: int) -> None:
@@ -207,25 +215,96 @@ class V16SubsetLoss(nn.Module):
         if torch.any((knots[mask] <= 0) | (knots[mask] >= 1)):
             raise ValueError("selected knots must lie strictly inside (0,1)")
 
-    def _fit(self, parameters, knots, mask, points, degree):
+    def _fit_details(self, parameters, knots, mask, points, degree):
         self._validate_geometry(parameters, knots, mask, points)
         result = differentiable_hard_gated_bspline_fit(
             parameters.double(), points.double(), knots.double(), mask,
             degree=degree, smoothness_weight=0.0, control_ridge=0.0,
             solver_jitter=self.solver_jitter,
-        )["per_sample_mse"]
-        if not torch.isfinite(result).all():
+        )
+        if not torch.isfinite(result["per_sample_mse"]).all():
             raise RuntimeError("non-finite standard B-spline subset refit")
         return result
 
-    def _decode_mse(self, model, context, mask, points, degree):
+    def _fit(self, parameters, knots, mask, points, degree):
+        return self._fit_details(parameters, knots, mask, points, degree)["per_sample_mse"]
+
+    @staticmethod
+    def _decode_output(model, context, mask):
         output = model.decode_subset(context, mask)
         if not isinstance(output, Mapping):
             raise ValueError("decode_subset must return a mapping")
         returned_mask = output.get("learned_keep_mask")
         if not isinstance(returned_mask, torch.Tensor) or not torch.equal(returned_mask, mask):
             raise ValueError("decode_subset must preserve the requested discrete mask")
+        return output
+
+    def _decode_mse(self, model, context, mask, points, degree):
+        output = self._decode_output(model, context, mask)
         return self._fit(output["params"], output["internal_knots"], mask, points, degree)
+
+    def _parameter_counterfactual(self, parameters, knots, mask, chord, mse,
+                                  points, degree, tolerance):
+        """Same selected knots/K in chord coordinates, as a detached target.
+
+        Relocated survivor knots are warped together with the parameters.  A
+        reference constructed from unchanged knot coordinates would compare
+        different geometric locations and supply a misleading trust target.
+        No decoder or deployment-time alternative search is involved.
+        """
+        if not isinstance(chord, torch.Tensor) or chord.shape != parameters.shape:
+            raise ValueError("parameter counterfactual requires chord_params [B,M]")
+        with torch.no_grad():
+            reference_knots = self._warp_knots_to_target_parameterization(
+                knots.detach(), parameters.detach(), chord.detach(),
+            )
+            reference_mse = self._fit(
+                chord.detach(), reference_knots, mask, points, degree,
+            ).detach()
+        floor = tolerance * 1e-12
+        penalty = F.relu(torch.log(mse + floor) - torch.log(reference_mse + floor))
+        return self._tail_aware_mean(penalty), reference_mse
+
+    def _local_fit_penalty(self, squared_error, parameters, tolerance):
+        """Normalized interval/end-neighborhood loss; global MSE stays intact.
+
+        Four equal parameter intervals and two endpoint neighborhoods each
+        contribute one mean, regardless of sample count. Empty intervals are
+        excluded rather than treated as zero-error evidence. The endpoints
+        themselves interpolate exactly; their nearby samples carry the signal.
+        """
+        if squared_error.shape != parameters.shape or squared_error.ndim != 2:
+            raise ValueError("local residuals and parameters must share [B,M]")
+        if not torch.isfinite(squared_error).all() or bool((squared_error < 0).any()):
+            raise ValueError("local squared residuals must be finite and non-negative")
+        bins = (parameters.detach() * 4).long().clamp(0, 3)
+        regions = [bins == index for index in range(4)]
+        sample_ids = torch.arange(parameters.shape[1], device=parameters.device)
+        endpoint_count = max(2, math.ceil(parameters.shape[1] * 0.1))
+        regions.extend([
+            (sample_ids < endpoint_count).expand_as(parameters),
+            (sample_ids >= parameters.shape[1] - endpoint_count).expand_as(parameters),
+        ])
+        masks = torch.stack(regions, dim=1)
+        counts = masks.sum(-1)
+        region_mse = (squared_error[:, None, :] * masks).sum(-1) / counts.clamp_min(1)
+        penalties = self._fit_penalty(region_mse, tolerance[:, None])
+        per_curve = (penalties * (counts > 0)).sum(-1) / (counts > 0).sum(-1)
+        return self._tail_aware_mean(per_curve), region_mse.amax(-1).mean()
+
+    @staticmethod
+    def _trust_statistics(value, *, prefix, zero):
+        """Scalar gate diagnostics; absent legacy/stage-specific fields are zero."""
+        if value is None:
+            return {f"{prefix}_{name}": zero for name in ("mean", "min", "max")}
+        if (not isinstance(value, torch.Tensor) or not value.numel()
+                or not value.is_floating_point() or not torch.isfinite(value).all()):
+            raise ValueError(f"{prefix} must be a nonempty finite floating-point tensor")
+        return {
+            f"{prefix}_mean": value.mean(),
+            f"{prefix}_min": value.amin(),
+            f"{prefix}_max": value.amax(),
+        }
 
     @staticmethod
     def _fit_penalty(mse, tolerance):
@@ -631,6 +710,102 @@ class V16SubsetLoss(nn.Module):
         per_curve = (penalties * valid_pairs).sum(dim=(-1, -2)) / pair_counts.clamp_min(1)
         return per_curve[pair_counts > 0].mean()
 
+    def _geometry_teacher_masks(self, model, context, mask, points, minimum):
+        """Bounded curvature/coverage and spatially dispersed probes, no logits.
+
+        Alternating removals and equal-count swaps explore survivors excluded
+        by student probability ranking. Geometry ranks only propose masks;
+        acceptance always uses the actual decoded endpoint-constrained refit.
+        """
+        parameters = context["proposal_params"].detach()
+        chord = context.get("chord_params", parameters).detach()
+        knots = self._warp_knots_to_target_parameterization(
+            context["proposal_internal_knots"].detach(), parameters, chord,
+        )
+        edges = points.detach().diff(dim=1)
+        directions = F.normalize(edges, dim=-1)
+        turns = (directions[:, 1:] - directions[:, :-1]).norm(dim=-1)
+        turns = F.pad(turns, (1, 1))
+        sample_ids = torch.searchsorted(chord.contiguous(), knots.contiguous()).clamp(
+            0, chord.shape[1] - 1,
+        )
+        salience = turns.gather(1, sample_ids) + 0.05
+        remove_orders = []
+        add_orders = []
+        selected_ids = []
+        for row in range(mask.shape[0]):
+            kept = mask[row].nonzero(as_tuple=False).flatten()
+            rejected = (~mask[row]).nonzero(as_tuple=False).flatten()
+            selected_ids.append(kept)
+            locations = knots[row, kept]
+            boundaries = torch.cat([locations.new_zeros(1), locations, locations.new_ones(1)])
+            if kept.numel():
+                spacing = torch.minimum(boundaries.diff()[:-1], boundaries.diff()[1:])
+                importance = spacing * salience[row, kept]
+                remove_orders.append(kept[importance.argsort(stable=True)])
+            else:
+                remove_orders.append(kept)
+            if rejected.numel():
+                distance = (knots[row, rejected, None] - boundaries[None, :]).abs().amin(-1)
+                coverage = distance * salience[row, rejected]
+                add_orders.append(rejected[coverage.argsort(descending=True, stable=True)])
+            else:
+                add_orders.append(rejected)
+        constrain = getattr(model, "constrain_selection_mask", None)
+        for index in range(self.teacher_geometry_candidates):
+            trial = mask.clone()
+            for row, kept in enumerate(selected_ids):
+                if not kept.numel():
+                    continue
+                round_index = index // 4
+                if index % 4 < 2:
+                    remove = remove_orders[row][round_index % kept.numel()]
+                else:
+                    # Golden-ratio spatial traversal spreads probes over the
+                    # whole survivor list instead of revisiting low-score slots.
+                    fraction = ((round_index + 1) * 0.6180339887498949) % 1.0
+                    remove = kept[min(int(fraction * kept.numel()), kept.numel() - 1)]
+                if index % 2 == 0:
+                    if kept.numel() > minimum:
+                        trial[row, remove] = False
+                elif add_orders[row].numel():
+                    add = add_orders[row][(index // 2) % add_orders[row].numel()]
+                    trial[row, remove] = False
+                    trial[row, add] = True
+            if callable(constrain):
+                trial = constrain(context, trial)
+            if (not isinstance(trial, torch.Tensor) or trial.shape != mask.shape
+                    or trial.dtype != torch.bool or trial.device != mask.device
+                    or bool((trial.sum(-1) < minimum).any())):
+                raise ValueError("geometry teacher masks must respect shape and minimum K")
+            yield trial
+
+    @torch.no_grad()
+    def _geometry_teacher(self, model, context, mask, mse, points, degree,
+                          tolerance, minimum):
+        masks, errors = [mask], [mse.detach()]
+        for trial in self._geometry_teacher_masks(model, context, mask, points, minimum):
+            if any(torch.equal(trial, previous) for previous in masks):
+                continue
+            masks.append(trial)
+            errors.append(self._decode_mse(model, context, trial, points, degree))
+        selected, indices = select_best_subset(torch.stack(masks), torch.stack(errors), tolerance)
+        columns = torch.arange(mask.shape[0], device=mask.device)
+        selected_mse = torch.stack(errors)[indices, columns]
+        # Never exchange an infeasible fallback for another infeasible mask.
+        # Feasible improvements are lexicographic (minimum K, then MSE), so a
+        # lower-K fit may use more of the allowed error without harming feasibility.
+        accept = (indices != 0) & (selected_mse <= tolerance)
+        best_mask = torch.where(accept[:, None], selected, mask)
+        best_mse = torch.where(accept, selected_mse, mse)
+        return best_mask, best_mse, {
+            "teacher_geometry_evaluations": mse.new_tensor(float(len(masks) - 1)),
+            "teacher_geometry_improved_fraction": accept.double().mean(),
+            "teacher_geometry_count_reduction": (mask.sum(-1) - best_mask.sum(-1)).double().mean(),
+            "teacher_geometry_mse_gain": (mse - best_mse).mean(),
+            "teacher_geometry_feasible_fraction": (best_mse <= tolerance).double().mean(),
+        }
+
     @staticmethod
     def _teacher_match_metrics(mask, teacher_mask, teacher_feasible):
         """Micro keep/reject agreement against feasible online teachers only."""
@@ -975,6 +1150,7 @@ class V16SubsetLoss(nn.Module):
             target_geometry_valid, points=points,
         )
         zero = points.new_zeros(())
+        proposal_ordered_loss = zero
         if bool(geometry_valid.any()):
             proposal_true_parameter_loss = F.mse_loss(
                 context["proposal_params"][geometry_valid],
@@ -1001,13 +1177,48 @@ class V16SubsetLoss(nn.Module):
                     geometry_valid,
                 )
             )
+            if self.proposal_ordered_weight:
+                proposal_ordered_loss, _, _ = self._selected_knot_loss(
+                    supervised_proposals,
+                    torch.ones_like(proposals, dtype=torch.bool),
+                    geometry_knots, geometry_mask, geometry_valid,
+                )
         else:
             proposal_true_parameter_loss = proposal_true_parameter_mae = zero
             proposal_knot_coverage_loss = proposal_knot_nearest_mae = zero
-        dense_mse = self._fit(context["proposal_params"], proposals, torch.ones_like(proposals, dtype=torch.bool), points, degree)
+        dense_mask = torch.ones_like(proposals, dtype=torch.bool)
+        dense_details = None
+        if self.local_fit_weight:
+            dense_details = self._fit_details(
+                context["proposal_params"], proposals, dense_mask, points, degree,
+            )
+            dense_mse = dense_details["per_sample_mse"]
+        else:
+            dense_mse = self._fit(context["proposal_params"], proposals, dense_mask, points, degree)
         dense_penalty = self._tail_aware_mean(self._fit_penalty(dense_mse, tolerance))
         zero = dense_mse.new_zeros(())
         boundary_ranking_loss = zero
+        proposal_counterfactual_loss = deployment_counterfactual_loss = zero
+        proposal_chord_mse = deployment_chord_mse = zero
+        proposal_counterfactual_win = deployment_counterfactual_win = zero
+        local_fit_loss = local_max_mse = zero
+        counterfactual_refits = 0
+        if self.parameter_counterfactual_weight:
+            proposal_counterfactual_loss, reference_mse = self._parameter_counterfactual(
+                context["proposal_params"], proposals, dense_mask,
+                context.get("chord_params"), dense_mse, points, degree, tolerance,
+            )
+            proposal_chord_mse = reference_mse.mean()
+            proposal_counterfactual_win = (dense_mse.detach() <= reference_mse).double().mean()
+            counterfactual_refits += 1
+        geometry_teacher_metrics = {
+            name: zero for name in (
+                "teacher_geometry_evaluations", "teacher_geometry_improved_fraction",
+                "teacher_geometry_count_reduction", "teacher_geometry_mse_gain",
+                "teacher_geometry_feasible_fraction",
+            )
+        }
+        deployment_output = None
         refinement_metrics = {
             name: zero for name in (
                 "teacher_refinement_evaluations", "teacher_refinement_steps_used",
@@ -1045,6 +1256,10 @@ class V16SubsetLoss(nn.Module):
             deployment_true_parameter_loss = deployment_true_parameter_mae = zero
             true_parameter_loss = proposal_true_parameter_loss
             true_parameter_mae = proposal_true_parameter_mae
+            if self.local_fit_weight:
+                local_fit_loss, local_max_mse = self._local_fit_penalty(
+                    dense_details["per_point_squared_error"], context["proposal_params"], tolerance,
+                )
         else:
             logits = context["keep_logits"]
             if logits.shape != proposals.shape or logits.device != points.device:
@@ -1055,7 +1270,32 @@ class V16SubsetLoss(nn.Module):
             mask = model.select_mask(context)
             if not isinstance(mask, torch.Tensor) or mask.shape != logits.shape or mask.dtype != torch.bool:
                 raise ValueError("select_mask must return a boolean [B,K] tensor")
-            deployment_mse = self._decode_mse(model, context, mask, points, degree)
+            deployment_output = None
+            if (self.parameter_counterfactual_weight or self.local_fit_weight
+                    or getattr(model, "parameter_trust_enabled", False)):
+                deployment_output = self._decode_output(model, context, mask)
+                deployment_details = self._fit_details(
+                    deployment_output["params"], deployment_output["internal_knots"],
+                    mask, points, degree,
+                )
+                deployment_mse = deployment_details["per_sample_mse"]
+                if self.local_fit_weight:
+                    local_fit_loss, local_max_mse = self._local_fit_penalty(
+                        deployment_details["per_point_squared_error"],
+                        deployment_output["params"], tolerance,
+                    )
+                if self.parameter_counterfactual_weight:
+                    deployment_counterfactual_loss, reference_mse = self._parameter_counterfactual(
+                        deployment_output["params"], deployment_output["internal_knots"], mask,
+                        context.get("chord_params"), deployment_mse, points, degree, tolerance,
+                    )
+                    deployment_chord_mse = reference_mse.mean()
+                    deployment_counterfactual_win = (
+                        deployment_mse.detach() <= reference_mse
+                    ).double().mean()
+                    counterfactual_refits += 1
+            else:
+                deployment_mse = self._decode_mse(model, context, mask, points, degree)
             count = mask.sum(-1).to(dense_mse.dtype)
             # Independent draws only: neither the deterministic deployment nor
             # any edited/optimized target is assigned a Bernoulli log-probability.
@@ -1178,6 +1418,11 @@ class V16SubsetLoss(nn.Module):
                         model, context, best_mask, searched_best_mse,
                         probabilities.detach(), points, degree, tolerance, minimum,
                     )
+                if self.teacher_geometry_candidates:
+                    best_mask, searched_best_mse, geometry_teacher_metrics = self._geometry_teacher(
+                        model, context, best_mask, searched_best_mse,
+                        points, degree, tolerance, minimum,
+                    )
                 teacher_feasible = searched_best_mse <= tolerance
                 teacher_match_metrics = self._teacher_match_metrics(
                     mask, best_mask, teacher_feasible,
@@ -1233,7 +1478,8 @@ class V16SubsetLoss(nn.Module):
             safe = deployment_mse.detach() <= tolerance * self.complexity_activation_ratio
             complexity = (safe * probabilities.mean(-1)).mean()
             if bool(geometry_valid.any()):
-                deployment_output = model.decode_subset(context, mask)
+                if deployment_output is None:
+                    deployment_output = model.decode_subset(context, mask)
                 if not isinstance(deployment_output, Mapping):
                     raise ValueError("decode_subset must return a mapping")
                 returned_mask = deployment_output.get("learned_keep_mask")
@@ -1373,8 +1619,36 @@ class V16SubsetLoss(nn.Module):
                     * selected_knot_position_loss)
             if self.boundary_ranking_weight:
                 loss = loss + self.boundary_ranking_weight * boundary_ranking_loss
+        parameter_counterfactual_loss = (
+            0.5 * (proposal_counterfactual_loss + deployment_counterfactual_loss)
+            if stage == "joint" else proposal_counterfactual_loss
+        )
+        # Conditional additions preserve the historical objective bit-for-bit
+        # with all four new mechanisms disabled.
+        if self.parameter_counterfactual_weight:
+            loss = loss + self.parameter_counterfactual_weight * parameter_counterfactual_loss
+        if self.local_fit_weight:
+            loss = loss + self.local_fit_weight * local_fit_loss
+        if self.proposal_ordered_weight:
+            loss = loss + self.proposal_ordered_weight * proposal_ordered_loss
         if not torch.isfinite(loss):
             raise RuntimeError("non-finite v16 subset objective")
+        proposal_trust = context.get("proposal_parameter_trust")
+        subset_trust = (
+            deployment_output.get("subset_parameter_trust")
+            if deployment_output is not None else None
+        )
+        if (stage == "joint" and subset_trust is None
+                and isinstance(proposal_trust, torch.Tensor)
+                and not getattr(model, "parameter_trust_enabled", False)):
+            # Disabled native gates are identically one. Do not decode again
+            # merely to observe that constant; legacy models without gate
+            # fields retain the zero-safe missing-field diagnostic.
+            subset_trust = torch.ones_like(proposal_trust)
+        trust_metrics = {
+            **self._trust_statistics(proposal_trust, prefix="proposal_parameter_trust", zero=zero),
+            **self._trust_statistics(subset_trust, prefix="subset_parameter_trust", zero=zero),
+        }
         metrics = {
             "loss": loss, "dense_mse": dense_mse.mean(),
             "dense_pass_rate": (dense_mse <= tolerance).double().mean(),
@@ -1398,6 +1672,17 @@ class V16SubsetLoss(nn.Module):
             "deployment_true_parameter_mae": deployment_true_parameter_mae,
             "proposal_knot_coverage_loss": proposal_knot_coverage_loss,
             "proposal_knot_nearest_mae": proposal_knot_nearest_mae,
+            "proposal_ordered_loss": proposal_ordered_loss,
+            "parameter_counterfactual_loss": parameter_counterfactual_loss,
+            "proposal_parameter_counterfactual_loss": proposal_counterfactual_loss,
+            "deployment_parameter_counterfactual_loss": deployment_counterfactual_loss,
+            "proposal_chord_counterfactual_mse": proposal_chord_mse,
+            "deployment_chord_counterfactual_mse": deployment_chord_mse,
+            "proposal_parameter_counterfactual_win_fraction": proposal_counterfactual_win,
+            "deployment_parameter_counterfactual_win_fraction": deployment_counterfactual_win,
+            "parameter_counterfactual_refits": zero.new_tensor(float(counterfactual_refits)),
+            "local_fit_loss": local_fit_loss,
+            "local_max_region_mse": local_max_mse,
             "selected_knot_position_loss": selected_knot_position_loss,
             "selected_knot_nearest_mae": selected_knot_nearest_mae,
             "selected_to_true_knot_mae": selected_to_true_knot_mae,
@@ -1411,6 +1696,8 @@ class V16SubsetLoss(nn.Module):
             "prefix_teacher_search_evaluations": prefix_search_evaluations,
             "mask_entropy": entropy, "feasible_complexity_loss": complexity,
             **refinement_metrics,
+            **geometry_teacher_metrics,
+            **trust_metrics,
             **teacher_match_metrics,
         }
         return loss, {name: value.detach() for name, value in metrics.items()}
