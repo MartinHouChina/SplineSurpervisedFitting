@@ -15,6 +15,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from .deployment_bspline_loss import differentiable_hard_gated_bspline_fit
+from ..spline.bspline_deletion_teacher import single_knot_deletion_mse_batch
 
 
 def subset_cost(
@@ -118,6 +119,11 @@ class V16SubsetLoss(nn.Module):
         parameter_counterfactual_weight: float = 0.0,
         teacher_geometry_candidates: int = 0, local_fit_weight: float = 0.0,
         proposal_ordered_weight: float = 0.0,
+        feasible_objective: bool = False, feasible_fit_margin: float = 0.8,
+        feasible_fit_weight: float = 0.02, teacher_greedy_steps: int = 0,
+        teacher_greedy_max_curves: int = 2,
+        teacher_geometry_distillation_weight: float = 0.0,
+        count_reserve_alignment: bool = False,
     ) -> None:
         super().__init__()
         if not math.isfinite(mse_tolerance) or mse_tolerance <= 0:
@@ -129,6 +135,8 @@ class V16SubsetLoss(nn.Module):
             ("teacher_refinement_candidates", teacher_refinement_candidates, 1),
             ("boundary_ranking_candidates", boundary_ranking_candidates, 1),
             ("teacher_geometry_candidates", teacher_geometry_candidates, 0),
+            ("teacher_greedy_steps", teacher_greedy_steps, 0),
+            ("teacher_greedy_max_curves", teacher_greedy_max_curves, 1),
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
                 raise ValueError(f"{name} must be an integer >= {minimum}")
@@ -140,6 +148,7 @@ class V16SubsetLoss(nn.Module):
             ("parameter_counterfactual_weight", parameter_counterfactual_weight),
             ("local_fit_weight", local_fit_weight),
             ("proposal_ordered_weight", proposal_ordered_weight),
+            ("teacher_geometry_distillation_weight", teacher_geometry_distillation_weight),
             ("supervised_count_weight", supervised_count_weight),
             ("supervised_over_count_weight", supervised_over_count_weight),
             ("true_parameter_weight", true_parameter_weight),
@@ -181,6 +190,19 @@ class V16SubsetLoss(nn.Module):
         self.teacher_refinement_candidates = teacher_refinement_candidates
         self.boundary_ranking_candidates = boundary_ranking_candidates
         self.teacher_geometry_candidates = teacher_geometry_candidates
+        for name, value in (("feasible_objective", feasible_objective),
+                            ("count_reserve_alignment", count_reserve_alignment)):
+            if not isinstance(value, bool):
+                raise ValueError(f"{name} must be boolean")
+            setattr(self, name, value)
+        if not math.isfinite(feasible_fit_margin) or not 0 < feasible_fit_margin <= 1:
+            raise ValueError("feasible_fit_margin must lie in (0,1]")
+        if not math.isfinite(feasible_fit_weight) or not 0 <= feasible_fit_weight <= 1:
+            raise ValueError("feasible_fit_weight must lie in [0,1]")
+        self.feasible_fit_margin = float(feasible_fit_margin)
+        self.feasible_fit_weight = float(feasible_fit_weight)
+        self.teacher_greedy_steps = teacher_greedy_steps
+        self.teacher_greedy_max_curves = teacher_greedy_max_curves
 
     @staticmethod
     def _validate_points(points: torch.Tensor, degree: int) -> None:
@@ -288,7 +310,7 @@ class V16SubsetLoss(nn.Module):
         masks = torch.stack(regions, dim=1)
         counts = masks.sum(-1)
         region_mse = (squared_error[:, None, :] * masks).sum(-1) / counts.clamp_min(1)
-        penalties = self._fit_penalty(region_mse, tolerance[:, None])
+        penalties = self._objective_fit_penalty(region_mse, tolerance[:, None])
         per_curve = (penalties * (counts > 0)).sum(-1) / (counts > 0).sum(-1)
         return self._tail_aware_mean(per_curve), region_mse.amax(-1).mean()
 
@@ -312,6 +334,20 @@ class V16SubsetLoss(nn.Module):
         log_mse = torch.log(mse + tolerance * 1e-12)
         log_tolerance = torch.log(tolerance)
         return torch.logaddexp(log_mse, log_tolerance) - log_tolerance + F.relu(log_mse - log_tolerance)
+
+    def _objective_fit_penalty(self, mse, tolerance):
+        original = self._fit_penalty(mse, tolerance)
+        if not self.feasible_objective:
+            return original
+        # Continuous at the safety margin. Above it the historical fit
+        # gradient is unchanged; safely feasible rows receive only a weak
+        # accuracy tie-break instead of paying many knots for unnecessary MSE.
+        boundary = math.log1p(self.feasible_fit_margin + 1e-12)
+        return torch.where(
+            mse <= tolerance * self.feasible_fit_margin,
+            self.feasible_fit_weight * original,
+            original - (1 - self.feasible_fit_weight) * boundary,
+        )
 
     def _tail_aware_mean(self, values: torch.Tensor) -> torch.Tensor:
         """Mean plus a CVaR-style upper-tail term for hard-curve recall."""
@@ -807,6 +843,221 @@ class V16SubsetLoss(nn.Module):
         }
 
     @staticmethod
+    def _greedy_metrics(zero):
+        return {name: zero for name in (
+            "teacher_greedy_curve_fraction", "teacher_greedy_fixed_count",
+            "teacher_greedy_fixed_pass_rate", "teacher_greedy_decoded_pass_rate",
+            "teacher_greedy_fixed_delta_k", "teacher_greedy_accepted_delta_k",
+            "teacher_greedy_accepted_fraction", "teacher_greedy_candidate_refits",
+            "teacher_greedy_verification_refits", "teacher_greedy_decode_refits",
+            "teacher_greedy_refits", "teacher_geometry_distillation_loss",
+            "teacher_geometry_fit_violation", "teacher_geometry_aux_refits",
+        )}
+
+    @staticmethod
+    def _row_context(context, row, batch):
+        return {
+            key: (value[row:row + 1] if isinstance(value, torch.Tensor)
+                  and value.ndim and value.shape[0] == batch else value)
+            for key, value in context.items()
+        }
+
+    @torch.no_grad()
+    def _fixed_geometry_greedy(self, model, context, parameters, knots, mask,
+                               points, degree, tolerance, minimum):
+        """Full single-deletion scan, bounded by accepted steps, on one curve.
+
+        The batched solver examines EVERY selected location in a round. The
+        counted budget is actual least-squares systems, including candidates
+        later rejected by coverage constraints, not Python call count. A second
+        fit with the training solver verifies each accepted deletion.
+        """
+        parameters, knots, mask = parameters.detach(), knots.detach(), mask.detach().clone()
+        current_mse = self._fit(parameters, knots, mask, points, degree)
+        scans, checks = 0, 1
+        if bool((current_mse > tolerance).any()):
+            return mask, current_mse, scans, checks
+        constrain = getattr(model, "constrain_selection_mask", None)
+        for _ in range(self.teacher_greedy_steps):
+            ids = mask[0].nonzero(as_tuple=False).flatten()
+            if ids.numel() <= minimum:
+                break
+            trials, permitted = [], []
+            for index in ids:
+                trial = mask.clone()
+                trial[0, index] = False
+                repaired = constrain(context, trial) if callable(constrain) else trial
+                valid = (isinstance(repaired, torch.Tensor)
+                         and repaired.dtype == torch.bool and repaired.shape == trial.shape
+                         and repaired.device == trial.device and torch.equal(repaired, trial))
+                trials.append(trial)
+                permitted.append(valid)
+            if not any(permitted):
+                break
+            deleted_mse = single_knot_deletion_mse_batch(
+                parameters.double(), points.double(), knots[:, ids].double(),
+                degree=degree, smoothness_weight=0.0,
+                # Same interior ridge rows as differentiable solver_jitter.
+                control_ridge=self.solver_jitter, interpolate_endpoints=True,
+            )[0]
+            scans += ids.numel()
+            allowed = torch.tensor(permitted, dtype=torch.bool, device=mask.device)
+            allowed &= torch.isfinite(deleted_mse) & (deleted_mse <= tolerance[0])
+            order = deleted_mse.masked_fill(~allowed, float("inf")).argsort(stable=True)
+            accepted = False
+            for candidate in order:
+                if not bool(allowed[candidate]):
+                    break
+                trial = trials[int(candidate)]
+                verified = self._fit(parameters, knots, trial, points, degree)
+                checks += 1
+                if bool((verified <= tolerance).all()):
+                    mask, current_mse = trial, verified
+                    accepted = True
+                    break
+            if not accepted:
+                break
+        return mask, current_mse, scans, checks
+
+    @torch.no_grad()
+    def _greedy_teacher(self, model, context, best_mask, best_mse, deployment_mask,
+                        deployment_output, points, degree, tolerance, minimum):
+        """Discover compact fixed geometry, then admit ONLY decoded-feasible labels.
+
+        Up to max_curves rows (shuffled by the training loader) are searched.
+        Each distinct seed, incumbent teacher and deployed mask, receives the
+        configured number of accepted deletion steps. A fixed-geometry target
+        that the current decoder cannot realize is auxiliary geometry training
+        data, NEVER a feasible mask/count label.
+        """
+        zero = best_mse.new_zeros(())
+        metrics = self._greedy_metrics(zero)
+        batch = points.shape[0]
+        original_mask = best_mask.clone()
+        best_mask, best_mse = best_mask.clone(), best_mse.clone()
+        targets = []
+        fixed_counts, fixed_pass, decoded_pass, fixed_delta = [], [], [], []
+        scans = checks = decoded_refits = 0
+        for row in range(min(batch, self.teacher_greedy_max_curves)):
+            row_context = self._row_context(context, row, batch)
+            row_points, row_tolerance = points[row:row + 1], tolerance[row:row + 1]
+            seeds = [original_mask[row:row + 1]]
+            if not torch.equal(seeds[0], deployment_mask[row:row + 1]):
+                seeds.append(deployment_mask[row:row + 1])
+            target = None
+            for seed in seeds:
+                if (deployment_output is not None
+                        and torch.equal(seed, deployment_mask[row:row + 1])):
+                    output = {key: value[row:row + 1] for key, value in deployment_output.items()
+                              if isinstance(value, torch.Tensor) and value.ndim
+                              and value.shape[0] == batch}
+                else:
+                    output = self._decode_output(model, row_context, seed)
+                fixed_mask, fixed_mse, evaluated, verified = self._fixed_geometry_greedy(
+                    model, row_context, output["params"], output["internal_knots"], seed,
+                    row_points, degree, row_tolerance, minimum,
+                )
+                scans += evaluated
+                checks += verified
+                if not bool((fixed_mse <= row_tolerance).all()):
+                    continue
+                decoded_mse = self._decode_mse(model, row_context, fixed_mask, row_points, degree)
+                decoded_refits += 1
+                current_k, old_k = int(fixed_mask.sum()), int(best_mask[row].sum())
+                feasible = bool((decoded_mse <= row_tolerance).all())
+                improve = (not bool(best_mse[row] <= tolerance[row])
+                           or current_k < old_k
+                           or (current_k == old_k and bool(decoded_mse[0] < best_mse[row])))
+                if feasible and improve:
+                    best_mask[row] = fixed_mask[0]
+                    best_mse[row] = decoded_mse[0]
+                if target is None or (current_k, float(fixed_mse[0])) < target["rank"]:
+                    target = dict(
+                        row=row, mask=fixed_mask.detach().clone(),
+                        params=output["params"].detach().clone(),
+                        knots=output["internal_knots"].detach().clone(),
+                        rank=(current_k, float(fixed_mse[0])),
+                        decoded_feasible=feasible,
+                    )
+            if target is not None:
+                targets.append(target)
+                fixed_counts.append(target["rank"][0])
+                fixed_pass.append(1.0)
+                decoded_pass.append(float(target["decoded_feasible"]))
+                fixed_delta.append(int(original_mask[row].sum()) - target["rank"][0])
+        searched = min(batch, self.teacher_greedy_max_curves)
+        changed = (best_mask != original_mask).any(-1)
+        metrics.update(
+            teacher_greedy_curve_fraction=zero.new_tensor(searched / batch),
+            teacher_greedy_fixed_count=zero.new_tensor(sum(fixed_counts) / max(len(fixed_counts), 1)),
+            teacher_greedy_fixed_pass_rate=zero.new_tensor(sum(fixed_pass) / searched),
+            teacher_greedy_decoded_pass_rate=zero.new_tensor(sum(decoded_pass) / max(len(decoded_pass), 1)),
+            teacher_greedy_fixed_delta_k=zero.new_tensor(sum(fixed_delta) / max(len(fixed_delta), 1)),
+            teacher_greedy_accepted_delta_k=(original_mask.sum(-1) - best_mask.sum(-1)).double().mean(),
+            teacher_greedy_accepted_fraction=changed.double().mean(),
+            teacher_greedy_candidate_refits=zero.new_tensor(float(scans)),
+            teacher_greedy_verification_refits=zero.new_tensor(float(checks)),
+            teacher_greedy_decode_refits=zero.new_tensor(float(decoded_refits)),
+            teacher_greedy_refits=zero.new_tensor(float(scans + checks + decoded_refits)),
+        )
+        return best_mask, best_mse, targets, metrics
+
+    def _greedy_geometry_distillation(self, model, context, targets, points, degree, tolerance):
+        """Detached compact target plus a differentiable REAL refit violation."""
+        losses, violations = [], []
+        beta = self.knot_position_beta
+        for target in targets:
+            row, mask = target["row"], target["mask"].detach()
+            row_context = self._row_context(context, row, points.shape[0])
+            output = self._decode_output(model, row_context, mask)
+            parameter_loss = F.smooth_l1_loss(
+                output["params"], target["params"].detach(), beta=beta,
+            ) / beta
+            position_loss = output["params"].new_zeros(())
+            if bool(mask.any()):
+                position_loss = F.smooth_l1_loss(
+                    output["internal_knots"][mask], target["knots"].detach()[mask], beta=beta,
+                ) / beta
+            mse = self._fit(output["params"], output["internal_knots"], mask,
+                            points[row:row + 1], degree)
+            threshold = tolerance[row:row + 1]
+            violation = F.relu(torch.log(mse + threshold * 1e-12) - torch.log(threshold)).mean()
+            violations.append(violation)
+            losses.append(parameter_loss + position_loss + violation)
+        zero = points.new_zeros(())
+        return (torch.stack(losses).mean() if losses else zero,
+                torch.stack(violations).mean() if violations else zero, len(losses))
+
+    @staticmethod
+    def _count_aligned_targets(mask, *, sigma, reserve, dtype):
+        """Soft BCE targets whose MASS + safety maps to the teacher cardinality.
+
+        Only positive slots receive probability; ordering labels stay boolean.
+        This is not an extra count network. Impossible targets below a fixed
+        reserve are reported explicitly, rather than silently called aligned.
+        """
+        if not math.isfinite(sigma) or sigma < 0 or not math.isfinite(reserve) or reserve < 0:
+            raise ValueError("selection safety must be finite and non-negative")
+        counts = mask.sum(-1).to(dtype)
+        desired = (counts - 0.25).clamp_min(0)
+        feasible = desired >= reserve
+        low, high = torch.zeros_like(counts), torch.ones_like(counts)
+        for _ in range(40):
+            midpoint = (low + high) * 0.5
+            score = counts * midpoint + sigma * (counts * midpoint * (1 - midpoint)).clamp_min(0).sqrt() + reserve
+            low = torch.where(score < desired, midpoint, low)
+            high = torch.where(score >= desired, midpoint, high)
+        # A reserve larger than the desired score makes exact calibration
+        # impossible. Preserve the hard positive labels in that case; turning
+        # them all into negatives would destroy the feasible mask teacher.
+        probability = torch.where(
+            feasible & (counts > 0), (low + high) * .5,
+            (counts > 0).to(dtype),
+        )
+        target = mask.to(dtype) * probability.unsqueeze(-1)
+        return target, feasible
+
+    @staticmethod
     def _teacher_match_metrics(mask, teacher_mask, teacher_feasible):
         """Micro keep/reject agreement against feasible online teachers only."""
         valid = teacher_feasible.unsqueeze(-1)
@@ -1195,13 +1446,18 @@ class V16SubsetLoss(nn.Module):
             dense_mse = dense_details["per_sample_mse"]
         else:
             dense_mse = self._fit(context["proposal_params"], proposals, dense_mask, points, degree)
-        dense_penalty = self._tail_aware_mean(self._fit_penalty(dense_mse, tolerance))
+        dense_penalty = self._tail_aware_mean(self._objective_fit_penalty(dense_mse, tolerance))
         zero = dense_mse.new_zeros(())
         boundary_ranking_loss = zero
         proposal_counterfactual_loss = deployment_counterfactual_loss = zero
         proposal_chord_mse = deployment_chord_mse = zero
         proposal_counterfactual_win = deployment_counterfactual_win = zero
         local_fit_loss = local_max_mse = zero
+        greedy_metrics = self._greedy_metrics(zero)
+        greedy_targets = []
+        geometry_distillation_loss = zero
+        complexity_active_fraction = zero
+        aligned_target_mass = count_reserve_infeasible_fraction = zero
         counterfactual_refits = 0
         if self.parameter_counterfactual_weight:
             proposal_counterfactual_loss, reference_mse = self._parameter_counterfactual(
@@ -1272,7 +1528,8 @@ class V16SubsetLoss(nn.Module):
                 raise ValueError("select_mask must return a boolean [B,K] tensor")
             deployment_output = None
             if (self.parameter_counterfactual_weight or self.local_fit_weight
-                    or getattr(model, "parameter_trust_enabled", False)):
+                    or getattr(model, "parameter_trust_enabled", False)
+                    or self.teacher_greedy_steps):
                 deployment_output = self._decode_output(model, context, mask)
                 deployment_details = self._fit_details(
                     deployment_output["params"], deployment_output["internal_knots"],
@@ -1423,9 +1680,26 @@ class V16SubsetLoss(nn.Module):
                         model, context, best_mask, searched_best_mse,
                         points, degree, tolerance, minimum,
                     )
+                if self.teacher_greedy_steps:
+                    best_mask, searched_best_mse, greedy_targets, greedy_metrics = self._greedy_teacher(
+                        model, context, best_mask, searched_best_mse, mask,
+                        deployment_output, points, degree, tolerance, minimum,
+                    )
                 teacher_feasible = searched_best_mse <= tolerance
                 teacher_match_metrics = self._teacher_match_metrics(
                     mask, best_mask, teacher_feasible,
+                )
+            if self.teacher_geometry_distillation_weight and greedy_targets:
+                geometry_distillation_loss, violation, auxiliary_refits = self._greedy_geometry_distillation(
+                    model, context, greedy_targets, points, degree, tolerance,
+                )
+                greedy_metrics.update(
+                    teacher_geometry_distillation_loss=geometry_distillation_loss,
+                    teacher_geometry_fit_violation=violation,
+                    teacher_geometry_aux_refits=zero.new_tensor(float(auxiliary_refits)),
+                )
+                greedy_metrics["teacher_greedy_refits"] = (
+                    greedy_metrics["teacher_greedy_refits"] + auxiliary_refits
                 )
             # Re-decode the actual chosen set with gradients. Targets are from
             # this model/context, so relocation is trained for the selected set.
@@ -1433,6 +1707,13 @@ class V16SubsetLoss(nn.Module):
             best_count = best_mask.sum(-1).to(dense_mse.dtype)
             target = best_mask.to(logits.dtype)
             element_weight = 1.0 + (self.false_remove_weight - 1.0) * target
+            if self.count_reserve_alignment:
+                target, alignment_feasible = self._count_aligned_targets(
+                    best_mask, sigma=float(getattr(model, "one_shot_safety_sigma", 0)),
+                    reserve=float(getattr(model, "one_shot_safety_knots", 0)), dtype=logits.dtype,
+                )
+                aligned_target_mass = target.sum(-1).mean()
+                count_reserve_infeasible_fraction = (~alignment_feasible).double().mean()
             distillation_loss = F.binary_cross_entropy_with_logits(
                 logits, target, weight=element_weight,
             )
@@ -1476,6 +1757,7 @@ class V16SubsetLoss(nn.Module):
             # trainer additionally ramps ``complexity_scale`` after validation
             # reaches its deployment gate.
             safe = deployment_mse.detach() <= tolerance * self.complexity_activation_ratio
+            complexity_active_fraction = safe.double().mean()
             complexity = (safe * probabilities.mean(-1)).mean()
             if bool(geometry_valid.any()):
                 if deployment_output is None:
@@ -1601,8 +1883,8 @@ class V16SubsetLoss(nn.Module):
                 else:
                     supervised_over_count_loss = zero
             selected_fit = 0.5 * (
-                self._tail_aware_mean(self._fit_penalty(deployment_mse, tolerance))
-                + self._tail_aware_mean(self._fit_penalty(best_mse, tolerance))
+                self._tail_aware_mean(self._objective_fit_penalty(deployment_mse, tolerance))
+                + self._tail_aware_mean(self._objective_fit_penalty(best_mse, tolerance))
             )
             loss = (self.fit_weight * selected_fit + self.dense_weight * dense_penalty
                     + self.policy_weight * policy_loss + self.distillation_weight * distillation_loss
@@ -1631,6 +1913,8 @@ class V16SubsetLoss(nn.Module):
             loss = loss + self.local_fit_weight * local_fit_loss
         if self.proposal_ordered_weight:
             loss = loss + self.proposal_ordered_weight * proposal_ordered_loss
+        if self.teacher_geometry_distillation_weight:
+            loss = loss + self.teacher_geometry_distillation_weight * geometry_distillation_loss
         if not torch.isfinite(loss):
             raise RuntimeError("non-finite v16 subset objective")
         proposal_trust = context.get("proposal_parameter_trust")
@@ -1695,6 +1979,10 @@ class V16SubsetLoss(nn.Module):
             "prefix_teacher_fallback_fraction": prefix_fallback_fraction,
             "prefix_teacher_search_evaluations": prefix_search_evaluations,
             "mask_entropy": entropy, "feasible_complexity_loss": complexity,
+            "complexity_active_fraction": complexity_active_fraction,
+            "aligned_teacher_probability_mass": aligned_target_mass,
+            "count_reserve_infeasible_fraction": count_reserve_infeasible_fraction,
+            **greedy_metrics,
             **refinement_metrics,
             **geometry_teacher_metrics,
             **trust_metrics,

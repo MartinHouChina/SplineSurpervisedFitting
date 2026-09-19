@@ -1,5 +1,7 @@
 # Minimum-Complexity B-Spline Fitting
 
+新增 [Overnight Compact](docs/overnight_compact.md)：`--compact-selection` 从 Reliable best 权重显式 warm-start，采用逐曲线可行性简化、有预算的 greedy Teacher、数量储备对齐和合成混合训练；默认 24 epochs，不增加部署搜索。含更新包上传、Linux 一条龙与续跑说明，不承诺最少节点或达标。
+
 当前短程改进实验见 [Overnight Reliable](docs/overnight_reliable.md)：保留一夜版流程，新增参数 trust gate、排序之外的教师候选与独立真实验证；`--reliable-selection` 提供 32-epoch warm-start 及六方法四指标一条龙。对照组采用明确标注的 threshold-safe adaptation，保留原生结果和修复代价。下面的主线历史参数不覆盖该档配置。
 
 1070 历史架构的 Linux 一键训练、六方法四指标比较及案例图入口见 [Linux 历史配置流程](docs/overnight_1070_linux.md)。这是独立 warm-start 新实验，不是旧 epoch 17 精确续训，也不是当前主线的离线 teacher 流程。

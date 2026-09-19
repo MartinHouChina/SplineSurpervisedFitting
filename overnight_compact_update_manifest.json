@@ -1,0 +1,65 @@
+{
+  "name": "overnight_compact_linux_update",
+  "created": "2026-09-19",
+  "base_commit": "9d155e50dfbddb1841d7f2b64d2bec6ff1436b81",
+  "branch": "experiment/v16-1070-overnight-3090",
+  "kind": "source-only delta; not a complete repository",
+  "entrypoint": "scripts/run_v16_1070_overnight_linux.sh --compact-selection",
+  "verification": {
+    "related_tests_passed": 491,
+    "smoke_epochs": 3,
+    "smoke_benchmark_records": 144,
+    "smoke_pngs": 9,
+    "formal_training_completed": false
+  },
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "36cb022fbca12e81859406bafd65e755fceca1b08e46a4e5b7712881f7e5635e"
+    },
+    {
+      "path": "docs/overnight_compact.md",
+      "sha256": "7b186d0000a48b7fce6c4e72322abda3935b0577024898c35693453e6e9cc91b"
+    },
+    {
+      "path": "docs/README.md",
+      "sha256": "7c0ea3d8b7ee9d37f3b7f4cf24f4b74fa5010a6bcfe5323384b141f87cb90d4f"
+    },
+    {
+      "path": "README.md",
+      "sha256": "c7619a9873b8b653ce6cca8b6bdba5036d237f94346f8947e7ab88369d1a6f78"
+    },
+    {
+      "path": "scripts/run_v16_1070_overnight_linux.sh",
+      "sha256": "740b4427f989df24c0182837f71b996a76188e07615a996278fd7ebe1a75705b"
+    },
+    {
+      "path": "scripts/train_v16.py",
+      "sha256": "a561650724281e2bc14f2639bff4a8255e7d8dc9ff040446a046b64fdd63dfad"
+    },
+    {
+      "path": "src/spline_fitting/data/v16_mixed.py",
+      "sha256": "dccb499e66f79f4adde510bcbcd0e8d375a19639b3784fee72d3496f0c5b696c"
+    },
+    {
+      "path": "src/spline_fitting/losses/v16_subset_loss.py",
+      "sha256": "c6e8c76b3639da4e54b8e22d662bbb025ef74bda54ec04f4b02755bddc87c023"
+    },
+    {
+      "path": "tests/test_run_v16_compact_linux.py",
+      "sha256": "e94a8b902e52651caf597dc81760a26b7cf3a2bb526bee7b131f72670329468c"
+    },
+    {
+      "path": "tests/test_train_v16_compact.py",
+      "sha256": "55a32d4c599b5dddb39f844ad903bf241a964db7ff9321d3e594ac92553578a8"
+    },
+    {
+      "path": "tests/test_v16_compact_data.py",
+      "sha256": "ffd7e07db12d2435eafcf1f21f87ad0071e3b6372a94311c74fea6b7b15b7c5a"
+    },
+    {
+      "path": "tests/test_v16_compact_loss.py",
+      "sha256": "ee351b80a36289e06dbd8e4d124524c6cb57a72925bccba29a23e6a4cc6ae314"
+    }
+  ]
+}

@@ -61,6 +61,16 @@ ENHANCED_TRAINING_DEFAULTS = {
     "teacher_geometry_candidates": 0,
     "local_fit_weight": 0.0,
     "proposal_ordered_weight": 0.0,
+    "simplification_controller": "worst_source",
+    "feasible_objective": False,
+    "feasible_fit_margin": 0.8,
+    "feasible_fit_weight": 0.02,
+    "teacher_greedy_steps": 0,
+    "teacher_greedy_max_curves": 2,
+    "teacher_geometry_distillation_weight": 0.0,
+    "count_reserve_alignment": False,
+    "synthetic_simple_fraction": 0.0,
+    "synthetic_shape_fraction": 0.0,
 }
 
 
@@ -76,6 +86,10 @@ def parser():
     p.add_argument("--real-val-size", type=int, default=100, help="Maximum val curves per real source")
     p.add_argument("--real-manifest", action="append", type=Path, default=[])
     p.add_argument("--real-fraction", type=float, default=0.5)
+    p.add_argument("--synthetic-simple-fraction", type=float, default=0.0,
+                   help="Training-only fraction of synthetic draws biased to low source K")
+    p.add_argument("--synthetic-shape-fraction", type=float, default=0.0,
+                   help="Training-only procedural shapes; no fabricated true-knot labels")
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--num-points", type=int, default=192)
     p.add_argument("--point-dim", type=int, choices=(2, 3), default=2)
@@ -154,6 +168,17 @@ def parser():
                    help="Auxiliary local/endpoint residual supervision")
     p.add_argument("--proposal-ordered-weight", type=float, default=0.0,
                    help="Additional ordered one-to-one candidate supervision")
+    p.add_argument("--feasible-objective", action="store_true",
+                   help="Opt-in threshold-aware fit loss with weak reward inside the safe region")
+    p.add_argument("--feasible-fit-margin", type=float, default=0.8)
+    p.add_argument("--feasible-fit-weight", type=float, default=0.02)
+    p.add_argument("--teacher-greedy-steps", type=int, default=0,
+                   help="Training-only fixed-geometry full single-deletion search rounds")
+    p.add_argument("--teacher-greedy-max-curves", type=int, default=2,
+                   help="Maximum curves per batch receiving full deletion search")
+    p.add_argument("--teacher-geometry-distillation-weight", type=float, default=0.0)
+    p.add_argument("--count-reserve-alignment", action="store_true",
+                   help="Align mask-probability mass targets with deployed count/safety reserve")
     p.add_argument("--count-weight", type=float, default=2.0)
     p.add_argument("--supervised-count-weight", type=float, default=1.0)
     p.add_argument("--supervised-over-count-weight", type=float, default=1.0)
@@ -188,6 +213,9 @@ def parser():
         help="Maximum validation-controlled multiplier on the complexity loss",
     )
     p.add_argument("--complexity-pass-margin", type=float, default=0.02)
+    p.add_argument("--simplification-controller", choices=("worst_source", "per_curve"),
+                   default="worst_source",
+                   help="per_curve ramps independently; only feasible training curves receive complexity pressure")
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--joint-lr", type=float, default=5e-5)
     p.add_argument("--joint-proposal-lr-scale", type=float, default=1.0,
@@ -251,11 +279,13 @@ def validate_args(args):
         "minimality_max_attempts",
         "teacher_refinement_steps",
         "teacher_geometry_candidates",
+        "teacher_greedy_steps",
     ):
         value = getattr(args, key)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError(f"{key} must be a non-negative integer")
-    for key in ("teacher_refinement_candidates", "boundary_ranking_candidates"):
+    for key in ("teacher_refinement_candidates", "boundary_ranking_candidates",
+                "teacher_greedy_max_curves"):
         if getattr(args, key) < 1:
             raise ValueError(f"{key} must be positive")
     if not 4 <= args.min_control_points <= args.max_control_points:
@@ -301,11 +331,20 @@ def validate_args(args):
         "complexity_max_scale",
         "boundary_ranking_weight",
         "parameter_counterfactual_weight", "local_fit_weight", "proposal_ordered_weight",
+        "teacher_geometry_distillation_weight", "feasible_fit_weight",
     ):
         if not math.isfinite(getattr(args, key)) or getattr(args, key) < 0:
             raise ValueError(f"{key} must be finite and nonnegative")
     if args.joint_final_lr_ratio > 1:
         raise ValueError("joint-final-lr-ratio must lie in (0,1]")
+    if not math.isfinite(args.feasible_fit_margin) or not 0 < args.feasible_fit_margin <= 1:
+        raise ValueError("feasible-fit-margin must lie in (0,1]")
+    if args.feasible_fit_weight > 1:
+        raise ValueError("feasible-fit-weight must lie in [0,1]")
+    if args.teacher_geometry_distillation_weight and not args.teacher_greedy_steps:
+        raise ValueError("teacher-geometry-distillation-weight requires teacher-greedy-steps > 0")
+    if args.simplification_controller == "per_curve" and not args.feasible_objective:
+        raise ValueError("per_curve controller requires --feasible-objective")
     if args.minimality_max_attempts < 1:
         raise ValueError("minimality-max-attempts must be positive")
     if args.minimality_audit_points not in (0,) and args.minimality_audit_points < 2:
@@ -326,9 +365,16 @@ def validate_args(args):
         raise ValueError("final-safety-sigma cannot exceed one-shot-safety-sigma")
     if args.final_safety_knots > args.one_shot_safety_knots:
         raise ValueError("final-safety-knots cannot exceed one-shot-safety-knots")
-    for key in ("real_fraction", "proposal_pass_target", "deployment_pass_target"):
+    for key in ("real_fraction", "proposal_pass_target", "deployment_pass_target",
+                "synthetic_simple_fraction", "synthetic_shape_fraction"):
         if not math.isfinite(getattr(args, key)) or not 0 <= getattr(args, key) <= 1:
             raise ValueError(f"{key} must lie in [0,1]")
+    if args.synthetic_simple_fraction + args.synthetic_shape_fraction > 1:
+        raise ValueError("synthetic-simple-fraction + synthetic-shape-fraction must be <= 1")
+    if args.synthetic_simple_fraction and not args.certified_minimal_source:
+        raise ValueError("synthetic-simple-fraction requires certified-minimal-source")
+    if args.synthetic_simple_fraction and max(4, args.min_control_points - 4) > min(8, args.max_control_points - 4):
+        raise ValueError("synthetic-simple-fraction requires a source range overlapping K=4..8")
     if args.tolerance_factor_min > args.tolerance_factor_max:
         raise ValueError("tolerance-factor-min must be <= tolerance-factor-max")
     if not math.isfinite(args.relocation_blend) or not 0 <= args.relocation_blend <= 1:
@@ -381,7 +427,12 @@ def simplification_is_ready(
 def update_simplification_controller(
     args, *, pass_rate, complexity_scale, safety_scale,
 ):
-    """Advance the pass-feedback complexity/safety curriculum by one epoch."""
+    """Advance the curriculum; per-curve mode leaves feasibility gating to loss.
+
+    Worst-source validation still selects checkpoints in either mode. In the
+    opt-in mode, an unseen validation domain must not switch off complexity
+    gradients for every already-feasible training curve.
+    """
     for name, value in {
         "pass_rate": pass_rate,
         "complexity_scale": complexity_scale,
@@ -397,7 +448,12 @@ def update_simplification_controller(
     safe_target = min(
         1.0, args.deployment_pass_target + args.complexity_pass_margin
     )
-    if pass_rate >= safe_target:
+    mode = getattr(args, "simplification_controller", "worst_source")
+    if mode not in {"worst_source", "per_curve"}:
+        raise ValueError("unknown simplification controller")
+    if mode == "per_curve":
+        speed = 1.0
+    elif pass_rate >= safe_target:
         speed = 1.0
     elif pass_rate >= args.deployment_pass_target:
         # Cautious progress in the hysteresis band prevents a permanent
@@ -1017,6 +1073,13 @@ def main(argv=None):
         teacher_geometry_candidates=args.teacher_geometry_candidates,
         local_fit_weight=args.local_fit_weight,
         proposal_ordered_weight=args.proposal_ordered_weight,
+        feasible_objective=args.feasible_objective,
+        feasible_fit_margin=args.feasible_fit_margin,
+        feasible_fit_weight=args.feasible_fit_weight,
+        teacher_greedy_steps=args.teacher_greedy_steps,
+        teacher_greedy_max_curves=args.teacher_greedy_max_curves,
+        teacher_geometry_distillation_weight=args.teacher_geometry_distillation_weight,
+        count_reserve_alignment=args.count_reserve_alignment,
         count_weight=args.count_weight,
         supervised_count_weight=args.supervised_count_weight,
         supervised_over_count_weight=args.supervised_over_count_weight,
@@ -1061,8 +1124,20 @@ def main(argv=None):
         flush=True,
     )
     print("Validation checkpoint quality uses the worst source pass rate. Additional subset fits run only during training.", flush=True)
+    if args.simplification_controller == "per_curve":
+        print("Per-curve simplification: scheduled complexity ramp; infeasible training curves receive no complexity pressure. "
+              "Worst-source validation still governs checkpoint selection, not the training ramp.", flush=True)
+    if args.synthetic_simple_fraction or args.synthetic_shape_fraction:
+        print(f"Training-only synthetic mixture: low-K={args.synthetic_simple_fraction:.0%}, "
+              f"procedural-shape={args.synthetic_shape_fraction:.0%}, "
+              f"historical={1-args.synthetic_simple_fraction-args.synthetic_shape_fraction:.0%}; "
+              "procedural shapes have no true-knot/count labels; validation distribution is unchanged.", flush=True)
     if sources and args.real_fraction == 0:
-        print("Real sources are VALIDATION ONLY; training uses synthetic labels, and test splits are excluded from model selection.", flush=True)
+        if args.synthetic_shape_fraction:
+            print("Real sources are VALIDATION ONLY; training uses labeled synthetic splines and unlabeled procedural shapes, "
+                  "and test splits are excluded from model selection.", flush=True)
+        else:
+            print("Real sources are VALIDATION ONLY; training uses synthetic labels, and test splits are excluded from model selection.", flush=True)
     if args.teacher_refinement_steps or args.boundary_ranking_weight:
         print(
             f"Online teacher refinement: {args.teacher_refinement_steps} rounds x "
@@ -1099,7 +1174,9 @@ def main(argv=None):
         learning_rates = {group.get("group_name", "all"): group["lr"]
                           for group in optimizer.param_groups}
         train_data = MixedTrainingCurves(dataset_config, sources, size=args.train_size, seed=args.seed,
-            real_fraction=args.real_fraction, epoch=epoch-1, resample=args.resample_train_each_epoch)
+            real_fraction=args.real_fraction, epoch=epoch-1, resample=args.resample_train_each_epoch,
+            synthetic_simple_fraction=args.synthetic_simple_fraction,
+            synthetic_shape_fraction=args.synthetic_shape_fraction)
         loader_generator = torch.Generator().manual_seed(args.seed + epoch)
         train_loader = DataLoader(
             train_data, batch_size=args.batch_size, shuffle=True,
@@ -1108,7 +1185,10 @@ def main(argv=None):
         model.train()
         started = time.perf_counter()
         total, samples = defaultdict(float), 0
+        training_family_counts = defaultdict(int)
         for step, batch in enumerate(train_loader, 1):
+            for family in batch.get("synthetic_family", ()):
+                training_family_counts[family] += 1
             points = batch["points"].to(device, non_blocking=device.type == "cuda")
             lower, upper = math.log(args.tolerance_factor_min), math.log(args.tolerance_factor_max)
             tolerance = args.mse_tolerance * (lower + (upper-lower)*torch.rand(points.shape[0], device=device)).exp()
@@ -1180,6 +1260,8 @@ def main(argv=None):
             feasible_streak=feasible_streak,
             seconds=time.perf_counter()-started,
         )
+        if training_family_counts:
+            entry["training_family_counts"] = dict(training_family_counts)
         history.append(entry)
         improved = False
         if stage == "proposal":
@@ -1210,9 +1292,13 @@ def main(argv=None):
             optimizer_state_dict=optimizer.state_dict(), epoch=epoch, stage=stage,
             training_config=current_config, dataset_config=dataset_config, history=history,
             training_schedule=dict(joint_end_epoch=joint_schedule_end_epoch,
-                                   joint_final_lr_ratio=args.joint_final_lr_ratio),
+                                   joint_final_lr_ratio=args.joint_final_lr_ratio,
+                                   **({"simplification_controller": args.simplification_controller}
+                                      if args.simplification_controller != "worst_source" else {})),
             initializer_provenance=initializer_provenance,
             dataset_type=(
+                "synthetic_bspline_and_procedural_shape_mixture"
+                if args.synthetic_shape_fraction and args.real_fraction == 0 else
                 (
                     "certified_synthetic_geometry_and_real_unlabeled"
                     if args.certified_minimal_source
@@ -1232,6 +1318,14 @@ def main(argv=None):
                 V16_CERTIFIED_SYNTHETIC_CONTRACT
                 if args.certified_minimal_source
                 else "random_source_uncertified"
+            ),
+            synthetic_training_mixture=dict(
+                simple_fraction=args.synthetic_simple_fraction,
+                shape_fraction=args.synthetic_shape_fraction,
+                historical_fraction=1-args.synthetic_simple_fraction-args.synthetic_shape_fraction,
+                applies_to="training synthetic draws only",
+                shape_geometry_targets_valid=False,
+                validation_distribution="unchanged historical certified B-splines and held-out real val splits",
             ),
             validation_metrics=measured, train_metrics=train_metrics,
             best_joint_rank=best_rank, best_proposal_rank=proposal_rank, proposal_ready=proposal_ready,
@@ -1275,6 +1369,12 @@ def main(argv=None):
                              teacher_refinement_steps=args.teacher_refinement_steps,
                              teacher_refinement_candidates=args.teacher_refinement_candidates,
                              teacher_geometry_candidates=args.teacher_geometry_candidates,
+                             teacher_greedy_steps=args.teacher_greedy_steps,
+                             teacher_greedy_max_curves=args.teacher_greedy_max_curves,
+                             feasible_objective=args.feasible_objective,
+                             feasible_fit_margin=args.feasible_fit_margin,
+                             feasible_fit_weight=args.feasible_fit_weight,
+                             count_reserve_alignment=args.count_reserve_alignment,
                              boundary_ranking_candidates=args.boundary_ranking_candidates,
                              ranked_prefix_teacher=objective.ranked_prefix_teacher,
                              knot_position_beta=objective.knot_position_beta,
@@ -1289,7 +1389,7 @@ def main(argv=None):
                                   "proposal_knot_coverage_weight",
                                   "selected_knot_position_weight", "boundary_ranking_weight",
                                   "parameter_counterfactual_weight", "local_fit_weight",
-                                  "proposal_ordered_weight")}))
+                                  "proposal_ordered_weight", "teacher_geometry_distillation_weight")}))
         payload["qualification"] = assess_v16_checkpoint(
             payload,
             required_pass_rate=V16_FORMAL_PASS_RATE,
@@ -1332,6 +1432,18 @@ def main(argv=None):
                 f"geometry_teacher_delta_K={train_metrics['teacher_geometry_count_reduction']:.3f}, "
                 f"geometry_fits={train_metrics['teacher_geometry_evaluations']:.1f}", flush=True,
             )
+        if args.teacher_greedy_steps and stage == "joint":
+            print(
+                f"  compact teacher: fixed_K={train_metrics['teacher_greedy_fixed_count']:.2f}, "
+                f"fixed_pass={train_metrics['teacher_greedy_fixed_pass_rate']:.1%}, "
+                f"decoded_pass={train_metrics['teacher_greedy_decoded_pass_rate']:.1%}, "
+                f"accepted_delta_K={train_metrics['teacher_greedy_accepted_delta_k']:.3f}, "
+                f"geometry_violation={train_metrics['teacher_geometry_fit_violation']:.4f}, "
+                f"extra_refits={train_metrics['teacher_greedy_refits']:.1f}, "
+                f"complexity_active={train_metrics['complexity_active_fraction']:.1%}", flush=True,
+            )
+        if training_family_counts:
+            print(f"  training families: {dict(training_family_counts)}", flush=True)
         for name, values in measured["by_source"].items():
             count_detail = (
                 f", targetK={values['target_count_mean']:.2f}, "

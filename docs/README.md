@@ -1,5 +1,7 @@
 # 文档索引
 
+[Overnight Compact：可行性约束下的紧凑节点实验](overnight_compact.md)：新增 `--compact-selection`，24-epoch 显式 best 权重 warm-start、四项训练改进、更新包上传与 Linux 一条龙；不增加部署搜索，不保证全局最简或达标。
+
 [Overnight Reliable：短程改进与独立真实验证](overnight_reliable.md)：推荐的 `--reliable-selection` 入口；参数 trust gate、几何教师、32-epoch warm-start、六方法四指标与案例图，以及修复前后对照口径。
 
 [1070 历史架构的 Linux 一键训练与六方法比较](overnight_1070_linux.md)：独立 warm-start 新实验、四指标图、Ours 和六方法真实案例；与主线离线 teacher 流程分开使用。

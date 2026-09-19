@@ -18,6 +18,7 @@ INIT_SPECIFIED=0
 WARM_START_CHECKPOINT=""
 ENHANCED_SELECTION=0
 RELIABLE_SELECTION=0
+COMPACT_SELECTION=0
 REAL_VAL_SIZE=32
 NATIVE_BASELINES=0
 CHECKPOINT=""
@@ -48,7 +49,9 @@ No current K24/K48 or offline-teacher model code is used.
                                   defaults to 96/12 epochs, new run name
   --reliable-selection            Parameter trust + geometry Teacher + local loss;
                                   defaults to 32/4 epochs, real validation only
-  --real-val-size N               Reliable profile: val curves per real source (32)
+  --compact-selection             Per-curve feasible simplification + bounded greedy
+                                  Teacher; defaults 24/4, explicit full warm start
+  --real-val-size N               Reliable/compact: val curves per real source (32)
   --native-baselines              Disable explicit MSE repair for Dung/Kang/Luo;
                                   corrected Kang clustering remains enabled
   --train-size N --val-size N      Synthetic training/validation (1500/500)
@@ -90,6 +93,7 @@ while (($#)); do
     --proposal-epochs) need_value "$@"; PROPOSAL_EPOCHS="$2"; shift 2 ;;
     --enhanced-selection) ENHANCED_SELECTION=1; shift ;;
     --reliable-selection) RELIABLE_SELECTION=1; shift ;;
+    --compact-selection) COMPACT_SELECTION=1; shift ;;
     --real-val-size) need_value "$@"; REAL_VAL_SIZE="$2"; shift 2 ;;
     --native-baselines) NATIVE_BASELINES=1; shift ;;
     --train-size) need_value "$@"; TRAIN_SIZE="$2"; shift 2 ;;
@@ -116,8 +120,32 @@ while (($#)); do
     *) die "unknown option: $1" ;;
   esac
 done
-((ENHANCED_SELECTION == 0 || RELIABLE_SELECTION == 0)) || die "choose only one of --enhanced-selection and --reliable-selection"
-if ((RELIABLE_SELECTION)); then
+((ENHANCED_SELECTION + RELIABLE_SELECTION + COMPACT_SELECTION <= 1)) || die "choose only one of --enhanced-selection, --reliable-selection and --compact-selection"
+SAFETY_ARGS=(--one-shot-safety-sigma 0.2 --safety-anneal-epochs 8)
+RESAMPLE_ARGS=(--no-resample-train-each-epoch)
+if ((COMPACT_SELECTION)); then
+  RUN_NAME=${RUN_NAME:-overnight_compact_3090_r1}
+  EPOCHS=${EPOCHS:-24}
+  PROPOSAL_EPOCHS=${PROPOSAL_EPOCHS:-4}
+  LEARNING_ARGS=(--policy-samples 2 --counterfactual-edits 4 --teacher-prefix-search-steps 6
+    --lr 2e-5 --joint-lr 3e-5 --teacher-refinement-steps 1 --teacher-refinement-candidates 3
+    --boundary-ranking-weight 0.5 --boundary-ranking-candidates 4
+    --joint-proposal-lr-scale 0.1 --joint-decoder-lr-scale 0.25 --joint-final-lr-ratio 0.25
+    --parameter-trust-enabled --parameter-trust-initial 0.25
+    --parameter-counterfactual-weight 0.25 --teacher-geometry-candidates 4
+    --local-fit-weight 0.1 --proposal-ordered-weight 0.5 --allow-infeasible-proposals
+    --simplification-controller per_curve --complexity-max-scale 1.0
+    --feasible-objective --feasible-fit-margin 0.8 --feasible-fit-weight 0.02
+    --teacher-greedy-steps 16 --teacher-greedy-max-curves 2
+    --teacher-geometry-distillation-weight 0.2 --count-reserve-alignment
+    --synthetic-simple-fraction 0.35 --synthetic-shape-fraction 0.25)
+  SAFETY_ARGS=(--one-shot-safety-sigma 0 --one-shot-safety-knots 0
+    --final-safety-sigma 0 --final-safety-knots 0 --safety-anneal-epochs 8)
+  RESAMPLE_ARGS=(--resample-train-each-epoch)
+  if [[ -z "$CHECKPOINT" && "$RESUME" == 0 ]]; then
+    [[ -n "$WARM_START_CHECKPOINT" ]] || die "--compact-selection requires an explicit --warm-start-checkpoint for a new run (use the selected best .pt, not .last.pt)"
+  fi
+elif ((RELIABLE_SELECTION)); then
   RUN_NAME=${RUN_NAME:-overnight_reliable_3090_r1}
   EPOCHS=${EPOCHS:-32}
   PROPOSAL_EPOCHS=${PROPOSAL_EPOCHS:-4}
@@ -241,6 +269,12 @@ if ((ENHANCED_SELECTION)); then
 fi
 if ((RELIABLE_SELECTION)); then
   printf 'Reliable selection: trust gates, ranking-independent Teacher, local fit and ordered coverage; one-shot deployment.\n'
+fi
+if ((COMPACT_SELECTION)); then
+  printf 'Compact selection: per-curve feasible simplification, bounded greedy Teacher and count reserve alignment; unchanged one-shot deployment.\n'
+  printf 'Teacher geometry is checked separately from decoded deployment; no global-minimum or pass-rate guarantee.\n'
+fi
+if ((RELIABLE_SELECTION || COMPACT_SELECTION)); then
   printf 'Real data: validation-only (%s/source); synthetic-only training; held-out test for comparison.\n' "$REAL_VAL_SIZE"
 fi
 printf 'Proposal %s + Joint %s = %s epochs; train/val=%s/%s, batch=%s.\n' \
@@ -275,7 +309,7 @@ if ((DRY_RUN == 0)); then
 fi
 STAMP="$(date -u +%Y%m%d_%H%M%S)_$$"
 PREFLIGHT_ARGS=(--data-root "$DATA_ROOT" --device "$DEVICE" --mse-tolerance "$MSE_TOLERANCE")
-if ((RELIABLE_SELECTION)); then PREFLIGHT_ARGS+=(--validate-real-splits); fi
+if ((RELIABLE_SELECTION || COMPACT_SELECTION)); then PREFLIGHT_ARGS+=(--validate-real-splits); fi
 if [[ "$CHECKPOINT" != "$TRAIN_OUTPUT" ]]; then
   PREFLIGHT_ARGS+=(--checkpoint "$CHECKPOINT")
 elif [[ -n "$INIT_CHECKPOINT" && "$RESUME" == 0 ]]; then
@@ -294,10 +328,10 @@ if [[ "$CHECKPOINT" == "$TRAIN_OUTPUT" ]]; then
     --num-points 192 --min-control-points 8 --max-control-points 28 --candidate-knots 64
     --mse-tolerance "$MSE_TOLERANCE" --real-fraction 0 --proposal-pass-target 0.90
     --deployment-pass-target 0.90 "${LEARNING_ARGS[@]}"
-    --one-shot-safety-sigma 0.2 --safety-anneal-epochs 8
-    --complexity-ramp-epochs 8 --no-resample-train-each-epoch --num-workers "$NUM_WORKERS"
+    "${SAFETY_ARGS[@]}"
+    --complexity-ramp-epochs 8 "${RESAMPLE_ARGS[@]}" --num-workers "$NUM_WORKERS"
     --torch-num-threads 4 --device "$DEVICE" --output "$TRAIN_OUTPUT")
-  if ((RELIABLE_SELECTION)); then
+  if ((RELIABLE_SELECTION || COMPACT_SELECTION)); then
     TRAIN_ARGS+=(--real-val-size "$REAL_VAL_SIZE"
       --real-manifest "$UJI" --real-manifest "$NATURAL" --real-manifest "$USGS")
   fi

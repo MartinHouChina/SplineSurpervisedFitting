@@ -1,0 +1,45 @@
+
+[plot_six_method_real_cases] python scripts/visualize_v16_real_deployments.py --checkpoint /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_compact_3090_r1.pt --real-samples-per-dataset 2 --selection-seed 20260909 --mse-tolerance 5e-5 --manifest UJI=/home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl --manifest NaturalEarth=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl --manifest USGS=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl --max-internal-knots 64 --paper-initial-knots 64 --liang-dense-knots 64 --gradient-steps 12 --paper-admm-iterations 400 --paper-lambda-bisections 8 --paper-relocation-iterations 8 --liang-feature-samples 1025 --dung-scan-intervals 10 --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations 50 --published-feasibility-safeguard --network-warmups 3 --network-repeats 100 --end-to-end-repeats 3 --torch-num-threads 4 --device cuda --dpi 240 --allow-unqualified-diagnostic --method-set published --output-dir /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_compact_3090_r1/six_method_real_cases
+[1/6] UJI / uji2_07455_stroke_00
+  Ours v16: MSE=2.453e-05, K=19, time=8.81 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.206e-05, K=10, time=12.33 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.680e-05, K=8, time=8.23 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=3.167e-05, K=6, time=111.91 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=2.491e-05, K=10, time=1209.33 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.903e-05, K=6, time=3011.73 ms
+[2/6] UJI / uji2_05088_stroke_00
+  Ours v16: MSE=9.374e-06, K=22, time=8.79 ms
+  Park & Lee 2007 (DOM adaptation): MSE=3.406e-05, K=26, time=32.72 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=1.544e-05, K=18, time=18.41 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=2.518e-05, K=10, time=150.64 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=1.913e-05, K=30, time=1036.36 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.526e-05, K=13, time=2897.25 ms
+[3/6] NaturalEarth / natural_earth_10m_coastline_6f39c8d2074b_w000_6f39c8d2
+  Ours v16: MSE=4.529e-05, K=26, time=8.73 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.969e-05, K=20, time=24.18 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=3.475e-05, K=16, time=16.29 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.440e-05, K=14, time=270.66 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=1.289e-05, K=33, time=935.43 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.947e-05, K=19, time=3189.29 ms
+[4/6] NaturalEarth / natural_earth_10m_coastline_08e9fecdd118_w000_08e9fecd
+  Ours v16: MSE=3.772e-04, K=41, time=8.89 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.122e-04, K=64, time=108.98 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=9.019e-05, K=64, time=84.69 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=1.086e-04, K=64, time=931.93 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=1.668e-04, K=64, time=30.15 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=1.668e-04, K=64, time=963.78 ms
+[5/6] USGS / usgs_tnm_contours_large_scale_3eb19dbb6d67_w000_3eb19dbb
+  Ours v16: MSE=2.616e-05, K=24, time=8.77 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.126e-05, K=15, time=17.95 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=3.855e-05, K=9, time=9.07 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.673e-05, K=11, time=124.22 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=2.067e-05, K=8, time=1289.45 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=1.557e-05, K=7, time=2986.71 ms
+[6/6] USGS / usgs_tnm_contours_large_scale_2cadfb668fb4_w000_2cadfb66
+  Ours v16: MSE=1.068e-05, K=13, time=8.52 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.945e-05, K=3, time=5.06 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=2.437e-05, K=4, time=4.22 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=1.232e-05, K=5, time=52.51 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=2.738e-08, K=62, time=963.47 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.629e-05, K=3, time=3165.39 ms
+Saved 6 PNG files and /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_compact_3090_r1/six_method_real_cases/deployment_visualizations.json
