@@ -1,0 +1,3 @@
+{"sample_id": "USGS_train", "source_dataset": "USGS", "group_id": "USGS_train_group", "split": "train", "points_path": "USGS_train.npy", "num_points": 32, "point_dim": 2, "has_knot_labels": false, "metadata": {}}
+{"sample_id": "USGS_val", "source_dataset": "USGS", "group_id": "USGS_val_group", "split": "val", "points_path": "USGS_val.npy", "num_points": 32, "point_dim": 2, "has_knot_labels": false, "metadata": {}}
+{"sample_id": "USGS_test", "source_dataset": "USGS", "group_id": "USGS_test_group", "split": "test", "points_path": "USGS_test.npy", "num_points": 32, "point_dim": 2, "has_knot_labels": false, "metadata": {}}

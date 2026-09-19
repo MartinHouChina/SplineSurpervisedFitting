@@ -67,6 +67,19 @@ OBJECTIVE_LABELS = {
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION: "v16",
 }
 DEFAULT_MANIFESTS = default_manifests(ROOT / "data")
+ERROR_METRIC_VERSION = "squared_euclidean_input_reference_peak_v2"
+ERROR_METRIC_DEFINITIONS = {
+    "mse": "mean_i ||C(t_i)-Q_i||^2 on normalized input points; no square root",
+    "max_squared_error": "max_i ||C(t_i)-Q_i||^2 on normalized input points; no square root",
+    "reference_mse": "mean squared Euclidean residual on normalized original reference points; parameters mapped from the original arc-length grid to predicted input parameters",
+    "reference_max_squared_error": "maximum squared Euclidean residual on the same mapped original reference points; no square root",
+    "mse_max": "largest per-curve input MSE among successful finite fits, not a within-curve maximum residual",
+    "reference_mse_max": "largest per-curve original-reference MSE among successful finite fits",
+    "peak_aggregation": "max_squared_error_mean/p95/max summarize per-curve peak squared residuals; reference_max_squared_error_* uses original reference points",
+    "missing_values": "Unavailable historical peak residuals remain null/N/A, never zero. Peak mean/p95/max remain null unless every successful eligible fit has that metric. Peak valid_count counts successful finite measurements; missing_count counts successful eligible fits without that metric. Failed fits remain in pass-rate denominators.",
+    "scope": "Discrete corresponding-point residuals in normalized coordinates, not Hausdorff distance or a certified continuous-curve maximum; all metric evaluation is excluded from successful method timing",
+    "pass_criterion": "Existing MSE tolerance only; maximum squared error is an additional diagnostic and does not change pass/fail",
+}
 
 
 def parser(*, default_checkpoint: Path | None = None,
@@ -455,14 +468,41 @@ def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict
     return cases, provenance
 
 
-def reference_mse(fit, parameters: torch.Tensor, case: dict) -> float | None:
+def _squared_error_statistics(predicted: torch.Tensor, target: torch.Tensor) -> tuple[float, float]:
+    squared = (predicted - target.to(predicted)).square().sum(-1)
+    if squared.numel() == 0 or not torch.isfinite(squared).all():
+        raise ValueError("empty or non-finite fitted squared residuals")
+    return float(squared.mean()), float(squared.max())
+
+
+def reference_error_metrics(fit, parameters: torch.Tensor, case: dict) -> dict:
+    """Evaluate the original reference grid without refitting or changing timing."""
     if case["reference"] is None:
-        return None
+        return {"reference_mse": None, "reference_max_squared_error": None}
     source_grid = torch.linspace(0, 1, parameters.numel(), dtype=torch.float64)
     reference_params = interpolate_parameters_by_chord(
         source_grid, parameters.double(), case["reference_grid"],
     )
-    return float((fit.evaluate(reference_params) - case["reference"]).square().sum(-1).mean())
+    mse, peak = _squared_error_statistics(fit.evaluate(reference_params), case["reference"])
+    return {"reference_mse": mse, "reference_max_squared_error": peak}
+
+
+def reference_mse(fit, parameters: torch.Tensor, case: dict) -> float | None:
+    """Historical compatibility wrapper; both reference metrics use one mapping."""
+    return reference_error_metrics(fit, parameters, case)["reference_mse"]
+
+
+def fit_error_metrics(fit, parameters: torch.Tensor, case: dict) -> dict:
+    """Report mean and pointwise peak squared error, outside method timing.
+
+    Both metrics sum coordinates before reducing points: this is not coordinate
+    MSE, RMS, maximum per-curve MSE, or a continuous-curve error guarantee.
+    """
+    mse, peak = _squared_error_statistics(fit.evaluate(parameters.double()), case["points"])
+    return {
+        "mse": mse, "max_squared_error": peak,
+        **reference_error_metrics(fit, parameters, case),
+    }
 
 
 def benchmark_version(objective_version: str, *, expected_objective: str) -> str:
@@ -603,7 +643,7 @@ def summarize(rows: list[dict]) -> list[dict]:
     result = []
     for (dataset, method), values in groups.items():
         valid = [r for r in values if r["status"] == "ok"]
-        refs = [r for r in valid if r["reference_mse"] is not None]
+        refs = [r for r in valid if r.get("reference_mse") is not None]
         # Ground truth belongs to the paired cases, not to a method's successes.
         # A failed solver must not alter the synthetic reference K.
         knot_labels = [r for r in values if r.get("canonical_k") is not None]
@@ -613,13 +653,29 @@ def summarize(rows: list[dict]) -> list[dict]:
         ]
         def mean(field, items=valid):
             return statistics.fmean(r[field] for r in items) if items else None
+        def peak_summary(field, eligible):
+            measured = [float(r[field]) for r in eligible
+                        if r.get(field) is not None and math.isfinite(float(r[field]))]
+            complete = bool(measured) and len(measured) == len(eligible)
+            return {
+                f"{field}_mean": statistics.fmean(measured) if complete else None,
+                f"{field}_p95": float(torch.quantile(torch.tensor(measured, dtype=torch.float64), .95)) if complete else None,
+                f"{field}_max": max(measured) if complete else None,
+                f"{field}_valid_count": len(measured),
+                f"{field}_missing_count": len(eligible) - len(measured),
+            }
+        reference_eligible = [r for r in valid if r.get("has_reference", r.get("reference_mse") is not None)]
         result.append({
             "dataset": dataset, "method": method, "n": len(values),
             "failed": len(values) - len(valid),
             "mse_mean": mean("mse"),
             "mse_p95": float(torch.quantile(torch.tensor([r["mse"] for r in valid], dtype=torch.float64), .95)) if valid else None,
+            "mse_max": max(r["mse"] for r in valid) if valid else None,
+            **peak_summary("max_squared_error", valid),
             "fit_pass_rate": sum(bool(r["fit_pass"]) for r in valid) / len(values),
             "reference_mse_mean": mean("reference_mse", refs),
+            "reference_mse_max": max(r["reference_mse"] for r in refs) if refs else None,
+            **peak_summary("reference_max_squared_error", reference_eligible),
             "reference_pass_rate": sum(bool(r["reference_pass"]) for r in valid) / len(values) if any(r.get("has_reference", r["reference_mse"] is not None) for r in values) else None,
             "final_k_mean": mean("final_k"),
             "canonical_k_mean": (
@@ -648,20 +704,29 @@ def summarize(rows: list[dict]) -> list[dict]:
 
 
 def write_reports(directory: Path, metadata: dict, rows: list[dict]):
+    # Re-rendering old reports must disclose missing peaks, not infer them from
+    # MSE or populate zero. Do not modify the source records or metadata.
+    rows = [{"max_squared_error": None, "reference_max_squared_error": None, **r}
+            for r in rows]
     summary = summarize(rows)
     audit = native_baseline_audit(rows)
     report = {"metadata": metadata, "summary": summary, "measurements": rows,
+              "metric_definitions": ERROR_METRIC_DEFINITIONS,
               "native_baseline_summary": audit}
     (directory / "comparison.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False),
         encoding="utf-8",
     )
     for filename, items in (("summary.csv", summary), ("measurements.csv", rows),
-                            ("native_baseline_summary.csv", audit)):
+                            ("native_baseline_summary.csv", audit),
+                            ("metric_definitions.csv", [
+                                {"metric": key, "definition": value}
+                                for key, value in ERROR_METRIC_DEFINITIONS.items()
+                            ])):
         if not items:
             continue
         with (directory / filename).open("w", encoding="utf-8-sig", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(items[0]))
+            writer = csv.DictWriter(handle, fieldnames=list(dict.fromkeys(key for item in items for key in item)))
             writer.writeheader()
             writer.writerows(items)
     version = OBJECTIVE_LABELS[metadata["objective_version"]]
@@ -681,6 +746,12 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
         (
             f"统一阈值：MSE ≤ {metadata['mse_tolerance']:.3e}；"
             "MSE = mean_i ||C(t_i)-Q_i||²，不开方。"
+        ),
+        (
+            "新增最大拟合误差 MaxSqErr = max_i ||C(t_i)-Q_i||²，同样不开方；"
+            "它衡量单条曲线最差采样点，与一组曲线中最大的 MSE 不同。"
+            "输入点和原始参考点分别计算，沿用同一参数映射；这是离散对应点误差，"
+            "不是 Hausdorff 距离或连续曲线最大误差保证。通过率仍由 MSE 阈值判断。"
         ),
         (
             "所有方法接收相同归一化有序点，并以 CPU float64、端点插值、"
@@ -739,6 +810,30 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
             f"{fmt(s['total_ms_mean'], '.2f')} | "
             f"{fmt(s['network_ms_mean'], '.2f')} |"
         )
+    lines += [
+        "", "## 最大拟合误差（平方欧氏距离，不开方）", "",
+        "先对每条曲线取点误差最大值，再报告其均值、P95 和全组最大值。"
+        "最差曲线 MSE 单独列出，不与 MaxSqErr 混用。旧结果缺少逐点残差时不从 MSE 推算："
+        "只要有成功样本缺失该指标，相应峰值统计就记为 N/A；失败样本数见 failed 字段。",
+        "",
+        "| 数据集 | 方法 | 点集 | MaxSqErr 均值 | MaxSqErr P95 | MaxSqErr 最大值 | 最差曲线 MSE | 峰值有效/缺失样本数 |",
+        "|---|---|---|---:|---:|---:|---:|---:|",
+    ]
+    for s in summary:
+        for field, mse_field, point_set in (
+            ("max_squared_error", "mse_max", "输入点"),
+            ("reference_max_squared_error", "reference_mse_max", "原始参考点"),
+        ):
+            if field.startswith("reference_") and s["reference_pass_rate"] is None:
+                continue
+            def peak_fmt(key):
+                return format(s[key], ".3e") if s[key] is not None else "N/A"
+            lines.append(
+                f"| {s['dataset']} | {labels[s['method']]} | {point_set} | "
+                f"{peak_fmt(field + '_mean')} | {peak_fmt(field + '_p95')} | "
+                f"{peak_fmt(field + '_max')} | {peak_fmt(mse_field)} | "
+                f"{s[field + '_valid_count']}/{s[field + '_missing_count']} |"
+            )
     if audit:
         lines += [
             "", "## 原生适配与最终结果审计", "",
@@ -911,6 +1006,8 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                 "diagnostic_not_final": diagnostic,
                 "diagnostic_reasons": diagnostic_reasons,
                 "model_version": version,
+                "error_metric_version": ERROR_METRIC_VERSION,
+                "error_metric_definitions": ERROR_METRIC_DEFINITIONS,
                 "method_set": args.method_set,
                 "methods": list(methods),
                 "method_labels": {method: f"Ours {version} learned" if method == "ours" else LABELS[method] + (" [threshold-safe adaptation]" if args.published_feasibility_safeguard and method in SAFEGUARDED_PUBLISHED_METHODS else "") for method in methods},
@@ -960,7 +1057,8 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                 row = {"dataset": case["dataset"], "sample_id": case["sample_id"], "group_id": case["group_id"],
                        "source_k": case["source_k"], "canonical_k": case["canonical_k"], "method": method,
                        "has_reference": case["reference"] is not None,
-                       "status": "ok", "mse": None, "fit_pass": False, "reference_mse": None,
+                       "status": "ok", "mse": None, "max_squared_error": None,
+                       "fit_pass": False, "reference_mse": None, "reference_max_squared_error": None,
                        "reference_pass": None, "final_k": None, "total_ms": None, "network_ms": None,
                        "knots": [], "diagnostics": {}, "error": None}
                 started = time.perf_counter()
@@ -977,12 +1075,14 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                             args,
                             degree=model.degree,
                         )
-                    mse = float(fit.fit_mse)
-                    ref_mse = reference_mse(fit, params, case)
+                    # All residual metrics are evaluated after the complete
+                    # method timer, using exactly the returned deployment fit.
+                    errors = fit_error_metrics(fit, params, case)
+                    mse, ref_mse = errors["mse"], errors["reference_mse"]
                     if not math.isfinite(mse) or (ref_mse is not None and not math.isfinite(ref_mse)):
                         raise RuntimeError("non-finite fitted MSE")
-                    row.update(mse=mse, fit_pass=mse <= args.mse_tolerance,
-                               reference_mse=ref_mse, reference_pass=ref_mse <= args.mse_tolerance if ref_mse is not None else None,
+                    row.update(**errors, fit_pass=mse <= args.mse_tolerance,
+                               reference_pass=ref_mse <= args.mse_tolerance if ref_mse is not None else None,
                                final_k=int(fit.internal_knots.numel()), total_ms=total_ms, network_ms=network_ms,
                                knots=fit.internal_knots.detach().cpu().tolist(), diagnostics=diagnostics)
                 except (RuntimeError, ValueError) as error:
@@ -990,7 +1090,7 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                 handle.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
                 handle.flush()
                 rows.append(row)
-                print(f"[{i}/{len(cases)}] {case['dataset']} {case['sample_id']} {method}: K={row['final_k']} MSE={row['mse']} time={row['total_ms']:.1f} ms {row['status']}", flush=True)
+                print(f"[{i}/{len(cases)}] {case['dataset']} {case['sample_id']} {method}: K={row['final_k']} MSE={row['mse']} MaxSqErr={row['max_squared_error']} time={row['total_ms']:.1f} ms {row['status']}", flush=True)
             write_reports(directory, metadata, rows)
     print(f"Saved {directory / 'report.md'}", flush=True)
 

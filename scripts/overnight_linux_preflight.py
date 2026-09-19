@@ -26,7 +26,7 @@ def file_hash(path):
         return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
-def checkpoint_record(path, *, deployment, tolerance):
+def checkpoint_record(path, *, deployment, tolerance, candidate_knots=64, resize_candidates=False):
     import torch
     from spline_fitting.checkpointing import (
         V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION, build_model_from_checkpoint,
@@ -38,8 +38,13 @@ def checkpoint_record(path, *, deployment, tolerance):
         if payload.get("objective_version") != V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
             raise ValueError("evaluation checkpoint is not the historical native v16 objective")
         _, config, _ = build_model_from_checkpoint(payload)
-        if config.get("max_internal_knots") != 64:
-            raise ValueError("overnight comparison requires a 64-internal-candidate checkpoint")
+        source_capacity = config.get("max_internal_knots")
+        if resize_candidates:
+            if not isinstance(source_capacity, int) or source_capacity <= candidate_knots:
+                raise ValueError("candidate warm-start resizing requires a strictly smaller target capacity")
+        elif source_capacity != candidate_knots:
+            raise ValueError(f"overnight comparison requires a {candidate_knots}-internal-candidate checkpoint; "
+                             "a baseline cap does not resize network weights")
         recorded = payload.get("training_config", {}).get("mse_tolerance")
         if recorded != tolerance:
             raise ValueError(f"checkpoint MSE tolerance {recorded} != requested {tolerance}")
@@ -49,6 +54,9 @@ def checkpoint_record(path, *, deployment, tolerance):
         "objective_version": payload.get("objective_version"),
         "training_config": payload.get("training_config", {}),
         "real_data_provenance": payload.get("real_data_provenance", []),
+        "source_candidate_knots": payload.get("model_config", {}).get("max_internal_knots"),
+        "requested_candidate_knots": candidate_knots,
+        "resize_candidate_warm_start": resize_candidates,
         "note": ("Evaluation of existing weights; unknown ancestor exposure is not inferred."
                  if deployment else
                  "Warm-start source provenance; real_fraction=0 in the new run does not erase prior exposure."),
@@ -81,8 +89,8 @@ with the historical trainer even when training has already finished.
     expected_last = output.with_name(output.stem + ".last.pt")
     if source != expected_last or args.resume is None or args.resume.resolve() != source:
         raise ValueError("resume status requires this output's original .last.pt and matching --resume")
-    if args.candidate_knots != 64 or args.real_fraction != 0:
-        raise ValueError("overnight resume requires Kc64 and the original synthetic-only training run")
+    if args.real_fraction != 0:
+        raise ValueError("overnight resume requires the original synthetic-only training run")
     current = serial_args(args)
     current.update(train_seed=args.seed, train_seed_stride=EPOCH_SEED_STRIDE)
     ignored = {"epochs", "resume", "init_checkpoint", "warm_start_checkpoint", "output", "device", "num_workers",
@@ -128,8 +136,9 @@ with the historical trainer even when training has already finished.
                 raise ValueError("resume validation manifest changed since the saved experiment")
         model_config = payload.get("model_config", {})
         if (not isinstance(model_config, Mapping)
-                or model_config.get("max_internal_knots") != 64):
-            raise ValueError("resume requires a 64-internal-candidate checkpoint")
+                or model_config.get("max_internal_knots") != args.candidate_knots):
+            raise ValueError(f"resume capacity mismatch: requires a {args.candidate_knots}-internal-candidate checkpoint; "
+                             "capacity cannot change during resume")
         if model_config.get("mse_tolerance") != args.mse_tolerance:
             raise ValueError("resume model MSE tolerance does not match the requested run")
         # Strict CPU restoration rejects incompatible or corrupt state tensors;
@@ -180,10 +189,21 @@ def main(argv=None):
     parser.add_argument("--initializer", type=Path)
     parser.add_argument("--warm-start-checkpoint", type=Path)
     parser.add_argument("--mse-tolerance", type=float, default=5e-5)
+    parser.add_argument("--candidate-knots", type=int, default=64,
+                        help="Expected shared internal-knot capacity; evaluated weights must match")
+    parser.add_argument("--resize-candidate-warm-start", action="store_true",
+                        help="Allow a larger full-model initializer, never an evaluation/resume mismatch")
     parser.add_argument("--output", type=Path)
     parser.add_argument("training_arguments", nargs=argparse.REMAINDER,
                         help="For --resume-status only: exact train_v16 options after --")
     args = parser.parse_args(argv)
+    if not 24 <= args.candidate_knots <= 188:
+        parser.error("candidate-knots must be 24..188 for the overnight source range and 192 points")
+    if args.resize_candidate_warm_start and (
+        args.warm_start_checkpoint is None or args.checkpoint is not None
+        or args.initializer is not None or args.resume_status
+    ):
+        parser.error("resize-candidate-warm-start requires only a full-model warm-start checkpoint")
     if sys.version_info < (3, 11):
         parser.error("the complete historical benchmark requires Python 3.11 or newer")
     if args.resume_status:
@@ -218,6 +238,8 @@ def main(argv=None):
     if args.runtime_only:
         print(json.dumps(record, ensure_ascii=False), flush=True)
         return record
+    record.update(candidate_knots=args.candidate_knots,
+                  full_cubic_knot_vector_cap=args.candidate_knots + 8)
     manifests = parse_manifests(args.manifest, defaults=default_manifests(args.data_root))
     record["datasets"] = {}
     if args.validate_real_splits:
@@ -257,21 +279,27 @@ def main(argv=None):
     if args.checkpoint:
         record["evaluation_checkpoint"] = checkpoint_record(
             args.checkpoint, deployment=True, tolerance=args.mse_tolerance,
+            candidate_knots=args.candidate_knots,
         )
     if args.initializer:
         record["warm_start"] = checkpoint_record(
             args.initializer, deployment=False, tolerance=args.mse_tolerance,
+            candidate_knots=args.candidate_knots,
         )
         print("Warm-start provenance recorded; this is not a from-scratch study.", flush=True)
     if args.warm_start_checkpoint:
         record["full_model_warm_start"] = checkpoint_record(
             args.warm_start_checkpoint, deployment=True, tolerance=args.mse_tolerance,
+            candidate_knots=args.candidate_knots, resize_candidates=args.resize_candidate_warm_start,
         )
         record["full_model_warm_start"]["note"] = (
             "All compatible model weights initialize a new run; not optimizer/epoch resume. "
             "Ancestor exposure and checkpoint selection provenance remain relevant."
         )
         print("Full-model initialization provenance recorded; strict configuration checks follow in training.", flush=True)
+        if args.resize_candidate_warm_start:
+            print("Explicit capacity migration: candidate queries will be resized for a NEW training run; "
+                  "the old model is not a smaller-capacity deployment checkpoint.", flush=True)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(record, ensure_ascii=False, indent=2, default=str) + "\n",

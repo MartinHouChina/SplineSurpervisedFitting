@@ -1,0 +1,4 @@
+
+[plot_four_metrics] /e/ProgramData/anaconda3/python.exe scripts/plot_v16_method_comparison.py --input /e/SelfSurpervisedSplineFitting/outputs/comparisons/overnight_all_sources_smoke_20260919_r2/comparison.json --output-dir /e/SelfSurpervisedSplineFitting/outputs/figures/overnight_all_sources_smoke_20260919_r2/four_metrics --method-set published --dpi 300 --reference --allow-unqualified-diagnostic
+E:\SelfSurpervisedSplineFitting\outputs\figures\overnight_all_sources_smoke_20260919_r2\four_metrics\v16_published_methods_input.png
+E:\SelfSurpervisedSplineFitting\outputs\figures\overnight_all_sources_smoke_20260919_r2\four_metrics\v16_published_methods_reference.png

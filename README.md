@@ -1,5 +1,7 @@
 # Minimum-Complexity B-Spline Fitting
 
+新增 [Overnight K32：统一容量与最大误差](docs/overnight_k32.md)：显式将网络与全部五个数值对照组上限设为 32 个内部节点，支持 K64 权重缩容后重新训练；增加最大单点平方误差、五指标图与六方法案例标注。含 Linux 训练—评测—绘图一条龙，旧实验不覆盖。
+
 当前改进见 [Overnight Stable](docs/overnight_stable.md)：依据“19 13”训练结果，增加可达删点轨迹教师；部署仍一次性。评测及六方法案例默认覆盖 UJI、Natural Earth、USGS 和工业等距线，含现有 checkpoint 补测与 Linux 训练一条龙。
 
 新增 [Overnight Compact](docs/overnight_compact.md)：`--compact-selection` 从 Reliable best 权重显式 warm-start，采用逐曲线可行性简化、有预算的 greedy Teacher、数量储备对齐和合成混合训练；默认 24 epochs，不增加部署搜索。含更新包上传、Linux 一条龙与续跑说明，不承诺最少节点或达标。

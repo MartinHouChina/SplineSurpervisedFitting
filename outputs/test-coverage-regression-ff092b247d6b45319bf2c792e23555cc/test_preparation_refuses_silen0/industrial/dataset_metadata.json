@@ -1,0 +1,38 @@
+{
+  "accepted_by_family": {
+    "elliptic_bore": 1
+  },
+  "dataset_class": "CAD-driven semi-synthetic external geometry benchmark",
+  "evaluation_note": "Report dense-reference MSE, threshold pass rate, retained knot count, and latency. Do not report knot precision/recall.",
+  "generation_seed": 20260914,
+  "group_count": 1,
+  "has_knot_labels": false,
+  "miter_limit": 4.0,
+  "offset_fractions": [
+    0.02
+  ],
+  "preprocessing_version": "industrial-offset-curves-v1",
+  "profile_families": [
+    "elliptic_bore"
+  ],
+  "reference_points": 32,
+  "rejected": {},
+  "sample_count": 1,
+  "schema_version": 1,
+  "scope_note": "Procedural engineering contours are not measured CAD data and must be reported as CAD-driven semi-synthetic offsets.",
+  "source_dataset": "industrial_model_offset_curves",
+  "source_points": 64,
+  "split_counts": {
+    "test": 0,
+    "train": 1,
+    "val": 0
+  },
+  "split_fractions": {
+    "test": 0.15000000000000005,
+    "train": 0.7,
+    "val": 0.15
+  },
+  "split_seed": 20260914,
+  "training_role": "external validation/test only; never synthetic-label training",
+  "variants_per_family": 1
+}

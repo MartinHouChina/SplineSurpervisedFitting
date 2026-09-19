@@ -1,0 +1,41 @@
+
+[check_data_and_provenance] /e/ProgramData/anaconda3/python.exe scripts/overnight_linux_preflight.py --data-root /e/SelfSurpervisedSplineFitting/data --device cpu --mse-tolerance 5e-5 --candidate-knots 32 --resize-candidate-warm-start --validate-real-splits --warm-start-checkpoint /e/SelfSurpervisedSplineFitting/outputs/checkpoints/overnight_stable_3090_r1.pt --output /e/SelfSurpervisedSplineFitting/outputs/logs/overnight_stable_k32_pipeline_smoke_20260919/preflight.json
+  Reading manifest: E:\SelfSurpervisedSplineFitting\data\splits\uji_pen_v2.jsonl
+  Checking groups/files: 2000/18219
+  Checking groups/files: 4000/18219
+  Checking groups/files: 6000/18219
+  Checking groups/files: 8000/18219
+  Checking groups/files: 10000/18219
+  Checking groups/files: 12000/18219
+  Checking groups/files: 14000/18219
+  Checking groups/files: 16000/18219
+  Checking groups/files: 18000/18219
+  Checking groups/files: 18219/18219
+  Ready uji_pen_characters_v2: train=9670, val=2456 (test excluded from training)
+  Reading manifest: E:\SelfSurpervisedSplineFitting\data\processed\natural_earth\v5.1.2_10m_coastline\manifest.jsonl
+  Checking groups/files: 2000/3908
+  Checking groups/files: 3908/3908
+  Ready natural_earth_10m_coastline: train=2625, val=750 (test excluded from training)
+  Reading manifest: E:\SelfSurpervisedSplineFitting\data\processed\usgs_contours\large_scale\manifest.jsonl
+  Checking groups/files: 820/820
+  Ready usgs_tnm_contours_large_scale: train=427, val=192 (test excluded from training)
+UJI: reading required manifest E:\SelfSurpervisedSplineFitting\data\splits\uji_pen_v2.jsonl
+UJI: checked 2000/18219 point-file paths
+UJI: checked 4000/18219 point-file paths
+UJI: checked 6000/18219 point-file paths
+UJI: checked 8000/18219 point-file paths
+UJI: checked 10000/18219 point-file paths
+UJI: checked 12000/18219 point-file paths
+UJI: checked 14000/18219 point-file paths
+UJI: checked 16000/18219 point-file paths
+UJI: checked 18000/18219 point-file paths
+UJI: 6093 held-out test curves; point paths checked
+NaturalEarth: reading required manifest E:\SelfSurpervisedSplineFitting\data\processed\natural_earth\v5.1.2_10m_coastline\manifest.jsonl
+NaturalEarth: checked 2000/3908 point-file paths
+NaturalEarth: 533 held-out test curves; point paths checked
+USGS: reading required manifest E:\SelfSurpervisedSplineFitting\data\processed\usgs_contours\large_scale\manifest.jsonl
+USGS: 201 held-out test curves; point paths checked
+IndustrialOffset: reading required manifest E:\SelfSurpervisedSplineFitting\data\processed\industrial_offsets\v1\manifest.jsonl
+IndustrialOffset: 67 held-out test curves; point paths checked
+Full-model initialization provenance recorded; strict configuration checks follow in training.
+Explicit capacity migration: candidate queries will be resized for a NEW training run; the old model is not a smaller-capacity deployment checkpoint.

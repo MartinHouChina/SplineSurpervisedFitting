@@ -1,0 +1,11 @@
+
+[plot_ours_cases] /e/ProgramData/anaconda3/python.exe scripts/visualize_v16_ours_cases.py --checkpoint /e/SelfSurpervisedSplineFitting/outputs/checkpoints/overnight_stable_k32_pipeline_smoke_20260919.pt --real-samples-per-dataset 1 --selection-seed 20260909 --mse-tolerance 5e-5 --manifest UJI=/e/SelfSurpervisedSplineFitting/data/splits/uji_pen_v2.jsonl --manifest NaturalEarth=/e/SelfSurpervisedSplineFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl --manifest USGS=/e/SelfSurpervisedSplineFitting/data/processed/usgs_contours/large_scale/manifest.jsonl --manifest IndustrialOffset=/e/SelfSurpervisedSplineFitting/data/processed/industrial_offsets/v1/manifest.jsonl --max-internal-knots 32 --paper-initial-knots 32 --liang-dense-knots 32 --gradient-steps 12 --paper-admm-iterations 100 --paper-lambda-bisections 8 --paper-relocation-iterations 8 --liang-feature-samples 1025 --dung-scan-intervals 10 --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations 10 --published-feasibility-safeguard --network-warmups 3 --network-repeats 1 --end-to-end-repeats 1 --torch-num-threads 4 --device cpu --dpi 240 --allow-unqualified-diagnostic --force-diagnostic --output-dir /e/SelfSurpervisedSplineFitting/outputs/figures/overnight_stable_k32_pipeline_smoke_20260919/ours_cases
+[1/4] UJI / uji2_07455_stroke_00
+  Ours v16: MSE=1.838e-04, max SE=2.427e-03, K=10, time=16.72 ms
+[2/4] NaturalEarth / natural_earth_10m_coastline_6f39c8d2074b_w000_6f39c8d2
+  Ours v16: MSE=2.147e-04, max SE=2.600e-03, K=15, time=15.16 ms
+[3/4] USGS / usgs_tnm_contours_large_scale_475ea687e55e_w000_475ea687
+  Ours v16: MSE=1.025e-03, max SE=1.167e-02, K=14, time=16.05 ms
+[4/4] IndustrialOffset / industrial_offset_keyway_bore_v007_o01_m0p0400
+  Ours v16: MSE=7.755e-04, max SE=1.236e-02, K=14, time=29.62 ms
+Saved 5 PNG files and E:\SelfSurpervisedSplineFitting\outputs\figures\overnight_stable_k32_pipeline_smoke_20260919\ours_cases\deployment_visualizations.json

@@ -1,0 +1,2 @@
+
+[inspect_checkpoint] /e/SelfSurpervisedSplineFitting/outputs/test-coverage-regression-ff092b247d6b45319bf2c792e23555cc/test_shell_resume_status_contr0/stub\ python scripts/inspect_v16_checkpoint.py --checkpoint /e/SelfSurpervisedSplineFitting/outputs/test-coverage-regression-ff092b247d6b45319bf2c792e23555cc/test_shell_resume_status_contr0/results\ with\ spaces/checkpoints/pytest_1070_linux.pt --mse-tolerance 5e-5

@@ -1,0 +1,6 @@
+
+[check_data_and_provenance] /e/ProgramData/anaconda3/python.exe scripts/overnight_linux_preflight.py --data-root /e/SelfSurpervisedSplineFitting/data --device cpu --mse-tolerance 5e-5 --checkpoint /e/SelfSurpervisedSplineFitting/outputs/checkpoints/overnight_compact_3090_r1.pt --output /e/SelfSurpervisedSplineFitting/outputs/logs/overnight_all_sources_smoke_20260919_r1/preflight.json
+UJI: 6093 held-out test curves; point paths checked
+NaturalEarth: 533 held-out test curves; point paths checked
+USGS: 201 held-out test curves; point paths checked
+IndustrialOffset: 67 held-out test curves; point paths checked

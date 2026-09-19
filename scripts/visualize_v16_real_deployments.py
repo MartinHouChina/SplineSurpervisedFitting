@@ -36,7 +36,7 @@ from benchmark_v15_datasets import (  # noqa: E402
     native_baseline_audit,
     published_baseline_protocol,
     prepare_cases,
-    reference_mse,
+    fit_error_metrics,
     resolve_comparison_capacities,
     sha256_file,
 )
@@ -87,6 +87,10 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--selection-seed", type=int, default=20260909)
     result.add_argument("--mse-tolerance", type=float, default=2.5e-5)
     result.add_argument("--max-internal-knots", type=int, default=None)
+    result.add_argument(
+        "--allow-unequal-capacity", action="store_true",
+        help="Allow unequal network/numerical knot budgets only as a visibly marked diagnostic ablation; irrelevant to --ours-only",
+    )
     result.add_argument("--gradient-steps", type=int, default=12)
     result.add_argument("--paper-initial-knots", type=int, default=None)
     result.add_argument("--paper-admm-iterations", type=int, default=400)
@@ -228,11 +232,10 @@ def _run_method(method, *, model, points, case, device, args, objective_version)
         fit, parameters, total_ms, network_ms, diagnostics = measure_numerical_baseline(
             method, points.double().cpu(), args, degree=model.degree,
         )
-    mse = float(fit.fit_mse)
-    dense_reference_mse = reference_mse(fit, parameters, case)
-    if not math.isfinite(mse) or (
-        dense_reference_mse is not None and not math.isfinite(dense_reference_mse)
-    ):
+    errors = fit_error_metrics(fit, parameters, case)
+    mse = errors["mse"]
+    dense_reference_mse = errors["reference_mse"]
+    if any(value is not None and not math.isfinite(value) for value in errors.values()):
         raise RuntimeError("method produced a non-finite fit metric")
     return {
         "method": method,
@@ -240,9 +243,8 @@ def _run_method(method, *, model, points, case, device, args, objective_version)
         "published_feasibility_safeguard": getattr(args, "published_feasibility_safeguard", True),
         "fit": fit,
         "parameters": parameters,
-        "mse": mse,
+        **errors,
         "fit_pass": mse <= args.mse_tolerance,
-        "reference_mse": dense_reference_mse,
         "reference_pass": (
             dense_reference_mse <= args.mse_tolerance
             if dense_reference_mse is not None else None
@@ -252,6 +254,14 @@ def _run_method(method, *, model, points, case, device, args, objective_version)
         "network_ms": float(network_ms) if network_ms is not None else None,
         "diagnostics": diagnostics,
     }
+
+
+def _peak_error_text(result: dict, *, reference: bool = False) -> str:
+    """Never reconstruct a missing pointwise maximum from a curve mean."""
+    key = "reference_max_squared_error" if reference else "max_squared_error"
+    value = result.get(key)
+    label = "ref max SE" if reference else "max SE"
+    return f"{label}={float(value):.2e}" if value is not None else f"{label}=N/A"
 
 
 def _plot_geometry(
@@ -423,6 +433,8 @@ def plot_ours_case(
     geometry.set_title(
         f"Ours v16 | K={result['final_k']} | sampled-point MSE={result['mse']:.3e}"
         f"{reference_text}\n"
+        f"{_peak_error_text(result)} | {_peak_error_text(result, reference=True)} "
+        "(maximum point squared error)\n"
         f"network={result['network_ms']:.2f} ms | "
         f"network + one final refit={result['total_ms']:.2f} ms | "
         f"threshold={tolerance:.2e} ({'PASS' if result['fit_pass'] else 'FAIL'})",
@@ -466,7 +478,8 @@ def plot_ours_overview(
             ours_label=True,
         )
         status = "PASS" if result.get("fit_pass") else "FAIL"
-        detail = (f"K={result['final_k']} | MSE={result['mse']:.2e} | {status}"
+        detail = (f"K={result['final_k']} | MSE={result['mse']:.2e} | {status}\n"
+                  f"{_peak_error_text(result)} (point squared error)"
                   if result.get("status") == "ok" else f"FAILED: {result.get('error', 'no fit')}")
         axis.set_title(
             f"{case.get('dataset_label', case['dataset'])} / {case['sample_id']}\n{detail}",
@@ -498,7 +511,8 @@ def plot_ours_overview(
     finally:
         plt.close(figure)
 def plot_case(path: Path, *, case: dict, results: list[dict],
-              tolerance: float, diagnostic: bool, dpi: int) -> None:
+              tolerance: float, diagnostic: bool, dpi: int,
+              capacity_note: str | None = None) -> None:
     dimension = int(case["points"].shape[-1])
     columns = 3 if len(results) > 4 else min(2, len(results))
     rows = math.ceil(len(results) / columns)
@@ -539,6 +553,7 @@ def plot_case(path: Path, *, case: dict, results: list[dict],
         axis.set_title(
             f"{label}\n"
             f"K={result['final_k']} | MSE={result['mse']:.2e}{ref_text}\n"
+            f"{_peak_error_text(result)} | {_peak_error_text(result, reference=True)}\n"
             f"{timing}{native_text}"
             , fontsize=9)
         if not has_fit_legend:
@@ -547,10 +562,13 @@ def plot_case(path: Path, *, case: dict, results: list[dict],
     title = (
         f"Held-out external curve: {case.get('dataset_label', case['dataset'])} / {case['sample_id']}\n"
         f"shared MSE tolerance={tolerance:.3e}; endpoint-constrained, "
-        "unregularized standard B-spline fits"
+        "unregularized standard B-spline fits\n"
+        "max SE = maximum observed-point squared Euclidean error (no square root; not the MSE pass criterion)"
     )
     if any(result.get("published_feasibility_safeguard") and result["method"] in SAFEGUARDED_PUBLISHED_METHODS for result in results):
         title += "\nThreshold-safe adaptations: repair refits included in complete time; not paper-original algorithms."
+    if capacity_note:
+        title += "\n" + capacity_note
     title = "\n".join(textwrap.fill(line, width=56 * columns) for line in title.splitlines())
     figure.suptitle(title, fontsize=15)
     if diagnostic:
@@ -605,6 +623,23 @@ def run(args: argparse.Namespace) -> dict:
     if model_config.get("structure_mode") != "candidate_pruning_one_shot":
         raise ValueError("checkpoint must expose one-shot candidate pruning")
     capacities = resolve_comparison_capacities(args, checkpoint)
+    capacity_note = None
+    unequal_capacity_ablation = not args.ours_only and not capacities["equal_initial_capacity"]
+    if unequal_capacity_ablation:
+        if not args.allow_unequal_capacity:
+            raise ValueError(
+                "v16 multi-method case comparisons require the same internal candidate cap "
+                "for Ours and configurable numerical methods; change all caps to the checkpoint Kc "
+                "or add --allow-unequal-capacity for a visibly marked diagnostic ablation"
+            )
+        diagnostic = True
+        capacity_note = (
+            "UNEQUAL-CAPACITY ABLATION: "
+            f"Ours Kc={capacities['network_candidates']}; "
+            f"numerical cap={capacities['greedy_initial_and_yeh_max']}; "
+            f"Kang initial={capacities['kang_dense_initial']}; "
+            f"Liang initial={capacities['liang_dense_initial']}"
+        )
     torch.set_num_threads(args.torch_num_threads)
     device = torch.device(
         "cuda" if args.device == "auto" and torch.cuda.is_available()
@@ -677,8 +712,10 @@ def run(args: argparse.Namespace) -> dict:
                     "fit": None,
                     "parameters": None,
                     "mse": None,
+                    "max_squared_error": None,
                     "fit_pass": False,
                     "reference_mse": None,
+                    "reference_max_squared_error": None,
                     "reference_pass": False,
                     "final_k": None,
                     "total_ms": None,
@@ -689,6 +726,7 @@ def run(args: argparse.Namespace) -> dict:
             if result["status"] == "ok":
                 print(
                     f"  {result['label']}: MSE={result['mse']:.3e}, "
+                    f"max SE={result['max_squared_error']:.3e}, "
                     f"K={result['final_k']}, time={result['total_ms']:.2f} ms",
                     flush=True,
                 )
@@ -715,6 +753,7 @@ def run(args: argparse.Namespace) -> dict:
                 tolerance=args.mse_tolerance,
                 diagnostic=diagnostic,
                 dpi=args.dpi,
+                capacity_note=capacity_note,
             )
         records.append({
             "dataset": case["dataset"],
@@ -758,6 +797,8 @@ def run(args: argparse.Namespace) -> dict:
             "checkpoint_quality": checkpoint.get("checkpoint_quality"),
             "checkpoint_qualification": qualification,
             "diagnostic_not_final": diagnostic,
+            "unequal_capacity_ablation": unequal_capacity_ablation,
+            "capacity_comparison_note": capacity_note,
             "mse_tolerance": args.mse_tolerance,
             "mse_definition": (
                 "mean(sum((prediction-observation)^2, coordinates)); no square root"
@@ -788,6 +829,13 @@ def run(args: argparse.Namespace) -> dict:
                 "Ours reports device-resident network median and normalized-input "
                 "end-to-end median separately; numerical baselines report their "
                 "complete algorithm time including every safeguard refit. Plotting and metrics are excluded."
+            ),
+            "max_squared_error_definition": (
+                "max(sum((prediction-observation)^2, coordinates)) over observed points; "
+                "normalized coordinates, no square root; not maximum curve MSE, "
+                "not a continuous/Hausdorff bound, and not the MSE pass criterion. "
+                "reference_max_squared_error uses the same original-reference parameter "
+                "mapping as reference_mse."
             ),
             "native_baseline_summary": native_baseline_audit([
                 dict(method, dataset=record["dataset"], sample_id=record["sample_id"])

@@ -1,5 +1,7 @@
 # 文档索引
 
+[Overnight K32：统一容量与最大误差](overnight_k32.md)：网络/六方法统一最多 32 内部节点，显式缩容迁移、新训练、最大单点平方误差与五指标对比图、Linux 一条龙。
+
 [Overnight Stable：可达教师与全部外部数据集评测](overnight_stable.md)：Compact 实验的配对审计、轨迹监督改进、工业等距线及四个外部来源的六方法测试/案例、上传与 Linux 一条龙。
 
 [Overnight Compact：可行性约束下的紧凑节点实验](overnight_compact.md)：新增 `--compact-selection`，24-epoch 显式 best 权重 warm-start、四项训练改进、更新包上传与 Linux 一条龙；不增加部署搜索，不保证全局最简或达标。

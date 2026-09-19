@@ -176,6 +176,34 @@ def validate_v16_benchmark(
                     and not math.isclose(actual_value, expected_value, rel_tol=1e-10, abs_tol=1e-12)
                 ):
                     raise ValueError(f"{summary_key} differs from measurements for {(dataset, method)}")
+            for field in ("max_squared_error", "reference_max_squared_error"):
+                # Old reports legitimately lack these observations. They may
+                # not acquire a peak-error bar by copying or rescaling MSE.
+                eligible = (valid if field == "max_squared_error" else
+                            [value for value in valid if value.get("has_reference", value.get("reference_mse") is not None)])
+                observed = [value.get(field) for value in eligible
+                            if value.get(field) is not None]
+                if any(not isinstance(value, (int, float)) or
+                       not math.isfinite(value) or value < 0 for value in observed):
+                    raise ValueError(f"Invalid {field} measurements for {(dataset, method)}")
+                for suffix, expected_count in (("valid_count", len(observed)),
+                                               ("missing_count", len(eligible) - len(observed))):
+                    count_key = f"{field}_{suffix}"
+                    if count_key in row and row[count_key] != expected_count:
+                        raise ValueError(f"{count_key} differs from measurements for {(dataset, method)}")
+                for suffix, reducer in (("mean", statistics.fmean),
+                                        ("p95", lambda items: float(np.quantile(items, 0.95))),
+                                        ("max", max)):
+                    summary_key = f"{field}_{suffix}"
+                    if summary_key not in row:
+                        continue
+                    expected = reducer(observed) if observed and len(observed) == len(eligible) else None
+                    actual = row[summary_key]
+                    if (actual is None) != (expected is None) or (
+                        actual is not None and not math.isclose(actual, expected,
+                                                                rel_tol=1e-10, abs_tol=1e-12)
+                    ):
+                        raise ValueError(f"{summary_key} differs from measurements for {(dataset, method)}")
             final_k = row.get("final_k_mean")
             if final_k is not None and (
                 not isinstance(final_k, (int, float))
@@ -276,8 +304,13 @@ def render_comparison(
     methods: tuple[str, ...] = PUBLISHED_METHODS,
     dpi: int = 300,
     reference: bool = False,
+    include_max_error: bool = False,
 ) -> Path | None:
-    """Render measured MSE, pass rate, final K, and complete wall time."""
+    """Render four legacy metrics, optionally plus the worst point residual.
+
+    The fifth panel is a maximum across observed points and curves, not a
+    maximum of curve-level MSEs. Missing historical measurements remain N/A.
+    """
     metadata, rows = report["metadata"], report["summary"]
     labels = published_method_labels(metadata, SHORT_LABELS)
     datasets = _ordered_datasets(rows, reference=reference)
@@ -294,6 +327,10 @@ def render_comparison(
         ("final_k_mean", "(c) Retained internal-knot count", "Mean retained internal K", False),
         ("total_ms_mean", "(d) Complete algorithm time", "Mean time per curve (ms)", True),
     )
+    if include_max_error:
+        peak_key = "reference_max_squared_error_max" if reference else "max_squared_error_max"
+        metrics += ((peak_key, "(e) Worst observed point squared error",
+                     "Max across curves and points (squared distance)", True),)
     x = np.arange(len(datasets), dtype=float)
     width = 0.82 / len(methods)
 
@@ -308,13 +345,14 @@ def render_comparison(
             "savefig.facecolor": "white",
         }
     ):
-        fig, axes = plt.subplots(2, 2, figsize=(17.5, 11.3))
+        fig, axes = plt.subplots(3 if include_max_error else 2, 2,
+                                 figsize=(17.5, 15.8 if include_max_error else 11.3))
         fig.subplots_adjust(
             left=0.07,
             right=0.985,
             bottom=0.205 if any("\n" in _dataset_tick_label(name, metadata) for name in datasets) else 0.175,
-            top=0.77,
-            hspace=0.42,
+            top=0.82 if include_max_error else 0.77,
+            hspace=0.55 if include_max_error else 0.42,
             wspace=0.24,
         )
         kind = "original-reference points" if reference else "resampled input points"
@@ -488,6 +526,24 @@ def render_comparison(
                 color="#20252a",
             )
 
+        if include_max_error:
+            axes[2, 1].set_axis_off()
+            axes[2, 1].text(
+                0.04, 0.88,
+                "Maximum-error definition\n\n"
+                r"Per curve: $E_{\max}=\max_i\|C(t_i)-Q_i\|_2^2$" "\n\n"
+                "Panel (e): maximum E_max over evaluated curves.\n"
+                "It is not the largest curve-level MSE.\n"
+                "No square root; normalized coordinates.\n\n"
+                "This is an observed-point maximum, not a certified\n"
+                "continuous or Hausdorff bound. The pass criterion\n"
+                "remains mean squared error, not maximum error.\n\n"
+                "N/A: maximum-error measurements unavailable.\n"
+                "Historical MSE alone cannot recover maximum error.",
+                transform=axes[2, 1].transAxes, va="top", fontsize=10.5,
+                color="#444444", linespacing=1.35,
+            )
+
         fig.text(
             0.07,
             0.118,
@@ -517,7 +573,7 @@ def render_comparison(
         fig.text(0.07, 0.060, detail, fontsize=9.1, color="#765097", wrap=True)
         fig.text(
             0.07, 0.041,
-            "MSE / K means include finite threshold misses; time includes failed attempts. Only synthetic has canonical ground-truth K. N/A: no finite fit.",
+            "Finite threshold misses remain included; time includes failed attempts. Only synthetic has canonical ground-truth K. N/A: no finite fit / metric unavailable.",
             fontsize=9.1, color="#555555",
         )
         checkpoint = Path(str(metadata.get("checkpoint", "unknown"))).name
@@ -534,7 +590,8 @@ def render_comparison(
 
         output_dir.mkdir(parents=True, exist_ok=True)
         suffix = "reference" if reference else "input"
-        target = output_dir / f"v16_published_methods_{suffix}.png"
+        metric_prefix = "five_metrics_" if include_max_error else ""
+        target = output_dir / f"v16_published_methods_{metric_prefix}{suffix}.png"
         fig.savefig(target, dpi=dpi)
         plt.close(fig)
     return target
@@ -561,6 +618,10 @@ def main() -> None:
         help="'published' draws Ours, Park, Liang, Dung, Kang, and Luo",
     )
     parser.add_argument("--dpi", type=int, default=300)
+    parser.add_argument(
+        "--five-metrics", action=argparse.BooleanOptionalAction, default=True,
+        help="Also write five-metric PNGs including worst observed point squared error; preserve legacy four-metric PNGs",
+    )
     parser.add_argument(
         "--reference",
         action=argparse.BooleanOptionalAction,
@@ -597,6 +658,13 @@ def main() -> None:
         )
         if result is not None:
             print(result)
+        if args.five_metrics:
+            result = render_comparison(
+                report, output_dir, methods=methods, dpi=args.dpi,
+                reference=reference, include_max_error=True,
+            )
+            if result is not None:
+                print(result)
 
 
 if __name__ == "__main__":

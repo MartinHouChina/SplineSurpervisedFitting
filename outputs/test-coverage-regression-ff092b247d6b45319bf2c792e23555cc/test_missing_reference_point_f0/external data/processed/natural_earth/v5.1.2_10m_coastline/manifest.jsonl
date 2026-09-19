@@ -1,0 +1,3 @@
+{"sample_id": "NaturalEarth_train", "source_dataset": "NaturalEarth", "group_id": "NaturalEarth_train_group", "split": "train", "points_path": "NaturalEarth_train.npy", "num_points": 32, "point_dim": 2, "has_knot_labels": false, "metadata": {}}
+{"sample_id": "NaturalEarth_val", "source_dataset": "NaturalEarth", "group_id": "NaturalEarth_val_group", "split": "val", "points_path": "NaturalEarth_val.npy", "num_points": 32, "point_dim": 2, "has_knot_labels": false, "metadata": {}}
+{"sample_id": "NaturalEarth_test", "source_dataset": "NaturalEarth", "group_id": "NaturalEarth_test_group", "split": "test", "points_path": "NaturalEarth_test.npy", "num_points": 32, "point_dim": 2, "has_knot_labels": false, "metadata": {}}

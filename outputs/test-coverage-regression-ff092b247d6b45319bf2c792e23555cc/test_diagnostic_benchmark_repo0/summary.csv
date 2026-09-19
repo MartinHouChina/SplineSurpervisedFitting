@@ -1,0 +1,2 @@
+﻿dataset,method,n,failed,mse_mean,mse_p95,fit_pass_rate,reference_mse_mean,reference_pass_rate,final_k_mean,canonical_k_mean,canonical_count_mae,canonical_count_bias,canonical_count_exact_rate,canonical_count_within_one_rate,total_ms_mean,network_ms_mean
+Synthetic,ours,1,0,1e-06,1e-06,1.0,,,2.0,,,,,,3.0,1.0

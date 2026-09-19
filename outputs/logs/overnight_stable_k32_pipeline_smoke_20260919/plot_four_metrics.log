@@ -1,0 +1,6 @@
+
+[plot_four_metrics] /e/ProgramData/anaconda3/python.exe scripts/plot_v16_method_comparison.py --input /e/SelfSurpervisedSplineFitting/outputs/comparisons/overnight_stable_k32_pipeline_smoke_20260919/comparison.json --output-dir /e/SelfSurpervisedSplineFitting/outputs/figures/overnight_stable_k32_pipeline_smoke_20260919/four_metrics --method-set published --dpi 300 --reference --allow-unqualified-diagnostic
+E:\SelfSurpervisedSplineFitting\outputs\figures\overnight_stable_k32_pipeline_smoke_20260919\four_metrics\v16_published_methods_input.png
+E:\SelfSurpervisedSplineFitting\outputs\figures\overnight_stable_k32_pipeline_smoke_20260919\four_metrics\v16_published_methods_five_metrics_input.png
+E:\SelfSurpervisedSplineFitting\outputs\figures\overnight_stable_k32_pipeline_smoke_20260919\four_metrics\v16_published_methods_reference.png
+E:\SelfSurpervisedSplineFitting\outputs\figures\overnight_stable_k32_pipeline_smoke_20260919\four_metrics\v16_published_methods_five_metrics_reference.png

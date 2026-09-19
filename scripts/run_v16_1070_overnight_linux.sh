@@ -12,6 +12,8 @@ TRAIN_SIZE=1500
 VAL_SIZE=500
 BATCH_SIZE=32
 MSE_TOLERANCE=5e-5
+CANDIDATE_KNOTS=64
+RESIZE_CANDIDATE_WARM_START=0
 NUM_WORKERS=0
 INIT_CHECKPOINT=outputs/checkpoints/candidate_selection_v16.proposal.pt
 INIT_SPECIFIED=0
@@ -40,8 +42,8 @@ usage() {
   cat <<'EOF'
 Usage: bash scripts/run_v16_1070_overnight_linux.sh [options]
 Historical warm start -> Synthetic + UJI/NaturalEarth/USGS/IndustrialOffset benchmark
--> four-metric PNGs -> Ours cases -> six-method real-case PNGs.
-No current K24/K48 or offline-teacher model code is used.
+-> four/five-metric PNGs -> Ours cases -> six-method real-case PNGs.
+Historical online-teacher architecture; capacity is explicit and shared by all methods.
 
   --python PATH                    Python 3.11+ executable (default python)
   --run-name NAME                  Fresh name (default overnight_1070_arch_3090_r1)
@@ -61,11 +63,15 @@ No current K24/K48 or offline-teacher model code is used.
   --train-size N --val-size N      Synthetic training/validation (1500/500)
   --batch-size N --num-workers N   Default 32/0
   --mse-tolerance X                Shared MSE threshold, not RMS (5e-5)
+  --candidate-knots N              Shared INTERNAL knot cap for network + baselines
+                                  (legacy default 64; use 32 for the new experiment)
   --init-checkpoint PATH           Historical Proposal warm-start checkpoint
   --warm-start-checkpoint PATH     Copy ALL compatible overnight model weights
                                   into a NEW experiment (not optimizer resume)
+  --resize-candidate-warm-start    Explicit smaller-capacity migration; resample only
+                                  candidate interval queries, then retrain (not resume)
   --no-init-checkpoint             Explicit from-scratch ablation (not original run)
-  --checkpoint PATH               Skip training and evaluate existing Kc64 weights
+  --checkpoint PATH               Skip training; checkpoint capacity must match N
   --resume-run                     Resume same run; skip training if epochs completed
   --data-root PATH                 Complete data tree (default repository data/)
   --manifest NAME=PATH             Add an independent evaluation-only source;
@@ -109,6 +115,8 @@ while (($#)); do
     --batch-size) need_value "$@"; BATCH_SIZE="$2"; shift 2 ;;
     --num-workers) need_value "$@"; NUM_WORKERS="$2"; shift 2 ;;
     --mse-tolerance) need_value "$@"; MSE_TOLERANCE="$2"; shift 2 ;;
+    --candidate-knots) need_value "$@"; CANDIDATE_KNOTS="$2"; shift 2 ;;
+    --resize-candidate-warm-start) RESIZE_CANDIDATE_WARM_START=1; shift ;;
     --init-checkpoint) need_value "$@"; INIT_CHECKPOINT="$2"; INIT_SPECIFIED=1; shift 2 ;;
     --no-init-checkpoint) INIT_CHECKPOINT=""; INIT_SPECIFIED=1; shift ;;
     --warm-start-checkpoint) need_value "$@"; WARM_START_CHECKPOINT="$2"; shift 2 ;;
@@ -130,6 +138,11 @@ while (($#)); do
   esac
 done
 ((ENHANCED_SELECTION + RELIABLE_SELECTION + COMPACT_SELECTION + STABLE_SELECTION <= 1)) || die "choose only one of --enhanced-selection, --reliable-selection, --compact-selection and --stable-selection"
+[[ "$CANDIDATE_KNOTS" =~ ^[1-9][0-9]*$ ]] || die "candidate-knots must be a positive integer"
+((CANDIDATE_KNOTS >= 24 && CANDIDATE_KNOTS <= 188)) || die "candidate-knots must be 24..188 for source K4..24 and 192 input points"
+if ((RESIZE_CANDIDATE_WARM_START)); then
+  [[ -n "$WARM_START_CHECKPOINT" && -z "$CHECKPOINT" && "$RESUME" == 0 ]] || die "--resize-candidate-warm-start requires a new --warm-start-checkpoint run, not evaluation or resume"
+fi
 SAFETY_ARGS=(--one-shot-safety-sigma 0.2 --safety-anneal-epochs 8)
 RESAMPLE_ARGS=(--no-resample-train-each-epoch)
 if ((COMPACT_SELECTION || STABLE_SELECTION)); then
@@ -290,7 +303,8 @@ if ((DRY_RUN == 0)); then
   command -v "$PYTHON_BIN" >/dev/null || die "Python executable not found: $PYTHON_BIN"
   mkdir -p -- "$LOG_DIR" "$OUTPUT_ROOT/checkpoints"
 fi
-printf 'Historical overnight: online Teacher; Kc=64; source K=4..24; MSE=%s.\n' "$MSE_TOLERANCE"
+printf 'Historical overnight: online Teacher; Kc=%s internal (full cubic vector <= %s); source K=4..24; MSE=%s.\n' "$CANDIDATE_KNOTS" "$((CANDIDATE_KNOTS+8))" "$MSE_TOLERANCE"
+printf 'All six methods use the same internal-knot cap. Pointwise maximum squared error is reported separately; pass remains an MSE test.\n'
 if [[ "$CHECKPOINT" != "$TRAIN_OUTPUT" ]]; then
   printf 'Evaluation-only: using existing checkpoint %s; no training or new model selection.\n' "$CHECKPOINT"
 else
@@ -348,7 +362,8 @@ if ((DRY_RUN == 0)); then
   done
 fi
 STAMP="$(date -u +%Y%m%d_%H%M%S)_$$"
-PREFLIGHT_ARGS=(--data-root "$DATA_ROOT" --device "$DEVICE" --mse-tolerance "$MSE_TOLERANCE" "${EXTRA_MANIFEST_ARGS[@]}")
+PREFLIGHT_ARGS=(--data-root "$DATA_ROOT" --device "$DEVICE" --mse-tolerance "$MSE_TOLERANCE" --candidate-knots "$CANDIDATE_KNOTS" "${EXTRA_MANIFEST_ARGS[@]}")
+if ((RESIZE_CANDIDATE_WARM_START)); then PREFLIGHT_ARGS+=(--resize-candidate-warm-start); fi
 if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION)); then PREFLIGHT_ARGS+=(--validate-real-splits); fi
 if [[ "$CHECKPOINT" != "$TRAIN_OUTPUT" ]]; then
   PREFLIGHT_ARGS+=(--checkpoint "$CHECKPOINT")
@@ -365,7 +380,7 @@ run_logged check_data_and_provenance "$PYTHON_BIN" scripts/overnight_linux_prefl
 if [[ "$CHECKPOINT" == "$TRAIN_OUTPUT" ]]; then
   TRAIN_ARGS=(scripts/train_v16.py --epochs "$EPOCHS" --proposal-epochs "$PROPOSAL_EPOCHS"
     --train-size "$TRAIN_SIZE" --val-size "$VAL_SIZE" --batch-size "$BATCH_SIZE"
-    --num-points 192 --min-control-points 8 --max-control-points 28 --candidate-knots 64
+    --num-points 192 --min-control-points 8 --max-control-points 28 --candidate-knots "$CANDIDATE_KNOTS"
     --mse-tolerance "$MSE_TOLERANCE" --real-fraction 0 --proposal-pass-target 0.90
     --deployment-pass-target 0.90 "${LEARNING_ARGS[@]}"
     "${SAFETY_ARGS[@]}"
@@ -395,6 +410,7 @@ if [[ "$CHECKPOINT" == "$TRAIN_OUTPUT" ]]; then
   else
     if [[ -n "$INIT_CHECKPOINT" ]]; then TRAIN_ARGS+=(--init-checkpoint "$INIT_CHECKPOINT"); fi
     if [[ -n "$WARM_START_CHECKPOINT" ]]; then TRAIN_ARGS+=(--warm-start-checkpoint "$WARM_START_CHECKPOINT"); fi
+    if ((RESIZE_CANDIDATE_WARM_START)); then TRAIN_ARGS+=(--resize-candidate-warm-start); fi
     run_logged train_fresh "$PYTHON_BIN" "${TRAIN_ARGS[@]}"
   fi
 fi
@@ -409,7 +425,7 @@ else
 fi
 MANIFEST_ARGS=(--manifest "UJI=$UJI" --manifest "NaturalEarth=$NATURAL" --manifest "USGS=$USGS"
   --manifest "IndustrialOffset=$INDUSTRIAL" "${EXTRA_MANIFEST_ARGS[@]}")
-BASELINE_ARGS=(--max-internal-knots 64 --paper-initial-knots 64 --liang-dense-knots 64
+BASELINE_ARGS=(--max-internal-knots "$CANDIDATE_KNOTS" --paper-initial-knots "$CANDIDATE_KNOTS" --liang-dense-knots "$CANDIDATE_KNOTS"
   --gradient-steps 12 --paper-admm-iterations "$KANG_ITERATIONS" --paper-lambda-bisections 8
   --paper-relocation-iterations 8 --liang-feature-samples 1025 --dung-scan-intervals 10
   --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations "$LUO_ITERATIONS")

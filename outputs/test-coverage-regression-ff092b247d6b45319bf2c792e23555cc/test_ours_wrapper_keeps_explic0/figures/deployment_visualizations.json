@@ -1,0 +1,658 @@
+{
+  "comparison_provenance": {
+    "checkpoint_sha256": "d7188ada7e9016096bd90af501e653f571ed5166e48625d836c2c7b60024f736",
+    "published_baseline_protocol": {
+      "feasibility_safeguard_enabled": true,
+      "feasibility_safeguard_version": "bounded_common_mse_v1",
+      "methods": [
+        "dung_direct_knot_2017_adaptation",
+        "kang_sparse_2015_adaptation",
+        "luo_linf_de_2022_adaptation"
+      ],
+      "label": "threshold-safe adaptation",
+      "native_definition": "corrected repository adaptation before the optional common-MSE safeguard; not an exact paper reproduction",
+      "repair": "only when native common refit misses tolerance; bounded residual-guided augmentation and uniform-capacity fallback; preserve best fit",
+      "capacity": "Dung: max_internal_knots; Kang/Luo: paper_initial_knots; neither cap is exceeded",
+      "timing": "all native algorithm work and safeguard refits included in complete time; Ours network-only remains separate",
+      "kang_long_cluster_correction_always_enabled": true,
+      "evaluation_code_sha256": {
+        "src\\spline_fitting\\evaluation\\__init__.py": "beffd07d931b4316633c84ba75964d22db0b092d2d3968184ee40cb74d18a8b5",
+        "src\\spline_fitting\\evaluation\\bspline_inference.py": "fa543e6337e16148105d62518016ac8b35ebedab3d368ee2b325b9007d820629",
+        "src\\spline_fitting\\evaluation\\certified_real_world.py": "741b836240502337036c6a51fcc689be98415896f529ca493515bee92041ddeb",
+        "src\\spline_fitting\\evaluation\\dung_direct_knot.py": "a99f3300f44518d16d3ccee24201f479e962e3e48d9efdc072fa64bb6d1703de",
+        "src\\spline_fitting\\evaluation\\feature_cdf_knot_placement.py": "dab111dc8d56d5aa64170588805a2fcdd3832e8ea2734b826666f2b8b990c6a9",
+        "src\\spline_fitting\\evaluation\\gradient_knot_pruning.py": "ed174bc2014a3cb0ad180e6e98c42d6f7283b4ed6bbe26b34bb693d8b4a8665f",
+        "src\\spline_fitting\\evaluation\\hybrid_knot_search.py": "09f673fb727b9f22ea3f662eff7a368d29b9780f12eec0c15198dd71ff0566ae",
+        "src\\spline_fitting\\evaluation\\knot_diagnostics.py": "c34b9f323cf708c2a1732982778053b2e885b7de8382df25d81ed9fb5bfb4e81",
+        "src\\spline_fitting\\evaluation\\liang_feature_iki.py": "f51209e6f0a419be1b9a5ba30d1539c7481470cf9498b8eb4a3066291c4880f9",
+        "src\\spline_fitting\\evaluation\\luo_linf_de.py": "9fec6149a2b36ad52c0d7aae9ff11b40c2275e9c9e3be1f52832e9126437edc3",
+        "src\\spline_fitting\\evaluation\\minimal_knot_pruning.py": "c6cca0c4fc3dc7222a1d0bb88c63ddf8f72686e9ca31f276f2832ed4c0dd1b62",
+        "src\\spline_fitting\\evaluation\\park_dominant_point.py": "a2c638bd548ca2560a460b2f74946f32639b1cb0435b74476454c26be9bd2f5c",
+        "src\\spline_fitting\\evaluation\\published_baselines.py": "cb37a544c6d46ce81949e4a5538cf50e49293494bffdb3c9836329aec27d26e2",
+        "src\\spline_fitting\\evaluation\\sparse_knot_paper.py": "e26b1acc357c3238178bb10946f9f2a9d0f64714993a670bc4c7dc86abd1de4b",
+        "src\\spline_fitting\\evaluation\\timing.py": "60debbfed834859a6f3957e2660094f63c9df2268187c2901f9864c7321daef0",
+        "src\\spline_fitting\\evaluation\\verified_knot_repair.py": "bcf5848cd0e602aa3ca51ad5eb71dc3fb6a3a87360b2b3ca3268b8b5b0882c86"
+      }
+    },
+    "code_sha256": {
+      "scripts\\benchmark_v15_datasets.py": "11dc9ff1e4781c23061c74040acb2df122fde8304af8af72ea72ad52048a7420",
+      "scripts\\overnight_datasets.py": "5b77ca8f3f83abeaadd6debcddf9867320eb4cfe5e281f029711ec0eedc53552",
+      "scripts\\visualize_v16_real_deployments.py": "e08a9064330c20ef5067db02f2911fc5f3317592a13f4df1f72847c464b88eea",
+      "src\\spline_fitting\\__init__.py": "422ca590afe6efa062aadcbd08b725a476c24efb859b62c7c560158c657d4271",
+      "src\\spline_fitting\\checkpointing.py": "dc08f278f2e25ed3e344f7b9142f7a4bb6fa9228e7f3301a7f17aaec39d96b15",
+      "src\\spline_fitting\\data\\__init__.py": "ab02496773cd0ce4121c9053c59879090b9b0157906aad3dc6321a81e35c01d3",
+      "src\\spline_fitting\\data\\dataset.py": "90cfc8a72a906be7932e943620e0fe153ba179d2b86550d16b87f2235a096f52",
+      "src\\spline_fitting\\data\\geospatial_curves.py": "c65155c909b0cbbb556fc69b5b6693cf6609e2a18ad78ed2627fbb351826a82e",
+      "src\\spline_fitting\\data\\industrial_offsets.py": "3f37ca519166aebbe8c63cb92e6a62d3a00615a7f3776346ee65f034a0ca29aa",
+      "src\\spline_fitting\\data\\point_cloud_io.py": "fa5d2b6bdbcb8102892cffc7033c3dfc94a06941a2e0cac035b2d03b135f6761",
+      "src\\spline_fitting\\data\\real_world.py": "1080b606749e80244dde06e5bcaba1bb75de15a08431e00f3755efc04c6b6b78",
+      "src\\spline_fitting\\data\\synthetic.py": "d75b0a77cba77c0eb9c4f171657653c0189301eb75130edbb9f771f5bbd263be",
+      "src\\spline_fitting\\data\\uji_pen.py": "9eacbbb52dbd37aa6eac711349e1dd3dc7927a7feab6472e3f4622a51edabce8",
+      "src\\spline_fitting\\data\\v16_mixed.py": "dccb499e66f79f4adde510bcbcd0e8d375a19639b3784fee72d3496f0c5b696c",
+      "src\\spline_fitting\\evaluation\\__init__.py": "beffd07d931b4316633c84ba75964d22db0b092d2d3968184ee40cb74d18a8b5",
+      "src\\spline_fitting\\evaluation\\bspline_inference.py": "fa543e6337e16148105d62518016ac8b35ebedab3d368ee2b325b9007d820629",
+      "src\\spline_fitting\\evaluation\\certified_real_world.py": "741b836240502337036c6a51fcc689be98415896f529ca493515bee92041ddeb",
+      "src\\spline_fitting\\evaluation\\dung_direct_knot.py": "a99f3300f44518d16d3ccee24201f479e962e3e48d9efdc072fa64bb6d1703de",
+      "src\\spline_fitting\\evaluation\\feature_cdf_knot_placement.py": "dab111dc8d56d5aa64170588805a2fcdd3832e8ea2734b826666f2b8b990c6a9",
+      "src\\spline_fitting\\evaluation\\gradient_knot_pruning.py": "ed174bc2014a3cb0ad180e6e98c42d6f7283b4ed6bbe26b34bb693d8b4a8665f",
+      "src\\spline_fitting\\evaluation\\hybrid_knot_search.py": "09f673fb727b9f22ea3f662eff7a368d29b9780f12eec0c15198dd71ff0566ae",
+      "src\\spline_fitting\\evaluation\\knot_diagnostics.py": "c34b9f323cf708c2a1732982778053b2e885b7de8382df25d81ed9fb5bfb4e81",
+      "src\\spline_fitting\\evaluation\\liang_feature_iki.py": "f51209e6f0a419be1b9a5ba30d1539c7481470cf9498b8eb4a3066291c4880f9",
+      "src\\spline_fitting\\evaluation\\luo_linf_de.py": "9fec6149a2b36ad52c0d7aae9ff11b40c2275e9c9e3be1f52832e9126437edc3",
+      "src\\spline_fitting\\evaluation\\minimal_knot_pruning.py": "c6cca0c4fc3dc7222a1d0bb88c63ddf8f72686e9ca31f276f2832ed4c0dd1b62",
+      "src\\spline_fitting\\evaluation\\park_dominant_point.py": "a2c638bd548ca2560a460b2f74946f32639b1cb0435b74476454c26be9bd2f5c",
+      "src\\spline_fitting\\evaluation\\published_baselines.py": "cb37a544c6d46ce81949e4a5538cf50e49293494bffdb3c9836329aec27d26e2",
+      "src\\spline_fitting\\evaluation\\sparse_knot_paper.py": "e26b1acc357c3238178bb10946f9f2a9d0f64714993a670bc4c7dc86abd1de4b",
+      "src\\spline_fitting\\evaluation\\timing.py": "60debbfed834859a6f3957e2660094f63c9df2268187c2901f9864c7321daef0",
+      "src\\spline_fitting\\evaluation\\verified_knot_repair.py": "bcf5848cd0e602aa3ca51ad5eb71dc3fb6a3a87360b2b3ca3268b8b5b0882c86",
+      "src\\spline_fitting\\losses\\__init__.py": "b27cdfa90c5e2f521c54845233418ca985497cb0e247f46a5fcf9cab99f6f14c",
+      "src\\spline_fitting\\losses\\candidate_pruning_loss.py": "8905986a1bb4bbf167d94a9c7dae398059520fcca97147e47352a944ce853b19",
+      "src\\spline_fitting\\losses\\deployment_bspline_loss.py": "298ae11343b673d614523e643fd46de9d30a7e8221fdda5f9b11b6b7e0c06446",
+      "src\\spline_fitting\\losses\\parameter_feedback_loss.py": "1b672a25b252e6b2e3e652a5e317cba5e83c2cc6d40bf6deb889ea81de409fa0",
+      "src\\spline_fitting\\losses\\total_loss.py": "549ba7dcb46f3756262fed8a3e5eb0f64d961c0cd0a2a3775589b16d9541c4e4",
+      "src\\spline_fitting\\losses\\v16_subset_loss.py": "c8e06bcaf6985479de73b97650b4a27f9fc5488f32186046d8913f32fbcba1ad",
+      "src\\spline_fitting\\models\\__init__.py": "e203ebb383ef2b5aec10ce4c26251b0994b43ba969fdb5650efe0385a13fe4f8",
+      "src\\spline_fitting\\models\\activity_head.py": "4b4573a452f92d4ddba17ff23a18857ba99d323397b8c81be3a47ee2b1754bf6",
+      "src\\spline_fitting\\models\\candidate_knot_head.py": "01baeb3814125daebb7139355898eee7bbc98bad757659d8183d518abf25bb6d",
+      "src\\spline_fitting\\models\\count_conditioned_knot_head.py": "47fb70b79d938d43fcec8e71dbefc0d431adcfbac1d6e7ad076d1d7bb30b7e58",
+      "src\\spline_fitting\\models\\count_head.py": "69e81b284e555e1909a0c70ad079c6e4952f053a52c6542fe7bf370e010ae8e0",
+      "src\\spline_fitting\\models\\dynamic_knot_decoder.py": "3b71ad34b2d160f548781ac650bba2e4b934772c97f96d23357b8c61dd314d37",
+      "src\\spline_fitting\\models\\geometry_encoder.py": "ec28fdd23c3e08f16c0f6848386cbe382eebdda5d08dac11ae8c1a649b2f3bed",
+      "src\\spline_fitting\\models\\hard_concrete.py": "0c42887c4d87101faed959d8b6a2e131fb8e27da4624e3ffcf0febd869550edd",
+      "src\\spline_fitting\\models\\interactive_pruning_head.py": "180a5a155f7236e0e6d33b0ce28f3f1c00002b8d3695cbea5712125fa4c8f884",
+      "src\\spline_fitting\\models\\interactive_structure_head.py": "48147c0a8cc18b98d5f7a12572cb36f9b23962f8461f911e3ae3870326904743",
+      "src\\spline_fitting\\models\\joint_parameter_structure_head.py": "fe654b4a30638da5787ffb6cf79ca63084896219369feb5efc872118383e67a5",
+      "src\\spline_fitting\\models\\knot_head.py": "25a2609ee138582f3846bad60ad41ac864cf4c231cc52ae8eef49df277c7bdd6",
+      "src\\spline_fitting\\models\\parameter_feedback_head.py": "c19f91d8a3092a3dd88bf8a05b1683af5b87fd2b92b5c2bbd8b7de433f2459a4",
+      "src\\spline_fitting\\models\\parameter_head.py": "c496fb6c48862017e5e1f56a1a2601c66b417772dd85684edabe10b974242a29",
+      "src\\spline_fitting\\models\\spline_network.py": "d215a3c78fb5b7a30d22c6ec91b66073d3af0e7271522e532c60320f68474b6c",
+      "src\\spline_fitting\\models\\v16_network.py": "cb48df3920a17d1cb882db15d899fd27dca9d2b9d71a5e2bd9cce5fefab6f92e",
+      "src\\spline_fitting\\spline\\__init__.py": "c7209c4a1f91268e396a91a0f5c080b6f381c24c8d8e44f21b69cc211e522fea",
+      "src\\spline_fitting\\spline\\bspline_deletion_teacher.py": "c21d6ada5d9a69a57cc960577738d7547494004c358c09f6e779dcf39ff98b41",
+      "src\\spline_fitting\\spline\\curve_evaluation.py": "a43ce46e5426445baf9b7adca2035e380e891c52c25acb8f7ccf96db1fc4ceec",
+      "src\\spline_fitting\\spline\\derivatives.py": "c1742c8b93eb7d809df5c48e23bbc5cb2900518dc76b4c5cdf3948de070e7094",
+      "src\\spline_fitting\\spline\\differentiable_solver.py": "f13810cec2535bd05e41ed44661377e2e0e02eea6e7d250eb9fb228c747803c4",
+      "src\\spline_fitting\\spline\\truncated_power_basis.py": "3cc0805dc0e85d5cdf7e8d7e835523df2c48a96095c9cbe0b2640094ebae2fb7",
+      "src\\spline_fitting\\training\\__init__.py": "5f739f9e8aeb78f30383d33c60b2f752ba9d42462a4f62e16d1ba964a98f977c",
+      "src\\spline_fitting\\training\\one_shot_teacher.py": "8d4797647a4856dcaa43359b57014bb0d637a781b17bbd95ec974fb1b249b046",
+      "src\\spline_fitting\\training\\trainer.py": "c96eaee75ed308ed22af24d10a498d7ea6c9e05ae736ba35a9b729f560ef37cb"
+    },
+    "configuration": {
+      "checkpoint": "E:\\SelfSurpervisedSplineFitting\\outputs\\test-coverage-regression-ff092b247d6b45319bf2c792e23555cc\\test_ours_wrapper_keeps_explic0\\test-fixture.pt",
+      "output_dir": "E:\\SelfSurpervisedSplineFitting\\outputs\\test-coverage-regression-ff092b247d6b45319bf2c792e23555cc\\test_ours_wrapper_keeps_explic0\\figures",
+      "manifest": [],
+      "data_root": null,
+      "real_samples_per_dataset": 2,
+      "selection_seed": 20260909,
+      "mse_tolerance": 2.5e-05,
+      "max_internal_knots": 16,
+      "gradient_steps": 12,
+      "paper_initial_knots": 16,
+      "paper_admm_iterations": 400,
+      "paper_lambda_bisections": 8,
+      "paper_relocation_iterations": 8,
+      "method_set": "published",
+      "published_feasibility_safeguard": true,
+      "force_diagnostic": true,
+      "park_shape_weight": 0.8,
+      "liang_dense_knots": null,
+      "liang_initial_knots": 4,
+      "liang_curvature_weight": 0.5,
+      "liang_feature_samples": 1025,
+      "dung_max_error": null,
+      "dung_scan_intervals": 10,
+      "dung_optimization_iterations": 10,
+      "luo_eta": 0.5,
+      "luo_de_population": 10,
+      "luo_de_iterations": 50,
+      "luo_seed": 2022,
+      "network_warmups": 1,
+      "network_repeats": 3,
+      "end_to_end_repeats": 1,
+      "torch_num_threads": 4,
+      "device": "cpu",
+      "dpi": 50,
+      "ours_only": true,
+      "allow_unqualified_diagnostic": false,
+      "overwrite": false,
+      "skip_synthetic": true,
+      "skip_real": false,
+      "seed": 0,
+      "scan_size": 1,
+      "min_knot_count": 0,
+      "max_knot_count": 0,
+      "samples_per_knot_count": 1
+    },
+    "dataset_provenance": [
+      {
+        "dataset": "TEST_FIXTURE",
+        "selected_count": 1
+      }
+    ],
+    "sample_content_sha256": [
+      "c1679a3b2be4e58eee4a67c89946ec606d1b8d8d02ffd625af3fa97ca2c73a6b"
+    ]
+  },
+  "comparison_fingerprint": "15fa3ce0d00274a954fb41adedb421b5e891af01084c64f1e822bd7867c43aa9",
+  "published_baseline_protocol": {
+    "feasibility_safeguard_enabled": true,
+    "feasibility_safeguard_version": "bounded_common_mse_v1",
+    "methods": [
+      "dung_direct_knot_2017_adaptation",
+      "kang_sparse_2015_adaptation",
+      "luo_linf_de_2022_adaptation"
+    ],
+    "label": "threshold-safe adaptation",
+    "native_definition": "corrected repository adaptation before the optional common-MSE safeguard; not an exact paper reproduction",
+    "repair": "only when native common refit misses tolerance; bounded residual-guided augmentation and uniform-capacity fallback; preserve best fit",
+    "capacity": "Dung: max_internal_knots; Kang/Luo: paper_initial_knots; neither cap is exceeded",
+    "timing": "all native algorithm work and safeguard refits included in complete time; Ours network-only remains separate",
+    "kang_long_cluster_correction_always_enabled": true,
+    "evaluation_code_sha256": {
+      "src\\spline_fitting\\evaluation\\__init__.py": "beffd07d931b4316633c84ba75964d22db0b092d2d3968184ee40cb74d18a8b5",
+      "src\\spline_fitting\\evaluation\\bspline_inference.py": "fa543e6337e16148105d62518016ac8b35ebedab3d368ee2b325b9007d820629",
+      "src\\spline_fitting\\evaluation\\certified_real_world.py": "741b836240502337036c6a51fcc689be98415896f529ca493515bee92041ddeb",
+      "src\\spline_fitting\\evaluation\\dung_direct_knot.py": "a99f3300f44518d16d3ccee24201f479e962e3e48d9efdc072fa64bb6d1703de",
+      "src\\spline_fitting\\evaluation\\feature_cdf_knot_placement.py": "dab111dc8d56d5aa64170588805a2fcdd3832e8ea2734b826666f2b8b990c6a9",
+      "src\\spline_fitting\\evaluation\\gradient_knot_pruning.py": "ed174bc2014a3cb0ad180e6e98c42d6f7283b4ed6bbe26b34bb693d8b4a8665f",
+      "src\\spline_fitting\\evaluation\\hybrid_knot_search.py": "09f673fb727b9f22ea3f662eff7a368d29b9780f12eec0c15198dd71ff0566ae",
+      "src\\spline_fitting\\evaluation\\knot_diagnostics.py": "c34b9f323cf708c2a1732982778053b2e885b7de8382df25d81ed9fb5bfb4e81",
+      "src\\spline_fitting\\evaluation\\liang_feature_iki.py": "f51209e6f0a419be1b9a5ba30d1539c7481470cf9498b8eb4a3066291c4880f9",
+      "src\\spline_fitting\\evaluation\\luo_linf_de.py": "9fec6149a2b36ad52c0d7aae9ff11b40c2275e9c9e3be1f52832e9126437edc3",
+      "src\\spline_fitting\\evaluation\\minimal_knot_pruning.py": "c6cca0c4fc3dc7222a1d0bb88c63ddf8f72686e9ca31f276f2832ed4c0dd1b62",
+      "src\\spline_fitting\\evaluation\\park_dominant_point.py": "a2c638bd548ca2560a460b2f74946f32639b1cb0435b74476454c26be9bd2f5c",
+      "src\\spline_fitting\\evaluation\\published_baselines.py": "cb37a544c6d46ce81949e4a5538cf50e49293494bffdb3c9836329aec27d26e2",
+      "src\\spline_fitting\\evaluation\\sparse_knot_paper.py": "e26b1acc357c3238178bb10946f9f2a9d0f64714993a670bc4c7dc86abd1de4b",
+      "src\\spline_fitting\\evaluation\\timing.py": "60debbfed834859a6f3957e2660094f63c9df2268187c2901f9864c7321daef0",
+      "src\\spline_fitting\\evaluation\\verified_knot_repair.py": "bcf5848cd0e602aa3ca51ad5eb71dc3fb6a3a87360b2b3ca3268b8b5b0882c86"
+    }
+  },
+  "checkpoint": "E:\\SelfSurpervisedSplineFitting\\outputs\\test-coverage-regression-ff092b247d6b45319bf2c792e23555cc\\test_ours_wrapper_keeps_explic0\\test-fixture.pt",
+  "objective_version": "candidate_selection_counterfactual_bspline_v16",
+  "checkpoint_epoch": 1,
+  "checkpoint_stage": "joint",
+  "checkpoint_quality": null,
+  "checkpoint_qualification": {
+    "formal_reporting_eligible": true,
+    "reasons": []
+  },
+  "diagnostic_not_final": true,
+  "mse_tolerance": 2.5e-05,
+  "mse_definition": "mean(sum((prediction-observation)^2, coordinates)); no square root",
+  "visualization_mode": "ours_only",
+  "overview_image": "E:\\SelfSurpervisedSplineFitting\\outputs\\test-coverage-regression-ff092b247d6b45319bf2c792e23555cc\\test_ours_wrapper_keeps_explic0\\figures\\ours_cases_overview.png",
+  "method_order": [
+    "ours"
+  ],
+  "knot_capacities": {
+    "network_candidates": 16,
+    "greedy_initial_and_yeh_max": 16,
+    "kang_dense_initial": 16,
+    "liang_dense_initial": 16,
+    "equal_initial_capacity": true,
+    "degree": 3,
+    "clamped_endpoint_entries": 8,
+    "network_full_knot_vector_size_at_all_keep": 24,
+    "numerical_full_knot_vector_cap": 24
+  },
+  "configuration": {
+    "checkpoint": "E:\\SelfSurpervisedSplineFitting\\outputs\\test-coverage-regression-ff092b247d6b45319bf2c792e23555cc\\test_ours_wrapper_keeps_explic0\\test-fixture.pt",
+    "output_dir": "E:\\SelfSurpervisedSplineFitting\\outputs\\test-coverage-regression-ff092b247d6b45319bf2c792e23555cc\\test_ours_wrapper_keeps_explic0\\figures",
+    "manifest": [],
+    "data_root": null,
+    "real_samples_per_dataset": 2,
+    "selection_seed": 20260909,
+    "mse_tolerance": 2.5e-05,
+    "max_internal_knots": 16,
+    "gradient_steps": 12,
+    "paper_initial_knots": 16,
+    "paper_admm_iterations": 400,
+    "paper_lambda_bisections": 8,
+    "paper_relocation_iterations": 8,
+    "method_set": "published",
+    "published_feasibility_safeguard": true,
+    "force_diagnostic": true,
+    "park_shape_weight": 0.8,
+    "liang_dense_knots": null,
+    "liang_initial_knots": 4,
+    "liang_curvature_weight": 0.5,
+    "liang_feature_samples": 1025,
+    "dung_max_error": null,
+    "dung_scan_intervals": 10,
+    "dung_optimization_iterations": 10,
+    "luo_eta": 0.5,
+    "luo_de_population": 10,
+    "luo_de_iterations": 50,
+    "luo_seed": 2022,
+    "network_warmups": 1,
+    "network_repeats": 3,
+    "end_to_end_repeats": 1,
+    "torch_num_threads": 4,
+    "device": "cpu",
+    "dpi": 50,
+    "ours_only": true,
+    "allow_unqualified_diagnostic": false,
+    "overwrite": false,
+    "skip_synthetic": true,
+    "skip_real": false,
+    "seed": 0,
+    "scan_size": 1,
+    "min_knot_count": 0,
+    "max_knot_count": 0,
+    "samples_per_knot_count": 1
+  },
+  "hardware": {
+    "requested_device": "cpu",
+    "resolved_device": "cpu",
+    "gpu": null,
+    "processor": "Intel64 Family 6 Model 94 Stepping 3, GenuineIntel",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "python": "3.13.9",
+    "torch": "2.12.0+cu126",
+    "torch_threads": 4
+  },
+  "dataset_provenance": [
+    {
+      "dataset": "TEST_FIXTURE",
+      "selected_count": 1
+    }
+  ],
+  "timing_note": "Ours reports device-resident network median and normalized-input end-to-end median separately; numerical baselines report their complete algorithm time including every safeguard refit. Plotting and metrics are excluded.",
+  "native_baseline_summary": [],
+  "records": [
+    {
+      "dataset": "TEST_FIXTURE",
+      "dataset_label": "TEST_FIXTURE",
+      "source_kind": "external_geometry_unspecified",
+      "source_note": "",
+      "sample_id": "curve-1",
+      "group_id": "test-group",
+      "image": "E:\\SelfSurpervisedSplineFitting\\outputs\\test-coverage-regression-ff092b247d6b45319bf2c792e23555cc\\test_ours_wrapper_keeps_explic0\\figures\\ours__TEST_FIXTURE__curve-1.png",
+      "network_input_points_normalized": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.032258063554763794,
+          0.03623373433947563
+        ],
+        [
+          0.06451612710952759,
+          0.07098405063152313
+        ],
+        [
+          0.09677419066429138,
+          0.10282827913761139
+        ],
+        [
+          0.12903225421905518,
+          0.13046270608901978
+        ],
+        [
+          0.16129031777381897,
+          0.1527559608221054
+        ],
+        [
+          0.19354838132858276,
+          0.1687953770160675
+        ],
+        [
+          0.22580644488334656,
+          0.17792430520057678
+        ],
+        [
+          0.25806450843811035,
+          0.17976896464824677
+        ],
+        [
+          0.29032257199287415,
+          0.17425388097763062
+        ],
+        [
+          0.32258063554763794,
+          0.16160482168197632
+        ],
+        [
+          0.35483869910240173,
+          0.14233963191509247
+        ],
+        [
+          0.3870967626571655,
+          0.11724704504013062
+        ],
+        [
+          0.4193548262119293,
+          0.08735435456037521
+        ],
+        [
+          0.4516128897666931,
+          0.053885363042354584
+        ],
+        [
+          0.4838709533214569,
+          0.01821029745042324
+        ],
+        [
+          0.5161290168762207,
+          -0.01821029745042324
+        ],
+        [
+          0.5483871102333069,
+          -0.053885363042354584
+        ],
+        [
+          0.5806451439857483,
+          -0.08735435456037521
+        ],
+        [
+          0.6129032373428345,
+          -0.11724704504013062
+        ],
+        [
+          0.6451612710952759,
+          -0.14233963191509247
+        ],
+        [
+          0.6774193644523621,
+          -0.16160482168197632
+        ],
+        [
+          0.7096773982048035,
+          -0.17425388097763062
+        ],
+        [
+          0.7419354915618896,
+          -0.17976896464824677
+        ],
+        [
+          0.774193525314331,
+          -0.17792430520057678
+        ],
+        [
+          0.8064516186714172,
+          -0.1687953770160675
+        ],
+        [
+          0.8387096524238586,
+          -0.1527559608221054
+        ],
+        [
+          0.8709677457809448,
+          -0.13046270608901978
+        ],
+        [
+          0.9032257795333862,
+          -0.10282827913761139
+        ],
+        [
+          0.9354838728904724,
+          -0.07098405063152313
+        ],
+        [
+          0.9677419066429138,
+          -0.03623373433947563
+        ],
+        [
+          1.0,
+          -4.408728404608808e-17
+        ]
+      ],
+      "original_reference_points_normalized": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.03225806451612903,
+          0.03623373361595881
+        ],
+        [
+          0.06451612903225806,
+          0.07098405392039733
+        ],
+        [
+          0.0967741935483871,
+          0.10282827871706261
+        ],
+        [
+          0.12903225806451613,
+          0.13046270170124158
+        ],
+        [
+          0.16129032258064516,
+          0.15275596634905517
+        ],
+        [
+          0.1935483870967742,
+          0.16879538378647446
+        ],
+        [
+          0.22580645161290322,
+          0.17792429837906004
+        ],
+        [
+          0.25806451612903225,
+          0.1797689712907895
+        ],
+        [
+          0.29032258064516125,
+          0.1742538813959168
+        ],
+        [
+          0.3225806451612903,
+          0.16160481712273347
+        ],
+        [
+          0.3548387096774194,
+          0.14233963264878574
+        ],
+        [
+          0.3870967741935484,
+          0.11724704689
+        ],
+        [
+          0.4193548387096774,
+          0.08735435325559465
+        ],
+        [
+          0.45161290322580644,
+          0.053885362135204444
+        ],
+        [
+          0.4838709677419355,
+          0.01821029795773781
+        ],
+        [
+          0.5161290322580645,
+          -0.018210297957737768
+        ],
+        [
+          0.5483870967741935,
+          -0.053885362135204326
+        ],
+        [
+          0.5806451612903226,
+          -0.08735435325559461
+        ],
+        [
+          0.6129032258064516,
+          -0.11724704688999996
+        ],
+        [
+          0.6451612903225806,
+          -0.14233963264878574
+        ],
+        [
+          0.6774193548387097,
+          -0.1616048171227335
+        ],
+        [
+          0.7096774193548387,
+          -0.17425388139591677
+        ],
+        [
+          0.7419354838709677,
+          -0.1797689712907895
+        ],
+        [
+          0.7741935483870968,
+          -0.17792429837906004
+        ],
+        [
+          0.8064516129032258,
+          -0.16879538378647452
+        ],
+        [
+          0.8387096774193549,
+          -0.15275596634905517
+        ],
+        [
+          0.8709677419354839,
+          -0.1304627017012416
+        ],
+        [
+          0.9032258064516129,
+          -0.10282827871706263
+        ],
+        [
+          0.935483870967742,
+          -0.07098405392039736
+        ],
+        [
+          0.967741935483871,
+          -0.03623373361595885
+        ],
+        [
+          1.0,
+          -4.4087284769304716e-17
+        ]
+      ],
+      "methods": [
+        {
+          "method": "ours",
+          "label": "Ours v16",
+          "published_feasibility_safeguard": true,
+          "mse": 1.8120482119646766e-06,
+          "fit_pass": true,
+          "reference_mse": 1.8120482119646766e-06,
+          "reference_pass": true,
+          "final_k": 2,
+          "total_ms": 1.75,
+          "network_ms": 1.25,
+          "diagnostics": {
+            "test_fixture": true
+          },
+          "status": "ok",
+          "error": null,
+          "parameters": [
+            0.0,
+            0.03225806451612903,
+            0.06451612903225806,
+            0.0967741935483871,
+            0.12903225806451613,
+            0.16129032258064516,
+            0.1935483870967742,
+            0.22580645161290322,
+            0.25806451612903225,
+            0.29032258064516125,
+            0.3225806451612903,
+            0.3548387096774194,
+            0.3870967741935484,
+            0.4193548387096774,
+            0.45161290322580644,
+            0.4838709677419355,
+            0.5161290322580645,
+            0.5483870967741935,
+            0.5806451612903226,
+            0.6129032258064516,
+            0.6451612903225806,
+            0.6774193548387097,
+            0.7096774193548387,
+            0.7419354838709677,
+            0.7741935483870968,
+            0.8064516129032258,
+            0.8387096774193549,
+            0.8709677419354839,
+            0.9032258064516129,
+            0.935483870967742,
+            0.967741935483871,
+            1.0
+          ],
+          "internal_knots": [
+            0.3,
+            0.68
+          ],
+          "internal_knot_curve_points_normalized": [
+            [
+              0.3000000000000001,
+              0.1729405140338845
+            ],
+            [
+              0.6799999999999999,
+              -0.16337963985559983
+            ]
+          ],
+          "full_knot_vector": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.3,
+            0.68,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "control_points_normalized": [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0999999999999996,
+              0.12059730956970052
+            ],
+            [
+              0.3266666666666672,
+              0.3159372934026834
+            ],
+            [
+              0.6599999999999995,
+              -0.30358259409159566
+            ],
+            [
+              0.8933333333333333,
+              -0.13535363259541805
+            ],
+            [
+              1.0,
+              -4.4087284769304716e-17
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}

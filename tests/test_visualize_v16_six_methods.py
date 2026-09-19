@@ -94,7 +94,7 @@ def harness(tmp_path, monkeypatch, cpu_case):
 
     monkeypatch.setattr(Figure, "savefig", capture)
     return SimpleNamespace(
-        args=args, model=model, case=case, cases=cases, fit=fit, parameters=parameters,
+        args=args, model=model, config=config, case=case, cases=cases, fit=fit, parameters=parameters,
         calls=calls, figures=figures, numerical=numerical, ours=ours,
         qualification_calls=qualification_calls,
     )
@@ -148,6 +148,14 @@ def test_selected_case_methods_render_complete_grid_and_record_each_fit(harness,
     assert [result["method"] for result in record["methods"]] == list(expected)
     assert all(result["status"] == "ok" for result in record["methods"])
     assert all(result["final_k"] == 2 for result in record["methods"])
+    predicted = harness.fit.evaluate(harness.parameters)
+    residual = (predicted - harness.case["points"].double()).square().sum(dim=-1)
+    reference_residual = (predicted - harness.case["reference"]).square().sum(dim=-1)
+    assert all(result["max_squared_error"] == pytest.approx(float(residual.max()))
+               for result in record["methods"])
+    assert all(result["reference_max_squared_error"] == pytest.approx(float(reference_residual.max()))
+               for result in record["methods"])
+    assert "not maximum curve MSE" in report["max_squared_error_definition"]
     assert_png(record["image"])
     assert len(harness.figures) == 1
     figure = harness.figures[0]
@@ -156,6 +164,8 @@ def test_selected_case_methods_render_complete_grid_and_record_each_fit(harness,
         grid = axis.get_subplotspec().get_gridspec()
         assert (grid.nrows, grid.ncols) == expected_grid
         assert entry.PLOT_LABELS[method] in axis.get_title()
+        assert "max SE=" in axis.get_title()
+        assert "ref max SE=" in axis.get_title()
         assert any(line.get_label() == "Final B-spline" for line in axis.lines)
     assert any("DIAGNOSTIC NOT FINAL" in text.get_text() for text in figure.texts)
     saved = json.loads((harness.args.output_dir / "deployment_visualizations.json").read_text(encoding="utf-8"))
@@ -183,6 +193,8 @@ def test_failed_method_is_preserved_in_six_panel_png_and_json(harness, monkeypat
     assert failed["fit_pass"] is False
     assert failed["reference_pass"] is False
     assert failed["mse"] is None and failed["final_k"] is None
+    assert failed["max_squared_error"] is None
+    assert failed["reference_max_squared_error"] is None
     assert failed["control_points_normalized"] is None
     assert "deliberate test-fixture" in failed["error"]
     assert sum(result["status"] == "ok" for result in record["methods"]) == 5
@@ -247,6 +259,72 @@ def test_ours_wrapper_keeps_explicit_options_and_ours_only_wins_over_published(h
     assert_png(report["records"][0]["image"])
     assert_png(report["overview_image"])
     assert len(harness.figures[0].axes) == 2  # geometry plus internal-knot strip
+    assert "max SE=" in harness.figures[0].axes[0].get_title()
+    assert "max SE=" in harness.figures[-1].axes[0].get_title()
+
+
+def test_old_case_missing_maximum_is_na_not_reconstructed_from_mse():
+    old = {"mse": 1e-6, "reference_mse": 2e-6}
+    assert entry._peak_error_text(old) == "max SE=N/A"
+    assert entry._peak_error_text(old, reference=True) == "ref max SE=N/A"
+    assert entry._peak_error_text({"max_squared_error": 0.0}) == "max SE=0.00e+00"
+
+
+def test_six_method_case_rejects_64_network_against_32_baselines(harness):
+    harness.config["max_internal_knots"] = 64
+    harness.args.method_set = "published"
+    harness.args.max_internal_knots = 32
+    harness.args.paper_initial_knots = 32
+    harness.args.liang_dense_knots = 32
+    with pytest.raises(ValueError, match="same internal candidate cap"):
+        entry.run(harness.args)
+    assert not harness.calls
+    assert not harness.args.output_dir.exists()
+
+
+def test_six_method_case_all_32_capacity_is_accepted(harness):
+    harness.config["max_internal_knots"] = 32
+    harness.args.method_set = "published"
+    harness.args.force_diagnostic = False
+    report = entry.run(harness.args)
+    assert report["knot_capacities"]["equal_initial_capacity"]
+    assert report["knot_capacities"]["network_candidates"] == 32
+    assert report["knot_capacities"]["numerical_full_knot_vector_cap"] == 40
+    assert not report["unequal_capacity_ablation"]
+    assert report["capacity_comparison_note"] is None
+    assert not report["diagnostic_not_final"]
+
+
+def test_unequal_capacity_opt_in_is_visibly_diagnostic(harness):
+    harness.config["max_internal_knots"] = 64
+    harness.args.method_set = "published"
+    harness.args.force_diagnostic = False
+    harness.args.max_internal_knots = 32
+    harness.args.paper_initial_knots = 32
+    harness.args.liang_dense_knots = 32
+    harness.args.allow_unequal_capacity = True
+    report = entry.run(harness.args)
+    assert not report["knot_capacities"]["equal_initial_capacity"]
+    assert report["unequal_capacity_ablation"]
+    assert report["diagnostic_not_final"]
+    assert "Ours Kc=64" in report["capacity_comparison_note"]
+    text = "\n".join(item.get_text() for figure in harness.figures for item in figure.texts)
+    assert "UNEQUAL-CAPACITY ABLATION" in text
+    assert "DIAGNOSTIC NOT FINAL" in text
+    assert "Ours Kc=64" in text and "numerical cap=32" in text
+
+
+def test_ours_only_ignores_unused_numerical_capacity(harness):
+    harness.config["max_internal_knots"] = 64
+    harness.args.ours_only = True
+    harness.args.force_diagnostic = False
+    harness.args.max_internal_knots = 32
+    harness.args.paper_initial_knots = 32
+    report = entry.run(harness.args)
+    assert not report["knot_capacities"]["equal_initial_capacity"]
+    assert not report["unequal_capacity_ablation"]
+    assert not report["diagnostic_not_final"]
+    assert report["method_order"] == ["ours"]
 
 
 def test_ours_only_failed_case_does_not_abort_later_case_or_overview(harness, monkeypatch):

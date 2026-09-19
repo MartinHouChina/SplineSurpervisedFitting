@@ -1,0 +1,1 @@
+{"sample_id": "held_out_curve", "source_dataset": "UJI", "group_id": "test_writer", "split": "test", "points_path": "../processed/uji_pen_v2/missing.npy", "num_points": 192, "point_dim": 2, "has_knot_labels": false, "metadata": {}}

@@ -1,0 +1,20 @@
+
+[check_data_and_provenance] /e/ProgramData/anaconda3/python.exe scripts/overnight_linux_preflight.py --data-root /e/SelfSurpervisedSplineFitting/data --device cpu --mse-tolerance 5e-5 --checkpoint /e/SelfSurpervisedSplineFitting/outputs/checkpoints/overnight_compact_3090_r1.pt --output /e/SelfSurpervisedSplineFitting/outputs/logs/overnight_all_sources_smoke_20260919_r2/preflight.json
+UJI: reading required manifest E:\SelfSurpervisedSplineFitting\data\splits\uji_pen_v2.jsonl
+UJI: checked 2000/18219 point-file paths
+UJI: checked 4000/18219 point-file paths
+UJI: checked 6000/18219 point-file paths
+UJI: checked 8000/18219 point-file paths
+UJI: checked 10000/18219 point-file paths
+UJI: checked 12000/18219 point-file paths
+UJI: checked 14000/18219 point-file paths
+UJI: checked 16000/18219 point-file paths
+UJI: checked 18000/18219 point-file paths
+UJI: 6093 held-out test curves; point paths checked
+NaturalEarth: reading required manifest E:\SelfSurpervisedSplineFitting\data\processed\natural_earth\v5.1.2_10m_coastline\manifest.jsonl
+NaturalEarth: checked 2000/3908 point-file paths
+NaturalEarth: 533 held-out test curves; point paths checked
+USGS: reading required manifest E:\SelfSurpervisedSplineFitting\data\processed\usgs_contours\large_scale\manifest.jsonl
+USGS: 201 held-out test curves; point paths checked
+IndustrialOffset: reading required manifest E:\SelfSurpervisedSplineFitting\data\processed\industrial_offsets\v1\manifest.jsonl
+IndustrialOffset: 67 held-out test curves; point paths checked

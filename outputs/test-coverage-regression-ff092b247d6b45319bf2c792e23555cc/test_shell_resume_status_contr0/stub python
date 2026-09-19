@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+case " $* " in
+  *' --resume-status '*) printf '%s\n' 'completed' ;;
+  *) : ;;
+esac

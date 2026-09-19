@@ -3,6 +3,8 @@ from __future__ import annotations
 # ruff: noqa: E402
 
 import importlib.util
+import csv
+import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -167,6 +169,195 @@ def test_reference_alignment_uses_original_resampling_grid():
     case = {"reference_grid": torch.tensor([0., .25, .5, .75, 1.], dtype=torch.float64),
             "reference": torch.tensor([[0.], [.1], [.2], [.6], [1.]], dtype=torch.float64)}
     assert benchmark.reference_mse(Fit(), parameters, case) == pytest.approx(0, abs=1e-30)
+
+
+def test_peak_error_is_squared_euclidean_and_uses_same_reference_mapping():
+    class Fit:
+        def evaluate(self, parameters):
+            return torch.stack((parameters, 2 * parameters), dim=-1)
+
+    parameters = torch.tensor([0., .2, 1.], dtype=torch.float64)
+    case = {
+        "points": torch.tensor([[0., 0.], [.5, .8], [1., 2.]], dtype=torch.float64),
+        "reference_grid": torch.tensor([0., .25, .5, .75, 1.], dtype=torch.float64),
+        "reference": torch.tensor([[0., 0.], [.1, .5], [.4, .4], [.6, 1.2], [1., 2.]], dtype=torch.float64),
+    }
+    metrics = benchmark.fit_error_metrics(Fit(), parameters, case)
+    # Sum coordinate squares first, then mean/max over points. No sqrt, no
+    # coordinate averaging, and no nearest-point or reparameterization search.
+    assert metrics["mse"] == pytest.approx(.25 / 3)
+    assert metrics["max_squared_error"] == pytest.approx(.25)
+    assert metrics["reference_mse"] == pytest.approx(.13 / 5)
+    assert metrics["reference_max_squared_error"] == pytest.approx(.09)
+    assert benchmark.reference_mse(Fit(), parameters, case) == metrics["reference_mse"]
+
+
+def test_peak_error_does_not_invent_synthetic_reference():
+    class Fit:
+        def evaluate(self, parameters):
+            return parameters[:, None]
+    params = torch.tensor([0., .5, 1.], dtype=torch.float64)
+    case = {"points": torch.tensor([[0.], [.75], [1.]], dtype=torch.float64), "reference": None}
+    result = benchmark.fit_error_metrics(Fit(), params, case)
+    assert result["max_squared_error"] == pytest.approx(.0625)
+    assert result["reference_mse"] is None
+    assert result["reference_max_squared_error"] is None
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf")])
+def test_peak_error_rejects_nonfinite_residuals(invalid):
+    class Fit:
+        def evaluate(self, parameters):
+            return torch.full((parameters.numel(), 2), invalid)
+    with pytest.raises(ValueError, match="non-finite fitted squared residuals"):
+        benchmark.fit_error_metrics(Fit(), torch.tensor([0., 1.]),
+                                    {"points": torch.zeros(2, 2), "reference": None})
+
+
+def test_measured_peak_and_mse_agree_with_actual_bspline_refit():
+    params = torch.linspace(0, 1, 21, dtype=torch.float64)
+    points = torch.stack((params, torch.sin(2 * torch.pi * params)), dim=-1)
+    fit = benchmark.refit_bspline_control_points(
+        params, points, torch.empty(0, dtype=torch.float64), degree=3,
+        smoothness_weight=0., control_ridge=0., interpolate_endpoints=True,
+    )
+    errors = benchmark.fit_error_metrics(fit, params, {"points": points, "reference": None})
+    assert errors["mse"] == pytest.approx(float(fit.fit_mse), rel=1e-12, abs=1e-15)
+    assert errors["max_squared_error"] > errors["mse"] > 0
+
+
+def _peak_row(**overrides):
+    return {
+        "dataset": "UJI", "method": "ours", "status": "ok", "has_reference": True,
+        "mse": 1e-6, "max_squared_error": 4e-6,
+        "reference_mse": 2e-6, "reference_max_squared_error": 8e-6,
+        "fit_pass": True, "reference_pass": True,
+        "final_k": 2, "total_ms": 3, "network_ms": 1,
+        **overrides,
+    }
+
+
+def test_peak_summary_distinguishes_max_residual_from_worst_curve_mse():
+    rows = [_peak_row(), _peak_row(mse=3e-6, max_squared_error=12e-6,
+                                 reference_mse=4e-6, reference_max_squared_error=24e-6)]
+    result = benchmark.summarize(rows)[0]
+    assert result["mse_max"] == 3e-6
+    assert result["max_squared_error_mean"] == pytest.approx(8e-6)
+    assert result["max_squared_error_p95"] == pytest.approx(11.6e-6)
+    assert result["max_squared_error_max"] == 12e-6
+    assert result["reference_mse_max"] == 4e-6
+    assert result["reference_max_squared_error_mean"] == pytest.approx(16e-6)
+    assert result["reference_max_squared_error_p95"] == pytest.approx(23.2e-6)
+    assert result["reference_max_squared_error_max"] == 24e-6
+    assert result["max_squared_error_valid_count"] == 2
+    assert result["max_squared_error_missing_count"] == 0
+
+
+def test_old_or_mixed_measurements_do_not_invent_or_understate_peak_errors():
+    legacy = _peak_row()
+    legacy.pop("max_squared_error")
+    legacy.pop("reference_max_squared_error")
+    for rows, valid in (([legacy], 0), ([legacy, _peak_row()], 1)):
+        result = benchmark.summarize(rows)[0]
+        for prefix in ("max_squared_error", "reference_max_squared_error"):
+            assert result[prefix + "_mean"] is None
+            assert result[prefix + "_p95"] is None
+            assert result[prefix + "_max"] is None
+            assert result[prefix + "_valid_count"] == valid
+            assert result[prefix + "_missing_count"] == 1
+
+
+def test_failed_rows_are_not_missing_successful_peak_measurements():
+    failure = _peak_row(status="failed", mse=None, max_squared_error=None,
+                        reference_mse=None, reference_max_squared_error=None,
+                        fit_pass=False, reference_pass=None)
+    result = benchmark.summarize([_peak_row(), failure])[0]
+    assert result["max_squared_error_valid_count"] == 1
+    assert result["max_squared_error_missing_count"] == 0
+    assert result["reference_max_squared_error_missing_count"] == 0
+    assert result["max_squared_error_max"] == 4e-6
+    assert result["fit_pass_rate"] == .5
+
+
+def test_peak_reports_explain_metrics_and_preserve_missing_legacy_values(tmp_path):
+    metadata = {"checkpoint": "legacy.pt", "epoch": 1, "mse_tolerance": 1e-5,
+                "objective_version": benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+                "hardware": {"device": "cpu"}, "num_points": 24}
+    legacy = _peak_row()
+    legacy.pop("max_squared_error")
+    legacy.pop("reference_max_squared_error")
+    benchmark.write_reports(tmp_path, metadata, [legacy, _peak_row()])
+    report = json.loads((tmp_path / "comparison.json").read_text(encoding="utf-8"))
+    assert report["measurements"][0]["max_squared_error"] is None
+    assert report["summary"][0]["max_squared_error_max"] is None
+    assert report["metric_definitions"]["max_squared_error"].startswith("max_i")
+    assert "error_metric_version" not in report["metadata"]  # no fabricated historical protocol
+    assert "max_squared_error" not in legacy  # source records were not changed
+    with (tmp_path / "measurements.csv").open(encoding="utf-8-sig", newline="") as handle:
+        csv_rows = list(csv.DictReader(handle))
+    assert csv_rows[0]["max_squared_error"] == ""
+    assert float(csv_rows[1]["max_squared_error"]) == 4e-6
+    markdown = (tmp_path / "report.md").read_text(encoding="utf-8")
+    assert "MaxSqErr" in markdown and "N/A" in markdown
+    assert "不是 Hausdorff" in markdown
+    assert "通过率仍由 MSE 阈值判断" in markdown
+    with (tmp_path / "metric_definitions.csv").open(encoding="utf-8-sig", newline="") as handle:
+        definitions = {item["metric"]: item["definition"] for item in csv.DictReader(handle)}
+    assert definitions["max_squared_error"].startswith("max_i")
+
+
+def test_six_method_benchmark_exports_peak_fields_and_versions_resume_protocol(tmp_path, monkeypatch):
+    checkpoint_path = tmp_path / "checkpoint.pt"
+    checkpoint_path.write_bytes(b"mock checkpoint; torch.load is patched")
+    checkpoint = {"objective_version": benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
+                  "epoch": 1, "model_config": {"max_internal_knots": 32, "degree": 3}}
+
+    class Model:
+        degree = 3
+        def to(self, device):
+            return self
+        def eval(self):
+            return self
+
+    parameters = torch.linspace(0, 1, 21, dtype=torch.float64)
+    points = torch.stack((parameters, torch.sin(2 * torch.pi * parameters)), dim=-1)
+    fit = benchmark.refit_bspline_control_points(
+        parameters, points, torch.empty(0, dtype=torch.float64), degree=3,
+        smoothness_weight=0., control_ridge=0., interpolate_endpoints=True,
+    )
+    case = {"dataset": "UJI", "sample_id": "test", "group_id": "writer-test",
+            "source_k": None, "canonical_k": None, "points": points,
+            "reference": points.clone(), "reference_grid": parameters.clone()}
+    monkeypatch.setattr(benchmark.torch, "load", lambda *a, **k: checkpoint)
+    monkeypatch.setattr(benchmark, "build_model_from_checkpoint", lambda *a: (
+        Model(), {"structure_mode": "candidate_pruning_one_shot"}, None))
+    monkeypatch.setattr(benchmark, "validate_checkpoint_for_benchmark", lambda *a, **k: (None, False))
+    monkeypatch.setattr(benchmark, "prepare_cases", lambda *a: ([case], []))
+    monkeypatch.setattr(benchmark, "run_published_baseline", lambda *a, **k: None)  # numerical warmup
+    monkeypatch.setattr(benchmark, "measure_ours", lambda *a, **k: (fit, parameters, 3., 1., {}))
+    monkeypatch.setattr(benchmark, "measure_numerical_baseline", lambda *a, **k: (fit, parameters, 4., None, {}))
+    directory = tmp_path / "reports"
+    argv = ["--checkpoint", str(checkpoint_path), "--output-dir", str(directory),
+            "--method-set", "published", "--device", "cpu",
+            "--max-internal-knots", "32", "--paper-initial-knots", "32", "--liang-dense-knots", "32"]
+    benchmark.main(argv, expected_objective=benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION)
+    report = json.loads((directory / "comparison.json").read_text(encoding="utf-8"))
+    assert len(report["measurements"]) == 6
+    assert report["metadata"]["error_metric_version"] == benchmark.ERROR_METRIC_VERSION
+    assert report["metadata"]["error_metric_definitions"] == benchmark.ERROR_METRIC_DEFINITIONS
+    assert report["metadata"]["knot_capacities"]["equal_initial_capacity"]
+    for row in report["measurements"]:
+        assert row["status"] == "ok"
+        assert row["max_squared_error"] > row["mse"] > 0
+        assert row["reference_max_squared_error"] == pytest.approx(row["max_squared_error"])
+        assert row["total_ms"] == (3. if row["method"] == "ours" else 4.)
+    # A report made with the old metric protocol cannot silently accept new
+    # measurements under --resume; there is no attempt to infer old peaks.
+    old_metadata = report["metadata"].copy()
+    old_metadata["fingerprint"] = "legacy-mean-error-only-protocol"
+    (directory / "experiment.json").write_text(json.dumps(old_metadata), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        benchmark.main([*argv, "--resume"], expected_objective=benchmark.V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION)
 
 
 def test_all_real_failures_have_zero_reference_pass_rate():

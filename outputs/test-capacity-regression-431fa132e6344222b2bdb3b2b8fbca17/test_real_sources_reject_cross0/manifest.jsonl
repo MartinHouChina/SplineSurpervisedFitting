@@ -1,0 +1,8 @@
+{"sample_id": "curve_0", "source_dataset": "TestReal", "group_id": "writer_train_a", "split": "train", "points_path": "points_0.npy", "num_points": 29, "point_dim": 2, "has_knot_labels": false, "metadata": {}}
+{"sample_id": "curve_1", "source_dataset": "TestReal", "group_id": "writer_train_b", "split": "train", "points_path": "points_1.npy", "num_points": 29, "point_dim": 2, "has_knot_labels": false, "metadata": {}}
+{"sample_id": "curve_2", "source_dataset": "TestReal", "group_id": "writer_train_a", "split": "val", "points_path": "points_2.npy", "num_points": 29, "point_dim": 2, "has_knot_labels": false, "metadata": {}}
+{"sample_id": "curve_3", "source_dataset": "TestReal", "group_id": "writer_val_a", "split": "val", "points_path": "points_3.npy", "num_points": 29, "point_dim": 2, "has_knot_labels": false, "metadata": {}}
+{"sample_id": "curve_4", "source_dataset": "TestReal", "group_id": "writer_val_b", "split": "val", "points_path": "points_4.npy", "num_points": 29, "point_dim": 2, "has_knot_labels": false, "metadata": {}}
+{"sample_id": "curve_5", "source_dataset": "TestReal", "group_id": "writer_val_b", "split": "val", "points_path": "points_5.npy", "num_points": 29, "point_dim": 2, "has_knot_labels": false, "metadata": {}}
+{"sample_id": "curve_6", "source_dataset": "TestReal", "group_id": "writer_test_a", "split": "test", "points_path": "points_6.npy", "num_points": 29, "point_dim": 2, "has_knot_labels": false, "metadata": {}}
+{"sample_id": "curve_7", "source_dataset": "TestReal", "group_id": "writer_test_b", "split": "test", "points_path": "points_7.npy", "num_points": 29, "point_dim": 2, "has_knot_labels": false, "metadata": {}}

@@ -1,0 +1,31 @@
+
+[plot_six_method_real_cases] /e/ProgramData/anaconda3/python.exe scripts/visualize_v16_real_deployments.py --checkpoint /e/SelfSurpervisedSplineFitting/outputs/checkpoints/overnight_stable_k32_pipeline_smoke_20260919.pt --real-samples-per-dataset 1 --selection-seed 20260909 --mse-tolerance 5e-5 --manifest UJI=/e/SelfSurpervisedSplineFitting/data/splits/uji_pen_v2.jsonl --manifest NaturalEarth=/e/SelfSurpervisedSplineFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl --manifest USGS=/e/SelfSurpervisedSplineFitting/data/processed/usgs_contours/large_scale/manifest.jsonl --manifest IndustrialOffset=/e/SelfSurpervisedSplineFitting/data/processed/industrial_offsets/v1/manifest.jsonl --max-internal-knots 32 --paper-initial-knots 32 --liang-dense-knots 32 --gradient-steps 12 --paper-admm-iterations 100 --paper-lambda-bisections 8 --paper-relocation-iterations 8 --liang-feature-samples 1025 --dung-scan-intervals 10 --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations 10 --published-feasibility-safeguard --network-warmups 3 --network-repeats 1 --end-to-end-repeats 1 --torch-num-threads 4 --device cpu --dpi 240 --allow-unqualified-diagnostic --force-diagnostic --method-set published --output-dir /e/SelfSurpervisedSplineFitting/outputs/figures/overnight_stable_k32_pipeline_smoke_20260919/six_method_real_cases
+[1/4] UJI / uji2_07455_stroke_00
+  Ours v16: MSE=1.838e-04, max SE=2.427e-03, K=10, time=14.76 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.206e-05, max SE=2.945e-04, K=10, time=30.16 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=3.513e-05, max SE=5.427e-04, K=9, time=22.99 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=3.230e-05, max SE=4.060e-04, K=6, time=353.85 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=5.352e-06, max SE=2.067e-04, K=31, time=368.24 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=3.724e-05, max SE=7.319e-04, K=6, time=2304.25 ms
+[2/4] NaturalEarth / natural_earth_10m_coastline_6f39c8d2074b_w000_6f39c8d2
+  Ours v16: MSE=2.147e-04, max SE=2.600e-03, K=15, time=18.57 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.969e-05, max SE=5.633e-04, K=20, time=55.57 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.474e-05, max SE=3.521e-04, K=17, time=44.16 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.444e-05, max SE=3.142e-04, K=14, time=710.05 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=2.585e-05, max SE=4.613e-04, K=32, time=319.07 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.871e-05, max SE=4.713e-04, K=16, time=2096.17 ms
+[3/4] USGS / usgs_tnm_contours_large_scale_475ea687e55e_w000_475ea687
+  Ours v16: MSE=1.025e-03, max SE=1.167e-02, K=14, time=17.50 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.881e-05, max SE=3.692e-04, K=29, time=124.43 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=3.749e-05, max SE=3.222e-04, K=25, time=90.67 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=3.946e-05, max SE=2.545e-04, K=26, time=1082.26 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=5.436e-05, max SE=9.004e-04, K=32, time=26.03 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.689e-05, max SE=3.917e-04, K=27, time=628.30 ms
+[4/4] IndustrialOffset / industrial_offset_keyway_bore_v007_o01_m0p0400
+  Ours v16: MSE=7.755e-04, max SE=1.236e-02, K=14, time=16.70 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.360e-04, max SE=1.674e-03, K=32, time=107.55 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=1.770e-05, max SE=2.209e-04, K=19, time=53.74 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.946e-05, max SE=2.704e-04, K=13, time=535.87 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=3.787e-05, max SE=6.925e-04, K=31, time=352.08 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.906e-05, max SE=7.115e-04, K=23, time=2534.22 ms
+Saved 4 PNG files and E:\SelfSurpervisedSplineFitting\outputs\figures\overnight_stable_k32_pipeline_smoke_20260919\six_method_real_cases\deployment_visualizations.json

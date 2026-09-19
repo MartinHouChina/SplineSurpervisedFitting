@@ -1,0 +1,2 @@
+
+[check_environment] /e/SelfSurpervisedSplineFitting/outputs/test-coverage-regression-ff092b247d6b45319bf2c792e23555cc/test_compact_resume_status_con1/stub\ python scripts/overnight_linux_preflight.py --runtime-only --device cuda

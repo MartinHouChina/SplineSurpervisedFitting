@@ -55,6 +55,7 @@ ENHANCED_TRAINING_DEFAULTS = {
     "joint_decoder_lr_scale": 1.0,
     "joint_final_lr_ratio": 1.0,
     "warm_start_checkpoint": None,
+    "resize_candidate_warm_start": False,
     "parameter_trust_enabled": False,
     "parameter_trust_initial": 0.25,
     "parameter_counterfactual_weight": 0.0,
@@ -254,6 +255,12 @@ def parser():
         help=("Strictly copy all compatible native-v16 weights into a fresh run; "
               "reset optimizer/history/controllers and recheck the proposal gate"),
     )
+    p.add_argument(
+        "--resize-candidate-warm-start", action="store_true",
+        help=("Only with --warm-start-checkpoint: explicitly shrink candidate capacity "
+              "for a new experiment, linearly resampling interval queries along rank; "
+              "all other compatible weights are copied exactly. Never valid for resume"),
+    )
     p.add_argument("--output", type=Path, default=Path("outputs/checkpoints/candidate_selection_v16.pt"))
     return p
 
@@ -398,6 +405,8 @@ def validate_args(args):
         args.resume, args.init_checkpoint, args.warm_start_checkpoint,
     )) > 1:
         raise ValueError("resume, init-checkpoint and warm-start-checkpoint are mutually exclusive")
+    if args.resize_candidate_warm_start and not args.warm_start_checkpoint:
+        raise ValueError("resize-candidate-warm-start requires --warm-start-checkpoint, not resume/init")
     if args.train_size >= EPOCH_SEED_STRIDE:
         raise ValueError("train-size exceeds epoch seed stride")
     for epoch in range(args.epochs if args.resample_train_each_epoch else 1):
@@ -813,6 +822,9 @@ def training_config_changes(current, previous, ignored):
     """Compare optional settings symmetrically, including legacy absent defaults."""
     normalized_current = {**ENHANCED_TRAINING_DEFAULTS, **current}
     normalized_previous = {**ENHANCED_TRAINING_DEFAULTS, **previous}
+    # Initialization is recorded in provenance, not reapplied when resuming the
+    # resulting native-capacity checkpoint. Keep preflight and trainer identical.
+    ignored = set(ignored) | {"resize_candidate_warm_start"}
     return [key for key, value in normalized_current.items()
             if key not in ignored and normalized_previous.get(key) != value]
 
@@ -905,8 +917,14 @@ def transfer_proposal_weights(model, checkpoint):
     return tuple(sorted(copied))
 
 
-def transfer_all_weights(model, checkpoint):
-    """Transfer all old tensors; only explicit off->on trust migration adds weights."""
+def transfer_all_weights(model, checkpoint, *, resize_candidate_warm_start=False,
+                         transfer_metadata=None):
+    """Copy native weights, with only explicitly requested, known migrations.
+
+    The return value lists tensors copied exactly. A capacity downsize resamples
+    only learned interval queries; its deterministic positional buffer is rebuilt
+    at the target capacity. This initializes a new function, not an exact resume.
+    """
     contracts = {
         "objective_version": V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
         "architecture_revision": V16_ADAPTIVE_SELECTION_REVISION,
@@ -918,6 +936,12 @@ def transfer_all_weights(model, checkpoint):
     source_model, _, _ = build_model_from_checkpoint(checkpoint)
     source_config, target_config = source_model.get_config(), model.get_config()
     controlled_safety = {"one_shot_safety_sigma", "one_shot_safety_knots"}
+    source_capacity = source_config["max_internal_knots"]
+    target_capacity = target_config["max_internal_knots"]
+    if resize_candidate_warm_start:
+        if not 0 < target_capacity < source_capacity:
+            raise ValueError("resize-candidate-warm-start requires a strict candidate-capacity downsize")
+        controlled_safety.add("max_internal_knots")
     add_trust = (not source_config.get("parameter_trust_enabled", False)
                  and target_config.get("parameter_trust_enabled", False))
     if add_trust:
@@ -935,9 +959,59 @@ def transfer_all_weights(model, checkpoint):
         missing and not (add_trust and all(key.startswith(trust_prefixes) for key in missing))
     ):
         raise ValueError("full warm start has unexpected missing or extra state tensors")
-    target_state.update(source_state)
+    adapted = {}
+    capacity_metadata = None
+    if resize_candidate_warm_start:
+        query_key = "candidate_head.interval_queries"
+        anchor_key = "candidate_head.interval_query_anchors"
+        expected_source_shape = (source_capacity + 1, source_config["hidden_dim"])
+        expected_target_shape = (target_capacity + 1, target_config["hidden_dim"])
+        if (tuple(source_state[query_key].shape) != expected_source_shape
+                or tuple(target_state[query_key].shape) != expected_target_shape):
+            raise ValueError("capacity transfer encountered an unexpected interval-query shape")
+        if not torch.isfinite(source_state[query_key]).all():
+            raise ValueError("capacity transfer requires finite source interval queries")
+        # Anchors are fixed positional metadata, not trainable weights. Never
+        # interpret an altered/noncanonical buffer as a learned tensor to resize.
+        for label, state, capacity in (
+            ("source", source_state, source_capacity),
+            ("target", target_state, target_capacity),
+        ):
+            anchors = state[anchor_key]
+            canonical = (torch.arange(capacity + 1, dtype=anchors.dtype,
+                                      device=anchors.device) + 0.5) / (capacity + 1)
+            if not torch.equal(anchors, canonical):
+                raise ValueError(f"capacity transfer requires canonical {label} interval-query anchors")
+        adapted[query_key] = torch.nn.functional.interpolate(
+            source_state[query_key].transpose(0, 1).unsqueeze(0),
+            size=target_capacity + 1, mode="linear", align_corners=True,
+        ).squeeze(0).transpose(0, 1).contiguous()
+        adapted[anchor_key] = target_state[anchor_key]
+        capacity_metadata = dict(
+            source_candidate_knots=source_capacity,
+            target_candidate_knots=target_capacity,
+            method="linear_interval_rank_align_corners",
+            resized_tensor_names=[query_key],
+            regenerated_buffer_names=[anchor_key],
+            source_shapes={key: list(source_state[key].shape) for key in adapted},
+            target_shapes={key: list(target_state[key].shape) for key in adapted},
+            optimizer_state="fresh", history="fresh", validation_controllers="fresh",
+            note=("Ordinal interval-rank interpolation with endpoints preserved; canonical "
+                  "target anchors are regenerated. Capacity and the forward function change; "
+                  "this is not a lossless conversion or a resumed experiment."),
+        )
+    copied = {key: value for key, value in source_state.items() if key not in adapted}
+    incompatible = [key for key, value in copied.items()
+                    if value.shape != target_state[key].shape]
+    if incompatible:
+        raise ValueError(f"full warm start has incompatible state tensor shapes: {sorted(incompatible)}")
+    target_state.update(copied)
+    target_state.update(adapted)
     model.load_state_dict(target_state, strict=True)
-    return tuple(sorted(source_state))
+    if capacity_metadata is not None and transfer_metadata is not None:
+        capacity_metadata["exact_copied_tensor_names"] = sorted(copied)
+        transfer_metadata.update(capacity_metadata)
+    return tuple(sorted(copied))
 
 
 def initializer_record(path, checkpoint, *, mode, copied):
@@ -1064,16 +1138,31 @@ def main(argv=None):
             p.error("resume requires the saved best proposal and, for joint training, the best model artifact")
     elif args.warm_start_checkpoint:
         source_checkpoint = torch.load(args.warm_start_checkpoint, map_location="cpu", weights_only=True)
+        capacity_transfer = {}
         try:
-            copied = transfer_all_weights(model, source_checkpoint)
+            copied = transfer_all_weights(
+                model, source_checkpoint,
+                resize_candidate_warm_start=args.resize_candidate_warm_start,
+                transfer_metadata=capacity_transfer,
+            )
         except (KeyError, TypeError, ValueError, RuntimeError) as error:
             p.error(str(error))
         initializer_provenance = initializer_record(
             args.warm_start_checkpoint, source_checkpoint, mode="full_model", copied=copied,
         )
-        initializer_provenance["initialized_tensor_names"] = sorted(set(model.state_dict()) - set(copied))
-        print(f"Transferred all {len(copied)} model tensors including selector/decoder; "
+        adapted_names = set(capacity_transfer.get("resized_tensor_names", [])) | set(
+            capacity_transfer.get("regenerated_buffer_names", []))
+        initializer_provenance["initialized_tensor_names"] = sorted(
+            set(model.state_dict()) - set(copied) - adapted_names)
+        print(f"Copied {len(copied)} model tensors exactly, including selector/decoder; "
               "fresh optimizer, history, safety curriculum and proposal gate.", flush=True)
+        if capacity_transfer:
+            initializer_provenance["capacity_transfer"] = capacity_transfer
+            print(f"Explicit candidate-capacity migration: "
+                  f"{capacity_transfer['source_candidate_knots']} -> "
+                  f"{capacity_transfer['target_candidate_knots']}; "
+                  "interval queries linearly resampled along rank, target anchors regenerated. "
+                  "New forward function; no unchanged-accuracy guarantee.", flush=True)
         if initializer_provenance["initialized_tensor_names"]:
             print("Initialized new parameter trust gates; this migration changes the forward function.", flush=True)
     elif args.init_checkpoint:

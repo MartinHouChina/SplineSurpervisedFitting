@@ -1,0 +1,31 @@
+
+[plot_six_method_real_cases] /e/ProgramData/anaconda3/python.exe scripts/visualize_v16_real_deployments.py --checkpoint /e/SelfSurpervisedSplineFitting/outputs/checkpoints/overnight_compact_3090_r1.pt --real-samples-per-dataset 1 --selection-seed 20260909 --mse-tolerance 5e-5 --manifest UJI=/e/SelfSurpervisedSplineFitting/data/splits/uji_pen_v2.jsonl --manifest NaturalEarth=/e/SelfSurpervisedSplineFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl --manifest USGS=/e/SelfSurpervisedSplineFitting/data/processed/usgs_contours/large_scale/manifest.jsonl --manifest IndustrialOffset=/e/SelfSurpervisedSplineFitting/data/processed/industrial_offsets/v1/manifest.jsonl --max-internal-knots 64 --paper-initial-knots 64 --liang-dense-knots 64 --gradient-steps 12 --paper-admm-iterations 100 --paper-lambda-bisections 8 --paper-relocation-iterations 8 --liang-feature-samples 1025 --dung-scan-intervals 10 --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations 10 --published-feasibility-safeguard --network-warmups 3 --network-repeats 1 --end-to-end-repeats 1 --torch-num-threads 4 --device cpu --dpi 240 --allow-unqualified-diagnostic --force-diagnostic --method-set published --output-dir /e/SelfSurpervisedSplineFitting/outputs/figures/overnight_all_sources_smoke_20260919_r2/six_method_real_cases
+[1/4] UJI / uji2_07455_stroke_00
+  Ours v16: MSE=2.454e-05, K=19, time=16.34 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.206e-05, K=10, time=35.00 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.680e-05, K=8, time=23.15 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=3.167e-05, K=6, time=290.46 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=2.705e-05, K=8, time=1188.65 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.900e-05, K=6, time=2017.50 ms
+[2/4] NaturalEarth / natural_earth_10m_coastline_6f39c8d2074b_w000_6f39c8d2
+  Ours v16: MSE=4.529e-05, K=26, time=15.69 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.969e-05, K=20, time=71.24 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=3.475e-05, K=16, time=44.40 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.440e-05, K=14, time=815.54 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=3.119e-06, K=64, time=413.40 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.762e-05, K=16, time=2215.88 ms
+[3/4] USGS / usgs_tnm_contours_large_scale_475ea687e55e_w000_475ea687
+  Ours v16: MSE=6.598e-05, K=27, time=19.12 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.881e-05, K=29, time=117.76 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.855e-05, K=28, time=79.95 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.840e-05, K=26, time=1002.81 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=5.842e-06, K=64, time=441.77 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.496e-05, K=24, time=2561.15 ms
+[4/4] IndustrialOffset / industrial_offset_keyway_bore_v007_o01_m0p0400
+  Ours v16: MSE=8.693e-06, K=23, time=17.21 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.072e-05, K=56, time=242.93 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=2.354e-05, K=18, time=71.31 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.572e-05, K=16, time=599.78 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=3.684e-05, K=39, time=534.09 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.731e-05, K=21, time=2565.64 ms
+Saved 4 PNG files and E:\SelfSurpervisedSplineFitting\outputs\figures\overnight_all_sources_smoke_20260919_r2\six_method_real_cases\deployment_visualizations.json

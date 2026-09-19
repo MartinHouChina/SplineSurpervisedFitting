@@ -182,3 +182,100 @@ def test_reference_renderer_skips_report_without_reference_rows(
 
     assert plotting.render_comparison(report, tmp_path, reference=True) is None
     assert not (tmp_path / "v16_published_methods_reference.png").exists()
+
+
+def _add_peak_measurements(report):
+    """Known test values intentionally unlike MSE to catch incorrect aliases."""
+    for row, record in zip(report["summary"], report["measurements"]):
+        peak = row["mse_mean"] * 7.0
+        reference_peak = peak * 1.4 if row["dataset"] == "UJI" else None
+        record.update(max_squared_error=peak, reference_max_squared_error=reference_peak,
+                      has_reference=row["dataset"] == "UJI")
+        for suffix in ("mean", "p95", "max"):
+            row[f"max_squared_error_{suffix}"] = peak
+            row[f"reference_max_squared_error_{suffix}"] = reference_peak
+
+
+def test_peak_metric_validator_audits_source_observations_not_mse(report):
+    _add_peak_measurements(report)
+    plotting.validate_v16_benchmark(report)
+    report["summary"][0]["max_squared_error_max"] = report["summary"][0]["mse_mean"]
+    with pytest.raises(ValueError, match="max_squared_error_max differs"):
+        plotting.validate_v16_benchmark(report)
+
+
+def test_peak_metric_validator_rejects_invented_historical_maximum(report):
+    report["summary"][0]["max_squared_error_max"] = report["summary"][0]["mse_mean"]
+    with pytest.raises(ValueError, match="max_squared_error_max differs"):
+        plotting.validate_v16_benchmark(report)
+
+
+def test_peak_metric_validator_requires_complete_coverage_for_dataset_maximum(report):
+    _add_peak_measurements(report)
+    # Add a second paired curve without a newly measured pointwise maximum.
+    # The first curve's finite maximum must not stand in for the entire dataset.
+    extra = [{**row, "sample_id": row["sample_id"] + "-missing",
+              "max_squared_error": None, "reference_max_squared_error": None}
+             for row in report["measurements"]]
+    report["measurements"].extend(extra)
+    for row in report["summary"]:
+        row["n"] = 2
+        for prefix in ("max_squared_error", "reference_max_squared_error"):
+            for suffix in ("mean", "p95", "max"):
+                row[f"{prefix}_{suffix}"] = None
+    plotting.validate_v16_benchmark(report)
+    report["summary"][0]["max_squared_error_max"] = report["measurements"][0]["max_squared_error"]
+    with pytest.raises(ValueError, match="max_squared_error_max differs"):
+        plotting.validate_v16_benchmark(report)
+
+
+def test_cli_emits_four_and_five_metric_views_by_default(report, tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(plotting, "read_report", lambda _: report)
+    monkeypatch.setattr(plotting, "render_comparison", lambda *args, **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(sys, "argv", ["plot_v16_method_comparison.py", "--input", str(tmp_path / "comparison.json")])
+    plotting.main()
+    assert [(call["reference"], call.get("include_max_error", False)) for call in calls] == [
+        (False, False), (False, True), (True, False), (True, True)]
+
+
+@pytest.mark.parametrize("reference", [False, True])
+@pytest.mark.parametrize("has_peak", [False, True])
+def test_five_metric_renderer_uses_recorded_maxima_or_na(tmp_path, report, monkeypatch,
+                                                       reference, has_peak):
+    from matplotlib.figure import Figure
+
+    if has_peak:
+        _add_peak_measurements(report)
+    before = copy.deepcopy(report)
+    figures = []
+    original = Figure.savefig
+
+    def capture(figure, *args, **kwargs):
+        figures.append(figure)
+        return original(figure, *args, **kwargs)
+
+    monkeypatch.setattr(Figure, "savefig", capture)
+    output = plotting.render_comparison(report, tmp_path, dpi=50, reference=reference,
+                                        include_max_error=True)
+    suffix = "reference" if reference else "input"
+    assert output.name == f"v16_published_methods_five_metrics_{suffix}.png"
+    assert output.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    peak_axis = figures[0].axes[4]
+    assert "Worst observed point" in peak_axis.get_title()
+    explanation = " ".join(text.get_text() for text in figures[0].axes[5].texts)
+    assert "not the largest curve-level MSE" in explanation
+    assert "pass criterion" in explanation
+    if has_peak:
+        key = "reference_max_squared_error_max" if reference else "max_squared_error_max"
+        datasets = plotting._ordered_datasets(report["summary"], reference=reference)
+        expected = [next(row[key] for row in report["summary"]
+                         if row["method"] == method and row["dataset"] == dataset)
+                    for method in plotting.PUBLISHED_METHODS for dataset in datasets]
+        assert [patch.get_height() for patch in peak_axis.patches] == pytest.approx(expected)
+        assert not any(text.get_text() == "N/A" for text in peak_axis.texts)
+    else:
+        assert not peak_axis.patches
+        assert all(text.get_text() == "N/A" for text in peak_axis.texts)
+        assert peak_axis.texts
+    assert report == before
