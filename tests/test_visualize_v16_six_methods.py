@@ -118,6 +118,20 @@ def test_legacy_four_method_cli_default_remains_unchanged():
     )
 
 
+@pytest.mark.parametrize("ours_only", [False, True])
+def test_industrial_case_figures_and_json_disclose_procedural_origin(harness, ours_only):
+    harness.case.update(dataset="IndustrialOffset", source_kind="procedural_cad_offset",
+                        dataset_label="IndustrialOffset (procedural CAD; not measured)",
+                        source_note="Procedurally generated; no ground-truth B-spline knots.")
+    harness.args.method_set = "published"
+    harness.args.ours_only = ours_only
+    report = entry.run(harness.args)
+    assert report["records"][0]["source_kind"] == "procedural_cad_offset"
+    assert "not measured" in report["records"][0]["dataset_label"]
+    titles = [text.get_text() for figure in harness.figures for text in figure.texts]
+    assert any("not measured" in title for title in titles)
+
+
 @pytest.mark.parametrize("method_set, expected_grid", [("legacy", (2, 2)), ("published", (2, 3))])
 def test_selected_case_methods_render_complete_grid_and_record_each_fit(harness, method_set, expected_grid):
     harness.args.method_set = method_set

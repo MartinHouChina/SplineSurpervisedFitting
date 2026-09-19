@@ -1,0 +1,116 @@
+{
+  "name": "overnight_stable_linux_update",
+  "date": "2026-09-19",
+  "base_commit": "1404b15d3c12f64cb84bb444e3b62f5a28b58b63",
+  "branch": "experiment/v16-1070-overnight-3090",
+  "package_type": "source-only incremental update; apply to the stated base, not a full repository",
+  "verification": {
+    "related_tests_passed": 527,
+    "existing_checkpoint_benchmark_records": 150,
+    "existing_checkpoint_pngs": 11,
+    "warm_start_smoke_epochs": 2,
+    "full_stable_training_performed": false
+  },
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "36cb022fbca12e81859406bafd65e755fceca1b08e46a4e5b7712881f7e5635e"
+    },
+    {
+      "path": "docs/overnight_compact.md",
+      "sha256": "b1d8dbddce237be3ec5ebc4f55396f661eca88b3322ca4cb9891db8a7f5db2d0"
+    },
+    {
+      "path": "docs/overnight_stable.md",
+      "sha256": "729c183ac555584cb41858ca26ef971cf738912982d1961e449af94f50811d93"
+    },
+    {
+      "path": "docs/README.md",
+      "sha256": "0651d01e3cd1d1dd8eebb9061353a74c72147ce246e842befbb63c8c5e1dfd7f"
+    },
+    {
+      "path": "README.md",
+      "sha256": "8d084d0b61d026a5c5dd7b76cdcc693c416689814f0cdfdb23b1f663f55c3fec"
+    },
+    {
+      "path": "scripts/benchmark_v15_datasets.py",
+      "sha256": "47be6ab6b161224b34ce255e0e325b7d1a4189311045f117417b0dfbc290ebed"
+    },
+    {
+      "path": "scripts/overnight_datasets.py",
+      "sha256": "5b77ca8f3f83abeaadd6debcddf9867320eb4cfe5e281f029711ec0eedc53552"
+    },
+    {
+      "path": "scripts/overnight_linux_preflight.py",
+      "sha256": "4d94c3042af1837cc2438f20f6f9d6852b386dab2756813806632f5225e35aa9"
+    },
+    {
+      "path": "scripts/plot_v16_method_comparison.py",
+      "sha256": "63fd5fb5d16ab58e903262c0ab5c456914a6a9289ef27d3f376a45b69ad9ccae"
+    },
+    {
+      "path": "scripts/prepare_industrial_offsets.py",
+      "sha256": "96f9e1cc2ff8e48e6f1b97b741005d9252f91bd495295ba8f16a814301c25c12"
+    },
+    {
+      "path": "scripts/run_v16_1070_overnight_linux.sh",
+      "sha256": "8bef12a1e4ba86fd1cfcac30cac16dbd994b45cfb8a6a23a0d46a90431f0796a"
+    },
+    {
+      "path": "scripts/train_v16.py",
+      "sha256": "ac4ab91e4e8d76b8819616a1ded86f530d897f83b8cc58046d8bcfa00250e8f9"
+    },
+    {
+      "path": "scripts/visualize_v16_ours_cases.py",
+      "sha256": "0f940064a7757519d26f9b274a2dd5f1fd97e696f20d5c38289847d14c87f7c3"
+    },
+    {
+      "path": "scripts/visualize_v16_real_deployments.py",
+      "sha256": "e08a9064330c20ef5067db02f2911fc5f3317592a13f4df1f72847c464b88eea"
+    },
+    {
+      "path": "src/spline_fitting/data/industrial_offsets.py",
+      "sha256": "3f37ca519166aebbe8c63cb92e6a62d3a00615a7f3776346ee65f034a0ca29aa"
+    },
+    {
+      "path": "src/spline_fitting/losses/v16_subset_loss.py",
+      "sha256": "c1743634d099f9a2f3fc8be8c9421c593d6e0cb72ba29a12ae0e1dda9c44b3b4"
+    },
+    {
+      "path": "tests/test_industrial_offsets.py",
+      "sha256": "d299491ff96ede94020515a629bbcd031a742a2c4f874e2535131f71107ec801"
+    },
+    {
+      "path": "tests/test_overnight_dataset_coverage.py",
+      "sha256": "927984f1315be19523518d0e604dcb635ccff39e6afe00b74c59bd8aeb1212dd"
+    },
+    {
+      "path": "tests/test_plot_v16_method_comparison.py",
+      "sha256": "2604bafd35bec67f575a7807ffd0ee5e56e4a11886c89c534b663c649cbf2b36"
+    },
+    {
+      "path": "tests/test_run_v16_1070_overnight_linux.py",
+      "sha256": "fc2821b5779a916731e91ec0d8f2cc369daf0e258e009d8aeb0b5744b39efbcb"
+    },
+    {
+      "path": "tests/test_run_v16_compact_linux.py",
+      "sha256": "bb4328f955fbb64a6d8b05aff73f32f77d1ed650c38653e6786946b4df946836"
+    },
+    {
+      "path": "tests/test_run_v16_stable_linux.py",
+      "sha256": "34e915319418bfd2f7cea273566214421803fae53e2c8407ed15257f7371c8f0"
+    },
+    {
+      "path": "tests/test_train_v16_trajectory.py",
+      "sha256": "68a2cdfff5efb57bd788f30302da39a4a54dc256f9dc7e213e1ec30b9d8b501c"
+    },
+    {
+      "path": "tests/test_v16_compact_loss.py",
+      "sha256": "205827dbce9fa67d101300523555803e8c5aeb5d5b27043f7a685d132a0a58ba"
+    },
+    {
+      "path": "tests/test_visualize_v16_six_methods.py",
+      "sha256": "18e0ef983eb0035c6067b2b440f0221fd631eef6e674a9b771c9b0b9aa20e222"
+    }
+  ]
+}

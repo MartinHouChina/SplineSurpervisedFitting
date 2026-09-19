@@ -19,10 +19,12 @@ WARM_START_CHECKPOINT=""
 ENHANCED_SELECTION=0
 RELIABLE_SELECTION=0
 COMPACT_SELECTION=0
+STABLE_SELECTION=0
 REAL_VAL_SIZE=32
 NATIVE_BASELINES=0
 CHECKPOINT=""
 DATA_ROOT=""
+EXTRA_MANIFESTS=()
 OUTPUT_ROOT=""
 PREPARE=0
 RESUME=0
@@ -37,7 +39,7 @@ END_TO_END_REPEATS=""
 usage() {
   cat <<'EOF'
 Usage: bash scripts/run_v16_1070_overnight_linux.sh [options]
-Historical warm start -> Synthetic + UJI/NaturalEarth/USGS six-method benchmark
+Historical warm start -> Synthetic + UJI/NaturalEarth/USGS/IndustrialOffset benchmark
 -> four-metric PNGs -> Ours cases -> six-method real-case PNGs.
 No current K24/K48 or offline-teacher model code is used.
 
@@ -51,7 +53,9 @@ No current K24/K48 or offline-teacher model code is used.
                                   defaults to 32/4 epochs, real validation only
   --compact-selection             Per-curve feasible simplification + bounded greedy
                                   Teacher; defaults 24/4, explicit full warm start
-  --real-val-size N               Reliable/compact: val curves per real source (32)
+  --stable-selection              Compact + decoded trajectory checks (4) and
+                                  trajectory targets (2); explicit full warm start
+  --real-val-size N               Reliable/compact/stable: real val curves/source (32)
   --native-baselines              Disable explicit MSE repair for Dung/Kang/Luo;
                                   corrected Kang clustering remains enabled
   --train-size N --val-size N      Synthetic training/validation (1500/500)
@@ -64,7 +68,10 @@ No current K24/K48 or offline-teacher model code is used.
   --checkpoint PATH               Skip training and evaluate existing Kc64 weights
   --resume-run                     Resume same run; skip training if epochs completed
   --data-root PATH                 Complete data tree (default repository data/)
+  --manifest NAME=PATH             Add an independent evaluation-only source;
+                                  repeat; never changes training/validation data
   --prepare-real-data              Prepare missing real manifests without overwriting
+                                  IndustrialOffset is generated locally, not measured
   --output-root PATH               Default repository outputs/
   --benchmark-profile quick|full  Default full; quick is visibly diagnostic
   --synthetic-samples-per-k N       Full 2 / quick 1 (source K=4..24)
@@ -94,6 +101,7 @@ while (($#)); do
     --enhanced-selection) ENHANCED_SELECTION=1; shift ;;
     --reliable-selection) RELIABLE_SELECTION=1; shift ;;
     --compact-selection) COMPACT_SELECTION=1; shift ;;
+    --stable-selection) STABLE_SELECTION=1; shift ;;
     --real-val-size) need_value "$@"; REAL_VAL_SIZE="$2"; shift 2 ;;
     --native-baselines) NATIVE_BASELINES=1; shift ;;
     --train-size) need_value "$@"; TRAIN_SIZE="$2"; shift 2 ;;
@@ -106,6 +114,7 @@ while (($#)); do
     --warm-start-checkpoint) need_value "$@"; WARM_START_CHECKPOINT="$2"; shift 2 ;;
     --checkpoint) need_value "$@"; CHECKPOINT="$2"; shift 2 ;;
     --data-root) need_value "$@"; DATA_ROOT="$2"; shift 2 ;;
+    --manifest) need_value "$@"; EXTRA_MANIFESTS+=("$2"); shift 2 ;;
     --output-root) need_value "$@"; OUTPUT_ROOT="$2"; shift 2 ;;
     --prepare-real-data) PREPARE=1; shift ;;
     --resume-run) RESUME=1; shift ;;
@@ -120,11 +129,15 @@ while (($#)); do
     *) die "unknown option: $1" ;;
   esac
 done
-((ENHANCED_SELECTION + RELIABLE_SELECTION + COMPACT_SELECTION <= 1)) || die "choose only one of --enhanced-selection, --reliable-selection and --compact-selection"
+((ENHANCED_SELECTION + RELIABLE_SELECTION + COMPACT_SELECTION + STABLE_SELECTION <= 1)) || die "choose only one of --enhanced-selection, --reliable-selection, --compact-selection and --stable-selection"
 SAFETY_ARGS=(--one-shot-safety-sigma 0.2 --safety-anneal-epochs 8)
 RESAMPLE_ARGS=(--no-resample-train-each-epoch)
-if ((COMPACT_SELECTION)); then
-  RUN_NAME=${RUN_NAME:-overnight_compact_3090_r1}
+if ((COMPACT_SELECTION || STABLE_SELECTION)); then
+  if ((STABLE_SELECTION)); then
+    RUN_NAME=${RUN_NAME:-overnight_stable_3090_r1}
+  else
+    RUN_NAME=${RUN_NAME:-overnight_compact_3090_r1}
+  fi
   EPOCHS=${EPOCHS:-24}
   PROPOSAL_EPOCHS=${PROPOSAL_EPOCHS:-4}
   LEARNING_ARGS=(--policy-samples 2 --counterfactual-edits 4 --teacher-prefix-search-steps 6
@@ -139,11 +152,14 @@ if ((COMPACT_SELECTION)); then
     --teacher-greedy-steps 16 --teacher-greedy-max-curves 2
     --teacher-geometry-distillation-weight 0.2 --count-reserve-alignment
     --synthetic-simple-fraction 0.35 --synthetic-shape-fraction 0.25)
+  if ((STABLE_SELECTION)); then
+    LEARNING_ARGS+=(--teacher-greedy-trajectory-checks 4 --teacher-geometry-trajectory-targets 2)
+  fi
   SAFETY_ARGS=(--one-shot-safety-sigma 0 --one-shot-safety-knots 0
     --final-safety-sigma 0 --final-safety-knots 0 --safety-anneal-epochs 8)
   RESAMPLE_ARGS=(--resample-train-each-epoch)
   if [[ -z "$CHECKPOINT" && "$RESUME" == 0 ]]; then
-    [[ -n "$WARM_START_CHECKPOINT" ]] || die "--compact-selection requires an explicit --warm-start-checkpoint for a new run (use the selected best .pt, not .last.pt)"
+    [[ -n "$WARM_START_CHECKPOINT" ]] || die "compact/stable selection requires an explicit --warm-start-checkpoint for a new run (use the selected best .pt, not .last.pt)"
   fi
 elif ((RELIABLE_SELECTION)); then
   RUN_NAME=${RUN_NAME:-overnight_reliable_3090_r1}
@@ -217,6 +233,17 @@ absolute_path() {
   readlink -m -- "$value"
 }
 DATA_ROOT="$(absolute_path "${DATA_ROOT:-data}")"
+EXTRA_MANIFEST_ARGS=()
+EXTRA_MANIFEST_NAMES=(UJI NaturalEarth USGS IndustrialOffset Synthetic)
+for entry in "${EXTRA_MANIFESTS[@]}"; do
+  [[ "$entry" == *=* && -n "${entry%%=*}" && -n "${entry#*=}" ]] || die "--manifest must be NAME=PATH"
+  name=${entry%%=*}
+  for existing in "${EXTRA_MANIFEST_NAMES[@]}"; do
+    [[ "$name" != "$existing" ]] || die "duplicate or reserved dataset name: $name"
+  done
+  EXTRA_MANIFEST_NAMES+=("$name")
+  EXTRA_MANIFEST_ARGS+=(--manifest "$name=$(absolute_path "${entry#*=}")")
+done
 OUTPUT_ROOT="$(absolute_path "${OUTPUT_ROOT:-outputs}")"
 if [[ -n "$INIT_CHECKPOINT" ]]; then INIT_CHECKPOINT="$(absolute_path "$INIT_CHECKPOINT")"; fi
 if [[ -n "$WARM_START_CHECKPOINT" ]]; then
@@ -264,27 +291,36 @@ if ((DRY_RUN == 0)); then
   mkdir -p -- "$LOG_DIR" "$OUTPUT_ROOT/checkpoints"
 fi
 printf 'Historical overnight: online Teacher; Kc=64; source K=4..24; MSE=%s.\n' "$MSE_TOLERANCE"
+if [[ "$CHECKPOINT" != "$TRAIN_OUTPUT" ]]; then
+  printf 'Evaluation-only: using existing checkpoint %s; no training or new model selection.\n' "$CHECKPOINT"
+else
 if ((ENHANCED_SELECTION)); then
   printf 'Enhanced selection: feasible teacher remove/add/swap refinement + boundary ranking; unchanged one-shot deployment.\n'
 fi
 if ((RELIABLE_SELECTION)); then
   printf 'Reliable selection: trust gates, ranking-independent Teacher, local fit and ordered coverage; one-shot deployment.\n'
 fi
-if ((COMPACT_SELECTION)); then
+if ((COMPACT_SELECTION || STABLE_SELECTION)); then
   printf 'Compact selection: per-curve feasible simplification, bounded greedy Teacher and count reserve alignment; unchanged one-shot deployment.\n'
   printf 'Teacher geometry is checked separately from decoded deployment; no global-minimum or pass-rate guarantee.\n'
 fi
-if ((RELIABLE_SELECTION || COMPACT_SELECTION)); then
+if ((STABLE_SELECTION)); then
+  printf 'Stable selection: up to 4 decoded trajectory checks and 2 geometry trajectory targets; no deployment search added.\n'
+fi
+if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION)); then
   printf 'Real data: validation-only (%s/source); synthetic-only training; held-out test for comparison.\n' "$REAL_VAL_SIZE"
 fi
 printf 'Proposal %s + Joint %s = %s epochs; train/val=%s/%s, batch=%s.\n' \
   "$PROPOSAL_EPOCHS" "$((EPOCHS-PROPOSAL_EPOCHS))" "$EPOCHS" "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
-printf 'Six methods, four datasets. Profile=%s (full is an experimental budget, not a claim of qualification).\n' "$BENCHMARK_PROFILE"
+fi
+printf 'Six methods: Synthetic + three observed/derived sources + procedural IndustrialOffset, plus explicit extra sources. Profile=%s.\n' "$BENCHMARK_PROFILE"
+printf 'IndustrialOffset is CAD-driven semi-synthetic, not measured industrial data; evaluation-only, not added to model selection.\n'
 run_logged check_environment "$PYTHON_BIN" scripts/overnight_linux_preflight.py --runtime-only --device "$DEVICE"
 
 UJI="$DATA_ROOT/splits/uji_pen_v2.jsonl"
 NATURAL="$DATA_ROOT/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl"
 USGS="$DATA_ROOT/processed/usgs_contours/large_scale/manifest.jsonl"
+INDUSTRIAL="$DATA_ROOT/processed/industrial_offsets/v1/manifest.jsonl"
 if ((PREPARE)); then
   if [[ ! -f "$UJI" ]]; then
     run_logged prepare_uji "$PYTHON_BIN" scripts/prepare_uji_pen.py --download \
@@ -301,15 +337,19 @@ if ((PREPARE)); then
       --bbox-file configs/usgs_contour_regions.example.json --max-features-per-region 2000 \
       --raw-dir "$DATA_ROOT/raw/usgs_contours" --output-dir "$(dirname -- "$USGS")"
   fi
+  if [[ ! -f "$INDUSTRIAL" ]]; then
+    run_logged prepare_industrial_offsets "$PYTHON_BIN" scripts/prepare_industrial_offsets.py \
+      --output-dir "$(dirname -- "$INDUSTRIAL")"
+  fi
 fi
 if ((DRY_RUN == 0)); then
-  for manifest in "$UJI" "$NATURAL" "$USGS"; do
-    [[ -f "$manifest" ]] || die "real-data manifest missing: $manifest; use --data-root or --prepare-real-data"
+  for manifest in "$UJI" "$NATURAL" "$USGS" "$INDUSTRIAL"; do
+    [[ -f "$manifest" ]] || die "required external-data manifest missing: $manifest; use --data-root or --prepare-real-data (industrial offsets are generated locally)"
   done
 fi
 STAMP="$(date -u +%Y%m%d_%H%M%S)_$$"
-PREFLIGHT_ARGS=(--data-root "$DATA_ROOT" --device "$DEVICE" --mse-tolerance "$MSE_TOLERANCE")
-if ((RELIABLE_SELECTION || COMPACT_SELECTION)); then PREFLIGHT_ARGS+=(--validate-real-splits); fi
+PREFLIGHT_ARGS=(--data-root "$DATA_ROOT" --device "$DEVICE" --mse-tolerance "$MSE_TOLERANCE" "${EXTRA_MANIFEST_ARGS[@]}")
+if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION)); then PREFLIGHT_ARGS+=(--validate-real-splits); fi
 if [[ "$CHECKPOINT" != "$TRAIN_OUTPUT" ]]; then
   PREFLIGHT_ARGS+=(--checkpoint "$CHECKPOINT")
 elif [[ -n "$INIT_CHECKPOINT" && "$RESUME" == 0 ]]; then
@@ -331,7 +371,7 @@ if [[ "$CHECKPOINT" == "$TRAIN_OUTPUT" ]]; then
     "${SAFETY_ARGS[@]}"
     --complexity-ramp-epochs 8 "${RESAMPLE_ARGS[@]}" --num-workers "$NUM_WORKERS"
     --torch-num-threads 4 --device "$DEVICE" --output "$TRAIN_OUTPUT")
-  if ((RELIABLE_SELECTION || COMPACT_SELECTION)); then
+  if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION)); then
     TRAIN_ARGS+=(--real-val-size "$REAL_VAL_SIZE"
       --real-manifest "$UJI" --real-manifest "$NATURAL" --real-manifest "$USGS")
   fi
@@ -367,7 +407,8 @@ if run_logged inspect_checkpoint "$PYTHON_BIN" scripts/inspect_v16_checkpoint.py
 else
   printf 'Checkpoint is not qualified for formal reporting; continue only with diagnostic labels.\n'
 fi
-MANIFEST_ARGS=(--manifest "UJI=$UJI" --manifest "NaturalEarth=$NATURAL" --manifest "USGS=$USGS")
+MANIFEST_ARGS=(--manifest "UJI=$UJI" --manifest "NaturalEarth=$NATURAL" --manifest "USGS=$USGS"
+  --manifest "IndustrialOffset=$INDUSTRIAL" "${EXTRA_MANIFEST_ARGS[@]}")
 BASELINE_ARGS=(--max-internal-knots 64 --paper-initial-knots 64 --liang-dense-knots 64
   --gradient-steps 12 --paper-admm-iterations "$KANG_ITERATIONS" --paper-lambda-bisections 8
   --paper-relocation-iterations 8 --liang-feature-samples 1025 --dung-scan-intervals 10

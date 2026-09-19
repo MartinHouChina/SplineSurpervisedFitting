@@ -196,6 +196,14 @@ def _ordered_datasets(rows: list[dict], *, reference: bool) -> list[str]:
     )
 
 
+def _dataset_tick_label(dataset: str, metadata: dict) -> str:
+    source = next((item for item in metadata.get("datasets", [])
+                   if item.get("dataset") == dataset), {})
+    if dataset == "IndustrialOffset" or source.get("source_kind") == "procedural_cad_offset":
+        return f"{DATASET_LABELS.get(dataset, dataset)}\n(procedural, not measured)"
+    return DATASET_LABELS.get(dataset, dataset)
+
+
 def _synthetic_canonical_k(
     index: dict[tuple[str, str], dict],
     methods: tuple[str, ...],
@@ -304,7 +312,7 @@ def render_comparison(
         fig.subplots_adjust(
             left=0.07,
             right=0.985,
-            bottom=0.175,
+            bottom=0.205 if any("\n" in _dataset_tick_label(name, metadata) for name in datasets) else 0.175,
             top=0.77,
             hspace=0.42,
             wspace=0.24,
@@ -375,7 +383,7 @@ def render_comparison(
         for dataset in datasets:
             counts = sorted(int(index[(dataset, method)]["n"]) for method in methods)
             count = str(counts[0]) if counts[0] == counts[-1] else f"{counts[0]}–{counts[-1]}"
-            tick_labels.append(f"{DATASET_LABELS.get(dataset, dataset)}\n$n={count}$")
+            tick_labels.append(f"{_dataset_tick_label(dataset, metadata)}\n$n={count}$")
 
         for panel, (ax, (key, title, ylabel, log_axis)) in enumerate(
             zip(axes.flat, metrics)

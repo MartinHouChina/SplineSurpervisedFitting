@@ -1,4 +1,4 @@
-"""Paired synthetic / real-world evaluation with explicit timing boundaries."""
+"""Paired synthetic / external-source evaluation with explicit timing boundaries."""
 from __future__ import annotations
 
 # ruff: noqa: E402
@@ -41,6 +41,7 @@ from spline_fitting.evaluation.published_baselines import (
 from spline_fitting.evaluation.timing import measure_synchronized_wall_time
 from compare_knot_methods import _select_indices
 from visualize_batch_comparison import _dataset_config_from_checkpoint
+from overnight_datasets import default_manifests, parse_manifests, source_description, validate_source_records
 
 METHODS = ("ours", *COMPARISON_BASELINE_METHODS)
 PUBLISHED_METHODS = (
@@ -65,11 +66,7 @@ OBJECTIVE_LABELS = {
     V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSION: "v15",
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION: "v16",
 }
-DEFAULT_MANIFESTS = {
-    "UJI": ROOT / "data/splits/uji_pen_v2.jsonl",
-    "NaturalEarth": ROOT / "data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl",
-    "USGS": ROOT / "data/processed/usgs_contours/large_scale/manifest.jsonl",
-}
+DEFAULT_MANIFESTS = default_manifests(ROOT / "data")
 
 
 def parser(*, default_checkpoint: Path | None = None,
@@ -87,6 +84,8 @@ def parser(*, default_checkpoint: Path | None = None,
     p.add_argument("--selection-seed", type=int, default=20260908)
     p.add_argument("--real-samples-per-dataset", type=int, default=10)
     p.add_argument("--manifest", action="append", default=[], metavar="NAME=PATH")
+    p.add_argument("--data-root", type=Path,
+                   help="Resolve the four default external sources under this complete data tree; explicit --manifest replaces that set")
     p.add_argument("--skip-synthetic", action="store_true")
     p.add_argument("--skip-real", action="store_true")
     p.add_argument(
@@ -411,23 +410,15 @@ def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict
                            "excluded_training_seed_ranges": excluded_ranges})
     if args.skip_real:
         return cases, provenance
-    manifests = dict(DEFAULT_MANIFESTS)
+    manifests = (default_manifests(args.data_root) if getattr(args, "data_root", None)
+                 else dict(DEFAULT_MANIFESTS))
     if args.manifest:
-        manifests = {}
-        for value in args.manifest:
-            name, sep, path = value.partition("=")
-            if not sep or not name:
-                raise ValueError("--manifest must be NAME=PATH")
-            if name in manifests or name == "Synthetic":
-                raise ValueError(f"Duplicate or reserved dataset name: {name}")
-            manifests[name] = Path(path)
+        manifests = parse_manifests(args.manifest)
+    seen_sources = set()
     for name, path in manifests.items():
         records = read_curve_manifest(path)
-        group_splits: dict[str, set[str]] = defaultdict(set)
-        for record in records:
-            group_splits[record["group_id"]].add(record["split"])
-        if any(len(splits) > 1 for splits in group_splits.values()):
-            raise ValueError(f"Group leakage between splits in {path}")
+        validate_source_records(name, records, seen_sources=seen_sources)
+        description = source_description(name, records)
         dataset = RealWorldCurveDataset(path, split="test", num_points=config["num_points"])
         if not len(dataset):
             raise ValueError(f"No test curves in {path}")
@@ -447,6 +438,7 @@ def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict
                 "group_id": sample["group_id"], "points": sample["points"],
                 "reference": reference, "reference_grid": reference_grid,
                 "source_k": None, "canonical_k": None,
+                **description,
             })
         provenance.append({
             "dataset": name, "manifest": str(path.resolve()), "manifest_sha256": sha256_file(path),
@@ -455,6 +447,10 @@ def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict
             "selected_count": len(indices), "selected_indices": indices,
             "selected_groups": len({dataset.records[i]["group_id"] for i in indices}),
             "has_knot_labels": False, "sampling": "seeded_group_round_robin",
+            **description,
+            "present_in_checkpoint_validation_manifests": str(path.resolve()) in {
+                str(Path(item).resolve()) for item in checkpoint.get("training_config", {}).get("real_manifest", [])
+            },
         })
     return cases, provenance
 
@@ -726,6 +722,12 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
             "",
         ]
 
+    source_notes = [f"{item['dataset']}: {item['source_note']}"
+                    for item in metadata.get("datasets", []) if item.get("source_note")]
+    if source_notes:
+        table_start = lines.index("| 数据集 | 方法 | n | 拟合通过率 | 最终 MSE | 平均 K | 完整耗时 ms | 网络 ms |")
+        lines[table_start:table_start] = ["数据来源：" + "；".join(source_notes), ""]
+
     def fmt(value, form):
         return format(value, form) if value is not None else "—"
 
@@ -761,7 +763,7 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
     lines += [
         "",
         (
-            f"真实曲线原始参考点测试：仅在 {metadata['num_points']} 个重采样输入点上"
+            f"外部曲线原始参考点测试（包括程序生成工业等距线）：仅在 {metadata['num_points']} 个重采样输入点上"
             "拟合，原始参考点集不直接用于 refit。UJI 通常从较少原始点上采样，"
             "这不产生新的独立观测。通过率由参考点 MSE 单独判定。"
         ),
@@ -893,7 +895,7 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                 "cpu": platform.processor(), "torch": str(torch.__version__), "threads": torch.get_num_threads(),
                 "python": platform.python_version()}
     config = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items() if k not in ("resume", "output_dir")}
-    code_paths = [Path(__file__), ROOT / "src/spline_fitting/evaluation/published_baselines.py",
+    code_paths = [Path(__file__), ROOT / "scripts/overnight_datasets.py", ROOT / "src/spline_fitting/evaluation/published_baselines.py",
                   ROOT / "src/spline_fitting/evaluation/gradient_knot_pruning.py",
                   ROOT / "src/spline_fitting/evaluation/sparse_knot_paper.py",
                   ROOT / "src/spline_fitting/evaluation/feature_cdf_knot_placement.py",

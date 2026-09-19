@@ -78,9 +78,11 @@ def parser() -> argparse.ArgumentParser:
         "--manifest", action="append", default=[], metavar="NAME=PATH",
         help=(
             "Prepared real-data manifest; repeat for several datasets. "
-            "Defaults to UJI, Natural Earth and USGS."
+            "Defaults to UJI, Natural Earth, USGS and procedural IndustrialOffset (not measured)."
         ),
     )
+    result.add_argument("--data-root", type=Path,
+                        help="Complete external data tree for the four default sources; missing sources fail explicitly")
     result.add_argument("--real-samples-per-dataset", type=int, default=2)
     result.add_argument("--selection-seed", type=int, default=20260909)
     result.add_argument("--mse-tolerance", type=float, default=2.5e-5)
@@ -428,7 +430,7 @@ def plot_ours_case(
     )
     _plot_knot_strip(figure.add_subplot(layout[1]), result["fit"])
     figure.suptitle(
-        f"Held-out Ours deployment: {case['dataset']} / {case['sample_id']}",
+        f"Held-out Ours deployment: {case.get('dataset_label', case['dataset'])} / {case['sample_id']}",
         fontsize=14,
     )
     if diagnostic:
@@ -467,7 +469,7 @@ def plot_ours_overview(
         detail = (f"K={result['final_k']} | MSE={result['mse']:.2e} | {status}"
                   if result.get("status") == "ok" else f"FAILED: {result.get('error', 'no fit')}")
         axis.set_title(
-            f"{case['dataset']} / {case['sample_id']}\n{detail}",
+            f"{case.get('dataset_label', case['dataset'])} / {case['sample_id']}\n{detail}",
             fontsize=9,
         )
         handles, labels = axis.get_legend_handles_labels()
@@ -543,7 +545,7 @@ def plot_case(path: Path, *, case: dict, results: list[dict],
             axis.legend(loc="best", fontsize=7)
             has_fit_legend = True
     title = (
-        f"Held-out real curve: {case['dataset']} / {case['sample_id']}\n"
+        f"Held-out external curve: {case.get('dataset_label', case['dataset'])} / {case['sample_id']}\n"
         f"shared MSE tolerance={tolerance:.3e}; endpoint-constrained, "
         "unregularized standard B-spline fits"
     )
@@ -628,7 +630,7 @@ def run(args: argparse.Namespace) -> dict:
                        PUBLISHED_METHODS if args.method_set == "published" else METHODS)
     records = []
     code_paths = sorted(set((ROOT / "src").rglob("*.py")) | {
-        Path(__file__), ROOT / "scripts/benchmark_v15_datasets.py",
+        Path(__file__), ROOT / "scripts/benchmark_v15_datasets.py", ROOT / "scripts/overnight_datasets.py",
     })
     comparison_provenance = {
         "checkpoint_sha256": sha256_file(args.checkpoint),
@@ -716,6 +718,9 @@ def run(args: argparse.Namespace) -> dict:
             )
         records.append({
             "dataset": case["dataset"],
+            "dataset_label": case.get("dataset_label", case["dataset"]),
+            "source_kind": case.get("source_kind", "external_geometry_unspecified"),
+            "source_note": case.get("source_note", ""),
             "sample_id": case["sample_id"],
             "group_id": case["group_id"],
             "image": str(image_path.resolve()),

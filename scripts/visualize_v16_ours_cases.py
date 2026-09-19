@@ -1,4 +1,4 @@
-"""Create paper-ready Ours-only v16 fitting examples on held-out real curves.
+"""Create Ours-only v16 examples on held-out observed or procedural external curves.
 
 This thin entry point deliberately reuses the case selection, model deployment,
 qualification checks, timing, final refit and JSON export implemented by

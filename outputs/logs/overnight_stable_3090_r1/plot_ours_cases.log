@@ -1,0 +1,51 @@
+
+[plot_ours_cases] python scripts/visualize_v16_ours_cases.py --checkpoint /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_stable_3090_r1.pt --real-samples-per-dataset 6 --selection-seed 20260909 --mse-tolerance 5e-5 --manifest UJI=/home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl --manifest NaturalEarth=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl --manifest USGS=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl --manifest IndustrialOffset=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/industrial_offsets/v1/manifest.jsonl --max-internal-knots 64 --paper-initial-knots 64 --liang-dense-knots 64 --gradient-steps 12 --paper-admm-iterations 400 --paper-lambda-bisections 8 --paper-relocation-iterations 8 --liang-feature-samples 1025 --dung-scan-intervals 10 --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations 50 --published-feasibility-safeguard --network-warmups 3 --network-repeats 100 --end-to-end-repeats 3 --torch-num-threads 4 --device cuda --dpi 240 --allow-unqualified-diagnostic --output-dir /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_stable_3090_r1/ours_cases
+[1/24] UJI / uji2_07455_stroke_00
+  Ours v16: MSE=2.589e-05, K=18, time=8.60 ms
+[2/24] UJI / uji2_05088_stroke_00
+  Ours v16: MSE=1.242e-05, K=21, time=8.68 ms
+[3/24] UJI / uji2_07958_stroke_00
+  Ours v16: MSE=1.468e-05, K=19, time=8.73 ms
+[4/24] UJI / uji2_10873_stroke_00
+  Ours v16: MSE=2.471e-05, K=22, time=8.63 ms
+[5/24] UJI / uji2_10402_stroke_02
+  Ours v16: MSE=1.090e-05, K=13, time=8.43 ms
+[6/24] UJI / uji2_02386_stroke_01
+  Ours v16: MSE=9.134e-06, K=11, time=8.50 ms
+[7/24] NaturalEarth / natural_earth_10m_coastline_6f39c8d2074b_w000_6f39c8d2
+  Ours v16: MSE=4.523e-05, K=25, time=8.67 ms
+[8/24] NaturalEarth / natural_earth_10m_coastline_08e9fecdd118_w000_08e9fecd
+  Ours v16: MSE=4.444e-04, K=40, time=8.93 ms
+[9/24] NaturalEarth / natural_earth_10m_coastline_8a97d7af70b1_w000_8a97d7af
+  Ours v16: MSE=3.527e-05, K=17, time=8.58 ms
+[10/24] NaturalEarth / natural_earth_10m_coastline_48ef53b7a2ac_w000_48ef53b7
+  Ours v16: MSE=7.738e-05, K=29, time=8.70 ms
+[11/24] NaturalEarth / natural_earth_10m_coastline_e798af85b73b_w000_e798af85
+  Ours v16: MSE=3.298e-05, K=20, time=8.70 ms
+[12/24] NaturalEarth / natural_earth_10m_coastline_933eab98f709_w000_933eab98
+  Ours v16: MSE=2.458e-05, K=25, time=8.65 ms
+[13/24] USGS / usgs_tnm_contours_large_scale_3eb19dbb6d67_w000_3eb19dbb
+  Ours v16: MSE=2.527e-05, K=24, time=8.68 ms
+[14/24] USGS / usgs_tnm_contours_large_scale_2cadfb668fb4_w000_2cadfb66
+  Ours v16: MSE=1.952e-05, K=12, time=8.47 ms
+[15/24] USGS / usgs_tnm_contours_large_scale_ddfe427e4dda_w000_ddfe427e
+  Ours v16: MSE=2.281e-05, K=18, time=8.59 ms
+[16/24] USGS / usgs_tnm_contours_large_scale_8e652f54e742_w000_8e652f54
+  Ours v16: MSE=4.520e-05, K=29, time=8.75 ms
+[17/24] USGS / usgs_tnm_contours_large_scale_f0e01325c640_w002_0eb6b787
+  Ours v16: MSE=7.636e-05, K=31, time=8.76 ms
+[18/24] USGS / usgs_tnm_contours_large_scale_f25cc5317711_w000_f25cc531
+  Ours v16: MSE=1.903e-05, K=41, time=8.97 ms
+[19/24] IndustrialOffset / industrial_offset_keyway_bore_v007_o01_m0p0400
+  Ours v16: MSE=1.274e-05, K=21, time=8.81 ms
+[20/24] IndustrialOffset / industrial_offset_elliptic_bore_v008_o03_p0p0200
+  Ours v16: MSE=1.206e-06, K=13, time=8.49 ms
+[21/24] IndustrialOffset / industrial_offset_keyway_bore_v008_o03_p0p0200
+  Ours v16: MSE=3.126e-05, K=21, time=8.75 ms
+[22/24] IndustrialOffset / industrial_offset_naca_airfoil_v005_o04_p0p0400
+  Ours v16: MSE=7.138e-06, K=18, time=8.61 ms
+[23/24] IndustrialOffset / industrial_offset_lobed_rotor_v001_o00_m0p0800
+  Ours v16: MSE=1.884e-04, K=17, time=8.55 ms
+[24/24] IndustrialOffset / industrial_offset_naca_airfoil_v011_o03_p0p0200
+  Ours v16: MSE=1.482e-05, K=19, time=8.69 ms
+Saved 25 PNG files and /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/overnight_stable_3090_r1/ours_cases/deployment_visualizations.json

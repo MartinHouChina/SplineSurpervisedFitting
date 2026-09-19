@@ -267,7 +267,7 @@ def test_all_evaluation_commands_share_capacity_tolerance_and_data(tmp_path: Pat
         assert args.force_diagnostic is False
         manifest_sets.append(dict(item.split("=", 1) for item in args.manifest))
     assert manifest_sets[0] == manifest_sets[1] == manifest_sets[2]
-    assert set(manifest_sets[0]) == {"UJI", "NaturalEarth", "USGS"}
+    assert set(manifest_sets[0]) == {"UJI", "NaturalEarth", "USGS", "IndustrialOffset"}
     assert parsed["plot_ours_cases"].real_samples_per_dataset == 2
     assert parsed["plot_six_method_real_cases"].method_set == "published"
     inspect = parsed["inspect_checkpoint"]
@@ -654,7 +654,8 @@ def test_shell_resume_status_controls_training_but_continues_reports(
     data = tmp_path / "fixture data"
     for relative in ("splits/uji_pen_v2.jsonl",
                      "processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl",
-                     "processed/usgs_contours/large_scale/manifest.jsonl"):
+                     "processed/usgs_contours/large_scale/manifest.jsonl",
+                     "processed/industrial_offsets/v1/manifest.jsonl"):
         manifest = data / relative
         manifest.parent.mkdir(parents=True, exist_ok=True)
         manifest.write_text("", encoding="utf-8")

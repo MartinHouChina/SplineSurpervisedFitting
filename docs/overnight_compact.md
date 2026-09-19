@@ -1,5 +1,7 @@
 # Overnight Compact：在可行性约束下学习更少节点
 
+更新：本档服务器实验已随 `1404b15`（“19 13 训练不错”）返回。下文验证记录是开发时的历史状态；正式返回结果、改善边界与后续可达轨迹教师见 [Overnight Stable](overnight_stable.md)。评测入口现已扩展至全部四个外部来源，包含明确标为半合成的工业等距线。
+
 这是从 Reliable 已选最佳权重继续改进的独立实验，由 `--compact-selection` 显式启用，与 `--enhanced-selection`、`--reliable-selection` 互斥。保留 Reliable 的参数 trust gate、Proposal → KeepMask → 存活节点/参数联合更新 → 标准 B 样条 refit，以及六方法评测和案例图流程；不加新开关时，原有档位不变。
 
 本档尚未完成正式训练。24 epochs 是实验预算，不保证一夜完成、通过率提高或节点数下降；Teacher 找到的子集也不是全局最少节点证明。**部署仍只有一次网络前向、一次离散选集和一次标准 refit，不增加逐节点试删、阈值扫描或数值修复搜索。**

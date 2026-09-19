@@ -125,8 +125,9 @@ def test_fixed_geometry_exhaustively_deletes_redundancy_with_exact_budget(minimu
         assert result[0, 0]
 
 
-def _greedy_case(model, *, batch=1, minimum=0, steps=8, max_curves=2):
-    objective = V16SubsetLoss(teacher_greedy_steps=steps, teacher_greedy_max_curves=max_curves)
+def _greedy_case(model, *, batch=1, minimum=0, steps=8, max_curves=2, **options):
+    objective = V16SubsetLoss(teacher_greedy_steps=steps, teacher_greedy_max_curves=max_curves,
+                             **options)
     points = _line(batch)
     context = model.context(points)
     mask = torch.ones(batch, 4, dtype=torch.bool)
@@ -188,7 +189,8 @@ def test_curve_and_step_budgets_do_not_change_unsearched_rows():
 
 
 @pytest.mark.parametrize("stage", ["proposal", "joint"])
-def test_compact_forward_is_finite_differentiable_and_zero_safe_by_stage(stage):
+@pytest.mark.parametrize("trajectory", [False, True])
+def test_compact_forward_is_finite_differentiable_and_zero_safe_by_stage(stage, trajectory):
     torch.manual_seed(101)
     model = V16CandidateSelectionNetwork(
         hidden_dim=16, encoder_layers=1, max_internal_knots=4,
@@ -200,6 +202,8 @@ def test_compact_forward_is_finite_differentiable_and_zero_safe_by_stage(stage):
         teacher_prefix_search_steps=2, teacher_greedy_steps=2,
         teacher_greedy_max_curves=1, teacher_geometry_distillation_weight=.2,
         feasible_objective=True, count_reserve_alignment=True,
+        teacher_greedy_trajectory_checks=4 if trajectory else 0,
+        teacher_geometry_trajectory_targets=2 if trajectory else 0,
     )
     points = _line(2)
     loss, metrics = objective(model, points, stage=stage)
@@ -213,6 +217,7 @@ def test_compact_forward_is_finite_differentiable_and_zero_safe_by_stage(stage):
         assert metrics["teacher_greedy_refits"] == 0
         assert metrics["teacher_geometry_aux_refits"] == 0
         assert metrics["complexity_active_fraction"] == 0
+        assert metrics["teacher_greedy_trajectory_checks"] == 0
     else:
         assert metrics["teacher_greedy_curve_fraction"] == .5
         assert metrics["teacher_greedy_refits"] > 0
@@ -244,7 +249,177 @@ def test_default_loss_never_calls_new_search_and_explicit_off_is_identical():
     {"feasible_fit_weight": -1}, {"feasible_fit_weight": float("nan")},
     {"teacher_greedy_steps": -1}, {"teacher_greedy_max_curves": 0},
     {"teacher_geometry_distillation_weight": -1},
+    {"teacher_greedy_trajectory_checks": -1}, {"teacher_greedy_trajectory_checks": True},
+    {"teacher_geometry_trajectory_targets": -1},
+    {"teacher_geometry_trajectory_targets": 2},  # No trajectory decode checks.
 ])
 def test_compact_configuration_validation(options):
     with pytest.raises(ValueError):
         V16SubsetLoss(**options)
+
+
+class TrajectoryOracle(GeometryOracle):
+    """The decoder is useful near its seed, but some smaller sets drift."""
+
+    def __init__(self, bad_counts=(0, 1, 2)):
+        super().__init__(drift=True)
+        self.bad_counts = bad_counts
+
+    def decode_subset(self, context, mask):
+        t = context["proposal_params"]
+        changed = torch.zeros(mask.shape[0], dtype=torch.bool, device=mask.device)
+        for count in self.bad_counts:
+            changed |= mask.sum(-1) == count
+        changed = changed.to(t.dtype).unsqueeze(-1)
+        return {
+            "params": t + self.drift * changed * t * (1 - t),
+            "internal_knots": context["proposal_internal_knots"] + changed * self.position_shift,
+            "learned_keep_mask": mask,
+        }
+
+
+@pytest.mark.parametrize("length,budget,expected", [
+    (0, 4, []), (1, 4, [0]), (4, 0, []), (4, 1, [3]),
+    (4, 2, [0, 3]), (4, 4, [0, 1, 2, 3]), (16, 4, [0, 5, 10, 15]),
+])
+def test_trajectory_probe_indices_are_bounded_and_cover_near_and_far(length, budget, expected):
+    assert V16SubsetLoss._trajectory_check_indices(length, budget) == expected
+
+
+def test_trajectory_records_only_verified_feasible_nested_deletions():
+    model = GeometryOracle(anchor=True)
+    objective = V16SubsetLoss(teacher_greedy_steps=3)
+    points = _line()
+    context = model.context(points)
+    mask = torch.ones(1, 4, dtype=torch.bool)
+    path = []
+    result, mse, scans, checks = objective._fixed_geometry_greedy(
+        model, context, context["proposal_params"], context["proposal_internal_knots"],
+        mask, points, 3, torch.tensor([1e-10]), 1, trajectory=path,
+    )
+    assert len(path) == 3 and scans == 9 and checks == 4
+    previous = mask
+    for selected, error in path:
+        assert selected[0, 0] and error <= 1e-10
+        assert not error.requires_grad
+        assert int((previous & ~selected).sum()) == 1
+        assert not (selected & ~previous).any()
+        previous = selected
+    assert torch.equal(path[-1][0], result)
+    assert torch.equal(path[-1][1], mse)
+
+
+def test_unreachable_endpoint_does_not_hide_a_reachable_teacher_transition():
+    model = TrajectoryOracle()
+    old = _greedy_case(model)[-1]
+    assert old[0].sum() == 4
+    objective, points, context, _, tolerance, result = _greedy_case(
+        model, teacher_greedy_trajectory_checks=4, teacher_geometry_trajectory_targets=2,
+    )
+    mask, mse, targets, metrics = result
+    assert mask.sum() == 3 and mse <= tolerance
+    assert metrics["teacher_greedy_fixed_count"] == 0
+    assert metrics["teacher_greedy_decoded_pass_rate"] == 0  # Endpoint still fails.
+    assert metrics["teacher_greedy_trajectory_checks"] == 4
+    assert metrics["teacher_greedy_trajectory_pass_rate"] == .25
+    assert metrics["teacher_greedy_accepted_delta_k"] == 1
+    assert metrics["teacher_greedy_refits"] == 19  # 10 scans + 5 verifies + 4 actual decodes.
+    assert [int(target["mask"].sum()) for target in targets] == [3, 2]
+    assert [target["decoded_feasible"] for target in targets] == [True, False]
+    assert metrics["teacher_geometry_target_count"] == 2
+    assert metrics["teacher_geometry_target_k_mean"] == 2.5
+    assert metrics["teacher_geometry_target_pass_rate"] == .5  # Both auxiliary targets.
+    loss, violation, refits = objective._greedy_geometry_distillation(
+        model, context, targets, points, 3, tolerance,
+    )
+    assert loss > 0 and violation > 0 and refits == 2
+    loss.backward()
+    assert torch.isfinite(model.drift.grad) and model.drift.grad.abs() > 0
+    assert torch.isfinite(model.position_shift.grad) and model.position_shift.grad.abs() > 0
+    assert all(not item["params"].requires_grad and not item["knots"].requires_grad for item in targets)
+
+
+def test_all_unreachable_trajectory_uses_nearest_auxiliary_without_false_feasible_labels():
+    _, _, _, original, tolerance, (mask, mse, targets, metrics) = _greedy_case(
+        GeometryOracle(drift=True), teacher_greedy_trajectory_checks=4,
+        teacher_geometry_trajectory_targets=2,
+    )
+    assert torch.equal(mask, original) and mse <= tolerance
+    assert [int(target["mask"].sum()) for target in targets] == [3, 2]
+    assert not any(target["decoded_feasible"] for target in targets)
+    assert metrics["teacher_greedy_trajectory_pass_rate"] == 0
+    assert metrics["teacher_greedy_accepted_delta_k"] == 0
+
+
+def test_trajectory_checks_do_not_assume_monotonic_decoded_feasibility():
+    _, _, _, _, tolerance, (mask, mse, targets, metrics) = _greedy_case(
+        TrajectoryOracle(bad_counts=(0, 2)), teacher_greedy_trajectory_checks=4,
+        teacher_geometry_trajectory_targets=2,
+    )
+    assert mask.sum() == 1 and mse <= tolerance  # K=2 failed; K=1 must still be checked.
+    assert [int(target["mask"].sum()) for target in targets] == [1, 0]
+    assert metrics["teacher_greedy_trajectory_pass_rate"] == .5
+
+
+def test_trajectory_and_auxiliary_budgets_are_per_seed_and_per_curve():
+    model = GeometryOracle()
+    objective = V16SubsetLoss(teacher_greedy_steps=4, teacher_greedy_max_curves=2,
+        teacher_greedy_trajectory_checks=2, teacher_geometry_trajectory_targets=2)
+    points = _line(3)
+    context = model.context(points)
+    original = torch.ones(3, 4, dtype=torch.bool)
+    deployment = original.clone()
+    deployment[:, -1] = False
+    output = model.decode_subset(context, deployment)
+    tolerance = torch.full((3,), 1e-10, dtype=torch.float64)
+    mask, _, targets, metrics = objective._greedy_teacher(
+        model, context, original, torch.zeros(3, dtype=torch.float64), deployment,
+        output, points, 3, tolerance, 0,
+    )
+    assert torch.equal(mask[-1], original[-1])
+    assert metrics["teacher_greedy_trajectory_checks"] == 2 * 2 * 2  # Rows, seeds, probes.
+    assert len(targets) <= 2 * 2  # Rows and max geometry targets.
+    assert all(target["row"] < 2 for target in targets)
+
+
+def test_explicit_trajectory_off_preserves_legacy_greedy_values():
+    model = GeometryOracle(drift=True)
+    old = _greedy_case(model)[-1]
+    explicit = _greedy_case(model, teacher_greedy_trajectory_checks=0,
+                            teacher_geometry_trajectory_targets=0)[-1]
+    assert torch.equal(old[0], explicit[0]) and torch.equal(old[1], explicit[1])
+    assert old[2][0]["rank"] == explicit[2][0]["rank"]
+    for name in old[3]:
+        assert torch.equal(old[3][name], explicit[3][name]), name
+
+
+def test_geometry_distillation_balances_curves_with_unequal_target_counts():
+    model = GeometryOracle(drift=True)
+    objective = V16SubsetLoss(teacher_greedy_trajectory_checks=4,
+                             teacher_geometry_trajectory_targets=2)
+    points = _line(2)
+    context = model.context(points)
+    tolerance = torch.full((2,), 1e-10, dtype=torch.float64)
+    targets = []
+    for row, count in ((0, 3), (0, 2), (1, 4)):
+        targets.append(dict(
+            row=row, mask=(torch.arange(4).unsqueeze(0) < count),
+            params=context["proposal_params"][row:row + 1].detach().clone(),
+            knots=context["proposal_internal_knots"][row:row + 1].detach().clone(),
+        ))
+    individual = [objective._greedy_geometry_distillation(
+        model, context, [target], points, 3, tolerance,
+    ) for target in targets]
+    loss, violation, refits = objective._greedy_geometry_distillation(
+        model, context, targets, points, 3, tolerance,
+    )
+    expected_loss = ((individual[0][0] + individual[1][0]) / 2 + individual[2][0]) / 2
+    expected_violation = ((individual[0][1] + individual[1][1]) / 2 + individual[2][1]) / 2
+    torch.testing.assert_close(loss, expected_loss)
+    torch.testing.assert_close(violation, expected_violation)
+    pooled_loss = torch.stack([value[0] for value in individual]).mean()
+    assert not torch.isclose(loss, pooled_loss)  # The two-target curve has no extra weight.
+    assert refits == 3 and all(value[2] == 1 for value in individual)
+    loss.backward()
+    assert torch.isfinite(model.drift.grad) and model.drift.grad.abs() > 0
+    assert torch.isfinite(model.position_shift.grad) and model.position_shift.grad.abs() > 0

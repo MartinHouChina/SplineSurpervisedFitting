@@ -124,6 +124,8 @@ class V16SubsetLoss(nn.Module):
         teacher_greedy_max_curves: int = 2,
         teacher_geometry_distillation_weight: float = 0.0,
         count_reserve_alignment: bool = False,
+        teacher_greedy_trajectory_checks: int = 0,
+        teacher_geometry_trajectory_targets: int = 0,
     ) -> None:
         super().__init__()
         if not math.isfinite(mse_tolerance) or mse_tolerance <= 0:
@@ -137,6 +139,8 @@ class V16SubsetLoss(nn.Module):
             ("teacher_geometry_candidates", teacher_geometry_candidates, 0),
             ("teacher_greedy_steps", teacher_greedy_steps, 0),
             ("teacher_greedy_max_curves", teacher_greedy_max_curves, 1),
+            ("teacher_greedy_trajectory_checks", teacher_greedy_trajectory_checks, 0),
+            ("teacher_geometry_trajectory_targets", teacher_geometry_trajectory_targets, 0),
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
                 raise ValueError(f"{name} must be an integer >= {minimum}")
@@ -203,6 +207,10 @@ class V16SubsetLoss(nn.Module):
         self.feasible_fit_weight = float(feasible_fit_weight)
         self.teacher_greedy_steps = teacher_greedy_steps
         self.teacher_greedy_max_curves = teacher_greedy_max_curves
+        if teacher_geometry_trajectory_targets and not teacher_greedy_trajectory_checks:
+            raise ValueError("trajectory geometry targets require trajectory decode checks")
+        self.teacher_greedy_trajectory_checks = teacher_greedy_trajectory_checks
+        self.teacher_geometry_trajectory_targets = teacher_geometry_trajectory_targets
 
     @staticmethod
     def _validate_points(points: torch.Tensor, degree: int) -> None:
@@ -852,6 +860,9 @@ class V16SubsetLoss(nn.Module):
             "teacher_greedy_verification_refits", "teacher_greedy_decode_refits",
             "teacher_greedy_refits", "teacher_geometry_distillation_loss",
             "teacher_geometry_fit_violation", "teacher_geometry_aux_refits",
+            "teacher_greedy_trajectory_checks", "teacher_greedy_trajectory_pass_rate",
+            "teacher_greedy_trajectory_accepted_delta_k", "teacher_geometry_target_count",
+            "teacher_geometry_target_k_mean", "teacher_geometry_target_pass_rate",
         )}
 
     @staticmethod
@@ -864,7 +875,7 @@ class V16SubsetLoss(nn.Module):
 
     @torch.no_grad()
     def _fixed_geometry_greedy(self, model, context, parameters, knots, mask,
-                               points, degree, tolerance, minimum):
+                               points, degree, tolerance, minimum, *, trajectory=None):
         """Full single-deletion scan, bounded by accepted steps, on one curve.
 
         The batched solver examines EVERY selected location in a round. The
@@ -913,11 +924,163 @@ class V16SubsetLoss(nn.Module):
                 checks += 1
                 if bool((verified <= tolerance).all()):
                     mask, current_mse = trial, verified
+                    if trajectory is not None:
+                        trajectory.append((mask.detach().clone(), current_mse.detach().clone()))
                     accepted = True
                     break
             if not accepted:
                 break
         return mask, current_mse, scans, checks
+
+    @staticmethod
+    def _trajectory_check_indices(length, budget):
+        """Bounded samples including one deletion and the final deletion.
+
+        We do not assume decoded feasibility is monotonic along fixed-geometry
+        deletions. Equally spaced probes cover the path without an extra search
+        over all its states; a one-check budget intentionally means endpoint.
+        """
+        count = min(length, budget)
+        if count < 1:
+            return []
+        if count == 1:
+            return [length - 1]
+        return sorted({round(index * (length - 1) / (count - 1)) for index in range(count)})
+
+    def _trajectory_geometry_targets(self, candidates):
+        """Teach the reachable frontier and its nearest harder checked state.
+
+        A long-jump, decoder-infeasible endpoint is not automatically a useful
+        first learning target. If none of the checked deletions is reachable,
+        start with the one-deletion state instead. Every target still has an
+        independently verified feasible *fixed* geometry and is detached.
+        """
+        unique = []
+        for candidate in sorted(candidates, key=lambda item: item["rank"]):
+            if not any(torch.equal(candidate["mask"], previous["mask"]) for previous in unique):
+                unique.append(candidate)
+        if not unique:
+            return []
+        reachable = [item for item in unique if item["decoded_feasible"]]
+        frontier = (min(reachable, key=lambda item: item["rank"]) if reachable else
+                    min(unique, key=lambda item: (item["depth"], item["rank"])))
+        selected = [frontier]
+        # A harder state is useful only when it is not already realizable.
+        # Prefer the nearest lower cardinality, not the farthest endpoint.
+        harder = [item for item in unique if item is not frontier
+                  and item["rank"][0] < frontier["rank"][0]]
+        others = [item for item in unique if item is not frontier
+                  and item["rank"][0] >= frontier["rank"][0]]
+        harder.sort(key=lambda item: (frontier["rank"][0] - item["rank"][0], item["rank"][1]))
+        others.sort(key=lambda item: (abs(item["rank"][0] - frontier["rank"][0]), item["rank"][1]))
+        selected.extend((harder + others)[:max(self.teacher_geometry_trajectory_targets - 1, 0)])
+        return selected
+
+    @torch.no_grad()
+    def _trajectory_teacher(self, model, context, best_mask, best_mse, deployment_mask,
+                            deployment_output, points, degree, tolerance, minimum):
+        """Training-only fixed-geometry paths with actual decoded acceptance.
+
+        At most trajectory_checks decoded refits are performed per distinct
+        seed and bounded row. Fixed geometry and masks do not bypass the actual
+        decoder. Failed endpoints remain diagnostics, not feasible labels.
+        """
+        zero = best_mse.new_zeros(())
+        metrics = self._greedy_metrics(zero)
+        batch = points.shape[0]
+        original_mask = best_mask.clone()
+        best_mask, best_mse = best_mask.clone(), best_mse.clone()
+        targets, terminals = [], []
+        scans = checks = decoded_refits = decoded_passes = 0
+        searched = min(batch, self.teacher_greedy_max_curves)
+        for row in range(searched):
+            row_context = self._row_context(context, row, batch)
+            row_points, row_tolerance = points[row:row + 1], tolerance[row:row + 1]
+            seeds = [original_mask[row:row + 1]]
+            if not torch.equal(seeds[0], deployment_mask[row:row + 1]):
+                seeds.append(deployment_mask[row:row + 1])
+            row_candidates, row_terminals = [], []
+            for seed in seeds:
+                if (deployment_output is not None
+                        and torch.equal(seed, deployment_mask[row:row + 1])):
+                    output = {key: value[row:row + 1] for key, value in deployment_output.items()
+                              if isinstance(value, torch.Tensor) and value.ndim
+                              and value.shape[0] == batch}
+                else:
+                    output = self._decode_output(model, row_context, seed)
+                trajectory = []
+                fixed_mask, fixed_mse, evaluated, verified = self._fixed_geometry_greedy(
+                    model, row_context, output["params"], output["internal_knots"], seed,
+                    row_points, degree, row_tolerance, minimum, trajectory=trajectory,
+                )
+                scans += evaluated
+                checks += verified
+                if not bool((fixed_mse <= row_tolerance).all()):
+                    continue
+                if not trajectory:
+                    trajectory = [(fixed_mask, fixed_mse)]
+                for index in self._trajectory_check_indices(
+                    len(trajectory), self.teacher_greedy_trajectory_checks,
+                ):
+                    trial_mask, trial_fixed_mse = trajectory[index]
+                    decoded_mse = self._decode_mse(model, row_context, trial_mask, row_points, degree)
+                    decoded_refits += 1
+                    feasible = bool((decoded_mse <= row_tolerance).all())
+                    decoded_passes += int(feasible)
+                    current_k, old_k = int(trial_mask.sum()), int(best_mask[row].sum())
+                    improve = (not bool(best_mse[row] <= tolerance[row])
+                               or current_k < old_k
+                               or (current_k == old_k and bool(decoded_mse[0] < best_mse[row])))
+                    if feasible and improve:
+                        best_mask[row] = trial_mask[0]
+                        best_mse[row] = decoded_mse[0]
+                    candidate = dict(
+                        row=row, mask=trial_mask.detach().clone(),
+                        params=output["params"].detach().clone(),
+                        knots=output["internal_knots"].detach().clone(),
+                        rank=(current_k, float(trial_fixed_mse[0])),
+                        decoded_feasible=feasible, depth=int(seed.sum()) - current_k,
+                    )
+                    row_candidates.append(candidate)
+                    if index == len(trajectory) - 1:
+                        row_terminals.append(candidate)
+            if row_terminals:
+                terminal = min(row_terminals, key=lambda item: item["rank"])
+                terminals.append(terminal)
+                if self.teacher_geometry_trajectory_targets:
+                    targets.extend(self._trajectory_geometry_targets(row_candidates))
+                else:
+                    targets.append(terminal)
+        changed = (best_mask != original_mask).any(-1)
+        accepted_delta = (original_mask.sum(-1) - best_mask.sum(-1)).double().mean()
+        metrics.update(
+            teacher_greedy_curve_fraction=zero.new_tensor(searched / batch),
+            teacher_greedy_fixed_count=zero.new_tensor(
+                sum(item["rank"][0] for item in terminals) / max(len(terminals), 1)),
+            teacher_greedy_fixed_pass_rate=zero.new_tensor(len(terminals) / searched),
+            teacher_greedy_decoded_pass_rate=zero.new_tensor(
+                sum(item["decoded_feasible"] for item in terminals) / max(len(terminals), 1)),
+            teacher_greedy_fixed_delta_k=zero.new_tensor(sum(
+                int(original_mask[item["row"]].sum()) - item["rank"][0]
+                for item in terminals) / max(len(terminals), 1)),
+            teacher_greedy_accepted_delta_k=accepted_delta,
+            teacher_greedy_accepted_fraction=changed.double().mean(),
+            teacher_greedy_candidate_refits=zero.new_tensor(float(scans)),
+            teacher_greedy_verification_refits=zero.new_tensor(float(checks)),
+            teacher_greedy_decode_refits=zero.new_tensor(float(decoded_refits)),
+            teacher_greedy_refits=zero.new_tensor(float(scans + checks + decoded_refits)),
+            teacher_greedy_trajectory_checks=zero.new_tensor(float(decoded_refits)),
+            teacher_greedy_trajectory_pass_rate=zero.new_tensor(decoded_passes / max(decoded_refits, 1)),
+            teacher_greedy_trajectory_accepted_delta_k=accepted_delta,
+            teacher_geometry_target_count=zero.new_tensor(float(len(targets))),
+            # These statistics cover ALL selected auxiliary targets, including
+            # the harder, not-yet-reachable target; they are not frontier-only.
+            teacher_geometry_target_k_mean=zero.new_tensor(
+                sum(item["rank"][0] for item in targets) / max(len(targets), 1)),
+            teacher_geometry_target_pass_rate=zero.new_tensor(
+                sum(item["decoded_feasible"] for item in targets) / max(len(targets), 1)),
+        )
+        return best_mask, best_mse, targets, metrics
 
     @torch.no_grad()
     def _greedy_teacher(self, model, context, best_mask, best_mse, deployment_mask,
@@ -930,6 +1093,11 @@ class V16SubsetLoss(nn.Module):
         that the current decoder cannot realize is auxiliary geometry training
         data, NEVER a feasible mask/count label.
         """
+        if self.teacher_greedy_trajectory_checks:
+            return self._trajectory_teacher(
+                model, context, best_mask, best_mse, deployment_mask,
+                deployment_output, points, degree, tolerance, minimum,
+            )
         zero = best_mse.new_zeros(())
         metrics = self._greedy_metrics(zero)
         batch = points.shape[0]
@@ -1025,6 +1193,19 @@ class V16SubsetLoss(nn.Module):
             violations.append(violation)
             losses.append(parameter_loss + position_loss + violation)
         zero = points.new_zeros(())
+        if losses and self.teacher_geometry_trajectory_targets:
+            # A curve with two frontier targets must not receive twice the
+            # weight of a curve with only one reachable compact state.
+            rows = sorted({target["row"] for target in targets})
+            mean_loss = torch.stack([
+                torch.stack([loss for loss, target in zip(losses, targets)
+                             if target["row"] == row]).mean() for row in rows
+            ]).mean()
+            mean_violation = torch.stack([
+                torch.stack([value for value, target in zip(violations, targets)
+                             if target["row"] == row]).mean() for row in rows
+            ]).mean()
+            return mean_loss, mean_violation, len(losses)
         return (torch.stack(losses).mean() if losses else zero,
                 torch.stack(violations).mean() if violations else zero, len(losses))
 

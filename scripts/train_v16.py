@@ -67,6 +67,8 @@ ENHANCED_TRAINING_DEFAULTS = {
     "feasible_fit_weight": 0.02,
     "teacher_greedy_steps": 0,
     "teacher_greedy_max_curves": 2,
+    "teacher_greedy_trajectory_checks": 0,
+    "teacher_geometry_trajectory_targets": 0,
     "teacher_geometry_distillation_weight": 0.0,
     "count_reserve_alignment": False,
     "synthetic_simple_fraction": 0.0,
@@ -176,6 +178,10 @@ def parser():
                    help="Training-only fixed-geometry full single-deletion search rounds")
     p.add_argument("--teacher-greedy-max-curves", type=int, default=2,
                    help="Maximum curves per batch receiving full deletion search")
+    p.add_argument("--teacher-greedy-trajectory-checks", type=int, default=0,
+                   help="Training-only decoded checkpoints per greedy seed; zero keeps endpoint-only supervision")
+    p.add_argument("--teacher-geometry-trajectory-targets", type=int, default=0,
+                   help="Per-curve reachable/frontier geometry targets; zero keeps legacy endpoint targets")
     p.add_argument("--teacher-geometry-distillation-weight", type=float, default=0.0)
     p.add_argument("--count-reserve-alignment", action="store_true",
                    help="Align mask-probability mass targets with deployed count/safety reserve")
@@ -280,6 +286,7 @@ def validate_args(args):
         "teacher_refinement_steps",
         "teacher_geometry_candidates",
         "teacher_greedy_steps",
+        "teacher_greedy_trajectory_checks", "teacher_geometry_trajectory_targets",
     ):
         value = getattr(args, key)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -343,6 +350,12 @@ def validate_args(args):
         raise ValueError("feasible-fit-weight must lie in [0,1]")
     if args.teacher_geometry_distillation_weight and not args.teacher_greedy_steps:
         raise ValueError("teacher-geometry-distillation-weight requires teacher-greedy-steps > 0")
+    if args.teacher_greedy_trajectory_checks and not args.teacher_greedy_steps:
+        raise ValueError("teacher-greedy-trajectory-checks requires teacher-greedy-steps > 0")
+    if args.teacher_geometry_trajectory_targets and not args.teacher_greedy_trajectory_checks:
+        raise ValueError("teacher-geometry-trajectory-targets requires teacher-greedy-trajectory-checks > 0")
+    if args.teacher_geometry_trajectory_targets and not args.teacher_geometry_distillation_weight:
+        raise ValueError("teacher-geometry-trajectory-targets requires teacher-geometry-distillation-weight > 0")
     if args.simplification_controller == "per_curve" and not args.feasible_objective:
         raise ValueError("per_curve controller requires --feasible-objective")
     if args.minimality_max_attempts < 1:
@@ -746,14 +759,27 @@ _TRAINING_TRUST_EXTREMA = {
     for gate in ("proposal_parameter_trust", "subset_parameter_trust")
     for statistic, reducer in (("min", min), ("max", max))
 }
+_TRAINING_SEARCH_COUNTS = {
+    "teacher_greedy_trajectory_checks", "teacher_geometry_target_count",
+}
+_TRAINING_SEARCH_DENOMINATORS = {
+    "teacher_greedy_trajectory_pass_rate": "teacher_greedy_trajectory_checks",
+    "teacher_geometry_target_k_mean": "teacher_geometry_target_count",
+    "teacher_geometry_target_pass_rate": "teacher_geometry_target_count",
+}
 
 
 def accumulate_training_metrics(total, metrics, sample_count):
-    """Accumulate sample-weighted means and true cross-batch gate extrema."""
+    """Keep sample means, gate extrema, and actual trajectory/target denominators."""
     for key, value in metrics.items():
         numeric = float(value)
         reducer = _TRAINING_TRUST_EXTREMA.get(key)
-        if reducer is not None:
+        if key in _TRAINING_SEARCH_COUNTS:
+            total[key] = total.get(key, 0.0) + numeric
+        elif key in _TRAINING_SEARCH_DENOMINATORS:
+            count = float(metrics.get(_TRAINING_SEARCH_DENOMINATORS[key], 0.0))
+            total[key] = total.get(key, 0.0) + numeric * count
+        elif reducer is not None:
             total[key] = reducer(total.get(key, numeric), numeric)
         else:
             total[key] = total.get(key, 0.0) + numeric * sample_count
@@ -763,8 +789,16 @@ def finalize_training_metrics(total, sample_count):
     """Normalize mean metrics only; extrema already describe the whole epoch."""
     if sample_count <= 0:
         raise ValueError("training metric aggregation requires at least one sample")
-    return {key: value if key in _TRAINING_TRUST_EXTREMA else value / sample_count
-            for key, value in total.items()}
+    result = {}
+    for key, value in total.items():
+        if key in _TRAINING_SEARCH_COUNTS or key in _TRAINING_TRUST_EXTREMA:
+            result[key] = value
+        elif key in _TRAINING_SEARCH_DENOMINATORS:
+            count = total.get(_TRAINING_SEARCH_DENOMINATORS[key], 0.0)
+            result[key] = value / count if count else 0.0
+        else:
+            result[key] = value / sample_count
+    return result
 
 
 def serial_args(args):
@@ -1078,6 +1112,8 @@ def main(argv=None):
         feasible_fit_weight=args.feasible_fit_weight,
         teacher_greedy_steps=args.teacher_greedy_steps,
         teacher_greedy_max_curves=args.teacher_greedy_max_curves,
+        teacher_greedy_trajectory_checks=args.teacher_greedy_trajectory_checks,
+        teacher_geometry_trajectory_targets=args.teacher_geometry_trajectory_targets,
         teacher_geometry_distillation_weight=args.teacher_geometry_distillation_weight,
         count_reserve_alignment=args.count_reserve_alignment,
         count_weight=args.count_weight,
@@ -1371,6 +1407,8 @@ def main(argv=None):
                              teacher_geometry_candidates=args.teacher_geometry_candidates,
                              teacher_greedy_steps=args.teacher_greedy_steps,
                              teacher_greedy_max_curves=args.teacher_greedy_max_curves,
+                             teacher_greedy_trajectory_checks=args.teacher_greedy_trajectory_checks,
+                             teacher_geometry_trajectory_targets=args.teacher_geometry_trajectory_targets,
                              feasible_objective=args.feasible_objective,
                              feasible_fit_margin=args.feasible_fit_margin,
                              feasible_fit_weight=args.feasible_fit_weight,
@@ -1441,6 +1479,16 @@ def main(argv=None):
                 f"geometry_violation={train_metrics['teacher_geometry_fit_violation']:.4f}, "
                 f"extra_refits={train_metrics['teacher_greedy_refits']:.1f}, "
                 f"complexity_active={train_metrics['complexity_active_fraction']:.1%}", flush=True,
+            )
+        if args.teacher_greedy_trajectory_checks and stage == "joint":
+            print(
+                f"  reachable teacher: checks_total={train_metrics['teacher_greedy_trajectory_checks']:.0f}, "
+                f"decoded_pass={train_metrics['teacher_greedy_trajectory_pass_rate']:.1%}, "
+                f"accepted_delta_K={train_metrics['teacher_greedy_trajectory_accepted_delta_k']:.3f}, "
+                f"geometry_targets_total={train_metrics['teacher_geometry_target_count']:.0f}, "
+                f"target_K={train_metrics['teacher_geometry_target_k_mean']:.1f}, "
+                f"target_pass={train_metrics['teacher_geometry_target_pass_rate']:.1%}",
+                flush=True,
             )
         if training_family_counts:
             print(f"  training families: {dict(training_family_counts)}", flush=True)

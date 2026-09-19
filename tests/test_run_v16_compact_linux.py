@@ -90,7 +90,7 @@ def test_compact_keeps_six_methods_four_metrics_and_three_real_test_sources(tmp_
         assert commands[stage] == default[stage]
     for stage in ("benchmark_six_methods", "plot_ours_cases", "plot_six_method_real_cases"):
         args = _parsed(commands[stage])
-        assert {value.split("=", 1)[0] for value in args.manifest} == {"UJI", "NaturalEarth", "USGS"}
+        assert {value.split("=", 1)[0] for value in args.manifest} == {"UJI", "NaturalEarth", "USGS", "IndustrialOffset"}
         assert args.published_feasibility_safeguard
     assert _parsed(commands["plot_four_metrics"]).method_set == "published"
 
@@ -207,7 +207,8 @@ def test_compact_resume_status_controls_training_and_preserves_reports(
     data = tmp_path / "fixture data"
     for relative in ("splits/uji_pen_v2.jsonl",
                      "processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl",
-                     "processed/usgs_contours/large_scale/manifest.jsonl"):
+                     "processed/usgs_contours/large_scale/manifest.jsonl",
+                     "processed/industrial_offsets/v1/manifest.jsonl"):
         manifest = data / relative
         manifest.parent.mkdir(parents=True, exist_ok=True)
         manifest.write_text("", encoding="utf-8")

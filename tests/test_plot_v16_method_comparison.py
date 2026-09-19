@@ -143,6 +143,35 @@ def test_only_synthetic_canonical_k_is_used_as_reference(report: dict) -> None:
         plotting._synthetic_canonical_k(index, plotting.PUBLISHED_METHODS)
 
 
+def test_industrial_ticks_disclose_generation_not_measurement():
+    assert "procedural, not measured" in plotting._dataset_tick_label("IndustrialOffset", {})
+    metadata = {"datasets": [{"dataset": "CustomOffset", "source_kind": "procedural_cad_offset"}]}
+    assert "procedural, not measured" in plotting._dataset_tick_label("CustomOffset", metadata)
+    assert plotting._dataset_tick_label("UJI", {}) == plotting.DATASET_LABELS.get("UJI", "UJI")
+
+
+def test_five_source_comparison_renders_with_honest_industrial_label(tmp_path, report, monkeypatch):
+    from matplotlib.figure import Figure
+
+    for name in ("NaturalEarth", "USGS", "IndustrialOffset"):
+        report["summary"].extend({**row, "dataset": name} for row in list(report["summary"])
+                                 if row["dataset"] == "UJI")
+    figures = []
+    original = Figure.savefig
+
+    def capture(figure, *args, **kwargs):
+        figures.append(figure)
+        return original(figure, *args, **kwargs)
+
+    monkeypatch.setattr(Figure, "savefig", capture)
+    output = plotting.render_comparison(report, tmp_path, dpi=60)
+    assert output.is_file()
+    tick_labels = [tick.get_text() for axis in figures[0].axes for tick in axis.get_xticklabels()]
+    assert any("IndustrialOffset" in label and "not measured" in label for label in tick_labels)
+    assert {row["dataset"] for row in report["summary"]} == {
+        "Synthetic", "UJI", "NaturalEarth", "USGS", "IndustrialOffset"}
+
+
 def test_reference_renderer_skips_report_without_reference_rows(
     tmp_path: Path,
     report: dict,

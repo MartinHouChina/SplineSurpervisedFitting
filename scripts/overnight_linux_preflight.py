@@ -15,6 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from overnight_datasets import (
+    VALIDATION_SOURCE_NAMES, default_manifests, parse_manifests,
+    source_description, validate_source_records,
+)
+
 
 def file_hash(path):
     with Path(path).open("rb") as handle:
@@ -169,6 +174,8 @@ def main(argv=None):
     parser.add_argument("--resume-status", action="store_true",
                         help="Validate --checkpoint as same-run .last.pt; print completed or needed")
     parser.add_argument("--data-root", type=Path, default=ROOT / "data")
+    parser.add_argument("--manifest", action="append", default=[], metavar="NAME=PATH",
+                        help="Additional evaluation-only source; the four default sources remain required")
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--initializer", type=Path)
     parser.add_argument("--warm-start-checkpoint", type=Path)
@@ -211,37 +218,40 @@ def main(argv=None):
     if args.runtime_only:
         print(json.dumps(record, ensure_ascii=False), flush=True)
         return record
-    manifests = {
-        "UJI": args.data_root / "splits/uji_pen_v2.jsonl",
-        "NaturalEarth": args.data_root / "processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl",
-        "USGS": args.data_root / "processed/usgs_contours/large_scale/manifest.jsonl",
-    }
+    manifests = parse_manifests(args.manifest, defaults=default_manifests(args.data_root))
     record["datasets"] = {}
     if args.validate_real_splits:
         from spline_fitting.data.v16_mixed import load_real_sources
         _, provenance = load_real_sources(
-            list(manifests.values()), num_points=192, point_dim=2,
+            [manifests[name] for name in VALIDATION_SOURCE_NAMES], num_points=192, point_dim=2,
             progress=lambda message: print(message, flush=True),
         )
         record["validation_provenance"] = provenance
         record["real_data_role"] = "validation_only; held-out test excluded from model selection"
+    seen_sources = set()
     for name, manifest in manifests.items():
-        rows = read_curve_manifest(manifest, split="test")
-        if not rows:
-            raise ValueError(f"no held-out test curves in {manifest}")
-        for row in rows:
+        print(f"{name}: reading required manifest {manifest}", flush=True)
+        records = read_curve_manifest(manifest)
+        validate_source_records(name, records, seen_sources=seen_sources)
+        rows = [row for row in records if row["split"] == "test"]
+        for index, row in enumerate(records, 1):
             point_path = resolve_points_path(manifest, row)
             if not point_path.is_file():
                 raise FileNotFoundError(
                     f"{name}: missing point file {point_path}; copy the complete data tree, "
                     "not only JSONL manifests (Windows absolute paths are not Linux paths)"
                 )
+            if index % 2000 == 0:
+                print(f"{name}: checked {index}/{len(records)} point-file paths", flush=True)
         points = load_manifest_points(manifest, rows[0])
         if points.shape[-1] != 2 or not torch.isfinite(points).all():
             raise ValueError(f"{name}: expected finite 2D ordered points")
         record["datasets"][name] = {
             "manifest": str(manifest.resolve()), "sha256": file_hash(manifest),
             "test_curves": len(rows), "test_groups": len({row["group_id"] for row in rows}),
+            **source_description(name, records),
+            "used_for_validation_by_this_runner": bool(args.validate_real_splits and name in VALIDATION_SOURCE_NAMES),
+            "evaluation_role": "held_out_test_only; extra sources never added to training or checkpoint selection",
         }
         print(f"{name}: {len(rows)} held-out test curves; point paths checked", flush=True)
     if args.checkpoint:
