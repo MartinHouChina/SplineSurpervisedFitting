@@ -1,0 +1,24 @@
+{
+  "base_commit": "c5a641d",
+  "profile": "overnight_anchored_k32",
+  "artifact": "outputs/delivery/overnight_anchored_linux_update.zip",
+  "note": "Source-only opt-in update. No datasets, trained checkpoints, optimizer state, old results, or Git refs are included. Preserve server uncommitted work before extracting. New warm-start and revalidation required.",
+  "files": [
+    "README.md",
+    "docs/overnight_k32.md",
+    "docs/overnight_anchored.md",
+    "scripts/run_v16_1070_overnight_linux.sh",
+    "scripts/train_v16.py",
+    "scripts/smoke_v16_subset_learning.py",
+    "scripts/audit_v16_compact_decoder.py",
+    "src/spline_fitting/models/v16_network.py",
+    "src/spline_fitting/losses/v16_subset_loss.py",
+    "tests/test_v16_anchored_geometry.py",
+    "tests/test_v16_targeted_compact_teacher.py",
+    "tests/test_train_v16_anchored.py",
+    "tests/test_run_v16_anchored_linux.py",
+    "tests/test_audit_v16_compact_decoder.py",
+    "tests/test_v16_overnight_reporting.py",
+    "overnight_anchored_update_manifest.json"
+  ]
+}

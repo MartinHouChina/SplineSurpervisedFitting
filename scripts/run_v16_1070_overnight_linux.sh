@@ -13,6 +13,7 @@ VAL_SIZE=500
 BATCH_SIZE=32
 MSE_TOLERANCE=5e-5
 CANDIDATE_KNOTS=64
+CANDIDATE_SPECIFIED=0
 RESIZE_CANDIDATE_WARM_START=0
 NUM_WORKERS=0
 INIT_CHECKPOINT=outputs/checkpoints/candidate_selection_v16.proposal.pt
@@ -22,6 +23,9 @@ ENHANCED_SELECTION=0
 RELIABLE_SELECTION=0
 COMPACT_SELECTION=0
 STABLE_SELECTION=0
+ANCHORED_SELECTION=0
+JOINT_GEOMETRY_CALIBRATION_EPOCHS=""
+COMPLEXITY_RAMP_EPOCHS=8
 REAL_VAL_SIZE=32
 NATIVE_BASELINES=0
 CHECKPOINT=""
@@ -57,6 +61,12 @@ Historical online-teacher architecture; capacity is explicit and shared by all m
                                   Teacher; defaults 24/4, explicit full warm start
   --stable-selection              Compact + decoded trajectory checks (4) and
                                   trajectory targets (2); explicit full warm start
+  --anchored-selection            Short K32 warm-start calibration: 16/4 epochs,
+                                  6 frozen-Proposal joint epochs + 6 low-LR joint;
+                                  compact-priority Teacher and anchored geometry
+  --joint-geometry-calibration-epochs N
+                                  Freeze dense geometry and pause complexity for
+                                  first N Joint epochs (anchored 6; otherwise 0)
   --real-val-size N               Reliable/compact/stable: real val curves/source (32)
   --native-baselines              Disable explicit MSE repair for Dung/Kang/Luo;
                                   corrected Kang clustering remains enabled
@@ -108,6 +118,8 @@ while (($#)); do
     --reliable-selection) RELIABLE_SELECTION=1; shift ;;
     --compact-selection) COMPACT_SELECTION=1; shift ;;
     --stable-selection) STABLE_SELECTION=1; shift ;;
+    --anchored-selection) ANCHORED_SELECTION=1; shift ;;
+    --joint-geometry-calibration-epochs) need_value "$@"; JOINT_GEOMETRY_CALIBRATION_EPOCHS="$2"; shift 2 ;;
     --real-val-size) need_value "$@"; REAL_VAL_SIZE="$2"; shift 2 ;;
     --native-baselines) NATIVE_BASELINES=1; shift ;;
     --train-size) need_value "$@"; TRAIN_SIZE="$2"; shift 2 ;;
@@ -115,7 +127,7 @@ while (($#)); do
     --batch-size) need_value "$@"; BATCH_SIZE="$2"; shift 2 ;;
     --num-workers) need_value "$@"; NUM_WORKERS="$2"; shift 2 ;;
     --mse-tolerance) need_value "$@"; MSE_TOLERANCE="$2"; shift 2 ;;
-    --candidate-knots) need_value "$@"; CANDIDATE_KNOTS="$2"; shift 2 ;;
+    --candidate-knots) need_value "$@"; CANDIDATE_KNOTS="$2"; CANDIDATE_SPECIFIED=1; shift 2 ;;
     --resize-candidate-warm-start) RESIZE_CANDIDATE_WARM_START=1; shift ;;
     --init-checkpoint) need_value "$@"; INIT_CHECKPOINT="$2"; INIT_SPECIFIED=1; shift 2 ;;
     --no-init-checkpoint) INIT_CHECKPOINT=""; INIT_SPECIFIED=1; shift ;;
@@ -137,7 +149,8 @@ while (($#)); do
     *) die "unknown option: $1" ;;
   esac
 done
-((ENHANCED_SELECTION + RELIABLE_SELECTION + COMPACT_SELECTION + STABLE_SELECTION <= 1)) || die "choose only one of --enhanced-selection, --reliable-selection, --compact-selection and --stable-selection"
+((ENHANCED_SELECTION + RELIABLE_SELECTION + COMPACT_SELECTION + STABLE_SELECTION + ANCHORED_SELECTION <= 1)) || die "choose only one of --enhanced-selection, --reliable-selection, --compact-selection, --stable-selection and --anchored-selection"
+if ((ANCHORED_SELECTION && CANDIDATE_SPECIFIED == 0)); then CANDIDATE_KNOTS=32; fi
 [[ "$CANDIDATE_KNOTS" =~ ^[1-9][0-9]*$ ]] || die "candidate-knots must be a positive integer"
 ((CANDIDATE_KNOTS >= 24 && CANDIDATE_KNOTS <= 188)) || die "candidate-knots must be 24..188 for source K4..24 and 192 input points"
 if ((RESIZE_CANDIDATE_WARM_START)); then
@@ -145,8 +158,13 @@ if ((RESIZE_CANDIDATE_WARM_START)); then
 fi
 SAFETY_ARGS=(--one-shot-safety-sigma 0.2 --safety-anneal-epochs 8)
 RESAMPLE_ARGS=(--no-resample-train-each-epoch)
-if ((COMPACT_SELECTION || STABLE_SELECTION)); then
-  if ((STABLE_SELECTION)); then
+if ((COMPACT_SELECTION || STABLE_SELECTION || ANCHORED_SELECTION)); then
+  if ((ANCHORED_SELECTION)); then
+    RUN_NAME=${RUN_NAME:-overnight_anchored_k32_3090_r1}
+    EPOCHS=${EPOCHS:-16}
+    JOINT_GEOMETRY_CALIBRATION_EPOCHS=${JOINT_GEOMETRY_CALIBRATION_EPOCHS:-6}
+    COMPLEXITY_RAMP_EPOCHS=4
+  elif ((STABLE_SELECTION)); then
     RUN_NAME=${RUN_NAME:-overnight_stable_3090_r1}
   else
     RUN_NAME=${RUN_NAME:-overnight_compact_3090_r1}
@@ -165,14 +183,27 @@ if ((COMPACT_SELECTION || STABLE_SELECTION)); then
     --teacher-greedy-steps 16 --teacher-greedy-max-curves 2
     --teacher-geometry-distillation-weight 0.2 --count-reserve-alignment
     --synthetic-simple-fraction 0.35 --synthetic-shape-fraction 0.25)
-  if ((STABLE_SELECTION)); then
+  if ((STABLE_SELECTION || ANCHORED_SELECTION)); then
     LEARNING_ARGS+=(--teacher-greedy-trajectory-checks 4 --teacher-geometry-trajectory-targets 2)
+  fi
+  if ((ANCHORED_SELECTION)); then
+    # Replace inherited settings rather than emitting duplicate options.
+    for ((index=0; index<${#LEARNING_ARGS[@]}; index++)); do
+      case "${LEARNING_ARGS[index]}" in
+        --teacher-greedy-max-curves) LEARNING_ARGS[index+1]=4 ;;
+        --teacher-geometry-distillation-weight) LEARNING_ARGS[index+1]=0.4 ;;
+        --joint-decoder-lr-scale) LEARNING_ARGS[index+1]=1.0 ;;
+      esac
+    done
+    LEARNING_ARGS+=(--subset-geometry-mode anchored --subset-geometry-residual-scale 0.25
+      --teacher-greedy-priority compact --teacher-compact-mask-weight 0.5)
   fi
   SAFETY_ARGS=(--one-shot-safety-sigma 0 --one-shot-safety-knots 0
     --final-safety-sigma 0 --final-safety-knots 0 --safety-anneal-epochs 8)
+  if ((ANCHORED_SELECTION)); then SAFETY_ARGS[${#SAFETY_ARGS[@]}-1]=4; fi
   RESAMPLE_ARGS=(--resample-train-each-epoch)
   if [[ -z "$CHECKPOINT" && "$RESUME" == 0 ]]; then
-    [[ -n "$WARM_START_CHECKPOINT" ]] || die "compact/stable selection requires an explicit --warm-start-checkpoint for a new run (use the selected best .pt, not .last.pt)"
+    [[ -n "$WARM_START_CHECKPOINT" ]] || die "compact/stable/anchored selection requires an explicit --warm-start-checkpoint for a new run (use the selected best .pt, not .last.pt)"
   fi
 elif ((RELIABLE_SELECTION)); then
   RUN_NAME=${RUN_NAME:-overnight_reliable_3090_r1}
@@ -199,6 +230,11 @@ else
   EPOCHS=${EPOCHS:-64}
   PROPOSAL_EPOCHS=${PROPOSAL_EPOCHS:-4}
   LEARNING_ARGS=(--policy-samples 2 --counterfactual-edits 2 --teacher-prefix-search-steps 6)
+fi
+JOINT_GEOMETRY_CALIBRATION_EPOCHS=${JOINT_GEOMETRY_CALIBRATION_EPOCHS:-0}
+[[ "$JOINT_GEOMETRY_CALIBRATION_EPOCHS" =~ ^[0-9]+$ ]] || die "joint-geometry-calibration-epochs must be non-negative"
+if ((JOINT_GEOMETRY_CALIBRATION_EPOCHS > 0)); then
+  LEARNING_ARGS+=(--joint-geometry-calibration-epochs "$JOINT_GEOMETRY_CALIBRATION_EPOCHS")
 fi
 if [[ -n "$WARM_START_CHECKPOINT" ]]; then
   ((INIT_SPECIFIED == 0)) || die "--warm-start-checkpoint cannot be combined with --init-checkpoint or --no-init-checkpoint"
@@ -235,6 +271,7 @@ for number in "$EPOCHS" "$PROPOSAL_EPOCHS" "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZ
   [[ "$number" =~ ^[1-9][0-9]*$ ]] || die "sizes, epochs and repeats must be positive integers"
 done
 ((PROPOSAL_EPOCHS < EPOCHS)) || die "Proposal epochs must be less than total epochs"
+((JOINT_GEOMETRY_CALIBRATION_EPOCHS <= EPOCHS-PROPOSAL_EPOCHS)) || die "joint-geometry-calibration-epochs cannot exceed total Joint epochs"
 [[ -z "$CHECKPOINT" || "$RESUME" == 0 ]] || die "--checkpoint and --resume-run are mutually exclusive"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -314,14 +351,20 @@ fi
 if ((RELIABLE_SELECTION)); then
   printf 'Reliable selection: trust gates, ranking-independent Teacher, local fit and ordered coverage; one-shot deployment.\n'
 fi
-if ((COMPACT_SELECTION || STABLE_SELECTION)); then
+if ((COMPACT_SELECTION || STABLE_SELECTION || ANCHORED_SELECTION)); then
   printf 'Compact selection: per-curve feasible simplification, bounded greedy Teacher and count reserve alignment; unchanged one-shot deployment.\n'
   printf 'Teacher geometry is checked separately from decoded deployment; no global-minimum or pass-rate guarantee.\n'
 fi
-if ((STABLE_SELECTION)); then
+if ((STABLE_SELECTION || ANCHORED_SELECTION)); then
   printf 'Stable selection: up to 4 decoded trajectory checks and 2 geometry trajectory targets; no deployment search added.\n'
 fi
-if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION)); then
+if ((ANCHORED_SELECTION)); then
+  printf 'Anchored selection: proposal-relative geometry, bounded residual=0.25; compact-priority Teacher covers <=4 curves/batch. No deployment search.\n'
+fi
+if ((JOINT_GEOMETRY_CALIBRATION_EPOCHS > 0)); then
+  printf 'First %s Joint epochs freeze dense geometry and pause complexity; remaining %s Joint epochs unfreeze at low LR.\n' "$JOINT_GEOMETRY_CALIBRATION_EPOCHS" "$((EPOCHS-PROPOSAL_EPOCHS-JOINT_GEOMETRY_CALIBRATION_EPOCHS))"
+fi
+if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION || ANCHORED_SELECTION)); then
   printf 'Real data: validation-only (%s/source); synthetic-only training; held-out test for comparison.\n' "$REAL_VAL_SIZE"
 fi
 printf 'Proposal %s + Joint %s = %s epochs; train/val=%s/%s, batch=%s.\n' \
@@ -364,7 +407,7 @@ fi
 STAMP="$(date -u +%Y%m%d_%H%M%S)_$$"
 PREFLIGHT_ARGS=(--data-root "$DATA_ROOT" --device "$DEVICE" --mse-tolerance "$MSE_TOLERANCE" --candidate-knots "$CANDIDATE_KNOTS" "${EXTRA_MANIFEST_ARGS[@]}")
 if ((RESIZE_CANDIDATE_WARM_START)); then PREFLIGHT_ARGS+=(--resize-candidate-warm-start); fi
-if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION)); then PREFLIGHT_ARGS+=(--validate-real-splits); fi
+if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION || ANCHORED_SELECTION)); then PREFLIGHT_ARGS+=(--validate-real-splits); fi
 if [[ "$CHECKPOINT" != "$TRAIN_OUTPUT" ]]; then
   PREFLIGHT_ARGS+=(--checkpoint "$CHECKPOINT")
 elif [[ -n "$INIT_CHECKPOINT" && "$RESUME" == 0 ]]; then
@@ -384,9 +427,9 @@ if [[ "$CHECKPOINT" == "$TRAIN_OUTPUT" ]]; then
     --mse-tolerance "$MSE_TOLERANCE" --real-fraction 0 --proposal-pass-target 0.90
     --deployment-pass-target 0.90 "${LEARNING_ARGS[@]}"
     "${SAFETY_ARGS[@]}"
-    --complexity-ramp-epochs 8 "${RESAMPLE_ARGS[@]}" --num-workers "$NUM_WORKERS"
+    --complexity-ramp-epochs "$COMPLEXITY_RAMP_EPOCHS" "${RESAMPLE_ARGS[@]}" --num-workers "$NUM_WORKERS"
     --torch-num-threads 4 --device "$DEVICE" --output "$TRAIN_OUTPUT")
-  if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION)); then
+  if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION || ANCHORED_SELECTION)); then
     TRAIN_ARGS+=(--real-val-size "$REAL_VAL_SIZE"
       --real-manifest "$UJI" --real-manifest "$NATURAL" --real-manifest "$USGS")
   fi

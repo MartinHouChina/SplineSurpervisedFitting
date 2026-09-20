@@ -126,6 +126,8 @@ class V16SubsetLoss(nn.Module):
         count_reserve_alignment: bool = False,
         teacher_greedy_trajectory_checks: int = 0,
         teacher_geometry_trajectory_targets: int = 0,
+        teacher_greedy_priority: str = "sequential",
+        teacher_compact_mask_weight: float = 0.0,
     ) -> None:
         super().__init__()
         if not math.isfinite(mse_tolerance) or mse_tolerance <= 0:
@@ -153,6 +155,7 @@ class V16SubsetLoss(nn.Module):
             ("local_fit_weight", local_fit_weight),
             ("proposal_ordered_weight", proposal_ordered_weight),
             ("teacher_geometry_distillation_weight", teacher_geometry_distillation_weight),
+            ("teacher_compact_mask_weight", teacher_compact_mask_weight),
             ("supervised_count_weight", supervised_count_weight),
             ("supervised_over_count_weight", supervised_over_count_weight),
             ("true_parameter_weight", true_parameter_weight),
@@ -211,6 +214,9 @@ class V16SubsetLoss(nn.Module):
             raise ValueError("trajectory geometry targets require trajectory decode checks")
         self.teacher_greedy_trajectory_checks = teacher_greedy_trajectory_checks
         self.teacher_geometry_trajectory_targets = teacher_geometry_trajectory_targets
+        if teacher_greedy_priority not in ("sequential", "compact"):
+            raise ValueError("teacher_greedy_priority must be 'sequential' or 'compact'")
+        self.teacher_greedy_priority = teacher_greedy_priority
 
     @staticmethod
     def _validate_points(points: torch.Tensor, degree: int) -> None:
@@ -863,6 +869,9 @@ class V16SubsetLoss(nn.Module):
             "teacher_greedy_trajectory_checks", "teacher_greedy_trajectory_pass_rate",
             "teacher_greedy_trajectory_accepted_delta_k", "teacher_geometry_target_count",
             "teacher_geometry_target_k_mean", "teacher_geometry_target_pass_rate",
+            "teacher_compact_mask_loss", "teacher_compact_bce_loss",
+            "teacher_compact_count_loss", "teacher_compact_ranking_loss",
+            "teacher_compact_target_count", "teacher_compact_target_k_mean",
         )}
 
     @staticmethod
@@ -872,6 +881,54 @@ class V16SubsetLoss(nn.Module):
                   and value.ndim and value.shape[0] == batch else value)
             for key, value in context.items()
         }
+
+    @torch.no_grad()
+    def _greedy_priority_rows(self, best_mask, best_mse, deployment_mask, tolerance,
+                              minimum, *, deployment_mse=None, supervised_counts=None,
+                              supervised_valid=None):
+        """Allocate a bounded search budget, without changing the random stream.
+
+        Compact mode exploits feasible curves with error slack and redundant
+        knots. One quarter of the budget (at least one slot when possible) is
+        reserved for the hardest remaining curve(s); priority must not starve
+        difficult curves. True counts affect search allocation only, never
+        certify a feasible teacher subset. Loader shuffling supplies diversity.
+        """
+        batch, capacity = best_mask.shape
+        budget = min(batch, self.teacher_greedy_max_curves)
+        if self.teacher_greedy_priority == "sequential":
+            return list(range(budget))
+        ratio = best_mse.detach() / tolerance.detach()
+        if deployment_mse is not None:
+            ratio = torch.minimum(ratio, deployment_mse.detach() / tolerance.detach())
+        ratio = torch.nan_to_num(ratio, nan=float("inf"), posinf=float("inf"))
+        current_k = torch.maximum(best_mask.sum(-1), deployment_mask.sum(-1))
+        reference_k = best_mask.sum(-1).to(ratio.dtype)
+        if supervised_counts is not None:
+            valid = (torch.ones_like(reference_k, dtype=torch.bool) if supervised_valid is None
+                     else supervised_valid.detach())
+            reference_k = torch.where(
+                valid, torch.minimum(reference_k, supervised_counts.detach().to(ratio.dtype)),
+                reference_k,
+            )
+        removable = (current_k - minimum).clamp_min(0).to(ratio.dtype) / capacity
+        excess = (current_k - reference_k).clamp_min(0) / capacity
+        slack = (1 - ratio).clamp(0, 1)
+        feasible = torch.isfinite(ratio) & (ratio <= 1)
+        score = slack * removable + excess
+        # One small host transfer per field, not scalar GPU synchronizations
+        # inside Python's sorting comparisons.
+        feasible_values, score_values = feasible.cpu().tolist(), score.cpu().tolist()
+        ratio_values, count_values = ratio.cpu().tolist(), current_k.cpu().tolist()
+        # Feasibility is lexicographically prior to estimated compactness.
+        exploitation = sorted(range(batch), key=lambda row: (
+            -int(feasible_values[row]), -score_values[row], row,
+        ))
+        explore = max(1, budget // 4) if budget >= 2 else 0
+        selected = exploitation[:budget - explore]
+        remaining = [row for row in range(batch) if row not in selected]
+        remaining.sort(key=lambda row: (-ratio_values[row], -count_values[row], row))
+        return selected + remaining[:explore]
 
     @torch.no_grad()
     def _fixed_geometry_greedy(self, model, context, parameters, knots, mask,
@@ -978,7 +1035,8 @@ class V16SubsetLoss(nn.Module):
 
     @torch.no_grad()
     def _trajectory_teacher(self, model, context, best_mask, best_mse, deployment_mask,
-                            deployment_output, points, degree, tolerance, minimum):
+                            deployment_output, points, degree, tolerance, minimum,
+                            *, row_indices=None):
         """Training-only fixed-geometry paths with actual decoded acceptance.
 
         At most trajectory_checks decoded refits are performed per distinct
@@ -992,8 +1050,10 @@ class V16SubsetLoss(nn.Module):
         best_mask, best_mse = best_mask.clone(), best_mse.clone()
         targets, terminals = [], []
         scans = checks = decoded_refits = decoded_passes = 0
-        searched = min(batch, self.teacher_greedy_max_curves)
-        for row in range(searched):
+        rows = (list(range(min(batch, self.teacher_greedy_max_curves)))
+                if row_indices is None else row_indices)
+        searched = len(rows)
+        for row in rows:
             row_context = self._row_context(context, row, batch)
             row_points, row_tolerance = points[row:row + 1], tolerance[row:row + 1]
             seeds = [original_mask[row:row + 1]]
@@ -1084,19 +1144,25 @@ class V16SubsetLoss(nn.Module):
 
     @torch.no_grad()
     def _greedy_teacher(self, model, context, best_mask, best_mse, deployment_mask,
-                        deployment_output, points, degree, tolerance, minimum):
+                        deployment_output, points, degree, tolerance, minimum,
+                        *, deployment_mse=None, supervised_counts=None, supervised_valid=None):
         """Discover compact fixed geometry, then admit ONLY decoded-feasible labels.
 
-        Up to max_curves rows (shuffled by the training loader) are searched.
+        Up to max_curves rows are searched using the configured priority.
         Each distinct seed, incumbent teacher and deployed mask, receives the
         configured number of accepted deletion steps. A fixed-geometry target
         that the current decoder cannot realize is auxiliary geometry training
         data, NEVER a feasible mask/count label.
         """
+        rows = self._greedy_priority_rows(
+            best_mask, best_mse, deployment_mask, tolerance, minimum,
+            deployment_mse=deployment_mse, supervised_counts=supervised_counts,
+            supervised_valid=supervised_valid,
+        )
         if self.teacher_greedy_trajectory_checks:
             return self._trajectory_teacher(
                 model, context, best_mask, best_mse, deployment_mask,
-                deployment_output, points, degree, tolerance, minimum,
+                deployment_output, points, degree, tolerance, minimum, row_indices=rows,
             )
         zero = best_mse.new_zeros(())
         metrics = self._greedy_metrics(zero)
@@ -1106,7 +1172,7 @@ class V16SubsetLoss(nn.Module):
         targets = []
         fixed_counts, fixed_pass, decoded_pass, fixed_delta = [], [], [], []
         scans = checks = decoded_refits = 0
-        for row in range(min(batch, self.teacher_greedy_max_curves)):
+        for row in rows:
             row_context = self._row_context(context, row, batch)
             row_points, row_tolerance = points[row:row + 1], tolerance[row:row + 1]
             seeds = [original_mask[row:row + 1]]
@@ -1153,7 +1219,7 @@ class V16SubsetLoss(nn.Module):
                 fixed_pass.append(1.0)
                 decoded_pass.append(float(target["decoded_feasible"]))
                 fixed_delta.append(int(original_mask[row].sum()) - target["rank"][0])
-        searched = min(batch, self.teacher_greedy_max_curves)
+        searched = len(rows)
         changed = (best_mask != original_mask).any(-1)
         metrics.update(
             teacher_greedy_curve_fraction=zero.new_tensor(searched / batch),
@@ -1208,6 +1274,79 @@ class V16SubsetLoss(nn.Module):
             return mean_loss, mean_violation, len(losses)
         return (torch.stack(losses).mean() if losses else zero,
                 torch.stack(violations).mean() if violations else zero, len(losses))
+
+    def _compact_mask_distillation(self, model, context, targets, deployment_mask):
+        """Emphasize already reachable compact sets, not impossible deletions.
+
+        Geometry-only targets can be decoder-infeasible and MUST be excluded.
+        For each searched curve choose just its smallest decoded-feasible state
+        that improves on deployment. Unweighted, mass-aligned BCE avoids adding
+        another false-remove class weight to the probability-based count head.
+        Averaging across selected curves keeps scarce deep-search labels from
+        being diluted by all the unsearched curves in the batch.
+        """
+        logits = context["keep_logits"]
+        zero = logits.new_zeros(())
+        metrics = {name: zero for name in (
+            "teacher_compact_mask_loss", "teacher_compact_bce_loss",
+            "teacher_compact_count_loss", "teacher_compact_ranking_loss",
+            "teacher_compact_target_count", "teacher_compact_target_k_mean",
+        )}
+        chosen = {}
+        for target in targets:
+            row = target["row"]
+            if not target["decoded_feasible"]:
+                continue
+            mask = target["mask"].detach()
+            count = int(mask.sum())
+            if count >= int(deployment_mask[row].sum()):
+                continue
+            rank = (count, target["rank"][1])
+            if row not in chosen or rank < chosen[row][0]:
+                chosen[row] = (rank, mask)
+        if not chosen:
+            return zero, metrics
+        if getattr(model, "one_shot_selection_policy", None) != "mass_topk":
+            raise ValueError("compact mask distillation requires mass_topk deployment")
+        rows = sorted(chosen)
+        masks = torch.cat([chosen[row][1] for row in rows], dim=0)
+        labels, reachable_count = self._count_aligned_targets(
+            masks, sigma=float(getattr(model, "one_shot_safety_sigma", 0)),
+            reserve=float(getattr(model, "one_shot_safety_knots", 0)), dtype=logits.dtype,
+        )
+        # A configured reserve can make a small target count unattainable.
+        # Do not create conflicting supervision for such rows.
+        if not bool(reachable_count.any()):
+            return zero, metrics
+        row_ids = torch.tensor(rows, device=logits.device, dtype=torch.long)[reachable_count]
+        masks, labels = masks[reachable_count], labels[reachable_count].detach()
+        selected_logits = logits[row_ids]
+        bce = F.binary_cross_entropy_with_logits(selected_logits, labels)
+        requested = context.get("one_shot_requested_count_score", logits.sigmoid().sum(-1))
+        target_counts = (masks.sum(-1).to(logits.dtype) - .25).clamp_min(0).detach()
+        count_loss = F.smooth_l1_loss(
+            torch.log1p(requested[row_ids].clamp_min(0)), torch.log1p(target_counts),
+        )
+        pair_mask = masks.unsqueeze(-1) & (~masks).unsqueeze(-2)
+        pair_penalty = F.softplus(
+            self.ranking_margin - selected_logits.unsqueeze(-1) + selected_logits.unsqueeze(-2),
+        )
+        # Give each curve equal weight even when its cardinality differs.
+        ranking_by_row = []
+        for pair, penalty in zip(pair_mask, pair_penalty):
+            if bool(pair.any()):
+                ranking_by_row.append(penalty[pair].mean())
+            else:
+                ranking_by_row.append(zero)
+        ranking = torch.stack(ranking_by_row).mean()
+        loss = bce + count_loss + ranking
+        metrics.update(
+            teacher_compact_mask_loss=loss, teacher_compact_bce_loss=bce,
+            teacher_compact_count_loss=count_loss, teacher_compact_ranking_loss=ranking,
+            teacher_compact_target_count=zero.new_tensor(float(len(row_ids))),
+            teacher_compact_target_k_mean=masks.sum(-1).to(logits.dtype).mean(),
+        )
+        return loss, metrics
 
     @staticmethod
     def _count_aligned_targets(mask, *, sigma, reserve, dtype):
@@ -1637,6 +1776,7 @@ class V16SubsetLoss(nn.Module):
         greedy_metrics = self._greedy_metrics(zero)
         greedy_targets = []
         geometry_distillation_loss = zero
+        compact_mask_loss = zero
         complexity_active_fraction = zero
         aligned_target_mass = count_reserve_infeasible_fraction = zero
         counterfactual_refits = 0
@@ -1865,6 +2005,8 @@ class V16SubsetLoss(nn.Module):
                     best_mask, searched_best_mse, greedy_targets, greedy_metrics = self._greedy_teacher(
                         model, context, best_mask, searched_best_mse, mask,
                         deployment_output, points, degree, tolerance, minimum,
+                        deployment_mse=deployment_mse, supervised_counts=supervised_counts,
+                        supervised_valid=supervised_valid,
                     )
                 teacher_feasible = searched_best_mse <= tolerance
                 teacher_match_metrics = self._teacher_match_metrics(
@@ -1882,6 +2024,11 @@ class V16SubsetLoss(nn.Module):
                 greedy_metrics["teacher_greedy_refits"] = (
                     greedy_metrics["teacher_greedy_refits"] + auxiliary_refits
                 )
+            if self.teacher_compact_mask_weight and greedy_targets:
+                compact_mask_loss, compact_metrics = self._compact_mask_distillation(
+                    model, context, greedy_targets, mask,
+                )
+                greedy_metrics.update(compact_metrics)
             # Re-decode the actual chosen set with gradients. Targets are from
             # this model/context, so relocation is trained for the selected set.
             best_mse = self._decode_mse(model, context, best_mask, points, degree)
@@ -2096,6 +2243,8 @@ class V16SubsetLoss(nn.Module):
             loss = loss + self.proposal_ordered_weight * proposal_ordered_loss
         if self.teacher_geometry_distillation_weight:
             loss = loss + self.teacher_geometry_distillation_weight * geometry_distillation_loss
+        if self.teacher_compact_mask_weight:
+            loss = loss + self.teacher_compact_mask_weight * compact_mask_loss
         if not torch.isfinite(loss):
             raise RuntimeError("non-finite v16 subset objective")
         proposal_trust = context.get("proposal_parameter_trust")

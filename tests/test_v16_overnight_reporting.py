@@ -170,7 +170,15 @@ def test_benchmark_executes_selected_methods_and_records_diagnostic_protocol(
     ))
     warmups, measured = [], []
     monkeypatch.setattr(benchmark, "run_published_baseline", lambda method, *a, **k: warmups.append(method))
-    fit = SimpleNamespace(fit_mse=1e-6, internal_knots=torch.tensor([0.5]))
+    # The K32 error contract evaluates both MSE and peak error from fitted
+    # points, rather than trusting fit_mse alone. Keep this orchestration
+    # fixture consistent with its declared residual (0.001, 0).
+    fit = SimpleNamespace(
+        fit_mse=1e-6, internal_knots=torch.tensor([0.5]),
+        evaluate=lambda parameters: torch.stack([
+            torch.full_like(parameters, 0.001), torch.zeros_like(parameters),
+        ], dim=-1),
+    )
     monkeypatch.setattr(benchmark, "measure_ours", lambda *a, **k: (
         fit, torch.linspace(0, 1, 24), 3.0, 1.0, {},
     ))
@@ -190,6 +198,9 @@ def test_benchmark_executes_selected_methods_and_records_diagnostic_protocol(
     assert warmups == list(methods[1:])
     assert measured == list(methods[1:])
     assert [row["method"] for row in report["measurements"]] == list(methods)
+    assert all(row["mse"] == pytest.approx(1e-6) for row in report["measurements"])
+    assert all(row["max_squared_error"] == pytest.approx(1e-6)
+               for row in report["measurements"])
     assert report["metadata"]["methods"] == list(methods)
     assert set(report["metadata"]["method_labels"]) == set(methods)
     assert report["metadata"]["diagnostic_not_final"]

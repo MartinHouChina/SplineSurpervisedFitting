@@ -1,5 +1,7 @@
 # Minimum-Complexity B-Spline Fitting
 
+最新短程改进见 [Overnight Anchored：稳定紧凑解码](docs/overnight_anchored.md)：K32、MSE `5e-5`，锚定式参数/节点残差、紧凑教师专项监督及 Joint 内冻结候选几何校准。新增 `--anchored-selection` 一条龙；旧检查点保持原行为，效果须重新验证。
+
 新增 [Overnight K32：统一容量与最大误差](docs/overnight_k32.md)：显式将网络与全部五个数值对照组上限设为 32 个内部节点，支持 K64 权重缩容后重新训练；增加最大单点平方误差、五指标图与六方法案例标注。含 Linux 训练—评测—绘图一条龙，旧实验不覆盖。
 
 当前改进见 [Overnight Stable](docs/overnight_stable.md)：依据“19 13”训练结果，增加可达删点轨迹教师；部署仍一次性。评测及六方法案例默认覆盖 UJI、Natural Earth、USGS 和工业等距线，含现有 checkpoint 补测与 Linux 训练一条龙。

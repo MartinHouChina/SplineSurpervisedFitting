@@ -83,6 +83,10 @@ def main():
     parser.add_argument("--mse-tolerance", type=float, default=2.5e-5)
     parser.add_argument("--policy-weight", type=float, default=0.25)
     parser.add_argument("--distillation-weight", type=float, default=3.0)
+    parser.add_argument("--subset-geometry-mode", choices=("legacy", "anchored"), default="legacy")
+    parser.add_argument("--subset-geometry-residual-scale", type=float, default=1.0)
+    parser.add_argument("--compact-teacher", action="store_true",
+                        help="Exercise compact-priority geometry/mask teaching on these toy TRAINING curves only.")
     args = parser.parse_args()
     if args.output.exists() and not args.overwrite:
         parser.error(f"output already exists: {args.output}; use --overwrite to replace it")
@@ -101,12 +105,23 @@ def main():
         hidden_dim=16, encoder_layers=1, max_internal_knots=6,
         attention_heads=2, selector_layers=1, mse_tolerance=args.mse_tolerance,
         relocation_blend=0.0, one_shot_selection_policy="mass_topk",
-        one_shot_adaptive_threshold=True, one_shot_safety_sigma=0.25,
-        one_shot_safety_knots=1, one_shot_coverage_bins=2,
+        one_shot_adaptive_threshold=True,
+        one_shot_safety_sigma=0.0 if args.compact_teacher else 0.25,
+        one_shot_safety_knots=0 if args.compact_teacher else 1,
+        one_shot_coverage_bins=2,
+        subset_geometry_mode=args.subset_geometry_mode,
+        subset_geometry_residual_scale=args.subset_geometry_residual_scale,
     )
     objective = _RecordingLoss(
         mse_tolerance=args.mse_tolerance, policy_samples=3, counterfactual_edits=4,
         policy_weight=args.policy_weight, distillation_weight=args.distillation_weight,
+        **(dict(
+            feasible_objective=True, teacher_greedy_steps=6,
+            teacher_greedy_max_curves=2, teacher_greedy_priority="compact",
+            teacher_greedy_trajectory_checks=4, teacher_geometry_trajectory_targets=2,
+            teacher_geometry_distillation_weight=1.0, teacher_compact_mask_weight=0.5,
+            count_reserve_alignment=True,
+        ) if args.compact_teacher else {}),
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     initial = _snapshot(model, objective, points)

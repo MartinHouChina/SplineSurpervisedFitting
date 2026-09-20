@@ -64,6 +64,8 @@ class V16CandidateSelectionNetwork(nn.Module):
         structure_mode: str = "candidate_pruning_one_shot",
         parameter_trust_enabled: bool = False,
         parameter_trust_initial: float = 0.25,
+        subset_geometry_mode: str = "legacy",
+        subset_geometry_residual_scale: float = 1.0,
     ) -> None:
         super().__init__()
         if point_dim < 1 or degree < 1 or hidden_dim < 4:
@@ -85,6 +87,14 @@ class V16CandidateSelectionNetwork(nn.Module):
             raise ValueError("min_knot_gap leaves no free interval budget")
         if not math.isfinite(relocation_blend) or not 0 <= relocation_blend <= 1:
             raise ValueError("relocation_blend must be in [0,1]")
+        if subset_geometry_mode not in {"legacy", "anchored"}:
+            raise ValueError("subset_geometry_mode must be 'legacy' or 'anchored'")
+        if (
+            isinstance(subset_geometry_residual_scale, bool)
+            or not math.isfinite(subset_geometry_residual_scale)
+            or not 0 <= subset_geometry_residual_scale <= 1
+        ):
+            raise ValueError("subset_geometry_residual_scale must be in [0,1]")
         if one_shot_selection_policy not in {"threshold", "mass_topk"}:
             raise ValueError(
                 "one_shot_selection_policy must be 'threshold' or 'mass_topk'"
@@ -132,6 +142,8 @@ class V16CandidateSelectionNetwork(nn.Module):
             structure_mode=structure_mode,
             parameter_trust_enabled=parameter_trust_enabled,
             parameter_trust_initial=parameter_trust_initial,
+            subset_geometry_mode=subset_geometry_mode,
+            subset_geometry_residual_scale=subset_geometry_residual_scale,
         )
         self.point_dim, self.degree, self.hidden_dim = point_dim, degree, hidden_dim
         self.max_internal_knots = max_internal_knots
@@ -145,6 +157,8 @@ class V16CandidateSelectionNetwork(nn.Module):
         self.one_shot_coverage_bins = int(one_shot_coverage_bins)
         self.min_selected_knots = int(min_selected_knots)
         self.parameter_trust_enabled = parameter_trust_enabled
+        self.subset_geometry_mode = subset_geometry_mode
+        self.subset_geometry_residual_scale = float(subset_geometry_residual_scale)
         self.encoder = GeometryEncoder(point_dim, hidden_dim, encoder_layers)
         self.parameter_head = ParameterHead(
             hidden_dim, min_parameter_gap, "strict", "chord_residual",
@@ -242,6 +256,7 @@ class V16CandidateSelectionNetwork(nn.Module):
         config.update(
             one_shot_safety_sigma=self.one_shot_safety_sigma,
             one_shot_safety_knots=self.one_shot_safety_knots,
+            subset_geometry_residual_scale=self.subset_geometry_residual_scale,
         )
         return config
 
@@ -484,6 +499,60 @@ class V16CandidateSelectionNetwork(nn.Module):
         fraction = (knots - old_left) / (old_right - old_left)
         return new.gather(1, left) + fraction * (new.gather(1, right) - new.gather(1, left))
 
+    def _anchored_subset_geometry(
+        self, knots: torch.Tensor, old_params: torch.Tensor,
+        proposed_params: torch.Tensor, keep_mask: torch.Tensor,
+        residual: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Small, coupled changes around proposal geometry; no rank attraction.
+
+        A curve-level contraction keeps the parameter warp and knot warp in
+        the same coordinate system.  Independently projecting warped knot
+        intervals would break that correspondence.  Relocation then uses less
+        than half the available room on *both* sides of each survivor, so two
+        neighboring residuals cannot cross or consume the minimum gap.
+        """
+        scale = self.subset_geometry_residual_scale
+        parameter_delta = scale * (proposed_params - old_params)
+        right_ids = torch.searchsorted(
+            old_params.contiguous(), knots.contiguous(), right=True,
+        ).clamp(1, old_params.shape[1] - 1)
+        left_ids = right_ids - 1
+        old_left = old_params.gather(1, left_ids)
+        fraction = (knots - old_left) / (
+            old_params.gather(1, right_ids) - old_left
+        )
+        # Interpolate the delta instead of full coordinates: zero residual
+        # preserves proposal t/U exactly, including after a legacy warm start.
+        delta_left = parameter_delta.gather(1, left_ids)
+        knot_delta = delta_left + fraction * (
+            parameter_delta.gather(1, right_ids) - delta_left
+        )
+        tentative = knots + knot_delta
+        old_left, old_right = self._neighbors(knots, keep_mask)
+        new_left, new_right = self._neighbors(tentative, keep_mask)
+        old_gaps = torch.stack([knots - old_left, old_right - knots], -1)
+        new_gaps = torch.stack([tentative - new_left, new_right - tentative], -1)
+        decrease = old_gaps - new_gaps
+        room = (old_gaps - self.min_knot_gap).clamp_min(0)
+        eps = torch.finfo(knots.dtype).eps
+        allowed_scale = torch.where(
+            decrease > 0, (room / decrease.clamp_min(eps)).clamp(max=1),
+            torch.ones_like(decrease),
+        )
+        allowed_scale = torch.where(
+            keep_mask.unsqueeze(-1), allowed_scale, torch.ones_like(allowed_scale),
+        ).amin(dim=(1, 2)).unsqueeze(-1)
+        params = old_params + allowed_scale * parameter_delta
+        warped = knots + allowed_scale * knot_delta
+        left, right = self._neighbors(warped, keep_mask)
+        local_room = torch.minimum(warped - left, right - warped)
+        local_room = (local_room - self.min_knot_gap).clamp_min(0)
+        blend = scale * (self.relocation_blend_logit + residual[..., 1]).sigmoid()
+        relocated = warped + 0.45 * local_room * blend * residual[..., 0].tanh()
+        internal = torch.where(keep_mask, relocated, warped)
+        return params, warped, internal, blend
+
     def decode_subset(self, context: dict, keep_mask: torch.Tensor) -> dict:
         knots, tokens = context["proposal_internal_knots"], context["candidate_tokens"]
         if keep_mask.shape != knots.shape or keep_mask.dtype != torch.bool:
@@ -534,25 +603,33 @@ class V16CandidateSelectionNetwork(nn.Module):
             gaps = params.diff(dim=-1)
         else:
             params = ungated_params
-        warped = self._warp_knots(knots, old_params, params)
         residual = self.relocation_update(survivors)
-        blend = (self.relocation_blend_logit + residual[..., 1]).sigmoid()
-        base = warped * (1 - blend) + rank * blend
-        left, right = self._neighbors(base, keep_mask)
-        relocated = base + 0.45 * (right - left).clamp_min(0) * residual[..., 0].tanh()
-        # Project only selected intervals onto their feasible simplex. The
-        # available intervals span removed cells, not the original anchor cells.
-        rows = []
-        for row in range(batch):
-            ids = keep_mask[row].nonzero(as_tuple=False).flatten()
-            chosen = relocated[row, ids]
-            boundaries = torch.cat([chosen.new_zeros(1), chosen, chosen.new_ones(1)])
-            gap_free = (boundaries.diff() - self.min_knot_gap).clamp_min(0)
-            normalized = gap_free / gap_free.sum().clamp_min(torch.finfo(knots.dtype).tiny)
-            selected_gaps = self.min_knot_gap + (1 - self.min_knot_gap * (ids.numel() + 1)) * normalized
-            chosen = selected_gaps.cumsum(0)[:-1]
-            rows.append(warped[row].scatter(0, ids, chosen))
-        internal = torch.stack(rows)
+        if self.subset_geometry_mode == "anchored":
+            params, warped, internal, blend = self._anchored_subset_geometry(
+                knots, old_params, params, keep_mask, residual,
+            )
+            gaps = params.diff(dim=-1)
+        else:
+            # Keep this historical path exact for checkpoints without the
+            # opt-in geometry configuration. No new state keys are introduced.
+            warped = self._warp_knots(knots, old_params, params)
+            blend = (self.relocation_blend_logit + residual[..., 1]).sigmoid()
+            base = warped * (1 - blend) + rank * blend
+            left, right = self._neighbors(base, keep_mask)
+            relocated = base + 0.45 * (right - left).clamp_min(0) * residual[..., 0].tanh()
+            # Project only selected intervals onto their feasible simplex. The
+            # available intervals span removed cells, not original anchor cells.
+            rows = []
+            for row in range(batch):
+                ids = keep_mask[row].nonzero(as_tuple=False).flatten()
+                chosen = relocated[row, ids]
+                boundaries = torch.cat([chosen.new_zeros(1), chosen, chosen.new_ones(1)])
+                gap_free = (boundaries.diff() - self.min_knot_gap).clamp_min(0)
+                normalized = gap_free / gap_free.sum().clamp_min(torch.finfo(knots.dtype).tiny)
+                selected_gaps = self.min_knot_gap + (1 - self.min_knot_gap * (ids.numel() + 1)) * normalized
+                chosen = selected_gaps.cumsum(0)[:-1]
+                rows.append(warped[row].scatter(0, ids, chosen))
+            internal = torch.stack(rows)
         probabilities = context["keep_probabilities"]
         return dict(
             params=params, internal_knots=internal, learned_keep_mask=keep_mask,

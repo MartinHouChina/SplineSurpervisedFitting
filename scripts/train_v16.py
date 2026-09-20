@@ -54,6 +54,9 @@ ENHANCED_TRAINING_DEFAULTS = {
     "joint_proposal_lr_scale": 1.0,
     "joint_decoder_lr_scale": 1.0,
     "joint_final_lr_ratio": 1.0,
+    "joint_geometry_calibration_epochs": 0,
+    "subset_geometry_mode": "legacy",
+    "subset_geometry_residual_scale": 1.0,
     "warm_start_checkpoint": None,
     "resize_candidate_warm_start": False,
     "parameter_trust_enabled": False,
@@ -68,6 +71,8 @@ ENHANCED_TRAINING_DEFAULTS = {
     "feasible_fit_weight": 0.02,
     "teacher_greedy_steps": 0,
     "teacher_greedy_max_curves": 2,
+    "teacher_greedy_priority": "sequential",
+    "teacher_compact_mask_weight": 0.0,
     "teacher_greedy_trajectory_checks": 0,
     "teacher_geometry_trajectory_targets": 0,
     "teacher_geometry_distillation_weight": 0.0,
@@ -179,6 +184,10 @@ def parser():
                    help="Training-only fixed-geometry full single-deletion search rounds")
     p.add_argument("--teacher-greedy-max-curves", type=int, default=2,
                    help="Maximum curves per batch receiving full deletion search")
+    p.add_argument("--teacher-greedy-priority", choices=("sequential", "compact"), default="sequential",
+                   help="compact prioritizes feasible, overcomplete curves for bounded training-only search")
+    p.add_argument("--teacher-compact-mask-weight", type=float, default=0.0,
+                   help="Auxiliary calibration toward smaller, re-decoded feasible teacher masks")
     p.add_argument("--teacher-greedy-trajectory-checks", type=int, default=0,
                    help="Training-only decoded checkpoints per greedy seed; zero keeps endpoint-only supervision")
     p.add_argument("--teacher-geometry-trajectory-targets", type=int, default=0,
@@ -219,6 +228,10 @@ def parser():
         "--complexity-max-scale", type=float, default=4.0,
         help="Maximum validation-controlled multiplier on the complexity loss",
     )
+    p.add_argument("--subset-geometry-mode", choices=("legacy", "anchored"), default="legacy",
+                   help="Opt-in anchor-preserving subset geometry; stored in the model checkpoint")
+    p.add_argument("--subset-geometry-residual-scale", type=float, default=1.0,
+                   help="Bounded subset geometry residual scale in [0,1]; zero keeps the anchor geometry")
     p.add_argument("--complexity-pass-margin", type=float, default=0.02)
     p.add_argument("--simplification-controller", choices=("worst_source", "per_curve"),
                    default="worst_source",
@@ -231,6 +244,8 @@ def parser():
                    help="Joint-stage subset decoder LR multiplier; selector stays at joint-lr")
     p.add_argument("--joint-final-lr-ratio", type=float, default=1.0,
                    help="Cosine joint LR end/start ratio in (0,1]; 1 preserves constant LR")
+    p.add_argument("--joint-geometry-calibration-epochs", type=int, default=0,
+                   help="First N joint epochs freeze dense geometry and suppress complexity pressure; then jointly fine-tune")
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--grad-clip", type=float, default=1.0)
     p.add_argument("--seed", type=int, default=42)
@@ -294,10 +309,13 @@ def validate_args(args):
         "teacher_geometry_candidates",
         "teacher_greedy_steps",
         "teacher_greedy_trajectory_checks", "teacher_geometry_trajectory_targets",
+        "joint_geometry_calibration_epochs",
     ):
         value = getattr(args, key)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError(f"{key} must be a non-negative integer")
+    if args.joint_geometry_calibration_epochs > args.epochs - args.proposal_epochs:
+        raise ValueError("joint-geometry-calibration-epochs cannot exceed the total joint epochs")
     for key in ("teacher_refinement_candidates", "boundary_ranking_candidates",
                 "teacher_greedy_max_curves"):
         if getattr(args, key) < 1:
@@ -346,6 +364,7 @@ def validate_args(args):
         "boundary_ranking_weight",
         "parameter_counterfactual_weight", "local_fit_weight", "proposal_ordered_weight",
         "teacher_geometry_distillation_weight", "feasible_fit_weight",
+        "teacher_compact_mask_weight",
     ):
         if not math.isfinite(getattr(args, key)) or getattr(args, key) < 0:
             raise ValueError(f"{key} must be finite and nonnegative")
@@ -359,6 +378,12 @@ def validate_args(args):
         raise ValueError("teacher-geometry-distillation-weight requires teacher-greedy-steps > 0")
     if args.teacher_greedy_trajectory_checks and not args.teacher_greedy_steps:
         raise ValueError("teacher-greedy-trajectory-checks requires teacher-greedy-steps > 0")
+    if args.teacher_compact_mask_weight and not args.teacher_greedy_trajectory_checks:
+        raise ValueError("teacher-compact-mask-weight requires teacher-greedy-trajectory-checks > 0")
+    if args.teacher_compact_mask_weight and args.one_shot_selection_policy != "mass_topk":
+        raise ValueError("teacher-compact-mask-weight requires mass_topk selection")
+    if args.teacher_greedy_priority != "sequential" and not args.teacher_greedy_steps:
+        raise ValueError("teacher-greedy-priority compact requires teacher-greedy-steps > 0")
     if args.teacher_geometry_trajectory_targets and not args.teacher_greedy_trajectory_checks:
         raise ValueError("teacher-geometry-trajectory-targets requires teacher-greedy-trajectory-checks > 0")
     if args.teacher_geometry_trajectory_targets and not args.teacher_geometry_distillation_weight:
@@ -399,6 +424,9 @@ def validate_args(args):
         raise ValueError("tolerance-factor-min must be <= tolerance-factor-max")
     if not math.isfinite(args.relocation_blend) or not 0 <= args.relocation_blend <= 1:
         raise ValueError("relocation-blend must lie in [0,1]")
+    if (not math.isfinite(args.subset_geometry_residual_scale)
+            or not 0 <= args.subset_geometry_residual_scale <= 1):
+        raise ValueError("subset-geometry-residual-scale must lie in [0,1]")
     if args.deployment_pass_target + args.complexity_pass_margin > 1:
         raise ValueError("deployment-pass-target + complexity-pass-margin cannot exceed one")
     if sum(bool(value) for value in (
@@ -439,7 +467,7 @@ def simplification_is_ready(
     """Require the final deployment reserve and mature complexity curriculum."""
     return bool(
         stage == "joint"
-        and epoch - args.proposal_epochs
+        and epoch - args.proposal_epochs - getattr(args, "joint_geometry_calibration_epochs", 0)
         >= max(args.complexity_ramp_epochs, args.safety_anneal_epochs)
         and applied_safety_scale <= 1e-12
         and applied_complexity_scale >= 1.0
@@ -770,11 +798,13 @@ _TRAINING_TRUST_EXTREMA = {
 }
 _TRAINING_SEARCH_COUNTS = {
     "teacher_greedy_trajectory_checks", "teacher_geometry_target_count",
+    "teacher_compact_target_count",
 }
 _TRAINING_SEARCH_DENOMINATORS = {
     "teacher_greedy_trajectory_pass_rate": "teacher_greedy_trajectory_checks",
     "teacher_geometry_target_k_mean": "teacher_geometry_target_count",
     "teacher_geometry_target_pass_rate": "teacher_geometry_target_count",
+    "teacher_compact_target_k_mean": "teacher_compact_target_count",
 }
 
 
@@ -829,15 +859,41 @@ def training_config_changes(current, previous, ignored):
             if key not in ignored and normalized_previous.get(key) != value]
 
 
+PROPOSAL_PARAMETER_PREFIXES = (
+    "encoder.", "parameter_head.", "candidate_head.", "proposal_parameter_trust_head.",
+)
+
+
+def geometry_calibration_active(args, *, stage, epoch):
+    return bool(stage == "joint" and
+                0 < epoch - args.proposal_epochs <= args.joint_geometry_calibration_epochs)
+
+
+def set_proposal_trainability(model, *, frozen):
+    """Hold dense geometry fixed, including dropout, without freezing the selector.
+
+    Call after model.train(). Clearing old gradients also prevents AdamW state
+    or weight decay from moving frozen weights on the transition/resume step.
+    """
+    for name, parameter in model.named_parameters():
+        if name.startswith(PROPOSAL_PARAMETER_PREFIXES):
+            parameter.requires_grad_(not frozen)
+            if frozen:
+                parameter.grad = None
+    for prefix in PROPOSAL_PARAMETER_PREFIXES:
+        module = getattr(model, prefix[:-1], None)
+        if module is not None:
+            module.train(not frozen)
+
+
 def build_optimizer(model, args, *, stage):
     """Keep the historical one-group layout unless differential LRs are requested."""
     lr = args.lr if stage == "proposal" else args.joint_lr
     if stage == "proposal" or (
         args.joint_proposal_lr_scale == 1.0 and args.joint_decoder_lr_scale == 1.0
+        and args.joint_geometry_calibration_epochs == 0
     ):
         return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=args.weight_decay)
-    proposal_prefixes = ("encoder.", "parameter_head.", "candidate_head.",
-                         "proposal_parameter_trust_head.")
     decoder_prefixes = (
         "subset_geometry.", "survivor_attention.", "parameter_attention.",
         "survivor_norm.", "parameter_norm.", "parameter_update.",
@@ -846,7 +902,7 @@ def build_optimizer(model, args, *, stage):
     )
     groups = {"proposal": [], "selector": [], "decoder": []}
     for name, parameter in model.named_parameters():
-        group = ("proposal" if name.startswith(proposal_prefixes) else
+        group = ("proposal" if name.startswith(PROPOSAL_PARAMETER_PREFIXES) else
                  "decoder" if name.startswith(decoder_prefixes) else "selector")
         groups[group].append(parameter)
     scales = {"proposal": args.joint_proposal_lr_scale, "selector": 1.0,
@@ -868,6 +924,9 @@ def apply_joint_learning_rate(optimizer, args, *, epoch, end_epoch):
     ) / 2.0
     for group in optimizer.param_groups:
         group["lr"] = args.joint_lr * group.get("lr_scale", 1.0) * ratio
+        if (group.get("group_name") == "proposal"
+                and geometry_calibration_active(args, stage="joint", epoch=epoch)):
+            group["lr"] = 0.0
     return ratio
 
 
@@ -936,6 +995,15 @@ def transfer_all_weights(model, checkpoint, *, resize_candidate_warm_start=False
     source_model, _, _ = build_model_from_checkpoint(checkpoint)
     source_config, target_config = source_model.get_config(), model.get_config()
     controlled_safety = {"one_shot_safety_sigma", "one_shot_safety_knots"}
+    geometry_keys = ("subset_geometry_mode", "subset_geometry_residual_scale")
+    geometry_changed = {key: {"source": source_config.get(key), "target": target_config.get(key)}
+                        for key in geometry_keys if source_config.get(key) != target_config.get(key)}
+    if geometry_changed and target_config.get("subset_geometry_mode") == "anchored":
+        # An explicit new-run anchored configuration is a functional migration,
+        # never an exact resume. Existing tensors remain shape-compatible.
+        controlled_safety.update(geometry_keys)
+    else:
+        geometry_changed = {}
     source_capacity = source_config["max_internal_knots"]
     target_capacity = target_config["max_internal_knots"]
     if resize_candidate_warm_start:
@@ -1011,6 +1079,11 @@ def transfer_all_weights(model, checkpoint, *, resize_candidate_warm_start=False
     if capacity_metadata is not None and transfer_metadata is not None:
         capacity_metadata["exact_copied_tensor_names"] = sorted(copied)
         transfer_metadata.update(capacity_metadata)
+    if geometry_changed and transfer_metadata is not None:
+        transfer_metadata["subset_geometry_transfer"] = dict(
+            changes=geometry_changed, optimizer_state="fresh", history="fresh",
+            note="Explicit anchor-preserving forward-function migration; revalidation required, not exact resume.",
+        )
     return tuple(sorted(copied))
 
 
@@ -1076,6 +1149,8 @@ def main(argv=None):
         mse_tolerance=args.mse_tolerance, relocation_blend=args.relocation_blend,
         parameter_trust_enabled=args.parameter_trust_enabled,
         parameter_trust_initial=args.parameter_trust_initial,
+        subset_geometry_mode=args.subset_geometry_mode,
+        subset_geometry_residual_scale=args.subset_geometry_residual_scale,
         one_shot_selection_policy=args.one_shot_selection_policy,
         one_shot_adaptive_threshold=True,
         one_shot_safety_sigma=args.one_shot_safety_sigma,
@@ -1156,6 +1231,10 @@ def main(argv=None):
             set(model.state_dict()) - set(copied) - adapted_names)
         print(f"Copied {len(copied)} model tensors exactly, including selector/decoder; "
               "fresh optimizer, history, safety curriculum and proposal gate.", flush=True)
+        if "subset_geometry_transfer" in capacity_transfer:
+            initializer_provenance["subset_geometry_transfer"] = capacity_transfer.pop("subset_geometry_transfer")
+            print("Explicit anchored subset-geometry migration: weights copied, forward function changed; "
+                  "revalidation required. This is not optimizer resume.", flush=True)
         if capacity_transfer:
             initializer_provenance["capacity_transfer"] = capacity_transfer
             print(f"Explicit candidate-capacity migration: "
@@ -1201,6 +1280,8 @@ def main(argv=None):
         feasible_fit_weight=args.feasible_fit_weight,
         teacher_greedy_steps=args.teacher_greedy_steps,
         teacher_greedy_max_curves=args.teacher_greedy_max_curves,
+        teacher_greedy_priority=args.teacher_greedy_priority,
+        teacher_compact_mask_weight=args.teacher_compact_mask_weight,
         teacher_greedy_trajectory_checks=args.teacher_greedy_trajectory_checks,
         teacher_geometry_trajectory_targets=args.teacher_geometry_trajectory_targets,
         teacher_geometry_distillation_weight=args.teacher_geometry_distillation_weight,
@@ -1249,6 +1330,11 @@ def main(argv=None):
         flush=True,
     )
     print("Validation checkpoint quality uses the worst source pass rate. Additional subset fits run only during training.", flush=True)
+    if args.joint_geometry_calibration_epochs:
+        print(f"Joint geometry calibration: first {args.joint_geometry_calibration_epochs} joint epochs "
+              "freeze encoder/ParameterHead/Proposal and pause complexity/safety curriculum; "
+              "Selector and subset decoder learn compact teacher geometry. Later joint epochs "
+              "unfreeze dense geometry at the configured proposal LR scale.", flush=True)
     if args.simplification_controller == "per_curve":
         print("Per-curve simplification: scheduled complexity ramp; infeasible training curves receive no complexity pressure. "
               "Worst-source validation still governs checkpoint selection, not the training ramp.", flush=True)
@@ -1273,6 +1359,10 @@ def main(argv=None):
         )
     for epoch in range(start_epoch, args.epochs + 1):
         stage = "proposal" if epoch <= args.proposal_epochs else "joint"
+        geometry_calibration = geometry_calibration_active(args, stage=stage, epoch=epoch)
+        phase = "joint_geometry_calibration" if geometry_calibration else stage
+        if geometry_calibration:
+            complexity_scale = 0.0
         applied_safety_scale = selection_safety_scale
         safety_sigma, safety_knots = selection_safety(args, applied_safety_scale)
         model.set_selection_safety(sigma=safety_sigma, knots=safety_knots)
@@ -1308,6 +1398,7 @@ def main(argv=None):
             generator=loader_generator, **loader_runtime,
         )
         model.train()
+        set_proposal_trainability(model, frozen=geometry_calibration)
         started = time.perf_counter()
         total, samples = defaultdict(float), 0
         training_family_counts = defaultdict(int)
@@ -1346,7 +1437,7 @@ def main(argv=None):
             size = len(points)
             samples += size
             accumulate_training_metrics(total, metrics, size)
-            progress(step, len(train_loader), f"Epoch {epoch:03}/{args.epochs} {stage}",
+            progress(step, len(train_loader), f"Epoch {epoch:03}/{args.epochs} {phase}",
                      f"MSE={metrics['deployment_mse']:.3e} pass={metrics['deployment_pass_rate']:.1%} "
                      f"K={metrics['keep_count']:.1f} teacherK={metrics['subset_best_count']:.1f} "
                      f"countMAE={metrics['supervised_count_mae']:.2f}",
@@ -1365,14 +1456,13 @@ def main(argv=None):
                 feasible_streak += 1
             else:
                 feasible_streak = 0
-            complexity_scale, selection_safety_scale = (
-                update_simplification_controller(
+            if not geometry_calibration:
+                complexity_scale, selection_safety_scale = update_simplification_controller(
                     args,
                     pass_rate=observed_pass,
                     complexity_scale=complexity_scale,
                     safety_scale=selection_safety_scale,
                 )
-            )
         entry = dict(
             epoch=epoch, stage=stage, train=train_metrics, validation=measured,
             learning_rates=learning_rates,
@@ -1385,6 +1475,8 @@ def main(argv=None):
             feasible_streak=feasible_streak,
             seconds=time.perf_counter()-started,
         )
+        if args.joint_geometry_calibration_epochs:
+            entry.update(phase=phase, proposal_frozen=geometry_calibration)
         if training_family_counts:
             entry["training_family_counts"] = dict(training_family_counts)
         history.append(entry)
@@ -1418,6 +1510,8 @@ def main(argv=None):
             training_config=current_config, dataset_config=dataset_config, history=history,
             training_schedule=dict(joint_end_epoch=joint_schedule_end_epoch,
                                    joint_final_lr_ratio=args.joint_final_lr_ratio,
+                                   **({"joint_geometry_calibration_epochs": args.joint_geometry_calibration_epochs}
+                                      if args.joint_geometry_calibration_epochs else {}),
                                    **({"simplification_controller": args.simplification_controller}
                                       if args.simplification_controller != "worst_source" else {})),
             initializer_provenance=initializer_provenance,
@@ -1496,6 +1590,7 @@ def main(argv=None):
                              teacher_geometry_candidates=args.teacher_geometry_candidates,
                              teacher_greedy_steps=args.teacher_greedy_steps,
                              teacher_greedy_max_curves=args.teacher_greedy_max_curves,
+                             teacher_greedy_priority=args.teacher_greedy_priority,
                              teacher_greedy_trajectory_checks=args.teacher_greedy_trajectory_checks,
                              teacher_geometry_trajectory_targets=args.teacher_geometry_trajectory_targets,
                              feasible_objective=args.feasible_objective,
@@ -1516,7 +1611,8 @@ def main(argv=None):
                                   "proposal_knot_coverage_weight",
                                   "selected_knot_position_weight", "boundary_ranking_weight",
                                   "parameter_counterfactual_weight", "local_fit_weight",
-                                  "proposal_ordered_weight", "teacher_geometry_distillation_weight")}))
+                                  "proposal_ordered_weight", "teacher_geometry_distillation_weight",
+                                  "teacher_compact_mask_weight")}))
         payload["qualification"] = assess_v16_checkpoint(
             payload,
             required_pass_rate=V16_FORMAL_PASS_RATE,
@@ -1578,6 +1674,14 @@ def main(argv=None):
                 f"target_K={train_metrics['teacher_geometry_target_k_mean']:.1f}, "
                 f"target_pass={train_metrics['teacher_geometry_target_pass_rate']:.1%}",
                 flush=True,
+            )
+        if args.teacher_compact_mask_weight and stage == "joint":
+            print(
+                f"  compact mask calibration: targets_total={train_metrics['teacher_compact_target_count']:.0f}, "
+                f"target_K={train_metrics['teacher_compact_target_k_mean']:.2f}, "
+                f"count_loss={train_metrics['teacher_compact_count_loss']:.4f}, "
+                f"ranking_loss={train_metrics['teacher_compact_ranking_loss']:.4f}; "
+                "targets require smaller count AND decoded feasibility", flush=True,
             )
         if training_family_counts:
             print(f"  training families: {dict(training_family_counts)}", flush=True)
