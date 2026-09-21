@@ -1,6 +1,6 @@
 # Minimum-Complexity B-Spline Fitting
 
-最新：[Granularity 实验与运行说明](docs/overnight_granularity.md)、[这次训练结果审计](docs/overnight_results_audit_20260921.md)、[当前算法论文框架](paper/overnight/README.md)。新增三段可选交互层、合成形态专用容量实验、峰值误差训练；默认不改变旧模型。真实训练结果显示拟合提升但节点数尚未改善，新增路线须重新训练检验。
+最新：[M16/M32 两个通用模型及一条龙指令](docs/overnight_m16_m32.md)、[Granularity 架构与实验说明](docs/overnight_granularity.md)、[这次训练结果审计](docs/overnight_results_audit_20260921.md)、[当前算法论文框架](paper/overnight/README.md)。容量路线只训练最大16、32个内部候选的两个通用模型，不再按数据集分别训练；均使用混合合成训练、真实验证/测试，默认三段各加2层并启用峰值误差损失。旧检查点行为不变，新模型尚需重新训练验证，未宣称效果已提升。
 
 最新短程改进见 [Overnight Anchored：稳定紧凑解码](docs/overnight_anchored.md)：K32、MSE `5e-5`，锚定式参数/节点残差、紧凑教师专项监督及 Joint 内冻结候选几何校准。新增 `--anchored-selection` 一条龙；旧检查点保持原行为，效果须重新验证。
 

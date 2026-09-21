@@ -78,8 +78,9 @@ $\mathbb R^d$, with $0=t_1<\cdots<t_M=1$. A clamped cubic spline is
 \bm C(t)=\sum_{a=1}^{K+4}B_{a,3}(t;\bm U)\bm P_a,\qquad
 \bm U=(0,0,0,0,u_1,\ldots,u_K,1,1,1,1).
 \end{equation}
-$K$ counts interior knots only: $K=32$ means 40 knot-vector entries and
-36 control points. Endpoint-constrained least squares computes
+$K$ counts interior knots only: $K=16$ means 24 knot-vector entries and
+20 control points, while $K=32$ means 40 entries and 36 control points.
+Endpoint-constrained least squares computes
 $\bm P^\star$ for given $\bm t$ and $\bm U$. Define
 \begin{equation}
 e_i=\|\bm C(t_i)-\bm q_i\|_2^2,\qquad
@@ -227,7 +228,14 @@ in this draft.
 \subsection{Data and supervision}
 Synthetic training includes labelled splines and procedural shape families.
 The audited runs use source $K=4,\ldots,24$, $M=192$, 1500 training curves
-per epoch, and 500 synthetic validation curves. The source minimality audit
+per epoch, and 500 synthetic validation curves. The new two-model study
+trains general-purpose M16 and M32 models, with $K_c=16$ and $K_c=32$,
+respectively. Both use mixed synthetic shapes, not dataset-specific models.
+Their default labelled source ranges are $K=4,\ldots,16$ and
+$K=4,\ldots,24$; this capacity-matched training changes the source
+distribution as well as capacity. A capacity-only ablation must instead
+use the shared source range $K=4,\ldots,16$ for both models.
+The source minimality audit
 is relative to tested source-subset removals, threshold, and parameterization;
 it does not prove globally minimal free knots for finite noisy data.
 
@@ -237,6 +245,11 @@ contours~\cite{usgscontours}. IndustrialOffset consists of procedurally
 generated CAD-style offsets, not measured industrial observations.
 Audited profiles use synthetic/procedural training and real validation;
 writer or geographic groups separate validation from held-out tests.
+The M16/M32 profiles retain this boundary: UJI, Natural Earth, and USGS
+provide external validation, while IndustrialOffset remains test-only.
+Both models are tested separately on all five sources, including the
+same synthetic $K=4,\ldots,24$ evaluation range. Cases exceeding M16's
+capacity are retained and identified rather than silently excluded.
 External curves have no ground-truth spline knot vectors.
 
 Input-fitting errors and original-reference-point errors are separate.
@@ -268,15 +281,23 @@ a hardware-neutral algorithmic speedup.
 Controlled studies should include:
 \begin{enumerate}
 \item proposal/selection/survivor depth at fixed capacity, seed, data, and budget;
-\item unified $K_c=32$ versus morphology-specific capacities chosen on
-validation, without post-hoc selection by test error;
+\item general-purpose M16 versus M32, with shared synthetic source ranges
+for capacity-only ablations and separately disclosed capacity-matched training;
 \item peak-loss on/off at the same MSE tolerance;
 \item teacher geometry, redecoding verification, and parameter coupling.
 \end{enumerate}
-Specialists default to morphology-specific synthetic training with real
-validation/testing only. Explicit real-training-split adaptation is a
-different protocol and must be labelled separately. Test labels and test-fit
-outcomes cannot choose capacity or model.
+The default two-model experiment uses the same depth and peak-loss variant
+for M16 and M32: two added refinement blocks per module and a peak-loss
+weight of $0.05$ with squared-error target $5\times10^{-4}$.
+The MSE tolerance remains $5\times10^{-5}$. Each model is initialized from
+the same shallow K32 checkpoint; resizing candidate queries for M16
+requires retraining and is not a function-preserving capacity reduction.
+Within each six-method comparison all methods share that model's capacity;
+M16 and M32 tables remain separate. No dataset router, test-error-based
+model selection, or automatic M16-to-M32 fallback is introduced.
+Explicit real-training-split adaptation would be a different protocol and
+must be labelled separately. Test labels and test-fit outcomes cannot choose
+capacity or model.
 
 \section{Results and analysis --- to be completed}
 \todo{Insert frozen paired six-method results, including synthetic strata and

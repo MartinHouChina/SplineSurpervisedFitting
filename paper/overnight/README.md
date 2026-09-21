@@ -13,10 +13,12 @@
 框架明确区分：
 
 1. **已有训练记录**：局部注意力 Proposal、动态 beta / probability-mass TopK、KeepMask 条件化存活几何、参数与节点一起更新、标准 LS、在线反事实 teacher。
-2. **新可选实验，尚无完整成绩**：`proposal_refinement_layers`、`selection_refinement_layers`、`survivor_refinement_layers`（默认均0，新增块零门控初始化）；逐点峰值/上尾损失；形态/容量专门模型。不得写成已经证实提高精度。
+2. **新可选实验，尚无完整成绩**：`proposal_refinement_layers`、`selection_refinement_layers`、`survivor_refinement_layers`（底层默认均0，新增块零门控初始化）；逐点峰值/上尾损失；M16/M32两个通用容量模型。当前两模型实验默认各加2层并启用峰值损失，不按数据集另训专用模型。不得写成已经证实提高精度。
 3. **没有理论或实验证实的承诺**：阈值必达、全局最少节点、所有对照均更慢、连续曲线最大误差有界。
 
 Keep embedding 的准确描述：由 KeepMask 决定的邻距、rank、数量形成 geometry embedding，并屏蔽被删除节点的 K/V；不是凭空存在的独立二值 embedding 查表。
+
+两模型运行协议见 [M16/M32](../../docs/overnight_m16_m32.md)。默认M16的有标签合成源K4..16，M32为K4..24，因此不是纯容量消融；后者需显式使用共同K4..16训练范围。两者测试同一五来源，六方法均采用当前模型的容量上限，分表报告；不按测试误差逐条挑选模型，也不将中断的来源专用训练结果改标为通用模型。
 
 ## 编译
 

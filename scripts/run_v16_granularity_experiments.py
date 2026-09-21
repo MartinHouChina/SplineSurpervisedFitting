@@ -1,11 +1,16 @@
-"""Run controlled depth/point-error ablations and synthetic morphological specialists.
+"""Train TWO general-purpose models: M16 and M32, then compare and visualize.
 
-Default ``--route all`` schedules TWELVE independent training + six-method
-benchmark + visualization pipelines, sequentially; this is not a one-night
-runtime promise. Specialist training is synthetic-only. Real train splits and
-test-case routing are not used; the named real source is used for validation.
-Every model is still tested on Synthetic K=4..24 and all four external sources.
-Smaller-capacity models intentionally retain those out-of-training-range tests.
+Default ``--route capacity`` schedules exactly two independent training +
+six-method benchmark + visualization pipelines, sequentially. Neither model
+is tied to a dataset: both use the mixed synthetic training distribution and
+the same external validation sources. Every model is tested on Synthetic
+K=4..24 and all four external sources, including capacity-exceeding cases.
+
+M16 trains on source K=4..16 and M32 on K=4..24 by default. For a controlled
+capacity-only ablation, use --shared-source-max-knots 16. Historical domain
+specialists and --route all are no longer accepted; interrupted runs are not
+automatically resumed or overwritten. Explicit --route depth retains the
+optional four K32 depth/peak-loss ablations instead of the two-model run.
 
 ``--dry-run`` only prints the plan; it never loads a checkpoint, writes files,
 prepares data, or launches the shell. All actual subprocess calls use argv lists
@@ -27,12 +32,6 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DEPTH_VARIANTS = ("baseline", "deep", "peak", "deep_peak")
 DOMAINS = ("UJI", "IndustrialOffset", "NaturalEarth", "USGS")
-DOMAIN_SETTINGS = {
-    "UJI": ("handwriting", 16, "uji"),
-    "IndustrialOffset": ("industrial", 24, "industrial_offset"),
-    "NaturalEarth": ("terrain", 24, "natural_earth"),
-    "USGS": ("terrain", 24, "usgs"),
-}
 PEAK_ARGS = ["--max-point-error-weight", "0.05", "--max-point-error-tolerance", "5e-4",
              "--max-point-error-tail-fraction", "0.05"]
 
@@ -40,10 +39,14 @@ PEAK_ARGS = ["--max-point-error-weight", "0.05", "--max-point-error-tolerance", 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    result.add_argument("--route", choices=("depth", "specialists", "all"), default="all")
+    result.add_argument("--route", choices=("capacity", "depth"), default="capacity",
+                        help="capacity: exactly M16 + M32 (default); depth: optional K32 ablations")
+    result.add_argument("--capacity-variant", choices=DEPTH_VARIANTS, default="deep_peak",
+                        help="Same architecture/loss variant for both general models (default deep_peak)")
+    result.add_argument("--shared-source-max-knots", type=int, default=None,
+                        help="Shared synthetic training/validation source upper K (4..16); otherwise M16=16, M32=24")
     result.add_argument("--depth-variants", choices=DEPTH_VARIANTS, nargs="+",
-                        default=list(DEPTH_VARIANTS))
-    result.add_argument("--domains", choices=DOMAINS, nargs="+", default=list(DOMAINS))
+                        default=None, help="Only with --route depth; default all four depth/peak ablations")
     result.add_argument("--warm-start-checkpoint", type=Path, required=True,
                         help="Common shallow K32 initializer; not an optimizer resume")
     result.add_argument("--data-root", type=Path, default=None,
@@ -78,10 +81,14 @@ def validate_args(args) -> None:
         raise ValueError("proposal-epochs must be at least one and less than total epochs")
     if not 0 <= args.joint_geometry_calibration_epochs <= args.epochs - args.proposal_epochs:
         raise ValueError("joint-geometry-calibration-epochs must fit within the Joint stage")
-    for field in ("depth_variants", "domains"):
-        selected = getattr(args, field)
-        if len(set(selected)) != len(selected):
-            raise ValueError(f"{field.replace('_', '-')} cannot contain duplicates")
+    if args.depth_variants is not None:
+        if args.route != "depth":
+            raise ValueError("depth-variants requires --route depth; capacity always schedules exactly two models")
+        if len(set(args.depth_variants)) != len(args.depth_variants):
+            raise ValueError("depth-variants cannot contain duplicates")
+    if args.shared_source_max_knots is not None:
+        if args.route != "capacity" or not 4 <= args.shared_source_max_knots <= 16:
+            raise ValueError("shared-source-max-knots requires --route capacity and a value in 4..16")
 
 
 def build_plan(args, *, root: Path | None = None) -> dict:
@@ -107,12 +114,11 @@ def build_plan(args, *, root: Path | None = None) -> dict:
         common += ["--prepare-real-data"]
     runs = []
 
-    def add_run(name, route, *, cap, source_max, domain, shape, deep, peak,
-                shape_fraction=None, simple_fraction=None):
+    def add_run(name, route, *, cap, source_max, deep, peak):
         command = common + [
             "--run-name", name, "--candidate-knots", str(cap),
-            "--source-max-knots", str(source_max), "--validation-source", domain,
-            "--synthetic-shape-domain", shape,
+            "--source-max-knots", str(source_max), "--validation-source", "all",
+            "--synthetic-shape-domain", "mixed",
             "--candidate-refinement-layers", "2" if deep else "0",
             "--selection-refinement-layers", "2" if deep else "0",
             "--decoder-refinement-layers", "2" if deep else "0",
@@ -123,35 +129,32 @@ def build_plan(args, *, root: Path | None = None) -> dict:
             command += ["--max-point-error-weight", "0"]
         if cap < 32:
             command += ["--resize-candidate-warm-start"]
-        if shape_fraction is not None:
-            command += ["--synthetic-shape-fraction", str(shape_fraction),
-                        "--synthetic-simple-fraction", str(simple_fraction)]
         runs.append({
             "run_name": name, "route": route, "candidate_internal_knots": cap,
-            "source_internal_knots": [4, source_max], "validation_source": domain,
-            "synthetic_shape_domain": shape, "extra_depth_per_module": 2 if deep else 0,
+            "source_internal_knots": [4, source_max], "validation_source": "all",
+            "synthetic_shape_domain": "mixed", "extra_depth_per_module": 2 if deep else 0,
             "point_error_loss_enabled": peak, "command": command,
         })
 
-    if args.route in ("depth", "all"):
-        for variant in args.depth_variants:
+    if args.route == "capacity":
+        variant = args.capacity_variant
+        for capacity, default_source_max in ((16, 16), (32, 24)):
+            add_run(f"{args.run_prefix}_m{capacity}", "capacity", cap=capacity,
+                    source_max=args.shared_source_max_knots or default_source_max,
+                    deep=variant in ("deep", "deep_peak"), peak=variant in ("peak", "deep_peak"))
+    else:
+        for variant in (args.depth_variants or DEPTH_VARIANTS):
             add_run(f"{args.run_prefix}_depth_{variant}", "depth", cap=32, source_max=24,
-                    domain="all", shape="mixed", deep=variant in ("deep", "deep_peak"),
+                    deep=variant in ("deep", "deep_peak"),
                     peak=variant in ("peak", "deep_peak"))
-    if args.route in ("specialists", "all"):
-        for domain in args.domains:
-            shape, smaller, slug = DOMAIN_SETTINGS[domain]
-            for capacity in (smaller, 32):
-                # Both members of a domain pair see the SAME source-K support.
-                add_run(f"{args.run_prefix}_specialist_{slug}_k{capacity}", "specialists",
-                        cap=capacity, source_max=smaller, domain=domain, shape=shape,
-                        deep=False, peak=True, shape_fraction=.5, simple_fraction=.25)
     return {
-        "schema_version": 1, "run_prefix": args.run_prefix, "root": str(root),
+        "schema_version": 2, "route": args.route, "run_prefix": args.run_prefix, "root": str(root),
         "warm_start_checkpoint": str(checkpoint), "data_root": str(data_root),
         "seed": 42, "mse_tolerance": 5e-5,
         "point_error_squared_target_when_enabled": 5e-4,
-        "training_data": "synthetic only; synthetic morphological specialists are not proven dataset-optimal models",
+        "training_data": "synthetic only; two general-purpose capacities, mixed procedural shapes, no dataset routing",
+        "source_range_policy": ("shared" if args.shared_source_max_knots is not None else "capacity_matched"),
+        "capacity_only_ablation": args.route == "capacity" and args.shared_source_max_knots is not None,
         "evaluation": {
             "synthetic_source_k": [4, 24],
             "sources": ["Synthetic", *DOMAINS],
