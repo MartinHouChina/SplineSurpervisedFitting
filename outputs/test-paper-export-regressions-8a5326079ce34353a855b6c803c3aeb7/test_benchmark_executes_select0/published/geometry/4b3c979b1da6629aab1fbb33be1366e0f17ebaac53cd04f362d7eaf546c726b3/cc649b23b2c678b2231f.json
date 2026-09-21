@@ -1,0 +1,180 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "1943815f525a86bb258d0cb54644711dcf469443b5741a2d34f07bb53abc2d24",
+  "case_artifact": {
+    "path": "geometry/4b3c979b1da6629aab1fbb33be1366e0f17ebaac53cd04f362d7eaf546c726b3/case.json",
+    "sha256": "9491826c8160682a70ce13893bc3015f370e786240e4538ab630260ea6c6a2f7"
+  },
+  "measurement": {
+    "dataset": "Synthetic",
+    "sample_id": "case-0",
+    "group_id": "g0",
+    "source_k": 8,
+    "canonical_k": 8,
+    "method": "dung_direct_knot_2017_adaptation",
+    "has_reference": false,
+    "status": "ok",
+    "mse": 9.999999999999997e-07,
+    "max_squared_error": 1e-06,
+    "fit_pass": true,
+    "reference_mse": null,
+    "reference_max_squared_error": null,
+    "reference_pass": null,
+    "final_k": 1,
+    "total_ms": 4.0,
+    "network_ms": null,
+    "knots": [
+      0.5
+    ],
+    "diagnostics": {},
+    "error": null,
+    "baseline_protocol": "adaptation",
+    "provenance": {
+      "audit_version": "source_paper_audit_20260921_v1",
+      "method": "dung_direct_knot_2017_adaptation",
+      "reproduction_status": "reproduction_unverified",
+      "native_available": false,
+      "native_comparison_available": false,
+      "implementation_origin": "repository_implementation",
+      "author_code_executed": false,
+      "reference_doi": "10.1371/journal.pone.0173857",
+      "source_url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0173857",
+      "source_access": "full primary article and official S1 MATLAB source inspected; not executed",
+      "author_code_url": "https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0173857.s006&type=supplementary",
+      "author_code_sha256": "2fc1830966f71ce77f7c29e33ecf321b5fddca5f5bfca75458d667a1d1ce0399",
+      "known_departures": [
+        "Only simple knots are optimized; the author's multiplicity 1..degree+1 and joining-angle/continuity classifier are absent.",
+        "Only serial splitting is implemented; parallel split/join/shift is absent (serial is itself a published variant).",
+        "Capacity overflow uniformly discards coarse breaks; this is not an author-code operation.",
+        "The final endpoint-constrained refit changes the author's unconstrained least-squares spline.",
+        "sqrt(mse_tolerance) is not an equivalent native maximum-error constraint; finite-difference solver/search and short-tail guards are repository choices."
+      ],
+      "audit_document": "docs/baseline_native_audit.md"
+    },
+    "source_kind": null,
+    "source_note": null,
+    "dataset_label": null,
+    "split": null,
+    "attempt_wall_ms": 0.8245999924838543,
+    "timing_status": "completed_method"
+  },
+  "spline": {
+    "degree": 3,
+    "internal_knots": [
+      0.5
+    ],
+    "full_knot_vector": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.5,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "control_points_normalized": [
+      [
+        0.001,
+        0.0
+      ],
+      [
+        0.0009999999999999996,
+        0.0
+      ],
+      [
+        0.0010000000000000002,
+        0.0
+      ],
+      [
+        0.001,
+        0.0
+      ],
+      [
+        0.001,
+        0.0
+      ]
+    ],
+    "sample_parameters": [
+      0.0,
+      0.043478260869565216,
+      0.08695652173913043,
+      0.13043478260869565,
+      0.17391304347826086,
+      0.21739130434782608,
+      0.2608695652173913,
+      0.30434782608695654,
+      0.34782608695652173,
+      0.3913043478260869,
+      0.43478260869565216,
+      0.4782608695652174,
+      0.5217391304347826,
+      0.5652173913043479,
+      0.6086956521739131,
+      0.6521739130434783,
+      0.6956521739130435,
+      0.7391304347826086,
+      0.782608695652174,
+      0.8260869565217391,
+      0.8695652173913043,
+      0.9130434782608696,
+      0.9565217391304348,
+      1.0
+    ]
+  },
+  "geometry_evaluation_error": null,
+  "errors_normalized": {
+    "mse": 9.999999999999997e-07,
+    "max_squared_error": 1e-06,
+    "reference_mse": null,
+    "reference_max_squared_error": null
+  },
+  "errors_original": {
+    "mse": null,
+    "max_squared_error": null,
+    "reference_mse": null,
+    "reference_max_squared_error": null
+  },
+  "arrays_file": "cc649b23b2c678b2231f.npz",
+  "arrays_sha256": "7cb7510d9779a899807f3268bcaf3952209c67ff7066fa50bcfa0ee628051c02",
+  "array_shapes": {
+    "sample_parameters": [
+      24
+    ],
+    "internal_knots": [
+      1
+    ],
+    "full_knot_vector": [
+      9
+    ],
+    "control_points_normalized": [
+      5,
+      2
+    ],
+    "fitted_input_normalized": [
+      24,
+      2
+    ],
+    "input_residual_vectors_normalized": [
+      24,
+      2
+    ],
+    "input_squared_residuals_normalized": [
+      24
+    ],
+    "dense_parameters": [
+      512
+    ],
+    "dense_curve_normalized": [
+      512,
+      2
+    ],
+    "knot_positions_normalized": [
+      1,
+      2
+    ]
+  },
+  "timing_scope": "Export, dense evaluation, metrics and plotting are excluded from successful method/network timings. The spline is from the final timed repetition; reported times are medians of all recorded timed repetitions.",
+  "coordinate_error_scaling": "Original-coordinate squared errors = normalized squared errors * scalar_scale**2; reported benchmark pass/fail uses normalized input MSE only."
+}

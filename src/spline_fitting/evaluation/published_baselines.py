@@ -23,6 +23,7 @@ from .gradient_knot_pruning import (
 )
 from .liang_feature_iki import fit_liang_feature_iki
 from .luo_linf_de import fit_luo_linf_de
+from .native_protocol import validate_baseline_protocol
 from .park_dominant_point import fit_park_dominant_points
 from .sparse_knot_paper import fit_sparse_knots_paper
 
@@ -314,6 +315,7 @@ def run_published_baseline(
     luo_de_iterations: int = 50,
     luo_seed: int = 2022,
     published_feasibility_safeguard: bool = True,
+    baseline_protocol: str = "adaptation",
 ) -> PublishedBaselineResult:
     """Run a baseline on a single already-normalized ordered CPU float64 curve.
 
@@ -331,9 +333,16 @@ def run_published_baseline(
     and respects each method's declared capacity (``paper_initial_knots`` for
     Kang/Luo, otherwise ``max_internal_knots``). Comparisons must set these
     capacities identically; the distinct historical API meanings are retained.
+
+    ``baseline_protocol='native'`` requires a verified, complete source-paper
+    implementation. It fails before numerical execution when one is missing;
+    it never silently runs an adaptation, even with the safeguard disabled.
+    The historical adaptation protocol and its safeguard default are retained
+    for reproducibility, not endorsed as an original-method comparison.
     """
     if method not in COMPARISON_BASELINE_METHODS:
         raise ValueError(f"unknown baseline method: {method!r}")
+    provenance = validate_baseline_protocol(method, baseline_protocol)
     _integer_bound(degree, "degree", 1)
     _integer_bound(max_internal_knots, "max_internal_knots", 0)
     _integer_bound(gradient_steps, "gradient_steps", 0)
@@ -454,7 +463,10 @@ def run_published_baseline(
                 result.scanned_max_parameter_residual
             ),
             "exact_refit_count": result.refit_count,
-            "method_fidelity": "core DOM equations with a common-MSE stopping wrapper",
+            "method_fidelity": (
+                "DOM-inspired repository implementation with common-MSE stopping; "
+                "complete source-algorithm reproduction remains unverified"
+            ),
         })
     elif method == "liang_feature_iki_2017_adaptation":
         result = fit_liang_feature_iki(
@@ -680,8 +692,8 @@ def run_published_baseline(
                     "the final fit uses the common endpoint-constrained refit"
                 ),
                 "method_fidelity": (
-                    "defining mixed-norm, local-maximum selection, and DE stages "
-                    "are reproduced; hyperparameter selection is adapted"
+                    "repository mixed-norm, local-maximum selection, and DE stages; "
+                    "complete source-algorithm and numerical equivalence remain unverified"
                 ),
             })
         else:
@@ -734,7 +746,7 @@ def run_published_baseline(
                 "comparison_feasibility_safeguard_used": False,
                 "comparison_feasibility_safeguard_attempted": False,
                 "comparison_feasibility_safeguard_role": (
-                    "disabled; native disclosed adaptation is reported"
+                    "disabled; unrepaired disclosed adaptation is reported, not the source-native method"
                 ),
                 "comparison_feasibility_native_mse": float(fit.fit_mse),
                 "comparison_feasibility_native_k": int(fit.internal_knots.numel()),
@@ -749,8 +761,26 @@ def run_published_baseline(
             })
         diagnostics["comparison_method_label"] = (
             "threshold-safe adaptation" if published_feasibility_safeguard
-            else "native disclosed adaptation"
+            else "unrepaired disclosed adaptation"
         )
+    # Apply authoritative provenance after method-specific diagnostics so an
+    # implementation's historical use of the word 'native' cannot override it.
+    diagnostics.update({
+        "baseline_protocol": baseline_protocol,
+        "baseline_provenance": provenance,
+        "reproduction_status": provenance["reproduction_status"],
+        "native_comparison_available": provenance["native_comparison_available"],
+        "source_native_algorithm_executed": False,
+        "reported_geometry_scope": (
+            "repository numerical control with endpoint-constrained refit"
+            if method in NUMERICAL_BASELINE_METHODS
+            else "repository adaptation with common endpoint-constrained refit"
+        ),
+        "legacy_native_fields_scope": (
+            "Historical native_* and comparison_feasibility_native_* keys describe "
+            "pre-safeguard repository adaptations, not verified source-paper output."
+        ),
+    })
     diagnostics["threshold_satisfied"] = float(fit.fit_mse) <= mse_tolerance
     elapsed_ms = (time.perf_counter() - started) * 1000.0
     return PublishedBaselineResult(

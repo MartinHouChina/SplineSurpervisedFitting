@@ -86,11 +86,20 @@ ENHANCED_TRAINING_DEFAULTS = {
     "proposal_refinement_layers": 0,
     "selection_refinement_layers": 0,
     "survivor_refinement_layers": 0,
+    "coupled_proposal_steps": 0,
+    "coupled_subset_steps": 0,
+    "parameter_chord_blend": 0.0,
 }
 
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--coupled-proposal-steps", type=int, default=0,
+                   help="Fixed-depth numerical t/U updates before selection; no spline search")
+    p.add_argument("--coupled-subset-steps", type=int, default=0,
+                   help="Fixed-depth numerical t/U updates conditioned on the final KeepMask")
+    p.add_argument("--parameter-chord-blend", type=float, default=0.0,
+                   help="Explicit chord anchor fraction [0,1] for a new run (0 preserves old model)")
     p.add_argument("--epochs", type=int, default=60, help="Total proposal plus joint epochs")
     p.add_argument(
         "--proposal-epochs", type=int, default=20,
@@ -332,10 +341,15 @@ def validate_args(args):
         "teacher_greedy_trajectory_checks", "teacher_geometry_trajectory_targets",
         "joint_geometry_calibration_epochs",
         "proposal_refinement_layers", "selection_refinement_layers", "survivor_refinement_layers",
+        "coupled_proposal_steps", "coupled_subset_steps",
     ):
         value = getattr(args, key)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError(f"{key} must be a non-negative integer")
+    if not math.isfinite(args.parameter_chord_blend) or not 0 <= args.parameter_chord_blend <= 1:
+        raise ValueError("parameter-chord-blend must be in [0,1]")
+    if (args.coupled_proposal_steps or args.coupled_subset_steps) and args.subset_geometry_mode != "anchored":
+        raise ValueError("coupled updates require --subset-geometry-mode anchored")
     if args.joint_geometry_calibration_epochs > args.epochs - args.proposal_epochs:
         raise ValueError("joint-geometry-calibration-epochs cannot exceed the total joint epochs")
     for key in ("teacher_refinement_candidates", "boundary_ranking_candidates",
@@ -924,6 +938,7 @@ def training_config_changes(current, previous, ignored):
 PROPOSAL_PARAMETER_PREFIXES = (
     "encoder.", "parameter_head.", "candidate_head.", "proposal_parameter_trust_head.",
     "proposal_refinement_blocks.",
+    "coupled_proposal_blocks.",
 )
 
 
@@ -963,6 +978,7 @@ def build_optimizer(model, args, *, stage):
         "relocation_update.", "relocation_blend_logit",
         "subset_parameter_trust_head.",
         "survivor_refinement_blocks.",
+        "coupled_subset_blocks.",
     )
     groups = {"proposal": [], "selector": [], "decoder": []}
     for name, parameter in model.named_parameters():
@@ -1061,7 +1077,9 @@ def transfer_all_weights(model, checkpoint, *, resize_candidate_warm_start=False
     controlled_safety = {"one_shot_safety_sigma", "one_shot_safety_knots"}
     depth_keys = {"proposal_refinement_layers": "proposal_refinement_blocks",
                   "selection_refinement_layers": "selection_refinement_blocks",
-                  "survivor_refinement_layers": "survivor_refinement_blocks"}
+                  "survivor_refinement_layers": "survivor_refinement_blocks",
+                  "coupled_proposal_steps": "coupled_proposal_blocks",
+                  "coupled_subset_steps": "coupled_subset_blocks"}
     depth_changes, added_prefixes = {}, []
     for key, prefix in depth_keys.items():
         old, new = source_config.get(key, 0), target_config.get(key, 0)
@@ -1071,7 +1089,7 @@ def transfer_all_weights(model, checkpoint, *, resize_candidate_warm_start=False
             depth_changes[key] = {"source": old, "target": new}
             added_prefixes.extend(f"{prefix}.{index}." for index in range(old, new))
         controlled_safety.add(key)
-    geometry_keys = ("subset_geometry_mode", "subset_geometry_residual_scale")
+    geometry_keys = ("subset_geometry_mode", "subset_geometry_residual_scale", "parameter_chord_blend")
     geometry_changed = {key: {"source": source_config.get(key), "target": target_config.get(key)}
                         for key in geometry_keys if source_config.get(key) != target_config.get(key)}
     if geometry_changed and target_config.get("subset_geometry_mode") == "anchored":
@@ -1236,6 +1254,9 @@ def main(argv=None):
         proposal_refinement_layers=args.proposal_refinement_layers,
         selection_refinement_layers=args.selection_refinement_layers,
         survivor_refinement_layers=args.survivor_refinement_layers,
+        coupled_proposal_steps=args.coupled_proposal_steps,
+        coupled_subset_steps=args.coupled_subset_steps,
+        parameter_chord_blend=args.parameter_chord_blend,
         one_shot_selection_policy=args.one_shot_selection_policy,
         one_shot_adaptive_threshold=True,
         one_shot_safety_sigma=args.one_shot_safety_sigma,

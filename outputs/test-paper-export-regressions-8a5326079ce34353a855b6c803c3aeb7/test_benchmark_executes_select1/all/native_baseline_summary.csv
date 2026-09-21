@@ -1,0 +1,4 @@
+﻿dataset,sample_id,method,status,baseline_protocol,reproduction_status,safeguard_enabled,safeguard_used,native_k,native_mse,final_k,final_mse,extra_refit_count,final_source,repair_status,capacity,complete_ms
+Synthetic,case-0,dung_direct_knot_2017_adaptation,ok,adaptation,reproduction_unverified,,,,,1,9.999999999999997e-07,,,,,4.0
+Synthetic,case-0,kang_sparse_2015_adaptation,ok,adaptation,reproduction_unverified,,,,,1,9.999999999999997e-07,,,,,4.0
+Synthetic,case-0,luo_linf_de_2022_adaptation,ok,adaptation,reproduction_unverified,,,,,1,9.999999999999997e-07,,,,,4.0

@@ -30,7 +30,7 @@ from spline_fitting.checkpointing import (
     V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
 )
 from spline_fitting.data.point_cloud_io import interpolate_parameters_by_chord
-from spline_fitting.data.real_world import RealWorldCurveDataset, read_curve_manifest
+from spline_fitting.data.real_world import RealWorldCurveDataset, read_curve_manifest, resolve_points_path
 from spline_fitting.data.synthetic import SyntheticCubicBSplineDataset
 from spline_fitting.evaluation.bspline_inference import refit_bspline_control_points
 from spline_fitting.evaluation.gradient_knot_pruning import chord_length_parameters
@@ -39,6 +39,12 @@ from spline_fitting.evaluation.published_baselines import (
     run_published_baseline,
 )
 from spline_fitting.evaluation.timing import measure_synchronized_wall_time
+from spline_fitting.evaluation.native_protocol import (
+    NativeBaselineUnavailableError, baseline_provenance, validate_baseline_protocol,
+)
+from benchmark_geometry import (
+    GEOMETRY_SCHEMA_VERSION, load_geometry_artifact, write_case_geometry, write_method_geometry,
+)
 from compare_knot_methods import _select_indices
 from visualize_batch_comparison import _dataset_config_from_checkpoint
 from overnight_datasets import default_manifests, parse_manifests, source_description, validate_source_records
@@ -69,6 +75,7 @@ OBJECTIVE_LABELS = {
 DEFAULT_MANIFESTS = default_manifests(ROOT / "data")
 ERROR_METRIC_VERSION = "squared_euclidean_input_reference_peak_v2"
 ERROR_METRIC_DEFINITIONS = {
+    "unavailable_methods": "Methods unavailable under the selected implementation protocol are not executed: fit_pass, errors, knot count and method time stay null. They are excluded from executed pass-rate denominators and counted separately from actual numerical failures.",
     "mse": "mean_i ||C(t_i)-Q_i||^2 on normalized input points; no square root",
     "max_squared_error": "max_i ||C(t_i)-Q_i||^2 on normalized input points; no square root",
     "reference_mse": "mean squared Euclidean residual on normalized original reference points; parameters mapped from the original arc-length grid to predicted input parameters",
@@ -98,6 +105,10 @@ def parser(*, default_checkpoint: Path | None = None,
     p.add_argument("--seed", type=int, default=20000)
     p.add_argument("--selection-seed", type=int, default=20260908)
     p.add_argument("--real-samples-per-dataset", type=int, default=10)
+    p.add_argument("--all-real-test-samples", action="store_true",
+                   help="Evaluate every test-split curve in each selected manifest; never include train/validation splits")
+    p.add_argument("--geometry-dense-points", type=int, default=512,
+                   help="Saved dense-curve evaluation grid, outside method timing; every measured fit is exported")
     p.add_argument("--manifest", action="append", default=[], metavar="NAME=PATH")
     p.add_argument("--data-root", type=Path,
                    help="Resolve the four default external sources under this complete data tree; explicit --manifest replaces that set")
@@ -141,6 +152,10 @@ def parser(*, default_checkpoint: Path | None = None,
     p.add_argument("--luo-de-population", type=int, default=10)
     p.add_argument("--luo-de-iterations", type=int, default=50)
     p.add_argument("--luo-seed", type=int, default=2022)
+    p.add_argument(
+        "--baseline-protocol", choices=("adaptation", "native"), default="adaptation",
+        help="Historical repository adaptations, or strict verified original-native implementations only; unavailable native methods are reported, never replaced",
+    )
     p.add_argument(
         "--published-feasibility-safeguard", action=argparse.BooleanOptionalAction,
         default=True,
@@ -289,6 +304,7 @@ def published_baseline_kwargs(args, *, degree: int, warmup: bool = False) -> dic
         "luo_de_iterations": 1 if warmup else args.luo_de_iterations,
         "luo_seed": args.luo_seed,
         "published_feasibility_safeguard": getattr(args, "published_feasibility_safeguard", True),
+        "baseline_protocol": getattr(args, "baseline_protocol", "adaptation"),
     }
     return values
 
@@ -302,12 +318,17 @@ SAFEGUARDED_PUBLISHED_METHODS = (
 def published_baseline_protocol(args) -> dict:
     """Fingerprint the disclosed comparison wrapper and its implementation."""
     enabled = bool(getattr(args, "published_feasibility_safeguard", True))
+    protocol = getattr(args, "baseline_protocol", "adaptation")
     return {
+        "baseline_protocol": protocol,
+        "unavailable_policy": "No substitution or execution; null geometry/metrics/time/pass outcomes. Excluded from executed pass-rate denominator, counted separately from failed algorithms.",
+        "method_provenance": {method: baseline_provenance(method) for method in PUBLISHED_METHODS[1:]},
         "feasibility_safeguard_enabled": enabled,
         "feasibility_safeguard_version": "bounded_common_mse_v1",
         "methods": list(SAFEGUARDED_PUBLISHED_METHODS),
-        "label": "threshold-safe adaptation" if enabled else "native disclosed adaptation",
-        "native_definition": "corrected repository adaptation before the optional common-MSE safeguard; not an exact paper reproduction",
+        "label": ("strict verified native implementations only" if protocol == "native" else
+                  "threshold-safe adaptation" if enabled else "unrepaired repository adaptation"),
+        "native_definition": "baseline_protocol=native requires a verified source-paper implementation; historical diagnostic fields named comparison_feasibility_native_* mean pre-repair repository adaptation, NOT original-native reproduction",
         "repair": "only when native common refit misses tolerance; bounded residual-guided augmentation and uniform-capacity fallback; preserve best fit",
         "capacity": "Dung: max_internal_knots; Kang/Luo: paper_initial_knots; neither cap is exceeded",
         "timing": "all native algorithm work and safeguard refits included in complete time; Ours network-only remains separate",
@@ -320,7 +341,11 @@ def published_baseline_protocol(args) -> dict:
 
 
 def native_baseline_audit(rows: list[dict]) -> list[dict]:
-    """Keep per-case native and final measurements visible, including misses."""
+    """Keep the historical three-method pre-/post-safeguard audit contract.
+
+    These native_* fields refer to repository adaptations before repair, not
+    source-paper provenance; the latter is reported in a separate audit.
+    """
     audit = []
     for row in rows:
         if row["method"] not in SAFEGUARDED_PUBLISHED_METHODS:
@@ -329,6 +354,8 @@ def native_baseline_audit(rows: list[dict]) -> list[dict]:
         audit.append({
             "dataset": row.get("dataset"), "sample_id": row.get("sample_id"),
             "method": row["method"], "status": row.get("status"),
+            "baseline_protocol": row.get("baseline_protocol"),
+            "reproduction_status": (row.get("provenance") or {}).get("reproduction_status"),
             "safeguard_enabled": diagnostic.get("comparison_feasibility_safeguard_enabled"),
             "safeguard_used": diagnostic.get("comparison_feasibility_safeguard_used"),
             "native_k": diagnostic.get("comparison_feasibility_native_k"),
@@ -339,6 +366,25 @@ def native_baseline_audit(rows: list[dict]) -> list[dict]:
             "repair_status": diagnostic.get("comparison_feasibility_status"),
             "capacity": diagnostic.get("comparison_feasibility_capacity"),
             "complete_ms": row.get("total_ms"),
+        })
+    return audit
+
+
+def baseline_provenance_audit(rows: list[dict]) -> list[dict]:
+    """Expose actual saved implementation provenance without backfilling history."""
+    audit = []
+    for row in rows:
+        provenance = row.get("provenance") or {}
+        if row["method"] == "ours" or not provenance:
+            continue
+        audit.append({
+            "dataset": row.get("dataset"), "sample_id": row.get("sample_id"),
+            "method": row["method"], "status": row.get("status"),
+            "baseline_protocol": row.get("baseline_protocol"),
+            "reproduction_status": provenance.get("reproduction_status"),
+            "native_comparison_available": provenance.get("native_comparison_available"),
+            "known_departures": provenance.get("known_departures"),
+            "complete_ms": row.get("total_ms"), "error": row.get("error"),
         })
     return audit
 
@@ -426,6 +472,12 @@ def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict
                 "source_k": source_k,
                 "canonical_k": canonical_k,
                 "reference_grid": None,
+                "split": "independent_test", "source_kind": "synthetic_bspline",
+                "dataset_label": "Synthetic B-spline", "source_note": "Generated held-out synthetic B-spline, not real observations.",
+                "center": sample["center"] if config.get("normalize", True) else torch.zeros_like(sample["center"]),
+                "scale": sample["scale"] if config.get("normalize", True) else torch.ones_like(sample["scale"]),
+                "canonical_internal_knots": sample["true_internal_knots"][sample["true_internal_knot_mask"].bool()],
+                "source_parameters": sample.get("true_params"),
             })
         provenance.append({"dataset": "Synthetic", "config": config, "seed": args.seed,
                            "selected_indices": indices, "selected_count": len(indices),
@@ -444,7 +496,8 @@ def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict
         dataset = RealWorldCurveDataset(path, split="test", num_points=config["num_points"])
         if not len(dataset):
             raise ValueError(f"No test curves in {path}")
-        indices = balanced_indices(dataset.records, args.real_samples_per_dataset, args.selection_seed)
+        all_test = bool(getattr(args, "all_real_test_samples", False))
+        indices = balanced_indices(dataset.records, len(dataset) if all_test else args.real_samples_per_dataset, args.selection_seed)
         for i in indices:
             sample = dataset[i]
             if sample["points"].shape[-1] != config["point_dim"]:
@@ -460,6 +513,12 @@ def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict
                 "group_id": sample["group_id"], "points": sample["points"],
                 "reference": reference, "reference_grid": reference_grid,
                 "source_k": None, "canonical_k": None,
+                "split": "test", "center": sample["center"], "scale": sample["scale"],
+                "reference_original": raw,
+                "source_dataset": sample["source_dataset"],
+                "source_manifest": str(path.resolve()), "source_manifest_record": dataset.records[i],
+                "source_points_path": str(resolve_points_path(path, dataset.records[i])),
+                "source_points_sha256": sha256_file(resolve_points_path(path, dataset.records[i])),
                 **description,
             })
         provenance.append({
@@ -468,7 +527,8 @@ def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict
             "available_test_groups": len({r["group_id"] for r in dataset.records}),
             "selected_count": len(indices), "selected_indices": indices,
             "selected_groups": len({dataset.records[i]["group_id"] for i in indices}),
-            "has_knot_labels": False, "sampling": "seeded_group_round_robin",
+            "has_knot_labels": False, "sampling": "all_test_seeded_group_round_robin" if all_test else "seeded_group_round_robin",
+            "all_test_samples": all_test,
             **description,
             "present_in_checkpoint_validation_manifests": str(path.resolve()) in {
                 str(Path(item).resolve()) for item in checkpoint.get("training_config", {}).get("real_manifest", [])
@@ -652,6 +712,7 @@ def summarize(rows: list[dict]) -> list[dict]:
     result = []
     for (dataset, method), values in groups.items():
         valid = [r for r in values if r["status"] == "ok"]
+        evaluated = [r for r in values if r["status"] != "unavailable"]
         refs = [r for r in valid if r.get("reference_mse") is not None]
         # Ground truth belongs to the paired cases, not to a method's successes.
         # A failed solver must not alter the synthetic reference K.
@@ -661,7 +722,8 @@ def summarize(rows: list[dict]) -> list[dict]:
             if r["status"] == "ok" and r["final_k"] is not None
         ]
         def mean(field, items=valid):
-            return statistics.fmean(r[field] for r in items) if items else None
+            measured = [r[field] for r in items if r.get(field) is not None]
+            return statistics.fmean(measured) if measured else None
         def peak_summary(field, eligible):
             measured = [float(r[field]) for r in eligible
                         if r.get(field) is not None and math.isfinite(float(r[field]))]
@@ -676,16 +738,18 @@ def summarize(rows: list[dict]) -> list[dict]:
         reference_eligible = [r for r in valid if r.get("has_reference", r.get("reference_mse") is not None)]
         result.append({
             "dataset": dataset, "method": method, "n": len(values),
-            "failed": len(values) - len(valid),
+            "evaluated_count": len(evaluated),
+            "failed": len(evaluated) - len(valid),
+            "unavailable": sum(r["status"] == "unavailable" for r in values),
             "mse_mean": mean("mse"),
             "mse_p95": float(torch.quantile(torch.tensor([r["mse"] for r in valid], dtype=torch.float64), .95)) if valid else None,
             "mse_max": max(r["mse"] for r in valid) if valid else None,
             **peak_summary("max_squared_error", valid),
-            "fit_pass_rate": sum(bool(r["fit_pass"]) for r in valid) / len(values),
+            "fit_pass_rate": sum(bool(r["fit_pass"]) for r in valid) / len(evaluated) if evaluated else None,
             "reference_mse_mean": mean("reference_mse", refs),
             "reference_mse_max": max(r["reference_mse"] for r in refs) if refs else None,
             **peak_summary("reference_max_squared_error", reference_eligible),
-            "reference_pass_rate": sum(bool(r["reference_pass"]) for r in valid) / len(values) if any(r.get("has_reference", r["reference_mse"] is not None) for r in values) else None,
+            "reference_pass_rate": sum(bool(r["reference_pass"]) for r in valid) / len(evaluated) if evaluated and any(r.get("has_reference", r["reference_mse"] is not None) for r in evaluated) else None,
             "final_k_mean": mean("final_k"),
             "canonical_k_mean": (
                 statistics.fmean(r["canonical_k"] for r in knot_labels)
@@ -719,15 +783,18 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
             for r in rows]
     summary = summarize(rows)
     audit = native_baseline_audit(rows)
+    provenance_audit = baseline_provenance_audit(rows)
     report = {"metadata": metadata, "summary": summary, "measurements": rows,
               "metric_definitions": ERROR_METRIC_DEFINITIONS,
-              "native_baseline_summary": audit}
+              "native_baseline_summary": audit,
+              "baseline_provenance_summary": provenance_audit}
     (directory / "comparison.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False),
         encoding="utf-8",
     )
     for filename, items in (("summary.csv", summary), ("measurements.csv", rows),
                             ("native_baseline_summary.csv", audit),
+                            ("baseline_provenance_summary.csv", provenance_audit),
                             ("metric_definitions.csv", [
                                 {"metric": key, "definition": value}
                                 for key, value in ERROR_METRIC_DEFINITIONS.items()
@@ -814,7 +881,7 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
     for s in summary:
         lines.append(
             f"| {s['dataset']} | {labels[s['method']]} | {s['n']} | "
-            f"{s['fit_pass_rate']:.1%} | {fmt(s['mse_mean'], '.3e')} | "
+            f"{fmt(s['fit_pass_rate'], '.1%')} | {fmt(s['mse_mean'], '.3e')} | "
             f"{fmt(s['final_k_mean'], '.2f')} | "
             f"{fmt(s['total_ms_mean'], '.2f')} | "
             f"{fmt(s['network_ms_mean'], '.2f')} |"
@@ -852,6 +919,21 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
             "",
             "| 数据集 | 方法 | native K | final K | native MSE | final MSE | 平均额外 refit | 使用修复的样本 |",
             "|---|---|---:|---:|---:|---:|---:|---:|",
+        ]
+
+    if protocol.get("baseline_protocol") == "native":
+        lines[2:2] = [
+            "STRICT NATIVE PROTOCOL: only verified source-paper implementations may execute. "
+            "Unavailable methods are not replaced by repository adaptations; their geometry, errors and method time are N/A. "
+            "Unavailable methods were not executed and are excluded from pass-rate denominators; actual failed runs remain included. "
+            "Historical native_* diagnostic column names refer only to pre-repair adaptations.", "",
+        ]
+    if metadata.get("geometry_schema_version"):
+        lines[2:2] = [
+            "Per-case measured geometry: each measurements.jsonl row links a hash-verified JSON + NPZ artifact "
+            "under geometry/. These include parameters, full/internal knots, control vertices, dense curves, "
+            "pointwise residuals and original-coordinate transforms. Failures/unavailable outputs remain absent; "
+            "export and plots do not rerun fitting. NumPy loading uses allow_pickle=False.", "",
         ]
         for dataset, method in sorted({(item["dataset"], item["method"]) for item in audit}):
             items = [item for item in audit if (item["dataset"], item["method"]) == (dataset, method)]
@@ -916,6 +998,8 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
     p = parser(default_checkpoint=default_checkpoint,
                default_output_dir=default_output_dir)
     args = p.parse_args(argv)
+    if args.baseline_protocol == "native":
+        args.published_feasibility_safeguard = False
     methods = PUBLISHED_METHODS if args.method_set == "published" else METHODS
     if not math.isfinite(args.mse_tolerance) or args.mse_tolerance <= 0:
         p.error("--mse-tolerance must be finite and positive")
@@ -927,6 +1011,8 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
     ):
         if getattr(args, name) < 1:
             p.error(f"--{name.replace('_', '-')} must be positive")
+    if args.geometry_dense_points < 2:
+        p.error("--geometry-dense-points must be at least 2")
     for name in ("park_shape_weight", "liang_curvature_weight", "luo_eta"):
         value = getattr(args, name)
         if not math.isfinite(value) or not 0.0 <= value <= 1.0:
@@ -968,6 +1054,12 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
     if args.force_diagnostic:
         diagnostic = True
         diagnostic_reasons.append("Forced diagnostic: quick or reduced benchmark protocol")
+    unavailable_native = [method for method in methods if method != "ours" and
+                          args.baseline_protocol == "native" and
+                          not baseline_provenance(method)["native_comparison_available"]]
+    if unavailable_native:
+        diagnostic = True
+        diagnostic_reasons.append("Verified original-native baseline implementations unavailable: " + ", ".join(unavailable_native))
     if diagnostic:
         print(
             "DIAGNOSTIC NOT FINAL — " + "; ".join(diagnostic_reasons),
@@ -999,7 +1091,7 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                 "cpu": platform.processor(), "torch": str(torch.__version__), "threads": torch.get_num_threads(),
                 "python": platform.python_version()}
     config = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items() if k not in ("resume", "output_dir")}
-    code_paths = [Path(__file__), ROOT / "scripts/overnight_datasets.py", ROOT / "src/spline_fitting/evaluation/published_baselines.py",
+    code_paths = [Path(__file__), ROOT / "scripts/benchmark_geometry.py", ROOT / "scripts/overnight_datasets.py", ROOT / "src/spline_fitting/evaluation/published_baselines.py",
                   ROOT / "src/spline_fitting/evaluation/gradient_knot_pruning.py",
                   ROOT / "src/spline_fitting/evaluation/sparse_knot_paper.py",
                   ROOT / "src/spline_fitting/evaluation/feature_cdf_knot_placement.py",
@@ -1014,12 +1106,21 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                 "checkpoint_qualification": qualification,
                 "diagnostic_not_final": diagnostic,
                 "diagnostic_reasons": diagnostic_reasons,
+                "native_comparison_complete": not unavailable_native if args.baseline_protocol == "native" else None,
+                "unavailable_native_methods": unavailable_native,
                 "model_version": version,
                 "error_metric_version": ERROR_METRIC_VERSION,
                 "error_metric_definitions": ERROR_METRIC_DEFINITIONS,
+                "geometry_schema_version": GEOMETRY_SCHEMA_VERSION,
+                "geometry_export": "Every evaluated case/method, including failed and unavailable methods; saved actual final timed result, never rerun for export or figures; compressed numeric NPZ plus hash-linked JSON",
                 "method_set": args.method_set,
                 "methods": list(methods),
-                "method_labels": {method: f"Ours {version} learned" if method == "ours" else LABELS[method] + (" [threshold-safe adaptation]" if args.published_feasibility_safeguard and method in SAFEGUARDED_PUBLISHED_METHODS else "") for method in methods},
+                "method_labels": {
+                    method: f"Ours {version} learned" if method == "ours" else
+                    LABELS[method].split(" (")[0] + " [native unavailable]" if method in unavailable_native else
+                    LABELS[method] + (" [threshold-safe adaptation]" if args.published_feasibility_safeguard and method in SAFEGUARDED_PUBLISHED_METHODS else "")
+                    for method in methods
+                },
                 "published_baseline_protocol": published_baseline_protocol(args),
                 "network_tolerance_conditioned": objective_version == V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION,
                 "knot_capacities": capacities,
@@ -1027,6 +1128,13 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                 "timing_protocol": "global numerical-backend warmup; every method uses the configured repeated complete-run median per curve, including all feasibility-safeguard work; Ours additionally reports a separately warmed network-only median; dataset summary averages per-curve medians",
                 "mse_tolerance": args.mse_tolerance, "configuration": config, "hardware": hardware,
                 "datasets": provenance, "code_sha256": {str(p.relative_to(ROOT)): sha256_file(p) for p in code_paths},
+                "sample_source_provenance": [
+                    {"dataset": case["dataset"], "sample_id": case["sample_id"],
+                     "source_points_sha256": case.get("source_points_sha256"),
+                     "center": case["center"].detach().cpu().tolist() if case.get("center") is not None else None,
+                     "scale": float(case["scale"]) if case.get("scale") is not None else None}
+                    for case in cases
+                ],
                 "sample_content_sha256": [hashlib.sha256(c["points"].numpy().tobytes() + (c["reference"].numpy().tobytes() if c["reference"] is not None else b"")).hexdigest() for c in cases]}
     fingerprint = hashlib.sha256(json.dumps(metadata, sort_keys=True).encode()).hexdigest()
     metadata["fingerprint"] = fingerprint
@@ -1047,19 +1155,36 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
     expected = {(c["dataset"], c["sample_id"], m) for c in cases for m in methods}
     if len(done) != len(rows) or not done.issubset(expected):
         p.error("Journal contains duplicate or unexpected experiment records")
+    for completed in rows:
+        artifact = completed.get("geometry_artifact")
+        if artifact is None:
+            p.error("Completed row has no measured geometry artifact; use a new output directory, never rerun to fabricate missing historical geometry")
+        document, _ = load_geometry_artifact(directory, artifact)
+        if document["fingerprint"] != fingerprint or document["measurement"] != {
+            key: value for key, value in completed.items() if key != "geometry_artifact"
+        }:
+            p.error("Completed journal row does not match its saved measured geometry")
+        load_geometry_artifact(directory, document["case_artifact"])
     if done != expected:
         print("Warming numerical solvers (excluded from timing)...", flush=True)
         t = torch.linspace(0, 1, 32, dtype=torch.float64)
         warm_points = torch.stack((t, t.square()), dim=-1)
         for method in methods[1:]:
-            run_published_baseline(
-                method,
-                warm_points,
-                **published_baseline_kwargs(args, degree=model.degree, warmup=True),
-            )
+            try:
+                validate_baseline_protocol(method, args.baseline_protocol)
+                run_published_baseline(
+                    method,
+                    warm_points,
+                    **published_baseline_kwargs(args, degree=model.degree, warmup=True),
+                )
+            except NativeBaselineUnavailableError as error:
+                print(f"Native warmup unavailable for {method}: {error}", flush=True)
+            except (RuntimeError, ValueError) as error:
+                print(f"Warmup failed for {method}: {error}; individual measured cases will still be attempted and recorded", flush=True)
     print(f"{len(cases)} curves x {len(methods)} methods; device={device}; MSE tolerance={args.mse_tolerance:g}", flush=True)
     with journal.open("a", encoding="utf-8") as handle:
         for i, case in enumerate(cases, 1):
+            case_artifact = write_case_geometry(directory, case, fingerprint=fingerprint)
             for method in methods:
                 if (case["dataset"], case["sample_id"], method) in done:
                     continue
@@ -1069,8 +1194,12 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                        "status": "ok", "mse": None, "max_squared_error": None,
                        "fit_pass": False, "reference_mse": None, "reference_max_squared_error": None,
                        "reference_pass": None, "final_k": None, "total_ms": None, "network_ms": None,
-                       "knots": [], "diagnostics": {}, "error": None}
+                       "knots": [], "diagnostics": {}, "error": None,
+                       "baseline_protocol": args.baseline_protocol if method != "ours" else None,
+                       "provenance": baseline_provenance(method) if method != "ours" else {"implementation": "learned checkpoint"},
+                       **{key: case.get(key) for key in ("source_kind", "source_note", "dataset_label", "split")}}
                 started = time.perf_counter()
+                fit, params = None, None
                 try:
                     if method == "ours":
                         fit, params, total_ms, network_ms, diagnostics = measure_ours(
@@ -1078,12 +1207,14 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                             objective_version=objective_version,
                         )
                     else:
+                        validate_baseline_protocol(method, args.baseline_protocol)
                         fit, params, total_ms, network_ms, diagnostics = measure_numerical_baseline(
                             method,
                             case["points"],
                             args,
                             degree=model.degree,
                         )
+                    row.update(total_ms=total_ms, network_ms=network_ms, diagnostics=diagnostics)
                     # All residual metrics are evaluated after the complete
                     # method timer, using exactly the returned deployment fit.
                     errors = fit_error_metrics(fit, params, case)
@@ -1094,12 +1225,25 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
                                reference_pass=ref_mse <= args.mse_tolerance if ref_mse is not None else None,
                                final_k=int(fit.internal_knots.numel()), total_ms=total_ms, network_ms=network_ms,
                                knots=fit.internal_knots.detach().cpu().tolist(), diagnostics=diagnostics)
+                except NativeBaselineUnavailableError as error:
+                    row.update(status="unavailable", error=f"{type(error).__name__}: {error}",
+                               provenance=error.provenance, total_ms=None, network_ms=None,
+                               fit_pass=None, reference_pass=None)
                 except (RuntimeError, ValueError) as error:
-                    row.update(status="failed", error=f"{type(error).__name__}: {error}", total_ms=(time.perf_counter()-started)*1000)
+                    row.update(status="failed", error=f"{type(error).__name__}: {error}")
+                    if row["total_ms"] is None:
+                        row["total_ms"] = (time.perf_counter()-started)*1000
+                row["attempt_wall_ms"] = (time.perf_counter()-started)*1000
+                row["timing_status"] = "not_executed" if row["status"] == "unavailable" else "completed_method" if fit is not None else "failed_attempt_wall_time"
+                row["geometry_artifact"] = write_method_geometry(
+                    directory, case, row, fit, params, case_artifact=case_artifact,
+                    fingerprint=fingerprint, dense_points=args.geometry_dense_points,
+                )
                 handle.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
                 handle.flush()
                 rows.append(row)
-                print(f"[{i}/{len(cases)}] {case['dataset']} {case['sample_id']} {method}: K={row['final_k']} MSE={row['mse']} MaxSqErr={row['max_squared_error']} time={row['total_ms']:.1f} ms {row['status']}", flush=True)
+                time_text = f"{row['total_ms']:.1f} ms" if row["total_ms"] is not None else "N/A"
+                print(f"[{i}/{len(cases)}] {case['dataset']} {case['sample_id']} {method}: K={row['final_k']} MSE={row['mse']} MaxSqErr={row['max_squared_error']} time={time_text} {row['status']}", flush=True)
             write_reports(directory, metadata, rows)
     print(f"Saved {directory / 'report.md'}", flush=True)
 

@@ -1,0 +1,94 @@
+{
+  "metadata": {
+    "checkpoint": "legacy.pt",
+    "epoch": 1,
+    "mse_tolerance": 1e-05,
+    "objective_version": "candidate_selection_counterfactual_bspline_v16",
+    "hardware": {
+      "device": "cpu"
+    },
+    "num_points": 24
+  },
+  "summary": [
+    {
+      "dataset": "UJI",
+      "method": "ours",
+      "n": 2,
+      "evaluated_count": 2,
+      "failed": 0,
+      "unavailable": 0,
+      "mse_mean": 1e-06,
+      "mse_p95": 1e-06,
+      "mse_max": 1e-06,
+      "max_squared_error_mean": null,
+      "max_squared_error_p95": null,
+      "max_squared_error_max": null,
+      "max_squared_error_valid_count": 1,
+      "max_squared_error_missing_count": 1,
+      "fit_pass_rate": 1.0,
+      "reference_mse_mean": 2e-06,
+      "reference_mse_max": 2e-06,
+      "reference_max_squared_error_mean": null,
+      "reference_max_squared_error_p95": null,
+      "reference_max_squared_error_max": null,
+      "reference_max_squared_error_valid_count": 1,
+      "reference_max_squared_error_missing_count": 1,
+      "reference_pass_rate": 1.0,
+      "final_k_mean": 2.0,
+      "canonical_k_mean": null,
+      "canonical_count_mae": null,
+      "canonical_count_bias": null,
+      "canonical_count_exact_rate": null,
+      "canonical_count_within_one_rate": null,
+      "total_ms_mean": 3.0,
+      "network_ms_mean": 1.0
+    }
+  ],
+  "measurements": [
+    {
+      "max_squared_error": null,
+      "reference_max_squared_error": null,
+      "dataset": "UJI",
+      "method": "ours",
+      "status": "ok",
+      "has_reference": true,
+      "mse": 1e-06,
+      "reference_mse": 2e-06,
+      "fit_pass": true,
+      "reference_pass": true,
+      "final_k": 2,
+      "total_ms": 3,
+      "network_ms": 1
+    },
+    {
+      "max_squared_error": 4e-06,
+      "reference_max_squared_error": 8e-06,
+      "dataset": "UJI",
+      "method": "ours",
+      "status": "ok",
+      "has_reference": true,
+      "mse": 1e-06,
+      "reference_mse": 2e-06,
+      "fit_pass": true,
+      "reference_pass": true,
+      "final_k": 2,
+      "total_ms": 3,
+      "network_ms": 1
+    }
+  ],
+  "metric_definitions": {
+    "unavailable_methods": "Methods unavailable under the selected implementation protocol are not executed: fit_pass, errors, knot count and method time stay null. They are excluded from executed pass-rate denominators and counted separately from actual numerical failures.",
+    "mse": "mean_i ||C(t_i)-Q_i||^2 on normalized input points; no square root",
+    "max_squared_error": "max_i ||C(t_i)-Q_i||^2 on normalized input points; no square root",
+    "reference_mse": "mean squared Euclidean residual on normalized original reference points; parameters mapped from the original arc-length grid to predicted input parameters",
+    "reference_max_squared_error": "maximum squared Euclidean residual on the same mapped original reference points; no square root",
+    "mse_max": "largest per-curve input MSE among successful finite fits, not a within-curve maximum residual",
+    "reference_mse_max": "largest per-curve original-reference MSE among successful finite fits",
+    "peak_aggregation": "max_squared_error_mean/p95/max summarize per-curve peak squared residuals; reference_max_squared_error_* uses original reference points",
+    "missing_values": "Unavailable historical peak residuals remain null/N/A, never zero. Peak mean/p95/max remain null unless every successful eligible fit has that metric. Peak valid_count counts successful finite measurements; missing_count counts successful eligible fits without that metric. Failed fits remain in pass-rate denominators.",
+    "scope": "Discrete corresponding-point residuals in normalized coordinates, not Hausdorff distance or a certified continuous-curve maximum; all metric evaluation is excluded from successful method timing",
+    "pass_criterion": "Existing MSE tolerance only; maximum squared error is an additional diagnostic and does not change pass/fail"
+  },
+  "native_baseline_summary": [],
+  "baseline_provenance_summary": []
+}

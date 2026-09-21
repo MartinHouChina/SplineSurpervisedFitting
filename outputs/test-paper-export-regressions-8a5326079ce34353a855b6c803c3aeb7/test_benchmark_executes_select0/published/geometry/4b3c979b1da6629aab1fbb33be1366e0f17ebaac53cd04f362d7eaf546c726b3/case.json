@@ -1,0 +1,33 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "1943815f525a86bb258d0cb54644711dcf469443b5741a2d34f07bb53abc2d24",
+  "dataset": "Synthetic",
+  "sample_id": "case-0",
+  "group_id": "g0",
+  "split": null,
+  "source_kind": null,
+  "source_note": null,
+  "dataset_label": null,
+  "source_k": 8,
+  "canonical_k": 8,
+  "source_dataset": null,
+  "source_manifest": null,
+  "source_manifest_record": null,
+  "source_points_path": null,
+  "source_points_sha256": null,
+  "normalization": {
+    "available": false,
+    "definition": "normalized = (original - center) / scalar_scale",
+    "center": null,
+    "scale": null,
+    "original_input_note": "Inverse transformed actual model inputs; may differ from pre-normalization resampling by floating-point rounding."
+  },
+  "arrays_file": "case.npz",
+  "arrays_sha256": "eb14215899c412f890e2d311809cfd01ff51c22e2b1fa61cae4894f7778e6c98",
+  "array_shapes": {
+    "input_points_normalized": [
+      24,
+      2
+    ]
+  }
+}

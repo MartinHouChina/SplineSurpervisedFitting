@@ -170,22 +170,23 @@ def test_benchmark_executes_selected_methods_and_records_diagnostic_protocol(
     ))
     warmups, measured = [], []
     monkeypatch.setattr(benchmark, "run_published_baseline", lambda method, *a, **k: warmups.append(method))
-    # The K32 error contract evaluates both MSE and peak error from fitted
-    # points, rather than trusting fit_mse alone. Keep this orchestration
-    # fixture consistent with its declared residual (0.001, 0).
-    fit = SimpleNamespace(
-        fit_mse=1e-6, internal_knots=torch.tensor([0.5]),
-        evaluate=lambda parameters: torch.stack([
-            torch.full_like(parameters, 0.001), torch.zeros_like(parameters),
-        ], dim=-1),
+    # Use an actual constant B-spline fitted to deliberately shifted fixture
+    # targets. Against the zero source points its residual is (0.001, 0), and
+    # the complete spline contract remains available for geometry export.
+    parameters = torch.linspace(0, 1, 24, dtype=torch.float64)
+    shifted_targets = case["points"].double() + torch.tensor([0.001, 0.0], dtype=torch.float64)
+    fit = benchmark.refit_bspline_control_points(
+        parameters, shifted_targets, torch.tensor([0.5], dtype=torch.float64),
+        degree=3, smoothness_weight=0.0, control_ridge=0.0,
+        interpolate_endpoints=True,
     )
     monkeypatch.setattr(benchmark, "measure_ours", lambda *a, **k: (
-        fit, torch.linspace(0, 1, 24), 3.0, 1.0, {},
+        fit, parameters, 3.0, 1.0, {},
     ))
 
     def measure(method, *args, **kwargs):
         measured.append(method)
-        return fit, torch.linspace(0, 1, 24), 4.0, None, {}
+        return fit, parameters, 4.0, None, {}
 
     monkeypatch.setattr(benchmark, "measure_numerical_baseline", measure)
     output = tmp_path / method_set
@@ -201,6 +202,11 @@ def test_benchmark_executes_selected_methods_and_records_diagnostic_protocol(
     assert all(row["mse"] == pytest.approx(1e-6) for row in report["measurements"])
     assert all(row["max_squared_error"] == pytest.approx(1e-6)
                for row in report["measurements"])
+    for row in report["measurements"]:
+        document, arrays = benchmark.load_geometry_artifact(output, row["geometry_artifact"])
+        assert document["spline"]["degree"] == 3
+        assert arrays["control_points_normalized"].shape == (5, 2)
+        assert arrays["input_squared_residuals_normalized"].mean() == pytest.approx(row["mse"])
     assert report["metadata"]["methods"] == list(methods)
     assert set(report["metadata"]["method_labels"]) == set(methods)
     assert report["metadata"]["diagnostic_not_final"]

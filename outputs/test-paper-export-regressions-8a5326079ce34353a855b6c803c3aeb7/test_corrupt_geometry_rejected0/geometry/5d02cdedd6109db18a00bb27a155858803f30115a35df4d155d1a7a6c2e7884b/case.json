@@ -1,0 +1,55 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "test",
+  "dataset": "TEST_FIXTURE",
+  "sample_id": "curve",
+  "group_id": "group",
+  "split": "test",
+  "source_kind": "unit_test_fixture",
+  "source_note": null,
+  "dataset_label": "TEST FIXTURE (not research data)",
+  "source_k": null,
+  "canonical_k": null,
+  "source_dataset": null,
+  "source_manifest": null,
+  "source_manifest_record": null,
+  "source_points_path": null,
+  "source_points_sha256": null,
+  "normalization": {
+    "available": true,
+    "definition": "normalized = (original - center) / scalar_scale",
+    "center": [
+      5.0,
+      -2.0
+    ],
+    "scale": 7.0,
+    "original_input_note": "Inverse transformed actual model inputs; may differ from pre-normalization resampling by floating-point rounding."
+  },
+  "arrays_file": "case.npz",
+  "arrays_sha256": "bd447b6953369643e68485ee0a63f0554a4b8d52309d523b6092758f6b60844e",
+  "array_shapes": {
+    "input_points_normalized": [
+      24,
+      2
+    ],
+    "normalization_center": [
+      2
+    ],
+    "normalization_scale": [],
+    "input_points_original": [
+      24,
+      2
+    ],
+    "reference_points_normalized": [
+      24,
+      2
+    ],
+    "reference_chord_parameters": [
+      24
+    ],
+    "reference_points_original": [
+      24,
+      2
+    ]
+  }
+} 

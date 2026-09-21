@@ -1,0 +1,40 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "75bad22280333d97ebd64ce70cbccbd645602d06f273eff68e593e30c280fd2c",
+  "dataset": "UJI",
+  "sample_id": "test",
+  "group_id": "writer-test",
+  "split": null,
+  "source_kind": null,
+  "source_note": null,
+  "dataset_label": null,
+  "source_k": null,
+  "canonical_k": null,
+  "source_dataset": null,
+  "source_manifest": null,
+  "source_manifest_record": null,
+  "source_points_path": null,
+  "source_points_sha256": null,
+  "normalization": {
+    "available": false,
+    "definition": "normalized = (original - center) / scalar_scale",
+    "center": null,
+    "scale": null,
+    "original_input_note": "Inverse transformed actual model inputs; may differ from pre-normalization resampling by floating-point rounding."
+  },
+  "arrays_file": "case.npz",
+  "arrays_sha256": "8f41d8ae5545be50665d72130622bb779fa6f1432e6afd9b61fa4f8f0b8b30d6",
+  "array_shapes": {
+    "input_points_normalized": [
+      21,
+      2
+    ],
+    "reference_points_normalized": [
+      21,
+      2
+    ],
+    "reference_chord_parameters": [
+      21
+    ]
+  }
+}

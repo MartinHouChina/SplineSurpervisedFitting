@@ -1,0 +1,6 @@
+﻿dataset,sample_id,method,status,baseline_protocol,reproduction_status,safeguard_enabled,safeguard_used,native_k,native_mse,final_k,final_mse,extra_refit_count,final_source,repair_status,capacity,complete_ms
+UJI,uji2_07539_stroke_00,park_dominant_point_2007_adaptation,ok,adaptation,reproduction_unverified,,,,,6,2.1204238140205234e-05,,,,,14.987800037488341
+UJI,uji2_07539_stroke_00,liang_feature_iki_2017_adaptation,ok,adaptation,reproduction_unverified,,,,,5,1.526108559170504e-05,,,,,8.244699973147362
+UJI,uji2_07539_stroke_00,dung_direct_knot_2017_adaptation,ok,adaptation,reproduction_unverified,False,False,4,5.861876780331271e-05,4,5.861876780331271e-05,0,native,disabled,32,141.75980002619326
+UJI,uji2_07539_stroke_00,kang_sparse_2015_adaptation,ok,adaptation,reproduction_unverified,False,False,29,1.4566276353608667e-06,29,1.4566276353608667e-06,0,native,disabled,32,150.49329999601468
+UJI,uji2_07539_stroke_00,luo_linf_de_2022_adaptation,ok,adaptation,reproduction_unverified,False,False,2,0.00010543632166907923,2,0.00010543632166907923,0,native,disabled,32,588.4818999911658

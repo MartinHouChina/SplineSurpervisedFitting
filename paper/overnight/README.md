@@ -1,5 +1,7 @@
 # Overnight 论文基础框架
 
+2026-09-21补充：最新数值耦合及导出协议见[说明](../../docs/overnight_coupled_paper.md)，[原生复现审计](../../docs/baseline_native_audit.md)确认当前五个文献基线均未获原版资格。现有适配版数据不能写成“与五个原生实现比较”；新网络只完成实现与功能测试，尚无长程训练优势证据。
+
 这是独立的英文 LaTeX 初稿，不覆盖旧版 `paper/manuscript.tex`。内容针对当前 Overnight / Anchored，不延续旧版 Hard-Concrete、BIC 或离线 teacher 描述。
 
 ## 文件与状态

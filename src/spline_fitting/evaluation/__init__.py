@@ -57,6 +57,13 @@ from .minimal_knot_pruning import (
     prune_knots_to_rms_tolerance,
 )
 from .park_dominant_point import ParkDominantPointResult, fit_park_dominant_points
+from .native_protocol import (
+    BASELINE_PROTOCOLS,
+    NATIVE_AUDIT_VERSION,
+    NativeBaselineUnavailableError,
+    baseline_provenance,
+    validate_baseline_protocol,
+)
 from .published_baselines import (
     COMPARISON_BASELINE_METHODS,
     NUMERICAL_BASELINE_METHODS,
@@ -75,6 +82,11 @@ from .verified_knot_repair import (
 )
 
 __all__ = [
+    "BASELINE_PROTOCOLS",
+    "NATIVE_AUDIT_VERSION",
+    "NativeBaselineUnavailableError",
+    "baseline_provenance",
+    "validate_baseline_protocol",
     "BSplineLeastSquaresFit",
     "HardGatedBSplineFit",
     "GradientKnotDeletionStep",

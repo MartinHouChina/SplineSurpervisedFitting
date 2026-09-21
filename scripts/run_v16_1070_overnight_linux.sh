@@ -33,6 +33,9 @@ JOINT_GEOMETRY_CALIBRATION_EPOCHS=""
 COMPLEXITY_RAMP_EPOCHS=8
 REAL_VAL_SIZE=32
 NATIVE_BASELINES=0
+BASELINE_PROTOCOL=adaptation
+PAPER_OUTPUT=0
+ALL_REAL_TEST_SAMPLES=0
 CHECKPOINT=""
 DATA_ROOT=""
 EXTRA_MANIFESTS=()
@@ -74,7 +77,11 @@ Historical online-teacher architecture; capacity is explicit and shared by all m
                                   first N Joint epochs (anchored 6; otherwise 0)
   --real-val-size N               Reliable/compact/stable: real val curves/source (32)
   --native-baselines              Disable explicit MSE repair for Dung/Kang/Luo;
-                                  corrected Kang clustering remains enabled
+                                  NOT a certificate of original-paper fidelity
+  --baseline-protocol adaptation|native
+                                  Native rejects unverified reproductions (N/A), never silently repairs
+  --paper-output                  Save full per-case results; draw from saved fits, without reruns
+  --all-real-test-samples          Evaluate every held-out test record in every real manifest
   --train-size N --val-size N      Synthetic training/validation (1500/500)
   --batch-size N --num-workers N   Default 32/0
   --mse-tolerance X                Shared MSE threshold, not RMS (5e-5)
@@ -90,6 +97,9 @@ Historical online-teacher architecture; capacity is explicit and shared by all m
   --candidate-refinement-layers N  Extra gated candidate interaction blocks (0)
   --selection-refinement-layers N  Extra gated pre-mask interaction blocks (0)
   --decoder-refinement-layers N    Extra survivor/parameter interaction blocks (0)
+  --coupled-proposal-steps N       Actual parameter/knot updates before selection (0)
+  --coupled-subset-steps N         Actual parameter/knot updates after selection (0)
+  --parameter-chord-blend X        Chord anchor fraction for the new run (0)
   --max-point-error-weight X       Optional peak/tail squared-error training weight (0)
   --max-point-error-tolerance X    Explicit peak SQUARED-distance target; MSE pass unchanged
   --max-point-error-tail-fraction X  Worst-point training fraction (0.05)
@@ -142,10 +152,13 @@ while (($#)); do
     --training-source) need_value "$@"; TRAINING_SOURCE="$2"; shift 2 ;;
     --training-real-fraction) need_value "$@"; TRAINING_REAL_FRACTION="$2"; shift 2 ;;
     --validation-source) need_value "$@"; VALIDATION_SOURCE="$2"; shift 2 ;;
-    --synthetic-shape-domain|--synthetic-shape-fraction|--synthetic-simple-fraction|--candidate-refinement-layers|--selection-refinement-layers|--decoder-refinement-layers|--max-point-error-weight|--max-point-error-tolerance|--max-point-error-tail-fraction)
+    --synthetic-shape-domain|--synthetic-shape-fraction|--synthetic-simple-fraction|--candidate-refinement-layers|--selection-refinement-layers|--decoder-refinement-layers|--max-point-error-weight|--max-point-error-tolerance|--max-point-error-tail-fraction|--coupled-proposal-steps|--coupled-subset-steps|--parameter-chord-blend|--joint-lr|--joint-proposal-lr-scale|--joint-decoder-lr-scale|--teacher-geometry-distillation-weight|--seed)
       need_value "$@"; EXTRA_LEARNING_ARGS+=("$1" "$2"); shift 2 ;;
     --real-val-size) need_value "$@"; REAL_VAL_SIZE="$2"; shift 2 ;;
     --native-baselines) NATIVE_BASELINES=1; shift ;;
+    --baseline-protocol) need_value "$@"; BASELINE_PROTOCOL="$2"; shift 2 ;;
+    --paper-output) PAPER_OUTPUT=1; shift ;;
+    --all-real-test-samples) ALL_REAL_TEST_SAMPLES=1; shift ;;
     --train-size) need_value "$@"; TRAIN_SIZE="$2"; shift 2 ;;
     --val-size) need_value "$@"; VAL_SIZE="$2"; shift 2 ;;
     --batch-size) need_value "$@"; BATCH_SIZE="$2"; shift 2 ;;
@@ -287,6 +300,8 @@ fi
 [[ "$RUN_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid run name"
 [[ "$DEVICE" =~ ^(auto|cpu|cuda)$ ]] || die "device must be auto, cpu or cuda"
 [[ "$BENCHMARK_PROFILE" =~ ^(quick|full)$ ]] || die "benchmark profile must be quick or full"
+[[ "$BASELINE_PROTOCOL" =~ ^(adaptation|native)$ ]] || die "baseline-protocol must be adaptation or native"
+if [[ "$BASELINE_PROTOCOL" == native ]]; then NATIVE_BASELINES=1; PAPER_OUTPUT=1; fi
 [[ "$NUM_WORKERS" =~ ^[0-9]+$ ]] || die "num-workers must be non-negative"
 [[ "$MSE_TOLERANCE" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$ ]] || die "invalid MSE tolerance"
 awk 'BEGIN { n=ARGV[1]+0; exit !(n>0 && (n-n)==0) }' "$MSE_TOLERANCE" || die "MSE tolerance must be finite and positive"
@@ -322,6 +337,10 @@ ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 cd -- "$ROOT"
 absolute_path() {
   local value="$1"
+  if [[ "$value" =~ ^[A-Za-z]:[\\/] ]]; then
+    command -v cygpath >/dev/null 2>&1 || die "Windows path requires Git Bash/cygpath; use Linux paths on the server"
+    value="$(cygpath -u -- "$value")"
+  fi
   [[ "$value" == /* ]] || value="$ROOT/$value"
   readlink -m -- "$value"
 }
@@ -541,6 +560,9 @@ fi
 TIMING_ARGS=(--network-warmups 3 --network-repeats "$NETWORK_REPEATS"
   --end-to-end-repeats "$END_TO_END_REPEATS" --torch-num-threads 4 --device "$DEVICE")
 BENCHMARK_RESUME=()
+PAPER_BENCHMARK_ARGS=()
+if ((PAPER_OUTPUT)); then PAPER_BENCHMARK_ARGS+=(--baseline-protocol "$BASELINE_PROTOCOL"); fi
+if ((ALL_REAL_TEST_SAMPLES)); then PAPER_BENCHMARK_ARGS+=(--all-real-test-samples); fi
 if ((RESUME)) && [[ -f "$COMPARISON_DIR/experiment.json" ]]; then BENCHMARK_RESUME=(--resume); fi
 run_logged benchmark_six_methods "$PYTHON_BIN" scripts/benchmark_v16_datasets.py \
   --checkpoint "$CHECKPOINT" --output-dir "$COMPARISON_DIR" --method-set published \
@@ -548,7 +570,7 @@ run_logged benchmark_six_methods "$PYTHON_BIN" scripts/benchmark_v16_datasets.py
   --synthetic-source-max-knots 24 \
   --real-samples-per-dataset "$REAL_SAMPLES" --mse-tolerance "$MSE_TOLERANCE" \
   "${MANIFEST_ARGS[@]}" "${BASELINE_ARGS[@]}" "${TIMING_ARGS[@]}" \
-  --allow-unqualified-diagnostic "${FORCE_DIAGNOSTIC[@]}" "${BENCHMARK_RESUME[@]}"
+  --allow-unqualified-diagnostic "${FORCE_DIAGNOSTIC[@]}" "${BENCHMARK_RESUME[@]}" "${PAPER_BENCHMARK_ARGS[@]}"
 if ((RESUME)); then FIGURE_DIR="$FIGURE_DIR/attempt_$STAMP"; fi
 run_logged plot_four_metrics "$PYTHON_BIN" scripts/plot_v16_method_comparison.py \
   --input "$COMPARISON_DIR/comparison.json" --output-dir "$FIGURE_DIR/four_metrics" \
@@ -557,10 +579,16 @@ CASE_ARGS=(--checkpoint "$CHECKPOINT" --real-samples-per-dataset "$VISUAL_SAMPLE
   --selection-seed 20260909 --mse-tolerance "$MSE_TOLERANCE"
   "${MANIFEST_ARGS[@]}" "${BASELINE_ARGS[@]}" "${TIMING_ARGS[@]}"
   --dpi 240 --allow-unqualified-diagnostic "${FORCE_DIAGNOSTIC[@]}")
-run_logged plot_ours_cases "$PYTHON_BIN" scripts/visualize_v16_ours_cases.py \
-  "${CASE_ARGS[@]}" --output-dir "$FIGURE_DIR/ours_cases"
-run_logged plot_six_method_real_cases "$PYTHON_BIN" scripts/visualize_v16_real_deployments.py \
-  "${CASE_ARGS[@]}" --method-set published --output-dir "$FIGURE_DIR/six_method_real_cases"
+if ((PAPER_OUTPUT)); then
+  run_logged plot_saved_six_method_cases "$PYTHON_BIN" scripts/visualize_v16_six_methods.py \
+    --benchmark-dir "$COMPARISON_DIR" --output-dir "$FIGURE_DIR/saved_cases" \
+    --max-cases-per-dataset "$VISUAL_SAMPLES"
+else
+  run_logged plot_ours_cases "$PYTHON_BIN" scripts/visualize_v16_ours_cases.py \
+    "${CASE_ARGS[@]}" --output-dir "$FIGURE_DIR/ours_cases"
+  run_logged plot_six_method_real_cases "$PYTHON_BIN" scripts/visualize_v16_real_deployments.py \
+    "${CASE_ARGS[@]}" --method-set published --output-dir "$FIGURE_DIR/six_method_real_cases"
+fi
 PHASE=completed
 printf '\nCompleted: checkpoint=%s\ncomparison=%s\nfigures=%s\nlogs=%s\n' \
   "$CHECKPOINT" "$COMPARISON_DIR" "$FIGURE_DIR" "$LOG_DIR"

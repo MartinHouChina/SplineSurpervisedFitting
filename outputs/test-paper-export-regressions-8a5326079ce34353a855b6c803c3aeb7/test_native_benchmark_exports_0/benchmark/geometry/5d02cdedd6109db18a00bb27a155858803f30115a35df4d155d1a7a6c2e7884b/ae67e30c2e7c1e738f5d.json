@@ -1,0 +1,77 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "82dadc8efcdf663ed51abdb51ed38169bfbc1ceab4b34afbec0dacd56491eb8a",
+  "case_artifact": {
+    "path": "geometry/5d02cdedd6109db18a00bb27a155858803f30115a35df4d155d1a7a6c2e7884b/case.json",
+    "sha256": "ee66ad3ba91b1a45076cb2b369fbe5260393dac67003a407c3ad20d51e745773"
+  },
+  "measurement": {
+    "dataset": "TEST_FIXTURE",
+    "sample_id": "curve",
+    "group_id": "group",
+    "source_k": null,
+    "canonical_k": null,
+    "method": "kang_sparse_2015_adaptation",
+    "has_reference": true,
+    "status": "unavailable",
+    "mse": null,
+    "max_squared_error": null,
+    "fit_pass": null,
+    "reference_mse": null,
+    "reference_max_squared_error": null,
+    "reference_pass": null,
+    "final_k": null,
+    "total_ms": null,
+    "network_ms": null,
+    "knots": [],
+    "diagnostics": {},
+    "error": "NativeBaselineUnavailableError: Native comparison unavailable for 'kang_sparse_2015_adaptation': reproduction_unverified. Disabling repairs does not restore the source algorithm. See docs/baseline_native_audit.md.",
+    "baseline_protocol": "native",
+    "provenance": {
+      "audit_version": "source_paper_audit_20260921_v1",
+      "method": "kang_sparse_2015_adaptation",
+      "reproduction_status": "reproduction_unverified",
+      "native_available": false,
+      "native_comparison_available": false,
+      "implementation_origin": "repository_implementation",
+      "author_code_executed": false,
+      "reference_doi": "10.1016/j.cad.2014.08.022",
+      "source_url": "https://www.sciencedirect.com/science/article/pii/S0010448514001912",
+      "source_access": "full primary article inspected in existing tmp/Kang2015.pdf",
+      "author_code_url": null,
+      "author_code_sha256": null,
+      "known_departures": [
+        "Scalar constrained l1 optimization is changed to vector group-l1 with approximate ADMM/penalty bisection instead of the source CVX solve.",
+        "Algorithms 1/3 (repeated convex solves for general-data relocation) are absent; long active runs are returned without that stage.",
+        "The degree+1 cluster-size gate, 1.25 spacing factor, singleton interval search, and absolute/relative jump cutoffs are repository choices.",
+        "The comparison wrapper replaces the final unconstrained spline by an endpoint-constrained refit."
+      ],
+      "audit_document": "docs/baseline_native_audit.md"
+    },
+    "source_kind": "unit_test_fixture",
+    "source_note": null,
+    "dataset_label": "TEST FIXTURE (not research data)",
+    "split": "test",
+    "attempt_wall_ms": 0.012999982573091984,
+    "timing_status": "not_executed"
+  },
+  "spline": null,
+  "geometry_evaluation_error": null,
+  "errors_normalized": {
+    "mse": null,
+    "max_squared_error": null,
+    "reference_mse": null,
+    "reference_max_squared_error": null
+  },
+  "errors_original": {
+    "mse": null,
+    "max_squared_error": null,
+    "reference_mse": null,
+    "reference_max_squared_error": null
+  },
+  "arrays_file": "ae67e30c2e7c1e738f5d.npz",
+  "arrays_sha256": "8739c76e681f900923b900c9df0ef75cf421d39cabb54650c4b9ad19b6a76d85",
+  "array_shapes": {},
+  "timing_scope": "Export, dense evaluation, metrics and plotting are excluded from successful method/network timings. The spline is from the final timed repetition; reported times are medians of all recorded timed repetitions.",
+  "coordinate_error_scaling": "Original-coordinate squared errors = normalized squared errors * scalar_scale**2; reported benchmark pass/fail uses normalized input MSE only."
+}

@@ -1,0 +1,7 @@
+﻿dataset,sample_id,method,status,baseline_protocol,reproduction_status,safeguard_enabled,safeguard_used,native_k,native_mse,final_k,final_mse,extra_refit_count,final_source,repair_status,capacity,complete_ms
+TEST_FIXTURE,curve,dung_direct_knot_2017_adaptation,unavailable,native,reproduction_unverified,,,,,,,,,,,
+TEST_FIXTURE,curve,kang_sparse_2015_adaptation,unavailable,native,reproduction_unverified,,,,,,,,,,,
+TEST_FIXTURE,curve,luo_linf_de_2022_adaptation,unavailable,native,reproduction_unverified,,,,,,,,,,,
+TEST_FIXTURE,curve2,dung_direct_knot_2017_adaptation,unavailable,native,reproduction_unverified,,,,,,,,,,,
+TEST_FIXTURE,curve2,kang_sparse_2015_adaptation,unavailable,native,reproduction_unverified,,,,,,,,,,,
+TEST_FIXTURE,curve2,luo_linf_de_2022_adaptation,unavailable,native,reproduction_unverified,,,,,,,,,,,

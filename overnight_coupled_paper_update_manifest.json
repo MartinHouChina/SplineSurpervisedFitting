@@ -1,0 +1,41 @@
+{
+  "base_commit": "614e839",
+  "created_date": "2026-09-21",
+  "description": "M16/M32 actual numeric t/U coupling with chord reference; auditable geometry exports and strictly separated native/adaptation protocols",
+  "scope": "source update + paired diagnostic evidence only; no checkpoints, full datasets, or git metadata",
+  "limitations": [
+    "New architecture requires retraining; no accuracy guarantee",
+    "Five literature baselines remain reproduction_unverified; strict native reports N/A, not adapted values",
+    "Local smoke tests are not server full-data performance results"
+  ],
+  "files": [
+    "README.md",
+    "docs/baseline_native_audit.md",
+    "docs/overnight_coupled_paper.md",
+    "docs/overnight_m16_m32.md",
+    "docs/overnight_m16_m32_results_audit.md",
+    "paper/overnight/README.md",
+    "scripts/benchmark_geometry.py",
+    "scripts/benchmark_v15_datasets.py",
+    "scripts/diagnose_v16_parameterization.py",
+    "scripts/plot_v16_method_comparison.py",
+    "scripts/run_v16_1070_overnight_linux.sh",
+    "scripts/run_v16_paper_training.py",
+    "scripts/run_v16_paper_training_linux.sh",
+    "scripts/train_v16.py",
+    "scripts/visualize_v16_six_methods.py",
+    "src/spline_fitting/evaluation/__init__.py",
+    "src/spline_fitting/evaluation/native_protocol.py",
+    "src/spline_fitting/evaluation/published_baselines.py",
+    "src/spline_fitting/models/v16_network.py",
+    "tests/test_benchmark_geometry_export.py",
+    "tests/test_diagnose_v16_parameterization.py",
+    "tests/test_native_baseline_protocol.py",
+    "tests/test_published_safeguard_reporting.py",
+    "tests/test_run_v16_paper_training.py",
+    "tests/test_train_v16_coupled_geometry.py",
+    "tests/test_v16_coupled_geometry.py",
+    "tests/test_v16_overnight_reporting.py",
+    "outputs/diagnostics/m16_m32_parameterization_20260921_saved_inputs.json"
+  ]
+}

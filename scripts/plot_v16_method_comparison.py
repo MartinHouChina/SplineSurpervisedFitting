@@ -137,19 +137,26 @@ def validate_v16_benchmark(
                 raise ValueError(f"Unpaired sample identities for {(dataset, method)}")
             paired_ids = sample_ids
             valid = [value for value in values if value["status"] == "ok"]
-            if row.get("failed") != count - len(valid):
+            evaluated = [value for value in values if value["status"] != "unavailable"]
+            unavailable = count - len(evaluated)
+            if row.get("unavailable", 0) != unavailable:
+                raise ValueError(f"Unavailable count does not match measurements for {(dataset, method)}")
+            if row.get("failed") != len(evaluated) - len(valid):
                 raise ValueError(f"Failed count does not match measurements for {(dataset, method)}")
             # Audit the means and pass-rate denominator against source records;
             # a renderer must never silently drop failures or fabricate bars.
             if all("fit_pass" in value for value in values):
-                expected_pass = sum(bool(value["fit_pass"]) for value in valid) / count
-                if not math.isclose(row["fit_pass_rate"], expected_pass, abs_tol=1e-12):
+                expected_pass = sum(bool(value["fit_pass"]) for value in valid) / len(evaluated) if evaluated else None
+                actual_pass = row.get("fit_pass_rate")
+                if (actual_pass is None) != (expected_pass is None) or (
+                    actual_pass is not None and not math.isclose(actual_pass, expected_pass, abs_tol=1e-12)
+                ):
                     raise ValueError(f"fit_pass_rate excludes failures or differs from measurements for {(dataset, method)}")
             if all("reference_pass" in value for value in values):
                 has_reference = any(value.get("has_reference", value.get("reference_mse") is not None) for value in values)
                 expected_reference_pass = (
-                    sum(bool(value["reference_pass"]) for value in valid) / count
-                    if has_reference else None
+                    sum(bool(value["reference_pass"]) for value in valid) / len(evaluated)
+                    if has_reference and evaluated else None
                 )
                 actual_reference_pass = row.get("reference_pass_rate")
                 if (actual_reference_pass is None) != (expected_reference_pass is None) or (
@@ -313,6 +320,11 @@ def render_comparison(
     """
     metadata, rows = report["metadata"], report["summary"]
     labels = published_method_labels(metadata, SHORT_LABELS)
+    strict_native = metadata.get("published_baseline_protocol", {}).get("baseline_protocol") == "native"
+    if strict_native:
+        for method in methods:
+            if method != "ours":
+                labels[method] = SHORT_LABELS[method] + " (native unavailable)" if method in metadata.get("unavailable_native_methods", []) else SHORT_LABELS[method] + " (verified native)"
     datasets = _ordered_datasets(rows, reference=reference)
     if not datasets:
         return None
@@ -357,7 +369,8 @@ def render_comparison(
         )
         kind = "original-reference points" if reference else "resampled input points"
         fig.suptitle(
-            f"Ours v16 versus published-method adaptations | {kind}",
+            (f"Ours v16 | strict native comparison unavailable | {kind}" if strict_native and metadata.get("unavailable_native_methods") else
+             f"Ours v16 versus published-method adaptations | {kind}"),
             y=0.975,
             fontsize=18,
         )
@@ -566,14 +579,15 @@ def render_comparison(
             for method in methods
         )
         detail = (
-            published_protocol_caption(metadata)
+            "Strict native protocol: unverified original methods were not executed; all unavailable metrics, times and pass rates are N/A."
+            if strict_native else published_protocol_caption(metadata)
         )
         if failures:
             detail += f" Failed runs: {failures}; pass rates include them as failures."
         fig.text(0.07, 0.060, detail, fontsize=9.1, color="#765097", wrap=True)
         fig.text(
             0.07, 0.041,
-            "Finite threshold misses remain included; time includes failed attempts. Only synthetic has canonical ground-truth K. N/A: no finite fit / metric unavailable.",
+            "Executed failures/misses remain included; unavailable methods are excluded, not counted as failures. Only synthetic has canonical reference K.",
             fontsize=9.1, color="#555555",
         )
         checkpoint = Path(str(metadata.get("checkpoint", "unknown"))).name

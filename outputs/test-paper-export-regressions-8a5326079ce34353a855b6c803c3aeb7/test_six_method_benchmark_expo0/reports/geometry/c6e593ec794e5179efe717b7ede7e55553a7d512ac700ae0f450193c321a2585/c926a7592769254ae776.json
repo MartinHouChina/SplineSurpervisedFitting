@@ -1,0 +1,180 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "75bad22280333d97ebd64ce70cbccbd645602d06f273eff68e593e30c280fd2c",
+  "case_artifact": {
+    "path": "geometry/c6e593ec794e5179efe717b7ede7e55553a7d512ac700ae0f450193c321a2585/case.json",
+    "sha256": "70f64436ddd3e8704b750c47c66bd13621dee45432be395929cddde712690bbd"
+  },
+  "measurement": {
+    "dataset": "UJI",
+    "sample_id": "test",
+    "group_id": "writer-test",
+    "source_k": null,
+    "canonical_k": null,
+    "method": "liang_feature_iki_2017_adaptation",
+    "has_reference": true,
+    "status": "ok",
+    "mse": 0.00809481576020531,
+    "max_squared_error": 0.020662743367848603,
+    "fit_pass": false,
+    "reference_mse": 0.00809481576020531,
+    "reference_max_squared_error": 0.020662743367848603,
+    "reference_pass": false,
+    "final_k": 0,
+    "total_ms": 4.0,
+    "network_ms": null,
+    "knots": [],
+    "diagnostics": {},
+    "error": null,
+    "baseline_protocol": "adaptation",
+    "provenance": {
+      "audit_version": "source_paper_audit_20260921_v1",
+      "method": "liang_feature_iki_2017_adaptation",
+      "reproduction_status": "reproduction_unverified",
+      "native_available": false,
+      "native_comparison_available": false,
+      "implementation_origin": "repository_implementation",
+      "author_code_executed": false,
+      "reference_doi": "10.1088/1361-6501/aa6a05",
+      "source_url": "https://doi.org/10.1088/1361-6501/aa6a05",
+      "source_access": "abstract/preview only; exact feature equation and IKI details unavailable",
+      "author_code_url": null,
+      "author_code_sha256": null,
+      "known_departures": [
+        "The normalized arc/unsigned-turning-angle feature blend (default 0.5) is a repository construction, not a verified original equation.",
+        "Sampled feature-CDF inversion and worst-residual span bisection replace unverified analytic-feature/IKI details.",
+        "Common-MSE stopping, dense/initial knot counts, and endpoint-constrained fits are comparison settings."
+      ],
+      "audit_document": "docs/baseline_native_audit.md"
+    },
+    "source_kind": null,
+    "source_note": null,
+    "dataset_label": null,
+    "split": null,
+    "attempt_wall_ms": 2.078999998047948,
+    "timing_status": "completed_method"
+  },
+  "spline": {
+    "degree": 3,
+    "internal_knots": [],
+    "full_knot_vector": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "control_points_normalized": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.3333333333333332,
+        3.3867160367291715
+      ],
+      [
+        0.6666666666666665,
+        -3.3867160367291715
+      ],
+      [
+        1.0,
+        -2.4492935982947064e-16
+      ]
+    ],
+    "sample_parameters": [
+      0.0,
+      0.05,
+      0.1,
+      0.15000000000000002,
+      0.2,
+      0.25,
+      0.30000000000000004,
+      0.35000000000000003,
+      0.4,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.6499999999999999,
+      0.7,
+      0.75,
+      0.8,
+      0.85,
+      0.9,
+      0.95,
+      1.0
+    ]
+  },
+  "geometry_evaluation_error": null,
+  "errors_normalized": {
+    "mse": 0.00809481576020531,
+    "max_squared_error": 0.020662743367848603,
+    "reference_mse": 0.00809481576020531,
+    "reference_max_squared_error": 0.020662743367848603
+  },
+  "errors_original": {
+    "mse": null,
+    "max_squared_error": null,
+    "reference_mse": null,
+    "reference_max_squared_error": null
+  },
+  "arrays_file": "c926a7592769254ae776.npz",
+  "arrays_sha256": "42761589c65625632de04a0058e003373d2f49a4d015254c473e2a319da7d15d",
+  "array_shapes": {
+    "sample_parameters": [
+      21
+    ],
+    "internal_knots": [
+      0
+    ],
+    "full_knot_vector": [
+      8
+    ],
+    "control_points_normalized": [
+      4,
+      2
+    ],
+    "fitted_input_normalized": [
+      21,
+      2
+    ],
+    "input_residual_vectors_normalized": [
+      21,
+      2
+    ],
+    "input_squared_residuals_normalized": [
+      21
+    ],
+    "dense_parameters": [
+      512
+    ],
+    "dense_curve_normalized": [
+      512,
+      2
+    ],
+    "knot_positions_normalized": [
+      0,
+      2
+    ],
+    "reference_parameters": [
+      21
+    ],
+    "fitted_reference_normalized": [
+      21,
+      2
+    ],
+    "reference_residual_vectors_normalized": [
+      21,
+      2
+    ],
+    "reference_squared_residuals_normalized": [
+      21
+    ]
+  },
+  "timing_scope": "Export, dense evaluation, metrics and plotting are excluded from successful method/network timings. The spline is from the final timed repetition; reported times are medians of all recorded timed repetitions.",
+  "coordinate_error_scaling": "Original-coordinate squared errors = normalized squared errors * scalar_scale**2; reported benchmark pass/fail uses normalized input MSE only."
+}

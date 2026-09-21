@@ -1,0 +1,12 @@
+﻿metric,definition
+unavailable_methods,"Methods unavailable under the selected implementation protocol are not executed: fit_pass, errors, knot count and method time stay null. They are excluded from executed pass-rate denominators and counted separately from actual numerical failures."
+mse,mean_i ||C(t_i)-Q_i||^2 on normalized input points; no square root
+max_squared_error,max_i ||C(t_i)-Q_i||^2 on normalized input points; no square root
+reference_mse,mean squared Euclidean residual on normalized original reference points; parameters mapped from the original arc-length grid to predicted input parameters
+reference_max_squared_error,maximum squared Euclidean residual on the same mapped original reference points; no square root
+mse_max,"largest per-curve input MSE among successful finite fits, not a within-curve maximum residual"
+reference_mse_max,largest per-curve original-reference MSE among successful finite fits
+peak_aggregation,max_squared_error_mean/p95/max summarize per-curve peak squared residuals; reference_max_squared_error_* uses original reference points
+missing_values,"Unavailable historical peak residuals remain null/N/A, never zero. Peak mean/p95/max remain null unless every successful eligible fit has that metric. Peak valid_count counts successful finite measurements; missing_count counts successful eligible fits without that metric. Failed fits remain in pass-rate denominators."
+scope,"Discrete corresponding-point residuals in normalized coordinates, not Hausdorff distance or a certified continuous-curve maximum; all metric evaluation is excluded from successful method timing"
+pass_criterion,Existing MSE tolerance only; maximum squared error is an additional diagnostic and does not change pass/fail

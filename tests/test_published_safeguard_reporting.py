@@ -1,6 +1,8 @@
 """Reporting/CLI fixtures only; these invented timings are not benchmark evidence."""
 from __future__ import annotations
 
+# ruff: noqa: E402
+
 import copy
 import csv
 import json
@@ -99,6 +101,7 @@ def test_native_final_report_audit_and_csv_are_explicit(tmp_path, enabled):
     assert saved["summary"] == report["summary"]
     audit = saved["native_baseline_summary"]
     assert len(audit) == 3
+    assert saved["baseline_provenance_summary"] == []  # Never invent provenance for legacy rows.
     assert all(row["native_k"] == 4 and row["final_k"] == (22 if enabled else 4) for row in audit)
     assert all(row["extra_refit_count"] == (54 if enabled else 0) for row in audit)
     assert all(row["complete_ms"] == 7.0 for row in audit)
@@ -117,6 +120,21 @@ def test_missing_native_diagnostics_stay_missing_in_audit():
     audit = benchmark.native_baseline_audit([row])[0]
     assert audit["native_k"] is None and audit["native_mse"] is None
     assert audit["extra_refit_count"] is None and audit["safeguard_enabled"] is None
+
+
+def test_source_paper_provenance_has_a_separate_audit_from_legacy_repair_fields():
+    rows = make_report()["measurements"]
+    for row in rows:
+        if row["method"] != "ours":
+            row["baseline_protocol"] = "native"
+            row["provenance"] = benchmark.baseline_provenance(row["method"])
+            row.update(status="unavailable", fit_pass=None, total_ms=None,
+                       mse=None, final_k=None, diagnostics={})
+    assert len(benchmark.native_baseline_audit(rows)) == 3
+    audit = benchmark.baseline_provenance_audit(rows)
+    assert len(audit) == 5
+    assert all(row["status"] == "unavailable" and row["complete_ms"] is None for row in audit)
+    assert all(row["native_comparison_available"] is False for row in audit)
 
 
 def test_historical_reports_are_not_relabelled_and_contradictions_rejected():

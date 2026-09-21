@@ -1,0 +1,33 @@
+{
+  "source_comparison": "E:\\SelfSurpervisedSplineFitting\\outputs\\comparisons\\paper_adaptation_export_smoke_20260921_r1\\comparison.json",
+  "source_comparison_sha256": "4af20231567ddb97fd0d6a0e59c315ae4e4b9980a5ec6a1a42fed8e4ccfff564",
+  "benchmark_fingerprint": "dc9a7c46775fdab5339c8013e249ba96d73685fab593f15557c860637ae6b85d",
+  "reran_methods": false,
+  "diagnostic_not_final": true,
+  "plot_selection": {
+    "seed": 20260908,
+    "max_cases_per_dataset": 1,
+    "rule": "seeded random sample without ranking by error, success, knots or runtime"
+  },
+  "evaluated_measurements": 6,
+  "evaluated_cases": 1,
+  "case_figures": [
+    {
+      "dataset": "UJI",
+      "sample_id": "uji2_07539_stroke_00",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\paper_adaptation_export_smoke_20260921_r1\\case_bc87a9d934cfa9d3e3c0836e04dc790ae87ea2e5033e6bb8878dbd7ee939b67f.png",
+        "sha256": "3bdd69f69e4f4e37cb8ca8c6d1f4288cb1b7428dbb2da97800e8197ad510d186"
+      }
+    }
+  ],
+  "summary_figures": [
+    {
+      "dataset": "UJI",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\paper_adaptation_export_smoke_20260921_r1\\summary_f6c1fd051041bc8736b3.png",
+        "sha256": "dce8629a0fadf69ec607874bb610992a58757213e1d5ce30afdd7e36a2745f8a"
+      }
+    }
+  ]
+}

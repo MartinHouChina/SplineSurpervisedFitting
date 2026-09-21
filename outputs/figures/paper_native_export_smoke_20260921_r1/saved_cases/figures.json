@@ -1,0 +1,80 @@
+{
+  "source_comparison": "E:\\SelfSurpervisedSplineFitting\\outputs\\comparisons\\paper_native_export_smoke_20260921_r1\\comparison.json",
+  "source_comparison_sha256": "16598321c349acc65827dc78e2ba114df6cc1dba391a44a863ca5fffbb1fbdfa",
+  "benchmark_fingerprint": "98365954a3322f8057eb4e07eca57d23a78906cbd0c785809db19cfef9e55ce6",
+  "reran_methods": false,
+  "diagnostic_not_final": true,
+  "plot_selection": {
+    "seed": 20260908,
+    "max_cases_per_dataset": 1,
+    "rule": "seeded random sample without ranking by error, success, knots or runtime"
+  },
+  "requested_measurements": 24,
+  "evaluated_measurements": 4,
+  "unavailable_measurements": 20,
+  "evaluated_cases": 4,
+  "case_figures": [
+    {
+      "dataset": "IndustrialOffset",
+      "sample_id": "industrial_offset_naca_airfoil_v011_o04_p0p0400",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\paper_native_export_smoke_20260921_r1\\saved_cases\\case_81602836d27de2603647a9377e94d97f5a7b5f6c96636f9245f614d6b135de8d.png",
+        "sha256": "6123c506534381140a98de480a8a29cbd2ef9f1b422cf4ce1a55430b80604aed"
+      }
+    },
+    {
+      "dataset": "NaturalEarth",
+      "sample_id": "natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\paper_native_export_smoke_20260921_r1\\saved_cases\\case_50820cd78c4eecdf0fcf73f15aabae9b07cdeccc6b3049b518c1feead838eac5.png",
+        "sha256": "06effbb6ff4e20c6fdbc5877e2f3022db9175e41ad7b5dfdfa1f2137d9fd1541"
+      }
+    },
+    {
+      "dataset": "UJI",
+      "sample_id": "uji2_07539_stroke_00",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\paper_native_export_smoke_20260921_r1\\saved_cases\\case_bc87a9d934cfa9d3e3c0836e04dc790ae87ea2e5033e6bb8878dbd7ee939b67f.png",
+        "sha256": "18713fdb33aa4e09289621526d487e155e2316c945a1e77828bef2013bc06af8"
+      }
+    },
+    {
+      "dataset": "USGS",
+      "sample_id": "usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\paper_native_export_smoke_20260921_r1\\saved_cases\\case_4b61cbb57f1be05ab855a694b21d5bdef4622eaa95e7dd2a569c320e67475b71.png",
+        "sha256": "b4fff17ab0e51d70806f1fec39b87ddf1617df913c9eea9c3182421d98deec39"
+      }
+    }
+  ],
+  "summary_figures": [
+    {
+      "dataset": "IndustrialOffset",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\paper_native_export_smoke_20260921_r1\\saved_cases\\summary_76abf77b13b1d78bd5af.png",
+        "sha256": "39dd7f01360917ed55a11566e08c397fa4523f72d3f79bc2e10cf975dbe1b6c6"
+      }
+    },
+    {
+      "dataset": "NaturalEarth",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\paper_native_export_smoke_20260921_r1\\saved_cases\\summary_859c3abb3540989f4053.png",
+        "sha256": "da80a213f5a9aba47f308b794a4f1745c1aad7ac62ce75c2c6e8659661d68128"
+      }
+    },
+    {
+      "dataset": "UJI",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\paper_native_export_smoke_20260921_r1\\saved_cases\\summary_f6c1fd051041bc8736b3.png",
+        "sha256": "47fbab6ce7d01a7992551506e6d0b1ce1dbc231468fc8bab0598266ab48c7497"
+      }
+    },
+    {
+      "dataset": "USGS",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\paper_native_export_smoke_20260921_r1\\saved_cases\\summary_5bdb66dd27ec22d83a1c.png",
+        "sha256": "8a9be69472c8d85f518a3a102fc103c570b73b772a365fe58946f58894ceca92"
+      }
+    }
+  ]
+}

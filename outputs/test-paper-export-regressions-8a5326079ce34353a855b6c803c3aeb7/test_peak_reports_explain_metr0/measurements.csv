@@ -1,0 +1,3 @@
+﻿max_squared_error,reference_max_squared_error,dataset,method,status,has_reference,mse,reference_mse,fit_pass,reference_pass,final_k,total_ms,network_ms
+,,UJI,ours,ok,True,1e-06,2e-06,True,True,2,3,1
+4e-06,8e-06,UJI,ours,ok,True,1e-06,2e-06,True,True,2,3,1

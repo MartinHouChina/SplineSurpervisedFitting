@@ -1,0 +1,244 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "82dadc8efcdf663ed51abdb51ed38169bfbc1ceab4b34afbec0dacd56491eb8a",
+  "case_artifact": {
+    "path": "geometry/2893cf8d264ef5d80fdba046ea759fb39940b3055a8da049a56c95e4f17aff2e/case.json",
+    "sha256": "c25af9f672636a7d6bc666ba9f7361a8edcc44cebc7fee1b17425f3d6f4b7dc8"
+  },
+  "measurement": {
+    "dataset": "TEST_FIXTURE",
+    "sample_id": "curve2",
+    "group_id": "group",
+    "source_k": null,
+    "canonical_k": null,
+    "method": "ours",
+    "has_reference": true,
+    "status": "ok",
+    "mse": 1.5252382516843362e-05,
+    "max_squared_error": 3.6106629668634666e-05,
+    "fit_pass": true,
+    "reference_mse": 1.5252382516843362e-05,
+    "reference_max_squared_error": 3.6106629668634666e-05,
+    "reference_pass": true,
+    "final_k": 2,
+    "total_ms": 2.0,
+    "network_ms": 1.0,
+    "knots": [
+      0.4,
+      0.6
+    ],
+    "diagnostics": {
+      "test_fixture": true
+    },
+    "error": null,
+    "baseline_protocol": null,
+    "provenance": {
+      "implementation": "learned checkpoint"
+    },
+    "source_kind": "unit_test_fixture",
+    "source_note": null,
+    "dataset_label": "TEST FIXTURE (not research data)",
+    "split": "test",
+    "attempt_wall_ms": 3.554499999154359,
+    "timing_status": "completed_method"
+  },
+  "spline": {
+    "degree": 3,
+    "internal_knots": [
+      0.4,
+      0.6
+    ],
+    "full_knot_vector": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.4,
+      0.6,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "control_points_normalized": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.13333333333333358,
+        0.19972780930576262
+      ],
+      [
+        0.33333333333333337,
+        0.28333826699903397
+      ],
+      [
+        0.6666666666666667,
+        -0.2833382669990339
+      ],
+      [
+        0.8666666666666666,
+        -0.19972780930576273
+      ],
+      [
+        1.0,
+        -4.898587196589413e-17
+      ]
+    ],
+    "sample_parameters": [
+      0.0,
+      0.043478260869565216,
+      0.08695652173913043,
+      0.13043478260869565,
+      0.17391304347826086,
+      0.21739130434782608,
+      0.2608695652173913,
+      0.30434782608695654,
+      0.34782608695652173,
+      0.3913043478260869,
+      0.43478260869565216,
+      0.4782608695652174,
+      0.5217391304347826,
+      0.5652173913043479,
+      0.6086956521739131,
+      0.6521739130434783,
+      0.6956521739130435,
+      0.7391304347826086,
+      0.782608695652174,
+      0.8260869565217391,
+      0.8695652173913043,
+      0.9130434782608696,
+      0.9565217391304348,
+      1.0
+    ],
+    "control_points_original": [
+      [
+        5.0,
+        -2.0
+      ],
+      [
+        5.933333333333335,
+        -0.6019053348596617
+      ],
+      [
+        7.333333333333334,
+        -0.016632131006762307
+      ],
+      [
+        9.666666666666668,
+        -3.9833678689932377
+      ],
+      [
+        11.066666666666666,
+        -3.398094665140339
+      ],
+      [
+        12.0,
+        -2.0000000000000004
+      ]
+    ]
+  },
+  "geometry_evaluation_error": null,
+  "errors_normalized": {
+    "mse": 1.5252382516843362e-05,
+    "max_squared_error": 3.6106629668634666e-05,
+    "reference_mse": 1.5252382516843362e-05,
+    "reference_max_squared_error": 3.6106629668634666e-05
+  },
+  "errors_original": {
+    "mse": 0.0007473667433253248,
+    "max_squared_error": 0.0017692248537630986,
+    "reference_mse": 0.0007473667433253248,
+    "reference_max_squared_error": 0.0017692248537630986
+  },
+  "arrays_file": "ae0bec9e9d33c56354bd.npz",
+  "arrays_sha256": "edc14f32d190c25b08ad4d0e3f522f460979b3b691fd8a4e77ba9444ed5546b9",
+  "array_shapes": {
+    "sample_parameters": [
+      24
+    ],
+    "internal_knots": [
+      2
+    ],
+    "full_knot_vector": [
+      10
+    ],
+    "control_points_normalized": [
+      6,
+      2
+    ],
+    "fitted_input_normalized": [
+      24,
+      2
+    ],
+    "input_residual_vectors_normalized": [
+      24,
+      2
+    ],
+    "input_squared_residuals_normalized": [
+      24
+    ],
+    "dense_parameters": [
+      512
+    ],
+    "dense_curve_normalized": [
+      512,
+      2
+    ],
+    "knot_positions_normalized": [
+      2,
+      2
+    ],
+    "reference_parameters": [
+      24
+    ],
+    "fitted_reference_normalized": [
+      24,
+      2
+    ],
+    "reference_residual_vectors_normalized": [
+      24,
+      2
+    ],
+    "reference_squared_residuals_normalized": [
+      24
+    ],
+    "control_points_original": [
+      6,
+      2
+    ],
+    "fitted_input_original": [
+      24,
+      2
+    ],
+    "input_residual_vectors_original": [
+      24,
+      2
+    ],
+    "input_squared_residuals_original": [
+      24
+    ],
+    "dense_curve_original": [
+      512,
+      2
+    ],
+    "knot_positions_original": [
+      2,
+      2
+    ],
+    "fitted_reference_original": [
+      24,
+      2
+    ],
+    "reference_residual_vectors_original": [
+      24,
+      2
+    ],
+    "reference_squared_residuals_original": [
+      24
+    ]
+  },
+  "timing_scope": "Export, dense evaluation, metrics and plotting are excluded from successful method/network timings. The spline is from the final timed repetition; reported times are medians of all recorded timed repetitions.",
+  "coordinate_error_scaling": "Original-coordinate squared errors = normalized squared errors * scalar_scale**2; reported benchmark pass/fail uses normalized input MSE only."
+}

@@ -150,6 +150,63 @@ class _SurvivorResidualRefinement(nn.Module):
         return survivors, point_features + self.parameter_gate.tanh() * update
 
 
+class _CoupledGeometryRefinement(_SurvivorResidualRefinement):
+    """One actual t/U update, with refreshed two-way geometric features.
+
+    This is a fixed-depth learned update, not a spline solve or a pruning
+    search. Both coordinate heads have zero gates for safe weight migration.
+    The next block consumes the new point features AND numeric coordinates.
+    """
+
+    def __init__(self, width: int, heads: int) -> None:
+        super().__init__(width, heads)
+        self.width = width
+        self.parameter_step = nn.Linear(width, 1)
+        self.chord_reference_embedding = nn.Linear(2, width)
+        self.position_step = nn.Linear(width, 2)
+        for head in (self.parameter_step, self.position_step):
+            nn.init.normal_(head.weight, std=.01)
+            nn.init.zeros_(head.bias)
+        self.coordinate_gate = nn.Parameter(torch.zeros(()))
+
+    def forward(self, tokens, point_features, knots, params, keep_mask,
+                *, min_parameter_gap, parameter_limit, chord_params):
+        # Unlike the historical feature-only stack, updated point features
+        # are fed back as evidence for the next node interaction.
+        memory = point_features + KnotHead._sinusoidal_position_encoding(params, self.width)
+        tokens, point_features = super().forward(
+            tokens, point_features, memory, knots, params, keep_mask,
+        )
+        gate = self.coordinate_gate.tanh()
+        # Chord coordinates are explicit evidence, not a forced replacement.
+        # Geographic curves and generated splines can prefer different
+        # parameterizations; the already deployed chord counterfactual loss
+        # supplies a per-curve training signal for this bounded update.
+        reference = self.chord_reference_embedding(torch.stack(
+            [chord_params, params - chord_params], -1,
+        ))
+        raw = self.parameter_step(point_features + reference)[:, :-1, 0]
+        correction = parameter_limit * gate * (raw - raw.mean(-1, keepdim=True)).tanh()
+        free = (params.diff(dim=-1) - min_parameter_gap).clamp_min(0)
+        weights = free * correction.exp()
+        weights = weights / weights.sum(-1, keepdim=True).clamp_min(torch.finfo(params.dtype).tiny)
+        gaps = min_parameter_gap + (1 - min_parameter_gap * free.shape[-1]) * weights
+        proposed = torch.cat([gaps.new_zeros(gaps.shape[0], 1), gaps.cumsum(-1)[:, :-1],
+                              gaps.new_ones(gaps.shape[0], 1)], -1)
+        # Subtract the same normalization at zero correction. This is bitwise
+        # identity at initialization without squaring the gate (which would
+        # remove its initial parameter-coordinate gradient).
+        reference_weights = free / free.sum(-1, keepdim=True).clamp_min(torch.finfo(params.dtype).tiny)
+        reference_gaps = min_parameter_gap + (1 - min_parameter_gap * free.shape[-1]) * reference_weights
+        reference = torch.cat([reference_gaps.new_zeros(params.shape[0], 1),
+                               reference_gaps.cumsum(-1)[:, :-1],
+                               reference_gaps.new_ones(params.shape[0], 1)], -1)
+        proposed = params + (proposed - reference)
+        residual = self.position_step(tokens)
+        residual = torch.stack([gate * residual[..., 0], residual[..., 1]], -1)
+        return tokens, point_features, proposed, residual
+
+
 class V16CandidateSelectionNetwork(nn.Module):
     """One proposal pass, one structured mask and one joint subset decoder."""
 
@@ -182,6 +239,9 @@ class V16CandidateSelectionNetwork(nn.Module):
         proposal_refinement_layers: int = 0,
         selection_refinement_layers: int = 0,
         survivor_refinement_layers: int = 0,
+        coupled_proposal_steps: int = 0,
+        coupled_subset_steps: int = 0,
+        parameter_chord_blend: float = 0.0,
     ) -> None:
         super().__init__()
         if point_dim < 1 or degree < 1 or hidden_dim < 4:
@@ -194,9 +254,16 @@ class V16CandidateSelectionNetwork(nn.Module):
             "proposal_refinement_layers": proposal_refinement_layers,
             "selection_refinement_layers": selection_refinement_layers,
             "survivor_refinement_layers": survivor_refinement_layers,
+            "coupled_proposal_steps": coupled_proposal_steps,
+            "coupled_subset_steps": coupled_subset_steps,
         }.items():
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
+        if (isinstance(parameter_chord_blend, bool) or not math.isfinite(parameter_chord_blend)
+                or not 0 <= parameter_chord_blend <= 1):
+            raise ValueError("parameter_chord_blend must be in [0,1]")
+        if (coupled_proposal_steps or coupled_subset_steps) and subset_geometry_mode != "anchored":
+            raise ValueError("coupled geometry updates require anchored subset geometry")
         for name, value in {
             "min_parameter_gap": min_parameter_gap,
             "min_knot_gap": min_knot_gap,
@@ -270,6 +337,9 @@ class V16CandidateSelectionNetwork(nn.Module):
             proposal_refinement_layers=proposal_refinement_layers,
             selection_refinement_layers=selection_refinement_layers,
             survivor_refinement_layers=survivor_refinement_layers,
+            coupled_proposal_steps=coupled_proposal_steps,
+            coupled_subset_steps=coupled_subset_steps,
+            parameter_chord_blend=parameter_chord_blend,
         )
         self.point_dim, self.degree, self.hidden_dim = point_dim, degree, hidden_dim
         self.max_internal_knots = max_internal_knots
@@ -288,6 +358,7 @@ class V16CandidateSelectionNetwork(nn.Module):
         self.proposal_refinement_layers = proposal_refinement_layers
         self.selection_refinement_layers = selection_refinement_layers
         self.survivor_refinement_layers = survivor_refinement_layers
+        self.parameter_chord_blend = float(parameter_chord_blend)
         self.encoder = GeometryEncoder(point_dim, hidden_dim, encoder_layers)
         self.parameter_head = ParameterHead(
             hidden_dim, min_parameter_gap, "strict", "chord_residual",
@@ -365,6 +436,14 @@ class V16CandidateSelectionNetwork(nn.Module):
         self.survivor_refinement_blocks = nn.ModuleList([
             _SurvivorResidualRefinement(hidden_dim, attention_heads)
             for _ in range(survivor_refinement_layers)
+        ])
+        self.coupled_proposal_blocks = nn.ModuleList([
+            _CoupledGeometryRefinement(hidden_dim, attention_heads)
+            for _ in range(coupled_proposal_steps)
+        ])
+        self.coupled_subset_blocks = nn.ModuleList([
+            _CoupledGeometryRefinement(hidden_dim, attention_heads)
+            for _ in range(coupled_subset_steps)
         ])
 
     @staticmethod
@@ -464,12 +543,29 @@ class V16CandidateSelectionNetwork(nn.Module):
             params = chord_params + proposal_trust * (ungated_params - chord_params)
         else:
             params = ungated_params
+        if self.parameter_chord_blend:
+            params = params + self.parameter_chord_blend * (chord_params - params)
         proposal = self.candidate_head(global_features, local, params)
         knots = proposal["candidate_knots"]
         proposal_tokens = proposal["candidate_tokens"]
         memory = local + KnotHead._sinusoidal_position_encoding(params, self.hidden_dim)
         for block in self.proposal_refinement_blocks:
             proposal_tokens, knots = block(proposal_tokens, memory, knots, params)
+        if self.coupled_proposal_blocks:
+            point_features = local
+            all_keep = torch.ones_like(knots, dtype=torch.bool)
+            for block in self.coupled_proposal_blocks:
+                proposal_tokens, point_features, proposed, residual = block(
+                    proposal_tokens, point_features, knots, params, all_keep,
+                    min_parameter_gap=self.min_parameter_gap,
+                    parameter_limit=self.subset_parameter_residual_limit,
+                    chord_params=chord_params,
+                )
+                params, _, knots, _ = self._anchored_subset_geometry(
+                    knots, params, proposed, all_keep, residual,
+                    relocation_logit=knots.new_zeros(()),
+                )
+            memory = point_features + KnotHead._sinusoidal_position_encoding(params, self.hidden_dim)
         boundaries = torch.cat([knots.new_zeros(knots.shape[0], 1), knots,
                                 knots.new_ones(knots.shape[0], 1)], -1)
         gaps = boundaries.diff(dim=-1)
@@ -652,6 +748,7 @@ class V16CandidateSelectionNetwork(nn.Module):
         self, knots: torch.Tensor, old_params: torch.Tensor,
         proposed_params: torch.Tensor, keep_mask: torch.Tensor,
         residual: torch.Tensor,
+        *, relocation_logit: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Small, coupled changes around proposal geometry; no rank attraction.
 
@@ -697,7 +794,11 @@ class V16CandidateSelectionNetwork(nn.Module):
         left, right = self._neighbors(warped, keep_mask)
         local_room = torch.minimum(warped - left, right - warped)
         local_room = (local_room - self.min_knot_gap).clamp_min(0)
-        blend = scale * (self.relocation_blend_logit + residual[..., 1]).sigmoid()
+        # Dense proposal geometry must never depend on a decoder-owned
+        # trainable scalar: decoder optimization continues while Proposal is
+        # frozen. Coupled proposal blocks supply their own neutral base here.
+        base_blend = self.relocation_blend_logit if relocation_logit is None else relocation_logit
+        blend = scale * (base_blend + residual[..., 1]).sigmoid()
         relocated = warped + 0.45 * local_room * blend * residual[..., 0].tanh()
         internal = torch.where(keep_mask, relocated, warped)
         return params, warped, internal, blend
@@ -787,8 +888,27 @@ class V16CandidateSelectionNetwork(nn.Module):
                 chosen = selected_gaps.cumsum(0)[:-1]
                 rows.append(warped[row].scatter(0, ids, chosen))
             internal = torch.stack(rows)
+        # Each new round updates actual t/U and refreshes their positional
+        # evidence. KeepMask is fixed: teacher masks and deployed masks follow
+        # precisely the same decoder, with one final external spline refit.
+        pre_coupling_params, pre_coupling_knots = params, internal
+        for block in self.coupled_subset_blocks:
+            survivors, point_features, proposed, residual = block(
+                survivors, point_features, internal, params, keep_mask,
+                min_parameter_gap=self.min_parameter_gap,
+                parameter_limit=self.subset_parameter_residual_limit,
+                chord_params=context["chord_params"],
+            )
+            params, warped, internal, blend = self._anchored_subset_geometry(
+                internal, params, proposed, keep_mask, residual,
+            )
+            gaps = params.diff(dim=-1)
+        if self.coupled_subset_blocks:
+            # Preserve this public diagnostic's original meaning: transport
+            # the ORIGINAL proposals, not the previous round's relocated U.
+            warped = self._warp_knots(knots, old_params, params)
         probabilities = context["keep_probabilities"]
-        return dict(
+        result = dict(
             params=params, internal_knots=internal, learned_keep_mask=keep_mask,
             final_hard_keep_mask=keep_mask,
             knot_mask=keep_mask, proposal_params=old_params,
@@ -813,6 +933,11 @@ class V16CandidateSelectionNetwork(nn.Module):
             ungated_subset_params=ungated_params,
             subset_parameter_trust=subset_trust,
         )
+        if self.coupled_subset_blocks:
+            result.update(pre_coupling_params=pre_coupling_params,
+                          pre_coupling_internal_knots=pre_coupling_knots,
+                          coupled_parameter_delta=params - pre_coupling_params)
+        return result
 
     def forward_deployment(self, points: torch.Tensor, mse_tolerance=None) -> dict:
         context = self.encode_candidates(points, mse_tolerance=mse_tolerance)

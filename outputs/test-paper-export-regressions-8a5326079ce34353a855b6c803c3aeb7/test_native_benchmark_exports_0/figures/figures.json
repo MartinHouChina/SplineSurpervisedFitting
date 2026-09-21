@@ -1,0 +1,35 @@
+{
+  "source_comparison": "E:\\SelfSurpervisedSplineFitting\\outputs\\test-paper-export-regressions-8a5326079ce34353a855b6c803c3aeb7\\test_native_benchmark_exports_0\\benchmark\\comparison.json",
+  "source_comparison_sha256": "a43929e70de8d469adae5cf254ed6a72ff84a8be18ab96f72f149b74b1dc07a6",
+  "benchmark_fingerprint": "82dadc8efcdf663ed51abdb51ed38169bfbc1ceab4b34afbec0dacd56491eb8a",
+  "reran_methods": false,
+  "diagnostic_not_final": true,
+  "plot_selection": {
+    "seed": 20260908,
+    "max_cases_per_dataset": 1,
+    "rule": "seeded random sample without ranking by error, success, knots or runtime"
+  },
+  "requested_measurements": 12,
+  "evaluated_measurements": 2,
+  "unavailable_measurements": 10,
+  "evaluated_cases": 2,
+  "case_figures": [
+    {
+      "dataset": "TEST_FIXTURE",
+      "sample_id": "curve2",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\test-paper-export-regressions-8a5326079ce34353a855b6c803c3aeb7\\test_native_benchmark_exports_0\\figures\\case_2893cf8d264ef5d80fdba046ea759fb39940b3055a8da049a56c95e4f17aff2e.png",
+        "sha256": "2fbad59451b6843bd9a13eab712328a11262245bda35de5ffb4e7b956cb935c2"
+      }
+    }
+  ],
+  "summary_figures": [
+    {
+      "dataset": "TEST_FIXTURE",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\test-paper-export-regressions-8a5326079ce34353a855b6c803c3aeb7\\test_native_benchmark_exports_0\\figures\\summary_ae71e272766f65040f4e.png",
+        "sha256": "9ef7056667ff7636af9fc643f701978a03f3ca6d126d2f76b5ea46a9ca1ed97f"
+      }
+    }
+  ]
+}

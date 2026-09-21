@@ -1,0 +1,4 @@
+﻿dataset,sample_id,method,status,baseline_protocol,reproduction_status,safeguard_enabled,safeguard_used,native_k,native_mse,final_k,final_mse,extra_refit_count,final_source,repair_status,capacity,complete_ms
+UJI,test,dung_direct_knot_2017_adaptation,ok,adaptation,reproduction_unverified,,,,,0,0.00809481576020531,,,,,4.0
+UJI,test,kang_sparse_2015_adaptation,ok,adaptation,reproduction_unverified,,,,,0,0.00809481576020531,,,,,4.0
+UJI,test,luo_linf_de_2022_adaptation,ok,adaptation,reproduction_unverified,,,,,0,0.00809481576020531,,,,,4.0
