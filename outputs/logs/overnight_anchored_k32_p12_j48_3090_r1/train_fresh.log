@@ -1,0 +1,1249 @@
+
+[train_fresh] python scripts/train_v16.py --epochs 60 --proposal-epochs 12 --train-size 1500 --val-size 500 --batch-size 32 --num-points 192 --min-control-points 8 --max-control-points 28 --candidate-knots 32 --mse-tolerance 5e-5 --real-fraction 0 --proposal-pass-target 0.90 --deployment-pass-target 0.90 --policy-samples 2 --counterfactual-edits 4 --teacher-prefix-search-steps 6 --lr 2e-5 --joint-lr 3e-5 --teacher-refinement-steps 1 --teacher-refinement-candidates 3 --boundary-ranking-weight 0.5 --boundary-ranking-candidates 4 --joint-proposal-lr-scale 0.1 --joint-decoder-lr-scale 1.0 --joint-final-lr-ratio 0.25 --parameter-trust-enabled --parameter-trust-initial 0.25 --parameter-counterfactual-weight 0.25 --teacher-geometry-candidates 4 --local-fit-weight 0.1 --proposal-ordered-weight 0.5 --allow-infeasible-proposals --simplification-controller per_curve --complexity-max-scale 1.0 --feasible-objective --feasible-fit-margin 0.8 --feasible-fit-weight 0.02 --teacher-greedy-steps 16 --teacher-greedy-max-curves 4 --teacher-geometry-distillation-weight 0.4 --count-reserve-alignment --synthetic-simple-fraction 0.35 --synthetic-shape-fraction 0.25 --teacher-greedy-trajectory-checks 4 --teacher-geometry-trajectory-targets 2 --subset-geometry-mode anchored --subset-geometry-residual-scale 0.25 --teacher-greedy-priority compact --teacher-compact-mask-weight 0.5 --joint-geometry-calibration-epochs 6 --one-shot-safety-sigma 0 --one-shot-safety-knots 0 --final-safety-sigma 0 --final-safety-knots 0 --safety-anneal-epochs 4 --complexity-ramp-epochs 4 --resample-train-each-epoch --num-workers 0 --torch-num-threads 4 --device cuda --output /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_anchored_k32_p12_j48_3090_r1.pt --real-val-size 32 --real-manifest /home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl --real-manifest /home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl --real-manifest /home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl --warm-start-checkpoint /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_stable_k32_3090_r1.pt
+Checking real manifests and train/val/test group separation...
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl
+  Checking groups/files: 2000/18219
+  Checking groups/files: 4000/18219
+  Checking groups/files: 6000/18219
+  Checking groups/files: 8000/18219
+  Checking groups/files: 10000/18219
+  Checking groups/files: 12000/18219
+  Checking groups/files: 14000/18219
+  Checking groups/files: 16000/18219
+  Checking groups/files: 18000/18219
+  Checking groups/files: 18219/18219
+  Ready uji_pen_characters_v2: train=9670, val=2456 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl
+  Checking groups/files: 2000/3908
+  Checking groups/files: 3908/3908
+  Ready natural_earth_10m_coastline: train=2625, val=750 (test excluded from training)
+  Reading manifest: /home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl
+  Checking groups/files: 2000/6654
+  Checking groups/files: 4000/6654
+  Checking groups/files: 6000/6654
+  Checking groups/files: 6654/6654
+  Ready usgs_tnm_contours_large_scale: train=4024, val=1210 (test excluded from training)
+Copied 125 model tensors exactly, including selector/decoder; fresh optimizer, history, safety curriculum and proposal gate.
+Explicit anchored subset-geometry migration: weights copied, forward function changed; revalidation required. This is not optimizer resume.
+v16 adaptive mass_topk: cuda, Kc=32 internal (full cubic knot vector at all-keep=40), MSE tolerance=5e-05; 1500 train draws, 596 validation curves; real sources=3
+Synthetic source contract: clean source-subset threshold-minimal certificate at RMS=0.00707107, margin=20%, audit_points=512
+Simplification curriculum: training-only ranked-prefix teacher steps=6; certified over-count weight=1, symmetric true-count weight=1; complexity multiplier 0..1; safety 0+0sigma -> 0+0sigma. Deployment still uses one network forward and one final refit.
+Validation checkpoint quality uses the worst source pass rate. Additional subset fits run only during training.
+Joint geometry calibration: first 6 joint epochs freeze encoder/ParameterHead/Proposal and pause complexity/safety curriculum; Selector and subset decoder learn compact teacher geometry. Later joint epochs unfreeze dense geometry at the configured proposal LR scale.
+Per-curve simplification: scheduled complexity ramp; infeasible training curves receive no complexity pressure. Worst-source validation still governs checkpoint selection, not the training ramp.
+Training-only synthetic mixture: low-K=35%, procedural-shape=25%, historical=40%; procedural shapes have no true-knot/count labels; validation distribution is unchanged.
+Real sources are VALIDATION ONLY; training uses labeled synthetic splines and unlabeled procedural shapes, and test splits are excluded from model selection.
+Online teacher refinement: 1 rounds x 3 deletion candidates; boundary ranking weight=0.5, candidates=4. Teacher mask agreement below is a training signal, not ground-truth knot F1.
+Epoch 001/60 proposal [........................] 1/47 MSE=1.064e-05 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 001/60 proposal [=====...................] 10/47 MSE=2.492e-05 pass=87.5% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 001/60 proposal [==========..............] 20/47 MSE=1.365e-05 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 001/60 proposal [===============.........] 30/47 MSE=6.750e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 001/60 proposal [====================....] 40/47 MSE=1.544e-05 pass=84.4% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 001/60 proposal [========================] 47/47 MSE=3.739e-06 pass=100.0% K=32.0 teacherK=32.0 countMAE=0.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 001 val dense=85.6% deployment=85.6% worst-source=84.4% MSE=2.775e-05 K=32.00 mass=24.28 beta=-2.14 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=0.3685, local=0.2729, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'simple': 520, 'historical': 600, 'shape_industrial': 133, 'shape_handwriting': 122, 'shape_terrain': 125}
+  Synthetic: dense=84.8%, deployment=84.8%, MSE=2.519e-05, K=32.00, targetK=14.22, count_MAE=17.78, bias=+17.78, knot_F1@0.01=0.472, param_RMSE=4.467e-02, trust_proposal=0.625
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.833e-06, K=32.00, trust_proposal=0.618
+  natural_earth_10m_coastline: dense=84.4%, deployment=84.4%, MSE=8.658e-05, K=32.00, trust_proposal=0.670
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=84.4%, MSE=3.281e-05, K=32.00, trust_proposal=0.615
+Epoch 002/60 proposal [........................] 1/47 MSE=7.611e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 002/60 proposal [=====...................] 10/47 MSE=8.095e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 002/60 proposal [==========..............] 20/47 MSE=1.607e-05 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 002/60 proposal [===============.........] 30/47 MSE=6.537e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 002/60 proposal [====================....] 40/47 MSE=8.395e-06 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 002/60 proposal [========================] 47/47 MSE=1.377e-05 pass=96.4% K=32.0 teacherK=32.0 countMAE=0.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 002 val dense=85.9% deployment=85.9% worst-source=81.2% MSE=2.736e-05 K=32.00 mass=24.45 beta=-2.18 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=0.3687, local=0.2773, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'historical': 610, 'simple': 509, 'shape_terrain': 120, 'shape_handwriting': 137, 'shape_industrial': 124}
+  Synthetic: dense=85.4%, deployment=85.4%, MSE=2.471e-05, K=32.00, targetK=14.22, count_MAE=17.78, bias=+17.78, knot_F1@0.01=0.468, param_RMSE=4.485e-02, trust_proposal=0.629
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.835e-06, K=32.00, trust_proposal=0.625
+  natural_earth_10m_coastline: dense=81.2%, deployment=81.2%, MSE=8.658e-05, K=32.00, trust_proposal=0.679
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=84.4%, MSE=3.312e-05, K=32.00, trust_proposal=0.619
+Epoch 003/60 proposal [........................] 1/47 MSE=1.573e-05 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 003/60 proposal [=====...................] 10/47 MSE=1.037e-05 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 003/60 proposal [==========..............] 20/47 MSE=1.639e-05 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 003/60 proposal [===============.........] 30/47 MSE=7.219e-06 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 003/60 proposal [====================....] 40/47 MSE=9.195e-06 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 003/60 proposal [========================] 47/47 MSE=1.802e-05 pass=85.7% K=32.0 teacherK=32.0 countMAE=0.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 003 val dense=86.4% deployment=86.4% worst-source=81.2% MSE=2.710e-05 K=32.00 mass=24.39 beta=-2.16 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=0.3486, local=0.3029, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'historical': 625, 'simple': 516, 'shape_terrain': 124, 'shape_handwriting': 111, 'shape_industrial': 124}
+  Synthetic: dense=86.0%, deployment=86.0%, MSE=2.440e-05, K=32.00, targetK=14.22, count_MAE=17.78, bias=+17.78, knot_F1@0.01=0.470, param_RMSE=4.472e-02, trust_proposal=0.641
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.796e-06, K=32.00, trust_proposal=0.639
+  natural_earth_10m_coastline: dense=81.2%, deployment=81.2%, MSE=8.633e-05, K=32.00, trust_proposal=0.696
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=84.4%, MSE=3.326e-05, K=32.00, trust_proposal=0.632
+Epoch 004/60 proposal [........................] 1/47 MSE=1.338e-05 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 004/60 proposal [=====...................] 10/47 MSE=9.531e-06 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 004/60 proposal [==========..............] 20/47 MSE=6.772e-06 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 004/60 proposal [===============.........] 30/47 MSE=1.013e-05 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 004/60 proposal [====================....] 40/47 MSE=6.377e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 004/60 proposal [========================] 47/47 MSE=8.261e-06 pass=96.4% K=32.0 teacherK=32.0 countMAE=0.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 004 val dense=85.9% deployment=85.9% worst-source=81.2% MSE=2.694e-05 K=32.00 mass=24.29 beta=-2.13 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=0.2632, local=0.2166, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'historical': 592, 'shape_industrial': 118, 'simple': 529, 'shape_handwriting': 134, 'shape_terrain': 127}
+  Synthetic: dense=85.4%, deployment=85.4%, MSE=2.419e-05, K=32.00, targetK=14.22, count_MAE=17.78, bias=+17.78, knot_F1@0.01=0.471, param_RMSE=4.481e-02, trust_proposal=0.645
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.767e-06, K=32.00, trust_proposal=0.647
+  natural_earth_10m_coastline: dense=81.2%, deployment=81.2%, MSE=8.687e-05, K=32.00, trust_proposal=0.706
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=84.4%, MSE=3.326e-05, K=32.00, trust_proposal=0.637
+Epoch 005/60 proposal [........................] 1/47 MSE=6.979e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 005/60 proposal [=====...................] 10/47 MSE=1.200e-05 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 005/60 proposal [==========..............] 20/47 MSE=7.439e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 005/60 proposal [===============.........] 30/47 MSE=8.212e-06 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 005/60 proposal [====================....] 40/47 MSE=1.308e-05 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 005/60 proposal [========================] 47/47 MSE=8.976e-06 pass=100.0% K=32.0 teacherK=32.0 countMAE=0.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 005 val dense=86.4% deployment=86.4% worst-source=78.1% MSE=2.644e-05 K=32.00 mass=24.22 beta=-2.12 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=0.2783, local=0.2310, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'historical': 594, 'shape_handwriting': 120, 'shape_industrial': 128, 'simple': 533, 'shape_terrain': 125}
+  Synthetic: dense=86.2%, deployment=86.2%, MSE=2.355e-05, K=32.00, targetK=14.22, count_MAE=17.78, bias=+17.78, knot_F1@0.01=0.475, param_RMSE=4.489e-02, trust_proposal=0.653
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.847e-06, K=32.00, trust_proposal=0.657
+  natural_earth_10m_coastline: dense=78.1%, deployment=78.1%, MSE=8.684e-05, K=32.00, trust_proposal=0.719
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=84.4%, MSE=3.374e-05, K=32.00, trust_proposal=0.646
+Epoch 006/60 proposal [........................] 1/47 MSE=7.731e-06 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 006/60 proposal [=====...................] 10/47 MSE=1.053e-05 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 006/60 proposal [==========..............] 20/47 MSE=1.204e-05 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 006/60 proposal [===============.........] 30/47 MSE=1.068e-05 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 006/60 proposal [====================....] 40/47 MSE=8.538e-06 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 006/60 proposal [========================] 47/47 MSE=8.228e-06 pass=96.4% K=32.0 teacherK=32.0 countMAE=0.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 006 val dense=86.7% deployment=86.7% worst-source=78.1% MSE=2.600e-05 K=32.00 mass=24.19 beta=-2.11 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=0.2330, local=0.2341, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'shape_industrial': 127, 'simple': 510, 'historical': 608, 'shape_terrain': 133, 'shape_handwriting': 122}
+  Synthetic: dense=86.6%, deployment=86.6%, MSE=2.295e-05, K=32.00, targetK=14.22, count_MAE=17.78, bias=+17.78, knot_F1@0.01=0.477, param_RMSE=4.504e-02, trust_proposal=0.656
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.933e-06, K=32.00, trust_proposal=0.664
+  natural_earth_10m_coastline: dense=78.1%, deployment=78.1%, MSE=8.737e-05, K=32.00, trust_proposal=0.728
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=84.4%, MSE=3.434e-05, K=32.00, trust_proposal=0.650
+Epoch 007/60 proposal [........................] 1/47 MSE=1.539e-05 pass=87.5% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 007/60 proposal [=====...................] 10/47 MSE=1.114e-05 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 007/60 proposal [==========..............] 20/47 MSE=8.515e-06 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 007/60 proposal [===============.........] 30/47 MSE=1.726e-05 pass=87.5% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 007/60 proposal [====================....] 40/47 MSE=6.430e-06 pass=100.0% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 007/60 proposal [========================] 47/47 MSE=6.375e-06 pass=100.0% K=32.0 teacherK=32.0 countMAE=0.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 007 val dense=87.4% deployment=87.4% worst-source=81.2% MSE=2.595e-05 K=32.00 mass=24.59 beta=-2.21 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=0.1320, local=0.2043, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'shape_handwriting': 124, 'simple': 530, 'historical': 611, 'shape_terrain': 125, 'shape_industrial': 110}
+  Synthetic: dense=87.2%, deployment=87.2%, MSE=2.289e-05, K=32.00, targetK=14.22, count_MAE=17.78, bias=+17.78, knot_F1@0.01=0.473, param_RMSE=4.498e-02, trust_proposal=0.667
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=4.025e-06, K=32.00, trust_proposal=0.677
+  natural_earth_10m_coastline: dense=81.2%, deployment=81.2%, MSE=8.680e-05, K=32.00, trust_proposal=0.742
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=84.4%, MSE=3.490e-05, K=32.00, trust_proposal=0.662
+Epoch 008/60 proposal [........................] 1/47 MSE=7.996e-06 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 008/60 proposal [=====...................] 10/47 MSE=9.263e-06 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 008/60 proposal [==========..............] 20/47 MSE=6.819e-06 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 008/60 proposal [===============.........] 30/47 MSE=1.026e-05 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 008/60 proposal [====================....] 40/47 MSE=9.546e-06 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 008/60 proposal [========================] 47/47 MSE=2.936e-06 pass=100.0% K=32.0 teacherK=32.0 countMAE=0.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 008 val dense=87.2% deployment=87.2% worst-source=78.1% MSE=2.550e-05 K=32.00 mass=24.44 beta=-2.18 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=0.1643, local=0.1936, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'simple': 539, 'historical': 583, 'shape_industrial': 117, 'shape_handwriting': 136, 'shape_terrain': 125}
+  Synthetic: dense=87.2%, deployment=87.2%, MSE=2.226e-05, K=32.00, targetK=14.22, count_MAE=17.78, bias=+17.78, knot_F1@0.01=0.474, param_RMSE=4.503e-02, trust_proposal=0.674
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.995e-06, K=32.00, trust_proposal=0.687
+  natural_earth_10m_coastline: dense=78.1%, deployment=78.1%, MSE=8.815e-05, K=32.00, trust_proposal=0.754
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=84.4%, MSE=3.489e-05, K=32.00, trust_proposal=0.669
+Epoch 009/60 proposal [........................] 1/47 MSE=6.379e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 009/60 proposal [=====...................] 10/47 MSE=1.018e-05 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 009/60 proposal [==========..............] 20/47 MSE=1.779e-05 pass=87.5% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 009/60 proposal [===============.........] 30/47 MSE=8.034e-06 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 009/60 proposal [====================....] 40/47 MSE=1.047e-05 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 009/60 proposal [========================] 47/47 MSE=1.025e-05 pass=96.4% K=32.0 teacherK=32.0 countMAE=0.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 009 val dense=87.4% deployment=87.4% worst-source=78.1% MSE=2.511e-05 K=32.00 mass=24.39 beta=-2.16 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=0.1144, local=0.2129, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'shape_handwriting': 133, 'simple': 516, 'historical': 606, 'shape_industrial': 123, 'shape_terrain': 122}
+  Synthetic: dense=87.4%, deployment=87.4%, MSE=2.176e-05, K=32.00, targetK=14.22, count_MAE=17.78, bias=+17.78, knot_F1@0.01=0.477, param_RMSE=4.494e-02, trust_proposal=0.682
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=4.023e-06, K=32.00, trust_proposal=0.699
+  natural_earth_10m_coastline: dense=78.1%, deployment=78.1%, MSE=8.846e-05, K=32.00, trust_proposal=0.767
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=84.4%, MSE=3.518e-05, K=32.00, trust_proposal=0.680
+Epoch 010/60 proposal [........................] 1/47 MSE=1.272e-05 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 010/60 proposal [=====...................] 10/47 MSE=4.024e-06 pass=100.0% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 010/60 proposal [==========..............] 20/47 MSE=9.454e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 010/60 proposal [===============.........] 30/47 MSE=4.987e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 010/60 proposal [====================....] 40/47 MSE=1.074e-05 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 010/60 proposal [========================] 47/47 MSE=9.715e-06 pass=92.9% K=32.0 teacherK=32.0 countMAE=0.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 010 val dense=88.1% deployment=88.1% worst-source=78.1% MSE=2.501e-05 K=32.00 mass=24.46 beta=-2.18 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=0.1713, local=0.1842, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'historical': 576, 'simple': 527, 'shape_industrial': 143, 'shape_handwriting': 134, 'shape_terrain': 120}
+  Synthetic: dense=88.2%, deployment=88.2%, MSE=2.170e-05, K=32.00, targetK=14.22, count_MAE=17.78, bias=+17.78, knot_F1@0.01=0.474, param_RMSE=4.505e-02, trust_proposal=0.682
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.916e-06, K=32.00, trust_proposal=0.702
+  natural_earth_10m_coastline: dense=78.1%, deployment=78.1%, MSE=8.771e-05, K=32.00, trust_proposal=0.772
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=84.4%, MSE=3.522e-05, K=32.00, trust_proposal=0.681
+Epoch 011/60 proposal [........................] 1/47 MSE=9.189e-06 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 011/60 proposal [=====...................] 10/47 MSE=1.565e-05 pass=84.4% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 011/60 proposal [==========..............] 20/47 MSE=9.375e-06 pass=90.6% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 011/60 proposal [===============.........] 30/47 MSE=9.392e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 011/60 proposal [====================....] 40/47 MSE=8.580e-06 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 011/60 proposal [========================] 47/47 MSE=8.050e-06 pass=96.4% K=32.0 teacherK=32.0 countMAE=0.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 011 val dense=87.6% deployment=87.6% worst-source=78.1% MSE=2.495e-05 K=32.00 mass=24.41 beta=-2.17 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=0.1222, local=0.2037, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'historical': 583, 'shape_terrain': 126, 'simple': 551, 'shape_handwriting': 125, 'shape_industrial': 115}
+  Synthetic: dense=87.6%, deployment=87.6%, MSE=2.169e-05, K=32.00, targetK=14.22, count_MAE=17.78, bias=+17.78, knot_F1@0.01=0.476, param_RMSE=4.496e-02, trust_proposal=0.683
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.874e-06, K=32.00, trust_proposal=0.707
+  natural_earth_10m_coastline: dense=78.1%, deployment=78.1%, MSE=8.700e-05, K=32.00, trust_proposal=0.779
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=84.4%, MSE=3.500e-05, K=32.00, trust_proposal=0.682
+Epoch 012/60 proposal [........................] 1/47 MSE=1.009e-05 pass=93.8% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 012/60 proposal [=====...................] 10/47 MSE=6.647e-06 pass=100.0% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 012/60 proposal [==========..............] 20/47 MSE=6.157e-06 pass=100.0% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 012/60 proposal [===============.........] 30/47 MSE=5.715e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 012/60 proposal [====================....] 40/47 MSE=6.420e-06 pass=96.9% K=32.0 teacherK=32.0 countMAE=0.00
+Epoch 012/60 proposal [========================] 47/47 MSE=5.216e-06 pass=96.4% K=32.0 teacherK=32.0 countMAE=0.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 012 val dense=88.1% deployment=88.1% worst-source=78.1% MSE=2.441e-05 K=32.00 mass=24.53 beta=-2.21 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=0.1389, local=0.1774, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'simple': 519, 'historical': 607, 'shape_industrial': 130, 'shape_terrain': 123, 'shape_handwriting': 121}
+  Synthetic: dense=88.2%, deployment=88.2%, MSE=2.104e-05, K=32.00, targetK=14.22, count_MAE=17.78, bias=+17.78, knot_F1@0.01=0.476, param_RMSE=4.498e-02, trust_proposal=0.686
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=3.954e-06, K=32.00, trust_proposal=0.713
+  natural_earth_10m_coastline: dense=78.1%, deployment=78.1%, MSE=8.693e-05, K=32.00, trust_proposal=0.786
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=84.4%, MSE=3.498e-05, K=32.00, trust_proposal=0.686
+Epoch 013/60 joint_geometry_calibration [........................] 1/47 MSE=2.036e-04 pass=15.6% K=19.6 teacherK=20.6 countMAE=9.73
+Epoch 013/60 joint_geometry_calibration [=====...................] 10/47 MSE=4.146e-05 pass=78.1% K=22.1 teacherK=17.0 countMAE=14.92
+Epoch 013/60 joint_geometry_calibration [==========..............] 20/47 MSE=5.159e-05 pass=59.4% K=22.3 teacherK=18.7 countMAE=13.76
+Epoch 013/60 joint_geometry_calibration [===============.........] 30/47 MSE=3.015e-05 pass=71.9% K=23.8 teacherK=19.5 countMAE=13.48
+Epoch 013/60 joint_geometry_calibration [====================....] 40/47 MSE=3.307e-05 pass=75.0% K=22.2 teacherK=17.9 countMAE=13.56
+Epoch 013/60 joint_geometry_calibration [========================] 47/47 MSE=4.167e-05 pass=64.3% K=21.7 teacherK=18.1 countMAE=13.20
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 013 val dense=85.6% deployment=66.9% worst-source=64.6% MSE=4.978e-05 K=27.28 mass=26.72 beta=-2.40 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: proposal=0.000e+00, selector=3.000e-05, decoder=3.000e-05
+  training teacher: keep_P/R/F1=0.793/0.951/0.864, false_remove=4.9%, refinement_delta_K=0.574, improved=70.1%, extra_fits=9.0, boundary_loss=1.4950
+  parameter/local: counterfactual=0.2003, local=1.3765, geometry_teacher_delta_K=0.578, geometry_fits=4.0
+  compact teacher: fixed_K=17.31, fixed_pass=76.6%, decoded_pass=79.4%, accepted_delta_K=0.809, geometry_violation=0.0161, extra_refits=1630.9, complexity_active=55.7%
+  reachable teacher: checks_total=1083, decoded_pass=94.3%, accepted_delta_K=0.809, geometry_targets_total=288, target_K=18.2, target_pass=84.4%
+  compact mask calibration: targets_total=144, target_K=17.82, count_loss=0.1459, ranking_loss=1.2314; targets require smaller count AND decoded feasibility
+  training families: {'simple': 537, 'shape_industrial': 129, 'historical': 603, 'shape_terrain': 102, 'shape_handwriting': 129}
+  Synthetic: dense=84.8%, deployment=64.6%, MSE=4.798e-05, K=27.54, targetK=14.22, count_MAE=13.32, bias=+13.32, knot_F1@0.01=0.511, param_RMSE=4.482e-02, trust_proposal=0.625, trust_subset=0.278
+  uji_pen_characters_v2: dense=100.0%, deployment=90.6%, MSE=2.038e-05, K=21.97, trust_proposal=0.618, trust_subset=0.277
+  natural_earth_10m_coastline: dense=84.4%, deployment=68.8%, MSE=1.159e-04, K=28.38, trust_proposal=0.670, trust_subset=0.278
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=78.1%, MSE=4.112e-05, K=27.31, trust_proposal=0.615, trust_subset=0.278
+Epoch 014/60 joint_geometry_calibration [........................] 1/47 MSE=4.138e-05 pass=59.4% K=22.0 teacherK=19.2 countMAE=12.59
+Epoch 014/60 joint_geometry_calibration [=====...................] 10/47 MSE=3.185e-05 pass=78.1% K=20.9 teacherK=15.8 countMAE=13.24
+Epoch 014/60 joint_geometry_calibration [==========..............] 20/47 MSE=4.077e-05 pass=62.5% K=20.8 teacherK=17.9 countMAE=12.29
+Epoch 014/60 joint_geometry_calibration [===============.........] 30/47 MSE=2.292e-05 pass=81.2% K=20.1 teacherK=15.2 countMAE=11.45
+Epoch 014/60 joint_geometry_calibration [====================....] 40/47 MSE=5.403e-05 pass=46.9% K=22.2 teacherK=20.3 countMAE=11.17
+Epoch 014/60 joint_geometry_calibration [========================] 47/47 MSE=2.871e-05 pass=71.4% K=22.4 teacherK=18.6 countMAE=12.57
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 014 val dense=85.6% deployment=68.8% worst-source=59.4% MSE=5.085e-05 K=26.62 mass=26.16 beta=-2.01 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: proposal=0.000e+00, selector=2.997e-05, decoder=2.997e-05
+  training teacher: keep_P/R/F1=0.795/0.956/0.868, false_remove=4.4%, refinement_delta_K=0.559, improved=67.6%, extra_fits=9.0, boundary_loss=1.3834
+  parameter/local: counterfactual=0.2524, local=1.1106, geometry_teacher_delta_K=0.534, geometry_fits=4.0
+  compact teacher: fixed_K=17.45, fixed_pass=76.6%, decoded_pass=91.7%, accepted_delta_K=0.809, geometry_violation=0.0030, extra_refits=1553.5, complexity_active=58.1%
+  reachable teacher: checks_total=1081, decoded_pass=98.0%, accepted_delta_K=0.809, geometry_targets_total=285, target_K=18.3, target_pass=94.0%
+  compact mask calibration: targets_total=142, target_K=17.72, count_loss=0.1335, ranking_loss=1.1357; targets require smaller count AND decoded feasibility
+  training families: {'historical': 617, 'simple': 507, 'shape_industrial': 141, 'shape_terrain': 112, 'shape_handwriting': 123}
+  Synthetic: dense=84.8%, deployment=67.2%, MSE=4.871e-05, K=26.90, targetK=14.22, count_MAE=12.68, bias=+12.68, knot_F1@0.01=0.516, param_RMSE=4.499e-02, trust_proposal=0.625, trust_subset=0.298
+  uji_pen_characters_v2: dense=100.0%, deployment=93.8%, MSE=1.865e-05, K=21.28, trust_proposal=0.618, trust_subset=0.296
+  natural_earth_10m_coastline: dense=84.4%, deployment=59.4%, MSE=1.240e-04, K=27.56, trust_proposal=0.670, trust_subset=0.298
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=78.1%, MSE=4.334e-05, K=26.53, trust_proposal=0.615, trust_subset=0.299
+Epoch 015/60 joint_geometry_calibration [........................] 1/47 MSE=4.703e-05 pass=62.5% K=20.8 teacherK=17.9 countMAE=11.88
+Epoch 015/60 joint_geometry_calibration [=====...................] 10/47 MSE=4.552e-05 pass=59.4% K=19.9 teacherK=17.1 countMAE=11.80
+Epoch 015/60 joint_geometry_calibration [==========..............] 20/47 MSE=4.519e-05 pass=59.4% K=17.9 teacherK=15.0 countMAE=10.30
+Epoch 015/60 joint_geometry_calibration [===============.........] 30/47 MSE=2.698e-05 pass=84.4% K=20.2 teacherK=15.9 countMAE=12.12
+Epoch 015/60 joint_geometry_calibration [====================....] 40/47 MSE=5.429e-05 pass=40.6% K=17.5 teacherK=15.6 countMAE=9.91
+Epoch 015/60 joint_geometry_calibration [========================] 47/47 MSE=4.195e-05 pass=64.3% K=20.2 teacherK=17.1 countMAE=11.09
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 015 val dense=85.6% deployment=57.0% worst-source=37.5% MSE=6.468e-05 K=25.59 mass=25.08 beta=-1.59 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: proposal=0.000e+00, selector=2.990e-05, decoder=2.990e-05
+  training teacher: keep_P/R/F1=0.790/0.953/0.863, false_remove=4.7%, refinement_delta_K=0.535, improved=66.3%, extra_fits=9.0, boundary_loss=1.3473
+  parameter/local: counterfactual=0.1698, local=1.1753, geometry_teacher_delta_K=0.505, geometry_fits=4.0
+  compact teacher: fixed_K=16.91, fixed_pass=78.2%, decoded_pass=97.2%, accepted_delta_K=0.764, geometry_violation=0.0018, extra_refits=1326.1, complexity_active=57.8%
+  reachable teacher: checks_total=1043, decoded_pass=98.8%, accepted_delta_K=0.764, geometry_targets_total=292, target_K=17.8, target_pass=96.9%
+  compact mask calibration: targets_total=145, target_K=16.93, count_loss=0.1391, ranking_loss=1.0627; targets require smaller count AND decoded feasibility
+  training families: {'simple': 507, 'historical': 622, 'shape_handwriting': 123, 'shape_terrain': 133, 'shape_industrial': 115}
+  Synthetic: dense=84.8%, deployment=55.6%, MSE=6.109e-05, K=25.99, targetK=14.22, count_MAE=11.77, bias=+11.77, knot_F1@0.01=0.526, param_RMSE=4.510e-02, trust_proposal=0.625, trust_subset=0.328
+  uji_pen_characters_v2: dense=100.0%, deployment=90.6%, MSE=2.230e-05, K=19.56, trust_proposal=0.618, trust_subset=0.323
+  natural_earth_10m_coastline: dense=84.4%, deployment=37.5%, MSE=1.765e-04, K=25.78, trust_proposal=0.670, trust_subset=0.327
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=65.6%, MSE=5.136e-05, K=25.09, trust_proposal=0.615, trust_subset=0.328
+Epoch 016/60 joint_geometry_calibration [........................] 1/47 MSE=5.866e-05 pass=53.1% K=21.0 teacherK=18.6 countMAE=10.88
+Epoch 016/60 joint_geometry_calibration [=====...................] 10/47 MSE=4.685e-05 pass=62.5% K=19.2 teacherK=16.6 countMAE=11.38
+Epoch 016/60 joint_geometry_calibration [==========..............] 20/47 MSE=3.598e-05 pass=68.8% K=18.3 teacherK=14.9 countMAE=11.27
+Epoch 016/60 joint_geometry_calibration [===============.........] 30/47 MSE=4.014e-05 pass=75.0% K=20.3 teacherK=16.6 countMAE=11.24
+Epoch 016/60 joint_geometry_calibration [====================....] 40/47 MSE=3.692e-05 pass=71.9% K=19.9 teacherK=16.6 countMAE=12.13
+Epoch 016/60 joint_geometry_calibration [========================] 47/47 MSE=3.920e-05 pass=60.7% K=19.3 teacherK=16.1 countMAE=11.57
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 016 val dense=85.6% deployment=60.7% worst-source=34.4% MSE=6.129e-05 K=25.32 mass=24.81 beta=-1.46 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: proposal=0.000e+00, selector=2.977e-05, decoder=2.977e-05
+  training teacher: keep_P/R/F1=0.801/0.954/0.871, false_remove=4.6%, refinement_delta_K=0.519, improved=66.1%, extra_fits=9.0, boundary_loss=1.2910
+  parameter/local: counterfactual=0.1864, local=1.1605, geometry_teacher_delta_K=0.513, geometry_fits=4.0
+  compact teacher: fixed_K=16.64, fixed_pass=76.6%, decoded_pass=97.9%, accepted_delta_K=0.699, geometry_violation=0.0006, extra_refits=1221.0, complexity_active=56.2%
+  reachable teacher: checks_total=972, decoded_pass=99.3%, accepted_delta_K=0.699, geometry_targets_total=285, target_K=17.4, target_pass=98.2%
+  compact mask calibration: targets_total=143, target_K=16.65, count_loss=0.1480, ranking_loss=1.0180; targets require smaller count AND decoded feasibility
+  training families: {'historical': 595, 'shape_industrial': 110, 'simple': 551, 'shape_terrain': 126, 'shape_handwriting': 118}
+  Synthetic: dense=84.8%, deployment=60.2%, MSE=5.790e-05, K=25.78, targetK=14.22, count_MAE=11.56, bias=+11.56, knot_F1@0.01=0.530, param_RMSE=4.512e-02, trust_proposal=0.625, trust_subset=0.374
+  uji_pen_characters_v2: dense=100.0%, deployment=90.6%, MSE=2.372e-05, K=19.03, trust_proposal=0.618, trust_subset=0.365
+  natural_earth_10m_coastline: dense=84.4%, deployment=34.4%, MSE=1.518e-04, K=25.25, trust_proposal=0.670, trust_subset=0.372
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=65.6%, MSE=6.127e-05, K=24.50, trust_proposal=0.615, trust_subset=0.375
+Epoch 017/60 joint_geometry_calibration [........................] 1/47 MSE=3.992e-05 pass=65.6% K=18.8 teacherK=15.7 countMAE=10.56
+Epoch 017/60 joint_geometry_calibration [=====...................] 10/47 MSE=4.835e-05 pass=59.4% K=19.9 teacherK=17.1 countMAE=11.38
+Epoch 017/60 joint_geometry_calibration [==========..............] 20/47 MSE=3.431e-05 pass=78.1% K=19.6 teacherK=16.5 countMAE=11.30
+Epoch 017/60 joint_geometry_calibration [===============.........] 30/47 MSE=4.515e-05 pass=65.6% K=18.1 teacherK=16.1 countMAE=10.08
+Epoch 017/60 joint_geometry_calibration [====================....] 40/47 MSE=4.425e-05 pass=62.5% K=19.3 teacherK=17.3 countMAE=11.04
+Epoch 017/60 joint_geometry_calibration [========================] 47/47 MSE=5.478e-05 pass=64.3% K=20.8 teacherK=18.3 countMAE=11.46
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 017 val dense=85.6% deployment=56.4% worst-source=28.1% MSE=6.579e-05 K=24.88 mass=24.36 beta=-1.30 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: proposal=0.000e+00, selector=2.960e-05, decoder=2.960e-05
+  training teacher: keep_P/R/F1=0.801/0.952/0.870, false_remove=4.8%, refinement_delta_K=0.513, improved=65.5%, extra_fits=9.0, boundary_loss=1.2787
+  parameter/local: counterfactual=0.2191, local=1.1436, geometry_teacher_delta_K=0.463, geometry_fits=4.0
+  compact teacher: fixed_K=16.68, fixed_pass=77.7%, decoded_pass=99.5%, accepted_delta_K=0.729, geometry_violation=0.0000, extra_refits=1135.2, complexity_active=57.0%
+  reachable teacher: checks_total=966, decoded_pass=99.9%, accepted_delta_K=0.729, geometry_targets_total=290, target_K=17.6, target_pass=99.7%
+  compact mask calibration: targets_total=144, target_K=16.60, count_loss=0.1323, ranking_loss=1.0114; targets require smaller count AND decoded feasibility
+  training families: {'simple': 522, 'historical': 624, 'shape_handwriting': 108, 'shape_terrain': 117, 'shape_industrial': 129}
+  Synthetic: dense=84.8%, deployment=55.6%, MSE=6.119e-05, K=25.39, targetK=14.22, count_MAE=11.17, bias=+11.17, knot_F1@0.01=0.533, param_RMSE=4.508e-02, trust_proposal=0.625, trust_subset=0.443
+  uji_pen_characters_v2: dense=100.0%, deployment=90.6%, MSE=2.434e-05, K=18.31, trust_proposal=0.618, trust_subset=0.427
+  natural_earth_10m_coastline: dense=84.4%, deployment=28.1%, MSE=1.857e-04, K=24.56, trust_proposal=0.670, trust_subset=0.438
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=62.5%, MSE=5.908e-05, K=23.84, trust_proposal=0.615, trust_subset=0.443
+Epoch 018/60 joint_geometry_calibration [........................] 1/47 MSE=4.003e-05 pass=78.1% K=22.2 teacherK=19.3 countMAE=11.29
+Epoch 018/60 joint_geometry_calibration [=====...................] 10/47 MSE=4.629e-05 pass=56.2% K=19.9 teacherK=17.6 countMAE=11.15
+Epoch 018/60 joint_geometry_calibration [==========..............] 20/47 MSE=4.832e-05 pass=53.1% K=17.5 teacherK=15.3 countMAE=10.27
+Epoch 018/60 joint_geometry_calibration [===============.........] 30/47 MSE=3.153e-05 pass=75.0% K=17.7 teacherK=14.6 countMAE=10.65
+Epoch 018/60 joint_geometry_calibration [====================....] 40/47 MSE=4.628e-05 pass=71.9% K=20.5 teacherK=17.5 countMAE=10.82
+Epoch 018/60 joint_geometry_calibration [========================] 47/47 MSE=3.908e-05 pass=67.9% K=20.0 teacherK=17.0 countMAE=11.10
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 018 val dense=85.6% deployment=57.4% worst-source=31.2% MSE=6.572e-05 K=24.88 mass=24.37 beta=-1.28 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: proposal=0.000e+00, selector=2.938e-05, decoder=2.938e-05
+  training teacher: keep_P/R/F1=0.813/0.953/0.877, false_remove=4.7%, refinement_delta_K=0.527, improved=64.3%, extra_fits=9.0, boundary_loss=1.2416
+  parameter/local: counterfactual=0.1998, local=1.2331, geometry_teacher_delta_K=0.444, geometry_fits=4.0
+  compact teacher: fixed_K=17.02, fixed_pass=76.1%, decoded_pass=98.6%, accepted_delta_K=0.658, geometry_violation=0.0002, extra_refits=1108.1, complexity_active=54.3%
+  reachable teacher: checks_total=991, decoded_pass=99.4%, accepted_delta_K=0.658, geometry_targets_total=286, target_K=17.9, target_pass=98.6%
+  compact mask calibration: targets_total=143, target_K=17.04, count_loss=0.1230, ranking_loss=0.9687; targets require smaller count AND decoded feasibility
+  training families: {'simple': 539, 'historical': 602, 'shape_terrain': 127, 'shape_handwriting': 115, 'shape_industrial': 117}
+  Synthetic: dense=84.8%, deployment=56.4%, MSE=6.134e-05, K=25.39, targetK=14.22, count_MAE=11.17, bias=+11.17, knot_F1@0.01=0.533, param_RMSE=4.515e-02, trust_proposal=0.625, trust_subset=0.520
+  uji_pen_characters_v2: dense=100.0%, deployment=90.6%, MSE=2.412e-05, K=18.44, trust_proposal=0.618, trust_subset=0.498
+  natural_earth_10m_coastline: dense=84.4%, deployment=31.2%, MSE=1.847e-04, K=24.56, trust_proposal=0.670, trust_subset=0.512
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=65.6%, MSE=5.679e-05, K=23.75, trust_proposal=0.615, trust_subset=0.520
+Epoch 019/60 joint [........................] 1/47 MSE=3.136e-05 pass=71.9% K=19.2 teacherK=16.3 countMAE=10.85
+Epoch 019/60 joint [=====...................] 10/47 MSE=3.860e-05 pass=59.4% K=17.8 teacherK=15.5 countMAE=10.30
+Epoch 019/60 joint [==========..............] 20/47 MSE=4.406e-05 pass=59.4% K=22.1 teacherK=20.0 countMAE=11.08
+Epoch 019/60 joint [===============.........] 30/47 MSE=3.890e-05 pass=68.8% K=18.8 teacherK=15.5 countMAE=11.12
+Epoch 019/60 joint [====================....] 40/47 MSE=5.211e-05 pass=71.9% K=18.2 teacherK=15.8 countMAE=10.96
+Epoch 019/60 joint [========================] 47/47 MSE=4.443e-05 pass=71.4% K=20.7 teacherK=18.1 countMAE=10.77
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 019 val dense=85.6% deployment=56.4% worst-source=34.4% MSE=6.690e-05 K=24.63 mass=24.13 beta=-1.22 complexity=0.00->0.25 safety=0+0.00sigma scale=1.00->0.75 target_met=False
+  learning rates: proposal=2.911e-06, selector=2.911e-05, decoder=2.911e-05
+  training teacher: keep_P/R/F1=0.805/0.952/0.872, false_remove=4.8%, refinement_delta_K=0.499, improved=64.5%, extra_fits=9.0, boundary_loss=1.2623
+  parameter/local: counterfactual=0.1806, local=1.2087, geometry_teacher_delta_K=0.467, geometry_fits=4.0
+  compact teacher: fixed_K=16.29, fixed_pass=79.3%, decoded_pass=96.6%, accepted_delta_K=0.674, geometry_violation=0.0002, extra_refits=1058.5, complexity_active=55.1%
+  reachable teacher: checks_total=966, decoded_pass=99.3%, accepted_delta_K=0.674, geometry_targets_total=293, target_K=17.1, target_pass=98.0%
+  compact mask calibration: targets_total=146, target_K=16.37, count_loss=0.1259, ranking_loss=0.9434; targets require smaller count AND decoded feasibility
+  training families: {'simple': 533, 'shape_handwriting': 134, 'historical': 593, 'shape_industrial': 119, 'shape_terrain': 121}
+  Synthetic: dense=85.0%, deployment=55.0%, MSE=6.254e-05, K=25.13, targetK=14.22, count_MAE=10.91, bias=+10.91, knot_F1@0.01=0.536, param_RMSE=4.500e-02, trust_proposal=0.629, trust_subset=0.574
+  uji_pen_characters_v2: dense=100.0%, deployment=90.6%, MSE=2.224e-05, K=18.31, trust_proposal=0.621, trust_subset=0.548
+  natural_earth_10m_coastline: dense=81.2%, deployment=34.4%, MSE=1.893e-04, K=24.34, trust_proposal=0.673, trust_subset=0.563
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=65.6%, MSE=5.718e-05, K=23.47, trust_proposal=0.618, trust_subset=0.573
+Epoch 020/60 joint [........................] 1/47 MSE=3.971e-05 pass=62.5% K=18.9 teacherK=16.3 countMAE=10.86
+Epoch 020/60 joint [=====...................] 10/47 MSE=5.306e-05 pass=62.5% K=17.5 teacherK=14.9 countMAE=9.58
+Epoch 020/60 joint [==========..............] 20/47 MSE=3.625e-05 pass=68.8% K=18.8 teacherK=16.1 countMAE=10.58
+Epoch 020/60 joint [===============.........] 30/47 MSE=2.866e-05 pass=78.1% K=18.2 teacherK=14.8 countMAE=10.58
+Epoch 020/60 joint [====================....] 40/47 MSE=4.908e-05 pass=53.1% K=19.5 teacherK=17.7 countMAE=10.54
+Epoch 020/60 joint [========================] 47/47 MSE=4.809e-05 pass=64.3% K=21.9 teacherK=19.3 countMAE=11.13
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 020 val dense=85.6% deployment=58.7% worst-source=37.5% MSE=6.596e-05 K=24.61 mass=24.11 beta=-1.21 complexity=0.25->0.50 safety=0+0.00sigma scale=0.75->0.50 target_met=False
+  learning rates: proposal=2.879e-06, selector=2.879e-05, decoder=2.879e-05
+  training teacher: keep_P/R/F1=0.805/0.953/0.873, false_remove=4.7%, refinement_delta_K=0.502, improved=64.3%, extra_fits=9.0, boundary_loss=1.2506
+  parameter/local: counterfactual=0.2255, local=1.1248, geometry_teacher_delta_K=0.449, geometry_fits=4.0
+  compact teacher: fixed_K=16.71, fixed_pass=77.1%, decoded_pass=97.9%, accepted_delta_K=0.656, geometry_violation=0.0006, extra_refits=1023.4, complexity_active=55.1%
+  reachable teacher: checks_total=946, decoded_pass=99.4%, accepted_delta_K=0.656, geometry_targets_total=289, target_K=17.6, target_pass=98.3%
+  compact mask calibration: targets_total=145, target_K=16.74, count_loss=0.1149, ranking_loss=0.9465; targets require smaller count AND decoded feasibility
+  training families: {'shape_terrain': 135, 'historical': 578, 'simple': 529, 'shape_handwriting': 113, 'shape_industrial': 145}
+  Synthetic: dense=85.2%, deployment=57.4%, MSE=6.137e-05, K=25.10, targetK=14.22, count_MAE=10.89, bias=+10.89, knot_F1@0.01=0.536, param_RMSE=4.512e-02, trust_proposal=0.632, trust_subset=0.623
+  uji_pen_characters_v2: dense=100.0%, deployment=90.6%, MSE=2.256e-05, K=18.25, trust_proposal=0.624, trust_subset=0.593
+  natural_earth_10m_coastline: dense=78.1%, deployment=37.5%, MSE=1.897e-04, K=24.34, trust_proposal=0.676, trust_subset=0.610
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=68.8%, MSE=5.743e-05, K=23.47, trust_proposal=0.621, trust_subset=0.621
+Epoch 021/60 joint [........................] 1/47 MSE=3.032e-05 pass=71.9% K=19.2 teacherK=15.9 countMAE=11.04
+Epoch 021/60 joint [=====...................] 10/47 MSE=3.524e-05 pass=71.9% K=17.6 teacherK=15.7 countMAE=10.14
+Epoch 021/60 joint [==========..............] 20/47 MSE=4.848e-05 pass=53.1% K=22.1 teacherK=20.3 countMAE=10.81
+Epoch 021/60 joint [===============.........] 30/47 MSE=3.234e-05 pass=75.0% K=19.0 teacherK=15.9 countMAE=11.09
+Epoch 021/60 joint [====================....] 40/47 MSE=5.141e-05 pass=59.4% K=17.3 teacherK=15.7 countMAE=10.13
+Epoch 021/60 joint [========================] 47/47 MSE=4.464e-05 pass=60.7% K=20.2 teacherK=17.7 countMAE=10.17
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 021 val dense=85.4% deployment=52.2% worst-source=31.2% MSE=6.944e-05 K=24.42 mass=23.91 beta=-1.16 complexity=0.50->0.75 safety=0+0.00sigma scale=0.50->0.25 target_met=False
+  learning rates: proposal=2.843e-06, selector=2.843e-05, decoder=2.843e-05
+  training teacher: keep_P/R/F1=0.811/0.959/0.879, false_remove=4.1%, refinement_delta_K=0.535, improved=68.7%, extra_fits=9.0, boundary_loss=1.2459
+  parameter/local: counterfactual=0.2061, local=1.0942, geometry_teacher_delta_K=0.453, geometry_fits=4.0
+  compact teacher: fixed_K=16.82, fixed_pass=77.1%, decoded_pass=96.4%, accepted_delta_K=0.663, geometry_violation=0.0007, extra_refits=1066.6, complexity_active=57.1%
+  reachable teacher: checks_total=986, decoded_pass=98.4%, accepted_delta_K=0.663, geometry_targets_total=286, target_K=17.7, target_pass=96.2%
+  compact mask calibration: targets_total=144, target_K=17.01, count_loss=0.0976, ranking_loss=0.9420; targets require smaller count AND decoded feasibility
+  training families: {'historical': 607, 'simple': 546, 'shape_handwriting': 123, 'shape_terrain': 122, 'shape_industrial': 102}
+  Synthetic: dense=85.0%, deployment=50.2%, MSE=6.609e-05, K=24.93, targetK=14.22, count_MAE=10.71, bias=+10.71, knot_F1@0.01=0.540, param_RMSE=4.505e-02, trust_proposal=0.635, trust_subset=0.675
+  uji_pen_characters_v2: dense=100.0%, deployment=90.6%, MSE=2.564e-05, K=17.97, trust_proposal=0.627, trust_subset=0.641
+  natural_earth_10m_coastline: dense=78.1%, deployment=31.2%, MSE=1.741e-04, K=24.12, trust_proposal=0.679, trust_subset=0.661
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=65.6%, MSE=6.093e-05, K=23.22, trust_proposal=0.624, trust_subset=0.673
+Epoch 022/60 joint [........................] 1/47 MSE=2.882e-05 pass=81.2% K=19.1 teacherK=16.0 countMAE=10.42
+Epoch 022/60 joint [=====...................] 10/47 MSE=4.314e-05 pass=65.6% K=17.8 teacherK=16.0 countMAE=10.54
+Epoch 022/60 joint [==========..............] 20/47 MSE=3.616e-05 pass=62.5% K=17.8 teacherK=15.2 countMAE=10.67
+Epoch 022/60 joint [===============.........] 30/47 MSE=4.413e-05 pass=62.5% K=19.1 teacherK=17.2 countMAE=10.09
+Epoch 022/60 joint [====================....] 40/47 MSE=4.898e-05 pass=65.6% K=19.2 teacherK=16.7 countMAE=9.88
+Epoch 022/60 joint [========================] 47/47 MSE=3.659e-05 pass=71.4% K=15.4 teacherK=13.2 countMAE=9.55
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 022 val dense=85.4% deployment=53.7% worst-source=31.2% MSE=6.962e-05 K=24.35 mass=23.86 beta=-1.13 complexity=0.75->1.00 safety=0+0.00sigma scale=0.25->0.00 target_met=False
+  learning rates: proposal=2.802e-06, selector=2.802e-05, decoder=2.802e-05
+  training teacher: keep_P/R/F1=0.810/0.955/0.876, false_remove=4.5%, refinement_delta_K=0.491, improved=64.7%, extra_fits=9.0, boundary_loss=1.2369
+  parameter/local: counterfactual=0.2355, local=1.0432, geometry_teacher_delta_K=0.446, geometry_fits=4.0
+  compact teacher: fixed_K=16.05, fixed_pass=77.7%, decoded_pass=97.9%, accepted_delta_K=0.661, geometry_violation=0.0003, extra_refits=1014.5, complexity_active=57.0%
+  reachable teacher: checks_total=947, decoded_pass=99.4%, accepted_delta_K=0.661, geometry_targets_total=288, target_K=17.0, target_pass=99.0%
+  compact mask calibration: targets_total=145, target_K=16.08, count_loss=0.1252, ranking_loss=0.9146; targets require smaller count AND decoded feasibility
+  training families: {'shape_terrain': 119, 'simple': 530, 'historical': 596, 'shape_handwriting': 123, 'shape_industrial': 132}
+  Synthetic: dense=85.0%, deployment=52.2%, MSE=6.630e-05, K=24.87, targetK=14.22, count_MAE=10.66, bias=+10.66, knot_F1@0.01=0.540, param_RMSE=4.505e-02, trust_proposal=0.638, trust_subset=0.726
+  uji_pen_characters_v2: dense=100.0%, deployment=90.6%, MSE=2.599e-05, K=17.75, trust_proposal=0.630, trust_subset=0.690
+  natural_earth_10m_coastline: dense=78.1%, deployment=31.2%, MSE=1.747e-04, K=23.94, trust_proposal=0.682, trust_subset=0.710
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=62.5%, MSE=5.999e-05, K=23.16, trust_proposal=0.628, trust_subset=0.723
+Epoch 023/60 joint [........................] 1/47 MSE=4.419e-05 pass=65.6% K=17.8 teacherK=15.5 countMAE=9.45
+Epoch 023/60 joint [=====...................] 10/47 MSE=3.790e-05 pass=68.8% K=17.4 teacherK=15.1 countMAE=10.22
+Epoch 023/60 joint [==========..............] 20/47 MSE=4.908e-05 pass=56.2% K=18.9 teacherK=16.2 countMAE=10.43
+Epoch 023/60 joint [===============.........] 30/47 MSE=4.848e-05 pass=50.0% K=17.8 teacherK=15.3 countMAE=10.32
+Epoch 023/60 joint [====================....] 40/47 MSE=3.283e-05 pass=78.1% K=15.6 teacherK=12.9 countMAE=9.48
+Epoch 023/60 joint [========================] 47/47 MSE=4.669e-05 pass=75.0% K=21.6 teacherK=18.6 countMAE=11.14
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 023 val dense=85.6% deployment=55.5% worst-source=37.5% MSE=6.782e-05 K=24.36 mass=23.89 beta=-1.13 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=2.758e-06, selector=2.758e-05, decoder=2.758e-05
+  training teacher: keep_P/R/F1=0.805/0.950/0.871, false_remove=5.0%, refinement_delta_K=0.506, improved=65.0%, extra_fits=9.0, boundary_loss=1.2112
+  parameter/local: counterfactual=0.2891, local=1.2061, geometry_teacher_delta_K=0.413, geometry_fits=4.0
+  compact teacher: fixed_K=16.36, fixed_pass=78.2%, decoded_pass=98.6%, accepted_delta_K=0.691, geometry_violation=0.0001, extra_refits=1006.5, complexity_active=53.9%
+  reachable teacher: checks_total=936, decoded_pass=99.7%, accepted_delta_K=0.691, geometry_targets_total=291, target_K=17.3, target_pass=99.0%
+  compact mask calibration: targets_total=146, target_K=16.34, count_loss=0.1080, ranking_loss=0.9294; targets require smaller count AND decoded feasibility
+  training families: {'historical': 615, 'shape_handwriting': 148, 'shape_industrial': 142, 'simple': 477, 'shape_terrain': 118}
+  Synthetic: dense=85.2%, deployment=54.2%, MSE=6.459e-05, K=24.89, targetK=14.22, count_MAE=10.68, bias=+10.68, knot_F1@0.01=0.540, param_RMSE=4.509e-02, trust_proposal=0.642, trust_subset=0.771
+  uji_pen_characters_v2: dense=100.0%, deployment=87.5%, MSE=2.413e-05, K=17.75, trust_proposal=0.633, trust_subset=0.735
+  natural_earth_10m_coastline: dense=78.1%, deployment=37.5%, MSE=1.678e-04, K=23.94, trust_proposal=0.685, trust_subset=0.755
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=62.5%, MSE=6.217e-05, K=23.09, trust_proposal=0.631, trust_subset=0.768
+Epoch 024/60 joint [........................] 1/47 MSE=4.390e-05 pass=59.4% K=18.8 teacherK=16.4 countMAE=10.54
+Epoch 024/60 joint [=====...................] 10/47 MSE=4.728e-05 pass=68.8% K=19.3 teacherK=16.3 countMAE=9.91
+Epoch 024/60 joint [==========..............] 20/47 MSE=3.931e-05 pass=62.5% K=17.9 teacherK=15.7 countMAE=10.27
+Epoch 024/60 joint [===============.........] 30/47 MSE=4.594e-05 pass=62.5% K=17.8 teacherK=15.9 countMAE=10.00
+Epoch 024/60 joint [====================....] 40/47 MSE=4.355e-05 pass=65.6% K=18.0 teacherK=15.3 countMAE=10.25
+Epoch 024/60 joint [========================] 47/47 MSE=6.687e-05 pass=32.1% K=21.0 teacherK=20.2 countMAE=10.15
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 024 val dense=85.7% deployment=46.6% worst-source=31.2% MSE=7.460e-05 K=24.00 mass=23.50 beta=-1.04 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=2.709e-06, selector=2.709e-05, decoder=2.709e-05
+  training teacher: keep_P/R/F1=0.810/0.954/0.876, false_remove=4.6%, refinement_delta_K=0.521, improved=64.7%, extra_fits=9.0, boundary_loss=1.2122
+  parameter/local: counterfactual=0.2390, local=1.1054, geometry_teacher_delta_K=0.429, geometry_fits=4.0
+  compact teacher: fixed_K=16.87, fixed_pass=80.3%, decoded_pass=96.6%, accepted_delta_K=0.665, geometry_violation=0.0008, extra_refits=1033.5, complexity_active=55.5%
+  reachable teacher: checks_total=987, decoded_pass=98.7%, accepted_delta_K=0.665, geometry_targets_total=296, target_K=17.6, target_pass=96.6%
+  compact mask calibration: targets_total=146, target_K=16.81, count_loss=0.0935, ranking_loss=0.9182; targets require smaller count AND decoded feasibility
+  training families: {'historical': 615, 'simple': 501, 'shape_handwriting': 138, 'shape_terrain': 127, 'shape_industrial': 119}
+  Synthetic: dense=85.4%, deployment=44.0%, MSE=7.200e-05, K=24.56, targetK=14.22, count_MAE=10.34, bias=+10.34, knot_F1@0.01=0.543, param_RMSE=4.504e-02, trust_proposal=0.645, trust_subset=0.806
+  uji_pen_characters_v2: dense=100.0%, deployment=87.5%, MSE=2.541e-05, K=17.19, trust_proposal=0.636, trust_subset=0.770
+  natural_earth_10m_coastline: dense=78.1%, deployment=31.2%, MSE=1.735e-04, K=23.50, trust_proposal=0.688, trust_subset=0.790
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=62.5%, MSE=6.547e-05, K=22.59, trust_proposal=0.634, trust_subset=0.803
+Epoch 025/60 joint [........................] 1/47 MSE=6.315e-05 pass=56.2% K=18.1 teacherK=16.0 countMAE=9.92
+Epoch 025/60 joint [=====...................] 10/47 MSE=2.471e-05 pass=78.1% K=16.9 teacherK=13.6 countMAE=10.86
+Epoch 025/60 joint [==========..............] 20/47 MSE=4.688e-05 pass=65.6% K=17.9 teacherK=16.0 countMAE=10.44
+Epoch 025/60 joint [===============.........] 30/47 MSE=3.998e-05 pass=68.8% K=18.3 teacherK=16.0 countMAE=10.17
+Epoch 025/60 joint [====================....] 40/47 MSE=2.800e-05 pass=78.1% K=17.8 teacherK=14.6 countMAE=11.26
+Epoch 025/60 joint [========================] 47/47 MSE=3.941e-05 pass=64.3% K=19.0 teacherK=16.5 countMAE=10.32
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 025 val dense=86.1% deployment=57.7% worst-source=34.4% MSE=6.327e-05 K=24.42 mass=23.92 beta=-1.13 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=2.657e-06, selector=2.657e-05, decoder=2.657e-05
+  training teacher: keep_P/R/F1=0.810/0.959/0.878, false_remove=4.1%, refinement_delta_K=0.499, improved=64.2%, extra_fits=9.0, boundary_loss=1.1970
+  parameter/local: counterfactual=0.2248, local=1.0848, geometry_teacher_delta_K=0.417, geometry_fits=4.0
+  compact teacher: fixed_K=16.93, fixed_pass=78.2%, decoded_pass=96.6%, accepted_delta_K=0.651, geometry_violation=0.0005, extra_refits=1037.1, complexity_active=58.2%
+  reachable teacher: checks_total=977, decoded_pass=99.0%, accepted_delta_K=0.651, geometry_targets_total=290, target_K=17.8, target_pass=97.6%
+  compact mask calibration: targets_total=145, target_K=16.95, count_loss=0.0982, ranking_loss=0.9243; targets require smaller count AND decoded feasibility
+  training families: {'shape_terrain': 124, 'historical': 631, 'simple': 509, 'shape_handwriting': 114, 'shape_industrial': 122}
+  Synthetic: dense=85.8%, deployment=56.8%, MSE=5.923e-05, K=24.95, targetK=14.22, count_MAE=10.73, bias=+10.73, knot_F1@0.01=0.542, param_RMSE=4.506e-02, trust_proposal=0.647, trust_subset=0.837
+  uji_pen_characters_v2: dense=100.0%, deployment=87.5%, MSE=2.379e-05, K=17.81, trust_proposal=0.638, trust_subset=0.803
+  natural_earth_10m_coastline: dense=78.1%, deployment=34.4%, MSE=1.669e-04, K=24.06, trust_proposal=0.690, trust_subset=0.821
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=65.6%, MSE=6.210e-05, K=23.16, trust_proposal=0.636, trust_subset=0.834
+Epoch 026/60 joint [........................] 1/47 MSE=4.650e-05 pass=65.6% K=19.1 teacherK=16.7 countMAE=9.94
+Epoch 026/60 joint [=====...................] 10/47 MSE=4.495e-05 pass=59.4% K=16.7 teacherK=14.8 countMAE=9.91
+Epoch 026/60 joint [==========..............] 20/47 MSE=4.305e-05 pass=65.6% K=17.6 teacherK=15.8 countMAE=10.04
+Epoch 026/60 joint [===============.........] 30/47 MSE=5.132e-05 pass=46.9% K=19.7 teacherK=17.7 countMAE=10.29
+Epoch 026/60 joint [====================....] 40/47 MSE=4.310e-05 pass=65.6% K=18.3 teacherK=16.1 countMAE=9.88
+Epoch 026/60 joint [========================] 47/47 MSE=5.035e-05 pass=53.6% K=19.4 teacherK=17.5 countMAE=10.56
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 026 val dense=86.2% deployment=52.0% worst-source=34.4% MSE=6.945e-05 K=24.13 mass=23.63 beta=-1.06 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=2.601e-06, selector=2.601e-05, decoder=2.601e-05
+  training teacher: keep_P/R/F1=0.809/0.952/0.874, false_remove=4.8%, refinement_delta_K=0.493, improved=64.7%, extra_fits=9.0, boundary_loss=1.1806
+  parameter/local: counterfactual=0.2538, local=1.0689, geometry_teacher_delta_K=0.403, geometry_fits=4.0
+  compact teacher: fixed_K=16.74, fixed_pass=78.2%, decoded_pass=95.7%, accepted_delta_K=0.656, geometry_violation=0.0008, extra_refits=1030.5, complexity_active=55.3%
+  reachable teacher: checks_total=968, decoded_pass=99.2%, accepted_delta_K=0.656, geometry_targets_total=291, target_K=17.6, target_pass=97.3%
+  compact mask calibration: targets_total=144, target_K=16.75, count_loss=0.1006, ranking_loss=0.9007; targets require smaller count AND decoded feasibility
+  training families: {'shape_industrial': 136, 'shape_terrain': 128, 'simple': 542, 'historical': 560, 'shape_handwriting': 134}
+  Synthetic: dense=86.0%, deployment=50.4%, MSE=6.587e-05, K=24.68, targetK=14.22, count_MAE=10.46, bias=+10.46, knot_F1@0.01=0.542, param_RMSE=4.508e-02, trust_proposal=0.649, trust_subset=0.863
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.548e-05, K=17.38, trust_proposal=0.641, trust_subset=0.829
+  natural_earth_10m_coastline: dense=78.1%, deployment=34.4%, MSE=1.747e-04, K=23.59, trust_proposal=0.693, trust_subset=0.848
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=62.5%, MSE=6.407e-05, K=22.84, trust_proposal=0.639, trust_subset=0.859
+Epoch 027/60 joint [........................] 1/47 MSE=3.333e-05 pass=78.1% K=18.3 teacherK=15.6 countMAE=9.27
+Epoch 027/60 joint [=====...................] 10/47 MSE=3.176e-05 pass=78.1% K=15.6 teacherK=13.1 countMAE=9.79
+Epoch 027/60 joint [==========..............] 20/47 MSE=3.288e-05 pass=75.0% K=16.9 teacherK=14.4 countMAE=10.26
+Epoch 027/60 joint [===============.........] 30/47 MSE=4.875e-05 pass=59.4% K=17.6 teacherK=15.6 countMAE=9.74
+Epoch 027/60 joint [====================....] 40/47 MSE=3.781e-05 pass=65.6% K=18.0 teacherK=15.8 countMAE=9.60
+Epoch 027/60 joint [========================] 47/47 MSE=8.653e-05 pass=28.6% K=22.4 teacherK=21.4 countMAE=9.81
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 027 val dense=86.2% deployment=54.0% worst-source=31.2% MSE=6.863e-05 K=24.13 mass=23.66 beta=-1.03 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=2.542e-06, selector=2.542e-05, decoder=2.542e-05
+  training teacher: keep_P/R/F1=0.811/0.955/0.877, false_remove=4.5%, refinement_delta_K=0.478, improved=63.2%, extra_fits=9.0, boundary_loss=1.1808
+  parameter/local: counterfactual=0.2213, local=1.0458, geometry_teacher_delta_K=0.429, geometry_fits=4.0
+  compact teacher: fixed_K=16.75, fixed_pass=77.7%, decoded_pass=97.9%, accepted_delta_K=0.656, geometry_violation=0.0004, extra_refits=992.7, complexity_active=55.9%
+  reachable teacher: checks_total=954, decoded_pass=98.8%, accepted_delta_K=0.656, geometry_targets_total=290, target_K=17.6, target_pass=97.2%
+  compact mask calibration: targets_total=145, target_K=16.77, count_loss=0.1062, ranking_loss=0.9112; targets require smaller count AND decoded feasibility
+  training families: {'historical': 588, 'shape_terrain': 111, 'simple': 548, 'shape_handwriting': 126, 'shape_industrial': 127}
+  Synthetic: dense=86.0%, deployment=52.8%, MSE=6.483e-05, K=24.70, targetK=14.22, count_MAE=10.48, bias=+10.48, knot_F1@0.01=0.542, param_RMSE=4.510e-02, trust_proposal=0.653, trust_subset=0.885
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.595e-05, K=17.19, trust_proposal=0.644, trust_subset=0.854
+  natural_earth_10m_coastline: dense=78.1%, deployment=31.2%, MSE=1.740e-04, K=23.62, trust_proposal=0.696, trust_subset=0.871
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=65.6%, MSE=6.533e-05, K=22.78, trust_proposal=0.642, trust_subset=0.882
+Epoch 028/60 joint [........................] 1/47 MSE=3.282e-05 pass=81.2% K=19.2 teacherK=16.3 countMAE=10.81
+Epoch 028/60 joint [=====...................] 10/47 MSE=3.064e-05 pass=78.1% K=15.5 teacherK=12.9 countMAE=9.90
+Epoch 028/60 joint [==========..............] 20/47 MSE=4.066e-05 pass=65.6% K=19.9 teacherK=17.1 countMAE=10.56
+Epoch 028/60 joint [===============.........] 30/47 MSE=4.018e-05 pass=68.8% K=18.9 teacherK=16.2 countMAE=10.78
+Epoch 028/60 joint [====================....] 40/47 MSE=4.389e-05 pass=59.4% K=19.7 teacherK=17.2 countMAE=10.18
+Epoch 028/60 joint [========================] 47/47 MSE=3.641e-05 pass=64.3% K=18.4 teacherK=16.2 countMAE=10.32
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 028 val dense=85.9% deployment=55.9% worst-source=34.4% MSE=6.572e-05 K=24.21 mass=23.71 beta=-1.09 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=2.480e-06, selector=2.480e-05, decoder=2.480e-05
+  training teacher: keep_P/R/F1=0.819/0.957/0.882, false_remove=4.3%, refinement_delta_K=0.482, improved=63.4%, extra_fits=9.0, boundary_loss=1.1757
+  parameter/local: counterfactual=0.2217, local=1.0624, geometry_teacher_delta_K=0.436, geometry_fits=4.0
+  compact teacher: fixed_K=16.75, fixed_pass=79.2%, decoded_pass=94.7%, accepted_delta_K=0.637, geometry_violation=0.0008, extra_refits=1032.1, complexity_active=57.4%
+  reachable teacher: checks_total=982, decoded_pass=98.6%, accepted_delta_K=0.637, geometry_targets_total=294, target_K=17.5, target_pass=95.9%
+  compact mask calibration: targets_total=147, target_K=16.88, count_loss=0.0986, ranking_loss=0.8827; targets require smaller count AND decoded feasibility
+  training families: {'shape_terrain': 127, 'historical': 612, 'shape_industrial': 107, 'simple': 539, 'shape_handwriting': 115}
+  Synthetic: dense=85.6%, deployment=54.8%, MSE=6.159e-05, K=24.76, targetK=14.22, count_MAE=10.54, bias=+10.54, knot_F1@0.01=0.545, param_RMSE=4.509e-02, trust_proposal=0.655, trust_subset=0.903
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.607e-05, K=17.38, trust_proposal=0.647, trust_subset=0.873
+  natural_earth_10m_coastline: dense=78.1%, deployment=34.4%, MSE=1.726e-04, K=23.66, trust_proposal=0.698, trust_subset=0.890
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=65.6%, MSE=6.293e-05, K=23.00, trust_proposal=0.645, trust_subset=0.900
+Epoch 029/60 joint [........................] 1/47 MSE=3.465e-05 pass=71.9% K=17.5 teacherK=15.1 countMAE=10.11
+Epoch 029/60 joint [=====...................] 10/47 MSE=3.401e-05 pass=71.9% K=19.5 teacherK=16.9 countMAE=10.54
+Epoch 029/60 joint [==========..............] 20/47 MSE=3.549e-05 pass=71.9% K=16.5 teacherK=13.6 countMAE=10.00
+Epoch 029/60 joint [===============.........] 30/47 MSE=3.843e-05 pass=65.6% K=21.4 teacherK=18.9 countMAE=10.96
+Epoch 029/60 joint [====================....] 40/47 MSE=3.319e-05 pass=84.4% K=19.2 teacherK=15.9 countMAE=10.87
+Epoch 029/60 joint [========================] 47/47 MSE=4.788e-05 pass=53.6% K=17.8 teacherK=16.1 countMAE=9.11
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 029 val dense=86.1% deployment=53.5% worst-source=25.0% MSE=6.728e-05 K=24.10 mass=23.61 beta=-1.05 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=2.416e-06, selector=2.416e-05, decoder=2.416e-05
+  training teacher: keep_P/R/F1=0.808/0.959/0.877, false_remove=4.1%, refinement_delta_K=0.496, improved=62.3%, extra_fits=9.0, boundary_loss=1.1581
+  parameter/local: counterfactual=0.2183, local=1.0419, geometry_teacher_delta_K=0.425, geometry_fits=4.0
+  compact teacher: fixed_K=16.81, fixed_pass=76.1%, decoded_pass=95.7%, accepted_delta_K=0.628, geometry_violation=0.0012, extra_refits=1003.1, complexity_active=57.6%
+  reachable teacher: checks_total=967, decoded_pass=98.9%, accepted_delta_K=0.628, geometry_targets_total=284, target_K=17.7, target_pass=96.8%
+  compact mask calibration: targets_total=142, target_K=16.94, count_loss=0.0882, ranking_loss=0.8896; targets require smaller count AND decoded feasibility
+  training families: {'shape_handwriting': 117, 'simple': 512, 'historical': 612, 'shape_terrain': 131, 'shape_industrial': 128}
+  Synthetic: dense=85.8%, deployment=52.6%, MSE=6.328e-05, K=24.66, targetK=14.22, count_MAE=10.44, bias=+10.44, knot_F1@0.01=0.544, param_RMSE=4.498e-02, trust_proposal=0.658, trust_subset=0.917
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.517e-05, K=17.22, trust_proposal=0.649, trust_subset=0.888
+  natural_earth_10m_coastline: dense=78.1%, deployment=25.0%, MSE=1.737e-04, K=23.59, trust_proposal=0.701, trust_subset=0.904
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=65.6%, MSE=6.545e-05, K=22.69, trust_proposal=0.648, trust_subset=0.913
+Epoch 030/60 joint [........................] 1/47 MSE=2.878e-05 pass=75.0% K=18.4 teacherK=15.3 countMAE=10.91
+Epoch 030/60 joint [=====...................] 10/47 MSE=3.524e-05 pass=75.0% K=18.0 teacherK=15.4 countMAE=9.92
+Epoch 030/60 joint [==========..............] 20/47 MSE=4.612e-05 pass=59.4% K=17.8 teacherK=16.0 countMAE=10.12
+Epoch 030/60 joint [===============.........] 30/47 MSE=3.946e-05 pass=68.8% K=17.4 teacherK=14.7 countMAE=10.52
+Epoch 030/60 joint [====================....] 40/47 MSE=2.604e-05 pass=84.4% K=15.5 teacherK=13.0 countMAE=9.36
+Epoch 030/60 joint [========================] 47/47 MSE=5.283e-05 pass=57.1% K=17.2 teacherK=15.2 countMAE=9.67
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 030 val dense=86.1% deployment=52.9% worst-source=25.0% MSE=6.938e-05 K=23.93 mass=23.44 beta=-1.01 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=2.349e-06, selector=2.349e-05, decoder=2.349e-05
+  training teacher: keep_P/R/F1=0.811/0.960/0.879, false_remove=4.0%, refinement_delta_K=0.474, improved=61.9%, extra_fits=9.0, boundary_loss=1.1717
+  parameter/local: counterfactual=0.1880, local=0.9869, geometry_teacher_delta_K=0.436, geometry_fits=4.0
+  compact teacher: fixed_K=16.95, fixed_pass=78.2%, decoded_pass=96.6%, accepted_delta_K=0.623, geometry_violation=0.0008, extra_refits=1031.9, complexity_active=60.9%
+  reachable teacher: checks_total=1012, decoded_pass=98.8%, accepted_delta_K=0.623, geometry_targets_total=289, target_K=17.6, target_pass=96.5%
+  compact mask calibration: targets_total=145, target_K=16.84, count_loss=0.0892, ranking_loss=0.8823; targets require smaller count AND decoded feasibility
+  training families: {'historical': 589, 'shape_terrain': 147, 'simple': 526, 'shape_industrial': 114, 'shape_handwriting': 124}
+  Synthetic: dense=85.8%, deployment=51.8%, MSE=6.544e-05, K=24.52, targetK=14.22, count_MAE=10.30, bias=+10.30, knot_F1@0.01=0.546, param_RMSE=4.496e-02, trust_proposal=0.661, trust_subset=0.926
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.752e-05, K=16.97, trust_proposal=0.652, trust_subset=0.899
+  natural_earth_10m_coastline: dense=78.1%, deployment=25.0%, MSE=1.744e-04, K=23.31, trust_proposal=0.703, trust_subset=0.914
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=65.6%, MSE=6.779e-05, K=22.28, trust_proposal=0.650, trust_subset=0.923
+Epoch 031/60 joint [........................] 1/47 MSE=4.189e-05 pass=62.5% K=17.1 teacherK=14.8 countMAE=10.59
+Epoch 031/60 joint [=====...................] 10/47 MSE=4.071e-05 pass=71.9% K=16.8 teacherK=13.7 countMAE=10.24
+Epoch 031/60 joint [==========..............] 20/47 MSE=3.709e-05 pass=65.6% K=19.2 teacherK=16.2 countMAE=11.20
+Epoch 031/60 joint [===============.........] 30/47 MSE=4.027e-05 pass=71.9% K=19.2 teacherK=16.9 countMAE=10.07
+Epoch 031/60 joint [====================....] 40/47 MSE=3.797e-05 pass=59.4% K=19.8 teacherK=17.1 countMAE=10.39
+Epoch 031/60 joint [========================] 47/47 MSE=4.536e-05 pass=64.3% K=18.4 teacherK=16.4 countMAE=9.95
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 031 val dense=85.9% deployment=58.2% worst-source=28.1% MSE=6.319e-05 K=24.25 mass=23.74 beta=-1.09 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=2.279e-06, selector=2.279e-05, decoder=2.279e-05
+  training teacher: keep_P/R/F1=0.813/0.957/0.879, false_remove=4.3%, refinement_delta_K=0.452, improved=60.9%, extra_fits=9.0, boundary_loss=1.1880
+  parameter/local: counterfactual=0.2249, local=1.0533, geometry_teacher_delta_K=0.424, geometry_fits=4.0
+  compact teacher: fixed_K=16.22, fixed_pass=78.7%, decoded_pass=96.4%, accepted_delta_K=0.662, geometry_violation=0.0007, extra_refits=962.7, complexity_active=56.7%
+  reachable teacher: checks_total=935, decoded_pass=98.9%, accepted_delta_K=0.662, geometry_targets_total=292, target_K=17.0, target_pass=97.3%
+  compact mask calibration: targets_total=146, target_K=16.27, count_loss=0.0948, ranking_loss=0.8744; targets require smaller count AND decoded feasibility
+  training families: {'historical': 619, 'simple': 516, 'shape_terrain': 123, 'shape_industrial': 122, 'shape_handwriting': 120}
+  Synthetic: dense=85.6%, deployment=57.8%, MSE=5.866e-05, K=24.83, targetK=14.22, count_MAE=10.61, bias=+10.61, knot_F1@0.01=0.543, param_RMSE=4.498e-02, trust_proposal=0.663, trust_subset=0.936
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.527e-05, K=17.41, trust_proposal=0.654, trust_subset=0.910
+  natural_earth_10m_coastline: dense=78.1%, deployment=28.1%, MSE=1.715e-04, K=23.62, trust_proposal=0.706, trust_subset=0.924
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=68.8%, MSE=6.368e-05, K=22.78, trust_proposal=0.653, trust_subset=0.932
+Epoch 032/60 joint [........................] 1/47 MSE=3.753e-05 pass=75.0% K=16.4 teacherK=14.2 countMAE=9.62
+Epoch 032/60 joint [=====...................] 10/47 MSE=3.915e-05 pass=78.1% K=18.6 teacherK=16.0 countMAE=10.28
+Epoch 032/60 joint [==========..............] 20/47 MSE=3.849e-05 pass=68.8% K=17.2 teacherK=15.2 countMAE=9.54
+Epoch 032/60 joint [===============.........] 30/47 MSE=4.060e-05 pass=68.8% K=17.6 teacherK=15.1 countMAE=9.23
+Epoch 032/60 joint [====================....] 40/47 MSE=3.179e-05 pass=68.8% K=18.3 teacherK=15.6 countMAE=10.08
+Epoch 032/60 joint [========================] 47/47 MSE=3.511e-05 pass=67.9% K=16.5 teacherK=14.8 countMAE=9.87
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 032 val dense=85.7% deployment=52.2% worst-source=21.9% MSE=7.127e-05 K=23.87 mass=23.37 beta=-1.01 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=2.208e-06, selector=2.208e-05, decoder=2.208e-05
+  training teacher: keep_P/R/F1=0.810/0.959/0.878, false_remove=4.1%, refinement_delta_K=0.467, improved=60.9%, extra_fits=9.0, boundary_loss=1.1446
+  parameter/local: counterfactual=0.2491, local=1.0131, geometry_teacher_delta_K=0.419, geometry_fits=4.0
+  compact teacher: fixed_K=16.93, fixed_pass=77.7%, decoded_pass=95.7%, accepted_delta_K=0.615, geometry_violation=0.0009, extra_refits=1025.7, complexity_active=59.4%
+  reachable teacher: checks_total=1002, decoded_pass=98.7%, accepted_delta_K=0.615, geometry_targets_total=290, target_K=17.7, target_pass=96.2%
+  compact mask calibration: targets_total=146, target_K=17.06, count_loss=0.0966, ranking_loss=0.8691; targets require smaller count AND decoded feasibility
+  training families: {'historical': 623, 'simple': 513, 'shape_terrain': 101, 'shape_industrial': 131, 'shape_handwriting': 132}
+  Synthetic: dense=85.6%, deployment=51.4%, MSE=6.684e-05, K=24.47, targetK=14.22, count_MAE=10.25, bias=+10.25, knot_F1@0.01=0.545, param_RMSE=4.497e-02, trust_proposal=0.666, trust_subset=0.942
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.788e-05, K=16.91, trust_proposal=0.657, trust_subset=0.917
+  natural_earth_10m_coastline: dense=75.0%, deployment=21.9%, MSE=1.864e-04, K=23.09, trust_proposal=0.708, trust_subset=0.931
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=62.5%, MSE=6.881e-05, K=22.22, trust_proposal=0.656, trust_subset=0.939
+Epoch 033/60 joint [........................] 1/47 MSE=4.171e-05 pass=56.2% K=18.9 teacherK=16.6 countMAE=10.44
+Epoch 033/60 joint [=====...................] 10/47 MSE=4.486e-05 pass=59.4% K=18.6 teacherK=16.2 countMAE=9.42
+Epoch 033/60 joint [==========..............] 20/47 MSE=3.291e-05 pass=71.9% K=16.5 teacherK=14.0 countMAE=9.67
+Epoch 033/60 joint [===============.........] 30/47 MSE=4.102e-05 pass=71.9% K=17.3 teacherK=15.2 countMAE=8.93
+Epoch 033/60 joint [====================....] 40/47 MSE=2.984e-05 pass=75.0% K=17.5 teacherK=14.4 countMAE=10.46
+Epoch 033/60 joint [========================] 47/47 MSE=3.727e-05 pass=71.4% K=17.4 teacherK=14.9 countMAE=10.45
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 033 val dense=85.9% deployment=51.7% worst-source=21.9% MSE=7.097e-05 K=23.92 mass=23.43 beta=-1.02 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=2.136e-06, selector=2.136e-05, decoder=2.136e-05
+  training teacher: keep_P/R/F1=0.814/0.957/0.880, false_remove=4.3%, refinement_delta_K=0.483, improved=60.5%, extra_fits=9.0, boundary_loss=1.1584
+  parameter/local: counterfactual=0.2653, local=1.0012, geometry_teacher_delta_K=0.419, geometry_fits=4.0
+  compact teacher: fixed_K=16.54, fixed_pass=78.2%, decoded_pass=98.0%, accepted_delta_K=0.651, geometry_violation=0.0003, extra_refits=965.7, complexity_active=57.5%
+  reachable teacher: checks_total=937, decoded_pass=99.7%, accepted_delta_K=0.651, geometry_targets_total=290, target_K=17.3, target_pass=99.0%
+  compact mask calibration: targets_total=146, target_K=16.61, count_loss=0.0856, ranking_loss=0.8673; targets require smaller count AND decoded feasibility
+  training families: {'historical': 608, 'shape_handwriting': 113, 'simple': 523, 'shape_terrain': 116, 'shape_industrial': 140}
+  Synthetic: dense=85.8%, deployment=50.8%, MSE=6.655e-05, K=24.52, targetK=14.22, count_MAE=10.30, bias=+10.30, knot_F1@0.01=0.545, param_RMSE=4.484e-02, trust_proposal=0.668, trust_subset=0.947
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.888e-05, K=16.97, trust_proposal=0.660, trust_subset=0.923
+  natural_earth_10m_coastline: dense=75.0%, deployment=21.9%, MSE=1.842e-04, K=23.22, trust_proposal=0.711, trust_subset=0.937
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=62.5%, MSE=6.892e-05, K=22.28, trust_proposal=0.659, trust_subset=0.944
+Epoch 034/60 joint [........................] 1/47 MSE=4.679e-05 pass=53.1% K=18.6 teacherK=16.7 countMAE=9.50
+Epoch 034/60 joint [=====...................] 10/47 MSE=3.430e-05 pass=75.0% K=16.0 teacherK=13.2 countMAE=9.90
+Epoch 034/60 joint [==========..............] 20/47 MSE=4.017e-05 pass=71.9% K=18.5 teacherK=16.2 countMAE=10.19
+Epoch 034/60 joint [===============.........] 30/47 MSE=3.298e-05 pass=75.0% K=20.2 teacherK=17.5 countMAE=10.65
+Epoch 034/60 joint [====================....] 40/47 MSE=4.166e-05 pass=65.6% K=17.8 teacherK=15.2 countMAE=9.65
+Epoch 034/60 joint [========================] 47/47 MSE=4.972e-05 pass=57.1% K=20.5 teacherK=18.9 countMAE=10.12
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 034 val dense=85.7% deployment=50.8% worst-source=18.8% MSE=7.358e-05 K=23.79 mass=23.27 beta=-0.96 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=2.062e-06, selector=2.062e-05, decoder=2.062e-05
+  training teacher: keep_P/R/F1=0.812/0.960/0.880, false_remove=4.0%, refinement_delta_K=0.445, improved=60.6%, extra_fits=9.0, boundary_loss=1.1618
+  parameter/local: counterfactual=0.2366, local=0.9959, geometry_teacher_delta_K=0.437, geometry_fits=4.0
+  compact teacher: fixed_K=16.69, fixed_pass=79.3%, decoded_pass=95.0%, accepted_delta_K=0.639, geometry_violation=0.0006, extra_refits=981.4, complexity_active=60.3%
+  reachable teacher: checks_total=977, decoded_pass=98.6%, accepted_delta_K=0.639, geometry_targets_total=295, target_K=17.4, target_pass=96.6%
+  compact mask calibration: targets_total=147, target_K=16.74, count_loss=0.0876, ranking_loss=0.8825; targets require smaller count AND decoded feasibility
+  training families: {'historical': 593, 'shape_industrial': 111, 'simple': 546, 'shape_handwriting': 133, 'shape_terrain': 117}
+  Synthetic: dense=85.6%, deployment=50.4%, MSE=6.936e-05, K=24.43, targetK=14.22, count_MAE=10.21, bias=+10.21, knot_F1@0.01=0.545, param_RMSE=4.488e-02, trust_proposal=0.670, trust_subset=0.952
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.046e-05, K=16.56, trust_proposal=0.661, trust_subset=0.929
+  natural_earth_10m_coastline: dense=75.0%, deployment=18.8%, MSE=1.863e-04, K=22.81, trust_proposal=0.713, trust_subset=0.942
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=59.4%, MSE=6.985e-05, K=22.06, trust_proposal=0.660, trust_subset=0.949
+Epoch 035/60 joint [........................] 1/47 MSE=4.378e-05 pass=62.5% K=18.0 teacherK=16.0 countMAE=10.04
+Epoch 035/60 joint [=====...................] 10/47 MSE=3.345e-05 pass=78.1% K=18.7 teacherK=16.4 countMAE=10.46
+Epoch 035/60 joint [==========..............] 20/47 MSE=4.956e-05 pass=71.9% K=17.9 teacherK=16.4 countMAE=9.87
+Epoch 035/60 joint [===============.........] 30/47 MSE=4.154e-05 pass=68.8% K=19.9 teacherK=17.2 countMAE=9.57
+Epoch 035/60 joint [====================....] 40/47 MSE=4.980e-05 pass=50.0% K=17.4 teacherK=15.5 countMAE=9.33
+Epoch 035/60 joint [========================] 47/47 MSE=2.610e-05 pass=78.6% K=16.5 teacherK=13.7 countMAE=9.80
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 035 val dense=85.7% deployment=55.2% worst-source=18.8% MSE=6.749e-05 K=23.96 mass=23.49 beta=-1.04 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.988e-06, selector=1.988e-05, decoder=1.988e-05
+  training teacher: keep_P/R/F1=0.816/0.958/0.881, false_remove=4.2%, refinement_delta_K=0.445, improved=58.4%, extra_fits=9.0, boundary_loss=1.1515
+  parameter/local: counterfactual=0.2325, local=1.0327, geometry_teacher_delta_K=0.425, geometry_fits=4.0
+  compact teacher: fixed_K=16.44, fixed_pass=78.2%, decoded_pass=94.5%, accepted_delta_K=0.619, geometry_violation=0.0010, extra_refits=915.9, complexity_active=58.0%
+  reachable teacher: checks_total=933, decoded_pass=98.4%, accepted_delta_K=0.619, geometry_targets_total=292, target_K=17.3, target_pass=96.6%
+  compact mask calibration: targets_total=146, target_K=16.62, count_loss=0.0909, ranking_loss=0.8673; targets require smaller count AND decoded feasibility
+  training families: {'historical': 586, 'simple': 546, 'shape_terrain': 125, 'shape_industrial': 135, 'shape_handwriting': 108}
+  Synthetic: dense=85.6%, deployment=55.4%, MSE=6.241e-05, K=24.61, targetK=14.22, count_MAE=10.39, bias=+10.39, knot_F1@0.01=0.545, param_RMSE=4.488e-02, trust_proposal=0.672, trust_subset=0.956
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.931e-05, K=16.53, trust_proposal=0.663, trust_subset=0.933
+  natural_earth_10m_coastline: dense=75.0%, deployment=18.8%, MSE=1.828e-04, K=22.97, trust_proposal=0.715, trust_subset=0.946
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=59.4%, MSE=6.974e-05, K=22.19, trust_proposal=0.662, trust_subset=0.953
+Epoch 036/60 joint [........................] 1/47 MSE=4.606e-05 pass=53.1% K=19.4 teacherK=17.9 countMAE=9.18
+Epoch 036/60 joint [=====...................] 10/47 MSE=4.431e-05 pass=62.5% K=18.0 teacherK=15.8 countMAE=10.60
+Epoch 036/60 joint [==========..............] 20/47 MSE=4.340e-05 pass=68.8% K=18.6 teacherK=16.4 countMAE=9.70
+Epoch 036/60 joint [===============.........] 30/47 MSE=2.832e-05 pass=78.1% K=17.1 teacherK=14.5 countMAE=9.96
+Epoch 036/60 joint [====================....] 40/47 MSE=3.188e-05 pass=71.9% K=16.1 teacherK=13.3 countMAE=8.95
+Epoch 036/60 joint [========================] 47/47 MSE=3.585e-05 pass=75.0% K=20.1 teacherK=17.5 countMAE=10.42
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 036 val dense=85.9% deployment=52.5% worst-source=18.8% MSE=7.032e-05 K=23.87 mass=23.36 beta=-0.98 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.913e-06, selector=1.913e-05, decoder=1.913e-05
+  training teacher: keep_P/R/F1=0.810/0.961/0.879, false_remove=3.9%, refinement_delta_K=0.485, improved=61.7%, extra_fits=9.0, boundary_loss=1.1483
+  parameter/local: counterfactual=0.2249, local=0.9791, geometry_teacher_delta_K=0.407, geometry_fits=4.0
+  compact teacher: fixed_K=17.33, fixed_pass=79.7%, decoded_pass=92.2%, accepted_delta_K=0.595, geometry_violation=0.0015, extra_refits=1003.9, complexity_active=62.5%
+  reachable teacher: checks_total=992, decoded_pass=98.3%, accepted_delta_K=0.595, geometry_targets_total=293, target_K=18.0, target_pass=94.5%
+  compact mask calibration: targets_total=148, target_K=17.45, count_loss=0.0795, ranking_loss=0.8647; targets require smaller count AND decoded feasibility
+  training families: {'historical': 593, 'shape_terrain': 140, 'simple': 508, 'shape_industrial': 138, 'shape_handwriting': 121}
+  Synthetic: dense=85.8%, deployment=52.0%, MSE=6.571e-05, K=24.52, targetK=14.22, count_MAE=10.31, bias=+10.31, knot_F1@0.01=0.545, param_RMSE=4.488e-02, trust_proposal=0.674, trust_subset=0.960
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.897e-05, K=16.50, trust_proposal=0.665, trust_subset=0.938
+  natural_earth_10m_coastline: dense=75.0%, deployment=18.8%, MSE=1.843e-04, K=22.78, trust_proposal=0.717, trust_subset=0.951
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=62.5%, MSE=6.975e-05, K=22.06, trust_proposal=0.664, trust_subset=0.957
+Epoch 037/60 joint [........................] 1/47 MSE=5.580e-05 pass=62.5% K=18.5 teacherK=16.2 countMAE=9.74
+Epoch 037/60 joint [=====...................] 10/47 MSE=4.294e-05 pass=59.4% K=18.8 teacherK=16.9 countMAE=9.88
+Epoch 037/60 joint [==========..............] 20/47 MSE=4.689e-05 pass=65.6% K=20.5 teacherK=18.3 countMAE=9.96
+Epoch 037/60 joint [===============.........] 30/47 MSE=5.170e-05 pass=59.4% K=17.1 teacherK=15.3 countMAE=9.46
+Epoch 037/60 joint [====================....] 40/47 MSE=4.305e-05 pass=53.1% K=17.3 teacherK=15.8 countMAE=9.27
+Epoch 037/60 joint [========================] 47/47 MSE=5.088e-05 pass=67.9% K=16.2 teacherK=14.9 countMAE=9.30
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 037 val dense=85.9% deployment=53.0% worst-source=18.8% MSE=7.062e-05 K=23.85 mass=23.35 beta=-0.98 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.837e-06, selector=1.837e-05, decoder=1.837e-05
+  training teacher: keep_P/R/F1=0.815/0.958/0.880, false_remove=4.2%, refinement_delta_K=0.494, improved=63.3%, extra_fits=9.0, boundary_loss=1.1489
+  parameter/local: counterfactual=0.2695, local=1.0039, geometry_teacher_delta_K=0.415, geometry_fits=4.0
+  compact teacher: fixed_K=16.72, fixed_pass=78.7%, decoded_pass=99.3%, accepted_delta_K=0.620, geometry_violation=0.0006, extra_refits=906.1, complexity_active=58.2%
+  reachable teacher: checks_total=936, decoded_pass=99.5%, accepted_delta_K=0.620, geometry_targets_total=292, target_K=17.5, target_pass=99.0%
+  compact mask calibration: targets_total=145, target_K=16.68, count_loss=0.0887, ranking_loss=0.8432; targets require smaller count AND decoded feasibility
+  training families: {'simple': 522, 'shape_handwriting': 121, 'shape_terrain': 137, 'shape_industrial': 131, 'historical': 589}
+  Synthetic: dense=85.8%, deployment=52.8%, MSE=6.584e-05, K=24.51, targetK=14.22, count_MAE=10.29, bias=+10.29, knot_F1@0.01=0.545, param_RMSE=4.483e-02, trust_proposal=0.676, trust_subset=0.962
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.947e-05, K=16.47, trust_proposal=0.667, trust_subset=0.941
+  natural_earth_10m_coastline: dense=75.0%, deployment=18.8%, MSE=1.870e-04, K=22.78, trust_proposal=0.719, trust_subset=0.953
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=59.4%, MSE=7.010e-05, K=22.03, trust_proposal=0.666, trust_subset=0.959
+Epoch 038/60 joint [........................] 1/47 MSE=4.324e-05 pass=65.6% K=20.0 teacherK=17.9 countMAE=10.18
+Epoch 038/60 joint [=====...................] 10/47 MSE=3.269e-05 pass=68.8% K=17.6 teacherK=15.2 countMAE=9.75
+Epoch 038/60 joint [==========..............] 20/47 MSE=3.193e-05 pass=71.9% K=16.6 teacherK=13.4 countMAE=10.41
+Epoch 038/60 joint [===============.........] 30/47 MSE=4.774e-05 pass=59.4% K=18.3 teacherK=16.0 countMAE=10.04
+Epoch 038/60 joint [====================....] 40/47 MSE=3.342e-05 pass=71.9% K=15.7 teacherK=13.6 countMAE=9.27
+Epoch 038/60 joint [========================] 47/47 MSE=3.407e-05 pass=75.0% K=16.9 teacherK=14.5 countMAE=10.50
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 038 val dense=85.9% deployment=53.4% worst-source=18.8% MSE=7.045e-05 K=23.84 mass=23.34 beta=-0.98 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.762e-06, selector=1.762e-05, decoder=1.762e-05
+  training teacher: keep_P/R/F1=0.812/0.959/0.879, false_remove=4.1%, refinement_delta_K=0.462, improved=61.9%, extra_fits=9.0, boundary_loss=1.1272
+  parameter/local: counterfactual=0.2930, local=0.9141, geometry_teacher_delta_K=0.403, geometry_fits=4.0
+  compact teacher: fixed_K=17.63, fixed_pass=78.2%, decoded_pass=95.4%, accepted_delta_K=0.637, geometry_violation=0.0019, extra_refits=1019.0, complexity_active=60.3%
+  reachable teacher: checks_total=973, decoded_pass=98.6%, accepted_delta_K=0.637, geometry_targets_total=291, target_K=18.4, target_pass=96.2%
+  compact mask calibration: targets_total=146, target_K=17.82, count_loss=0.0795, ranking_loss=0.8977; targets require smaller count AND decoded feasibility
+  training families: {'simple': 508, 'historical': 584, 'shape_handwriting': 141, 'shape_industrial': 131, 'shape_terrain': 136}
+  Synthetic: dense=85.8%, deployment=53.2%, MSE=6.560e-05, K=24.49, targetK=14.22, count_MAE=10.27, bias=+10.27, knot_F1@0.01=0.546, param_RMSE=4.479e-02, trust_proposal=0.678, trust_subset=0.965
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.940e-05, K=16.44, trust_proposal=0.669, trust_subset=0.944
+  natural_earth_10m_coastline: dense=75.0%, deployment=18.8%, MSE=1.882e-04, K=22.81, trust_proposal=0.721, trust_subset=0.956
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=59.4%, MSE=6.957e-05, K=22.09, trust_proposal=0.668, trust_subset=0.962
+Epoch 039/60 joint [........................] 1/47 MSE=3.693e-05 pass=68.8% K=17.8 teacherK=15.7 countMAE=10.15
+Epoch 039/60 joint [=====...................] 10/47 MSE=4.258e-05 pass=71.9% K=19.8 teacherK=17.6 countMAE=10.22
+Epoch 039/60 joint [==========..............] 20/47 MSE=3.527e-05 pass=65.6% K=18.2 teacherK=15.8 countMAE=9.52
+Epoch 039/60 joint [===============.........] 30/47 MSE=3.737e-05 pass=68.8% K=16.0 teacherK=13.9 countMAE=9.29
+Epoch 039/60 joint [====================....] 40/47 MSE=2.671e-05 pass=90.6% K=16.6 teacherK=13.9 countMAE=9.77
+Epoch 039/60 joint [========================] 47/47 MSE=2.907e-05 pass=78.6% K=16.8 teacherK=13.8 countMAE=10.17
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 039 val dense=86.1% deployment=58.4% worst-source=18.8% MSE=6.456e-05 K=24.08 mass=23.59 beta=-1.06 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.688e-06, selector=1.688e-05, decoder=1.688e-05
+  training teacher: keep_P/R/F1=0.812/0.957/0.878, false_remove=4.3%, refinement_delta_K=0.490, improved=62.9%, extra_fits=9.0, boundary_loss=1.1326
+  parameter/local: counterfactual=0.2409, local=0.9493, geometry_teacher_delta_K=0.403, geometry_fits=4.0
+  compact teacher: fixed_K=17.24, fixed_pass=78.7%, decoded_pass=94.2%, accepted_delta_K=0.639, geometry_violation=0.0013, extra_refits=994.8, complexity_active=60.0%
+  reachable teacher: checks_total=979, decoded_pass=98.6%, accepted_delta_K=0.639, geometry_targets_total=293, target_K=18.0, target_pass=96.2%
+  compact mask calibration: targets_total=144, target_K=17.22, count_loss=0.0838, ranking_loss=0.8888; targets require smaller count AND decoded feasibility
+  training families: {'simple': 496, 'shape_handwriting': 144, 'historical': 608, 'shape_terrain': 115, 'shape_industrial': 137}
+  Synthetic: dense=86.0%, deployment=58.8%, MSE=5.875e-05, K=24.71, targetK=14.22, count_MAE=10.49, bias=+10.49, knot_F1@0.01=0.542, param_RMSE=4.489e-02, trust_proposal=0.679, trust_subset=0.967
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.932e-05, K=16.81, trust_proposal=0.671, trust_subset=0.948
+  natural_earth_10m_coastline: dense=75.0%, deployment=18.8%, MSE=1.875e-04, K=23.22, trust_proposal=0.722, trust_subset=0.958
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=65.6%, MSE=6.762e-05, K=22.34, trust_proposal=0.670, trust_subset=0.964
+Epoch 040/60 joint [........................] 1/47 MSE=4.521e-05 pass=68.8% K=18.4 teacherK=15.9 countMAE=10.58
+Epoch 040/60 joint [=====...................] 10/47 MSE=4.565e-05 pass=62.5% K=19.0 teacherK=16.9 countMAE=10.59
+Epoch 040/60 joint [==========..............] 20/47 MSE=3.551e-05 pass=78.1% K=18.4 teacherK=15.6 countMAE=9.78
+Epoch 040/60 joint [===============.........] 30/47 MSE=2.511e-05 pass=84.4% K=19.3 teacherK=16.0 countMAE=11.19
+Epoch 040/60 joint [====================....] 40/47 MSE=4.011e-05 pass=62.5% K=16.2 teacherK=14.1 countMAE=9.61
+Epoch 040/60 joint [========================] 47/47 MSE=3.870e-05 pass=71.4% K=19.6 teacherK=17.2 countMAE=10.21
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 040 val dense=86.1% deployment=52.0% worst-source=18.8% MSE=7.213e-05 K=23.71 mass=23.21 beta=-0.95 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.614e-06, selector=1.614e-05, decoder=1.614e-05
+  training teacher: keep_P/R/F1=0.818/0.960/0.883, false_remove=4.0%, refinement_delta_K=0.483, improved=63.0%, extra_fits=9.0, boundary_loss=1.1426
+  parameter/local: counterfactual=0.2790, local=0.9999, geometry_teacher_delta_K=0.465, geometry_fits=4.0
+  compact teacher: fixed_K=17.36, fixed_pass=78.7%, decoded_pass=95.2%, accepted_delta_K=0.635, geometry_violation=0.0018, extra_refits=990.0, complexity_active=59.4%
+  reachable teacher: checks_total=963, decoded_pass=97.9%, accepted_delta_K=0.635, geometry_targets_total=292, target_K=18.1, target_pass=95.5%
+  compact mask calibration: targets_total=148, target_K=17.51, count_loss=0.0772, ranking_loss=0.8903; targets require smaller count AND decoded feasibility
+  training families: {'shape_industrial': 122, 'simple': 504, 'historical': 641, 'shape_handwriting': 116, 'shape_terrain': 117}
+  Synthetic: dense=86.0%, deployment=51.8%, MSE=6.749e-05, K=24.36, targetK=14.22, count_MAE=10.14, bias=+10.14, knot_F1@0.01=0.546, param_RMSE=4.483e-02, trust_proposal=0.681, trust_subset=0.969
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=2.983e-05, K=16.47, trust_proposal=0.673, trust_subset=0.950
+  natural_earth_10m_coastline: dense=75.0%, deployment=18.8%, MSE=1.876e-04, K=22.72, trust_proposal=0.724, trust_subset=0.961
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=59.4%, MSE=7.156e-05, K=21.94, trust_proposal=0.672, trust_subset=0.967
+Epoch 041/60 joint [........................] 1/47 MSE=3.405e-05 pass=71.9% K=19.2 teacherK=16.9 countMAE=10.27
+Epoch 041/60 joint [=====...................] 10/47 MSE=2.975e-05 pass=81.2% K=16.8 teacherK=13.9 countMAE=10.27
+Epoch 041/60 joint [==========..............] 20/47 MSE=3.485e-05 pass=71.9% K=19.4 teacherK=17.1 countMAE=10.19
+Epoch 041/60 joint [===============.........] 30/47 MSE=2.310e-05 pass=93.8% K=17.4 teacherK=14.3 countMAE=10.20
+Epoch 041/60 joint [====================....] 40/47 MSE=4.068e-05 pass=65.6% K=18.3 teacherK=16.2 countMAE=10.24
+Epoch 041/60 joint [========================] 47/47 MSE=3.278e-05 pass=67.9% K=15.8 teacherK=13.1 countMAE=9.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 041 val dense=85.7% deployment=56.7% worst-source=18.8% MSE=6.380e-05 K=23.97 mass=23.47 beta=-1.03 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.542e-06, selector=1.542e-05, decoder=1.542e-05
+  training teacher: keep_P/R/F1=0.812/0.961/0.880, false_remove=3.9%, refinement_delta_K=0.491, improved=64.1%, extra_fits=9.0, boundary_loss=1.1197
+  parameter/local: counterfactual=0.2499, local=0.9814, geometry_teacher_delta_K=0.399, geometry_fits=4.0
+  compact teacher: fixed_K=17.52, fixed_pass=77.6%, decoded_pass=92.5%, accepted_delta_K=0.601, geometry_violation=0.0019, extra_refits=944.0, complexity_active=59.0%
+  reachable teacher: checks_total=928, decoded_pass=97.6%, accepted_delta_K=0.601, geometry_targets_total=290, target_K=18.2, target_pass=94.8%
+  compact mask calibration: targets_total=144, target_K=17.66, count_loss=0.0748, ranking_loss=0.8746; targets require smaller count AND decoded feasibility
+  training families: {'shape_terrain': 124, 'historical': 631, 'simple': 483, 'shape_handwriting': 129, 'shape_industrial': 133}
+  Synthetic: dense=85.8%, deployment=57.2%, MSE=5.787e-05, K=24.62, targetK=14.22, count_MAE=10.41, bias=+10.41, knot_F1@0.01=0.548, param_RMSE=4.480e-02, trust_proposal=0.683, trust_subset=0.971
+  uji_pen_characters_v2: dense=100.0%, deployment=84.4%, MSE=2.887e-05, K=16.50, trust_proposal=0.675, trust_subset=0.953
+  natural_earth_10m_coastline: dense=71.9%, deployment=18.8%, MSE=1.860e-04, K=22.91, trust_proposal=0.726, trust_subset=0.964
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=59.4%, MSE=6.927e-05, K=22.22, trust_proposal=0.674, trust_subset=0.969
+Epoch 042/60 joint [........................] 1/47 MSE=3.962e-05 pass=65.6% K=18.0 teacherK=15.3 countMAE=9.43
+Epoch 042/60 joint [=====...................] 10/47 MSE=4.603e-05 pass=56.2% K=15.6 teacherK=13.4 countMAE=8.88
+Epoch 042/60 joint [==========..............] 20/47 MSE=5.010e-05 pass=62.5% K=19.8 teacherK=17.8 countMAE=10.38
+Epoch 042/60 joint [===============.........] 30/47 MSE=5.407e-05 pass=56.2% K=19.3 teacherK=17.6 countMAE=9.78
+Epoch 042/60 joint [====================....] 40/47 MSE=3.795e-05 pass=65.6% K=19.1 teacherK=17.0 countMAE=9.84
+Epoch 042/60 joint [========================] 47/47 MSE=3.795e-05 pass=71.4% K=19.0 teacherK=16.7 countMAE=9.67
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 042 val dense=86.2% deployment=53.0% worst-source=15.6% MSE=7.035e-05 K=23.67 mass=23.18 beta=-0.99 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.471e-06, selector=1.471e-05, decoder=1.471e-05
+  training teacher: keep_P/R/F1=0.814/0.960/0.881, false_remove=4.0%, refinement_delta_K=0.461, improved=61.7%, extra_fits=9.0, boundary_loss=1.1388
+  parameter/local: counterfactual=0.2208, local=1.0176, geometry_teacher_delta_K=0.419, geometry_fits=4.0
+  compact teacher: fixed_K=17.18, fixed_pass=77.7%, decoded_pass=95.2%, accepted_delta_K=0.619, geometry_violation=0.0013, extra_refits=956.9, complexity_active=60.2%
+  reachable teacher: checks_total=956, decoded_pass=98.6%, accepted_delta_K=0.619, geometry_targets_total=291, target_K=17.9, target_pass=96.6%
+  compact mask calibration: targets_total=145, target_K=17.32, count_loss=0.0771, ranking_loss=0.8614; targets require smaller count AND decoded feasibility
+  training families: {'simple': 513, 'historical': 636, 'shape_handwriting': 125, 'shape_industrial': 119, 'shape_terrain': 107}
+  Synthetic: dense=86.4%, deployment=53.4%, MSE=6.481e-05, K=24.37, targetK=14.22, count_MAE=10.15, bias=+10.15, knot_F1@0.01=0.546, param_RMSE=4.471e-02, trust_proposal=0.685, trust_subset=0.972
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.161e-05, K=15.84, trust_proposal=0.676, trust_subset=0.953
+  natural_earth_10m_coastline: dense=71.9%, deployment=15.6%, MSE=1.918e-04, K=22.56, trust_proposal=0.728, trust_subset=0.965
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=56.2%, MSE=7.406e-05, K=21.72, trust_proposal=0.675, trust_subset=0.970
+Epoch 043/60 joint [........................] 1/47 MSE=4.990e-05 pass=65.6% K=17.8 teacherK=15.9 countMAE=9.72
+Epoch 043/60 joint [=====...................] 10/47 MSE=4.378e-05 pass=68.8% K=18.4 teacherK=17.0 countMAE=9.04
+Epoch 043/60 joint [==========..............] 20/47 MSE=4.617e-05 pass=62.5% K=17.9 teacherK=16.6 countMAE=8.86
+Epoch 043/60 joint [===============.........] 30/47 MSE=4.883e-05 pass=65.6% K=17.2 teacherK=14.8 countMAE=9.80
+Epoch 043/60 joint [====================....] 40/47 MSE=4.298e-05 pass=71.9% K=17.2 teacherK=14.8 countMAE=9.48
+Epoch 043/60 joint [========================] 47/47 MSE=4.741e-05 pass=67.9% K=19.0 teacherK=16.6 countMAE=10.19
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 043 val dense=86.2% deployment=48.8% worst-source=12.5% MSE=7.873e-05 K=23.49 mass=22.99 beta=-0.92 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.401e-06, selector=1.401e-05, decoder=1.401e-05
+  training teacher: keep_P/R/F1=0.818/0.960/0.883, false_remove=4.0%, refinement_delta_K=0.468, improved=62.4%, extra_fits=9.0, boundary_loss=1.1048
+  parameter/local: counterfactual=0.2325, local=1.0214, geometry_teacher_delta_K=0.415, geometry_fits=4.0
+  compact teacher: fixed_K=16.22, fixed_pass=76.6%, decoded_pass=93.4%, accepted_delta_K=0.635, geometry_violation=0.0020, extra_refits=960.7, complexity_active=59.3%
+  reachable teacher: checks_total=957, decoded_pass=98.7%, accepted_delta_K=0.635, geometry_targets_total=285, target_K=17.0, target_pass=96.5%
+  compact mask calibration: targets_total=142, target_K=16.34, count_loss=0.0968, ranking_loss=0.8471; targets require smaller count AND decoded feasibility
+  training families: {'simple': 510, 'historical': 632, 'shape_handwriting': 111, 'shape_industrial': 135, 'shape_terrain': 112}
+  Synthetic: dense=86.4%, deployment=48.8%, MSE=7.424e-05, K=24.21, targetK=14.22, count_MAE=9.99, bias=+9.99, knot_F1@0.01=0.547, param_RMSE=4.478e-02, trust_proposal=0.686, trust_subset=0.974
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.296e-05, K=15.59, trust_proposal=0.678, trust_subset=0.955
+  natural_earth_10m_coastline: dense=71.9%, deployment=12.5%, MSE=1.955e-04, K=22.25, trust_proposal=0.730, trust_subset=0.967
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.797e-05, K=21.41, trust_proposal=0.677, trust_subset=0.971
+Epoch 044/60 joint [........................] 1/47 MSE=6.529e-05 pass=56.2% K=18.9 teacherK=17.0 countMAE=9.43
+Epoch 044/60 joint [=====...................] 10/47 MSE=3.218e-05 pass=81.2% K=17.2 teacherK=14.6 countMAE=10.25
+Epoch 044/60 joint [==========..............] 20/47 MSE=3.042e-05 pass=84.4% K=15.3 teacherK=12.8 countMAE=9.74
+Epoch 044/60 joint [===============.........] 30/47 MSE=3.406e-05 pass=81.2% K=17.5 teacherK=15.1 countMAE=9.54
+Epoch 044/60 joint [====================....] 40/47 MSE=4.579e-05 pass=59.4% K=19.0 teacherK=16.8 countMAE=10.23
+Epoch 044/60 joint [========================] 47/47 MSE=3.995e-05 pass=67.9% K=17.2 teacherK=14.7 countMAE=9.48
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 044 val dense=86.2% deployment=54.4% worst-source=15.6% MSE=6.870e-05 K=23.80 mass=23.31 beta=-1.00 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.334e-06, selector=1.334e-05, decoder=1.334e-05
+  training teacher: keep_P/R/F1=0.813/0.958/0.879, false_remove=4.2%, refinement_delta_K=0.465, improved=62.3%, extra_fits=9.0, boundary_loss=1.0962
+  parameter/local: counterfactual=0.2016, local=0.9840, geometry_teacher_delta_K=0.446, geometry_fits=4.0
+  compact teacher: fixed_K=16.73, fixed_pass=77.7%, decoded_pass=95.4%, accepted_delta_K=0.613, geometry_violation=0.0014, extra_refits=894.3, complexity_active=59.5%
+  reachable teacher: checks_total=923, decoded_pass=98.3%, accepted_delta_K=0.613, geometry_targets_total=291, target_K=17.5, target_pass=96.2%
+  compact mask calibration: targets_total=145, target_K=16.82, count_loss=0.0823, ranking_loss=0.8241; targets require smaller count AND decoded feasibility
+  training families: {'shape_handwriting': 132, 'simple': 511, 'historical': 604, 'shape_terrain': 136, 'shape_industrial': 117}
+  Synthetic: dense=86.4%, deployment=55.0%, MSE=6.309e-05, K=24.50, targetK=14.22, count_MAE=10.28, bias=+10.28, knot_F1@0.01=0.546, param_RMSE=4.467e-02, trust_proposal=0.688, trust_subset=0.975
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.052e-05, K=15.97, trust_proposal=0.680, trust_subset=0.957
+  natural_earth_10m_coastline: dense=71.9%, deployment=15.6%, MSE=1.897e-04, K=22.69, trust_proposal=0.731, trust_subset=0.968
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=56.2%, MSE=7.365e-05, K=21.84, trust_proposal=0.679, trust_subset=0.973
+Epoch 045/60 joint [........................] 1/47 MSE=2.561e-05 pass=75.0% K=15.5 teacherK=12.3 countMAE=9.35
+Epoch 045/60 joint [=====...................] 10/47 MSE=4.253e-05 pass=62.5% K=16.5 teacherK=14.0 countMAE=9.48
+Epoch 045/60 joint [==========..............] 20/47 MSE=3.613e-05 pass=75.0% K=16.8 teacherK=14.7 countMAE=9.80
+Epoch 045/60 joint [===============.........] 30/47 MSE=3.533e-05 pass=68.8% K=17.8 teacherK=15.2 countMAE=10.67
+Epoch 045/60 joint [====================....] 40/47 MSE=4.456e-05 pass=71.9% K=17.6 teacherK=15.6 countMAE=9.44
+Epoch 045/60 joint [========================] 47/47 MSE=3.712e-05 pass=60.7% K=16.0 teacherK=14.0 countMAE=9.57
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 045 val dense=86.1% deployment=44.5% worst-source=6.2% MSE=7.783e-05 K=23.29 mass=22.80 beta=-0.87 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.270e-06, selector=1.270e-05, decoder=1.270e-05
+  training teacher: keep_P/R/F1=0.811/0.957/0.878, false_remove=4.3%, refinement_delta_K=0.512, improved=66.3%, extra_fits=9.0, boundary_loss=1.1366
+  parameter/local: counterfactual=0.2706, local=0.9608, geometry_teacher_delta_K=0.433, geometry_fits=4.0
+  compact teacher: fixed_K=16.92, fixed_pass=79.2%, decoded_pass=89.5%, accepted_delta_K=0.564, geometry_violation=0.0028, extra_refits=887.5, complexity_active=58.9%
+  reachable teacher: checks_total=943, decoded_pass=97.3%, accepted_delta_K=0.564, geometry_targets_total=294, target_K=17.7, target_pass=92.5%
+  compact mask calibration: targets_total=149, target_K=17.07, count_loss=0.0733, ranking_loss=0.8057; targets require smaller count AND decoded feasibility
+  training families: {'simple': 530, 'historical': 582, 'shape_industrial': 126, 'shape_handwriting': 130, 'shape_terrain': 132}
+  Synthetic: dense=86.2%, deployment=44.0%, MSE=7.216e-05, K=24.05, targetK=14.22, count_MAE=9.83, bias=+9.83, knot_F1@0.01=0.550, param_RMSE=4.472e-02, trust_proposal=0.689, trust_subset=0.976
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.472e-05, K=15.06, trust_proposal=0.681, trust_subset=0.957
+  natural_earth_10m_coastline: dense=71.9%, deployment=6.2%, MSE=2.061e-04, K=21.84, trust_proposal=0.732, trust_subset=0.970
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=8.127e-05, K=21.09, trust_proposal=0.680, trust_subset=0.974
+Epoch 046/60 joint [........................] 1/47 MSE=5.190e-05 pass=62.5% K=17.3 teacherK=15.5 countMAE=9.59
+Epoch 046/60 joint [=====...................] 10/47 MSE=2.878e-05 pass=78.1% K=16.9 teacherK=14.2 countMAE=9.27
+Epoch 046/60 joint [==========..............] 20/47 MSE=3.831e-05 pass=68.8% K=16.8 teacherK=14.9 countMAE=9.50
+Epoch 046/60 joint [===============.........] 30/47 MSE=2.899e-05 pass=81.2% K=16.7 teacherK=13.7 countMAE=9.86
+Epoch 046/60 joint [====================....] 40/47 MSE=2.942e-05 pass=75.0% K=17.4 teacherK=14.2 countMAE=10.61
+Epoch 046/60 joint [========================] 47/47 MSE=5.855e-05 pass=57.1% K=18.8 teacherK=16.4 countMAE=9.27
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 046 val dense=86.1% deployment=53.5% worst-source=18.8% MSE=7.173e-05 K=23.58 mass=23.09 beta=-0.96 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.208e-06, selector=1.208e-05, decoder=1.208e-05
+  training teacher: keep_P/R/F1=0.816/0.959/0.881, false_remove=4.1%, refinement_delta_K=0.495, improved=64.9%, extra_fits=9.0, boundary_loss=1.1107
+  parameter/local: counterfactual=0.2762, local=0.9198, geometry_teacher_delta_K=0.391, geometry_fits=4.0
+  compact teacher: fixed_K=17.45, fixed_pass=79.3%, decoded_pass=93.2%, accepted_delta_K=0.615, geometry_violation=0.0010, extra_refits=956.0, complexity_active=60.5%
+  reachable teacher: checks_total=958, decoded_pass=98.2%, accepted_delta_K=0.615, geometry_targets_total=296, target_K=18.2, target_pass=95.6%
+  compact mask calibration: targets_total=147, target_K=17.54, count_loss=0.0767, ranking_loss=0.8650; targets require smaller count AND decoded feasibility
+  training families: {'historical': 590, 'simple': 504, 'shape_terrain': 128, 'shape_handwriting': 139, 'shape_industrial': 139}
+  Synthetic: dense=86.2%, deployment=54.0%, MSE=6.602e-05, K=24.31, targetK=14.22, count_MAE=10.09, bias=+10.09, knot_F1@0.01=0.547, param_RMSE=4.473e-02, trust_proposal=0.690, trust_subset=0.977
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.256e-05, K=15.56, trust_proposal=0.682, trust_subset=0.960
+  natural_earth_10m_coastline: dense=71.9%, deployment=18.8%, MSE=1.972e-04, K=22.22, trust_proposal=0.733, trust_subset=0.971
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.461e-05, K=21.50, trust_proposal=0.681, trust_subset=0.975
+Epoch 047/60 joint [........................] 1/47 MSE=3.979e-05 pass=68.8% K=15.8 teacherK=13.8 countMAE=8.88
+Epoch 047/60 joint [=====...................] 10/47 MSE=4.669e-05 pass=65.6% K=17.3 teacherK=15.1 countMAE=9.32
+Epoch 047/60 joint [==========..............] 20/47 MSE=3.690e-05 pass=71.9% K=16.8 teacherK=14.3 countMAE=9.74
+Epoch 047/60 joint [===============.........] 30/47 MSE=4.560e-05 pass=53.1% K=20.7 teacherK=18.7 countMAE=10.25
+Epoch 047/60 joint [====================....] 40/47 MSE=3.272e-05 pass=78.1% K=17.4 teacherK=15.1 countMAE=9.33
+Epoch 047/60 joint [========================] 47/47 MSE=3.961e-05 pass=60.7% K=16.5 teacherK=14.5 countMAE=9.13
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 047 val dense=86.4% deployment=51.3% worst-source=12.5% MSE=6.998e-05 K=23.57 mass=23.08 beta=-0.95 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.149e-06, selector=1.149e-05, decoder=1.149e-05
+  training teacher: keep_P/R/F1=0.815/0.960/0.882, false_remove=4.0%, refinement_delta_K=0.505, improved=63.9%, extra_fits=9.0, boundary_loss=1.1235
+  parameter/local: counterfactual=0.2349, local=0.9442, geometry_teacher_delta_K=0.440, geometry_fits=4.0
+  compact teacher: fixed_K=17.28, fixed_pass=77.7%, decoded_pass=95.7%, accepted_delta_K=0.618, geometry_violation=0.0013, extra_refits=920.7, complexity_active=60.1%
+  reachable teacher: checks_total=925, decoded_pass=99.0%, accepted_delta_K=0.618, geometry_targets_total=288, target_K=18.0, target_pass=97.2%
+  compact mask calibration: targets_total=145, target_K=17.26, count_loss=0.0741, ranking_loss=0.8564; targets require smaller count AND decoded feasibility
+  training families: {'historical': 611, 'shape_industrial': 132, 'simple': 517, 'shape_terrain': 118, 'shape_handwriting': 122}
+  Synthetic: dense=86.6%, deployment=51.8%, MSE=6.373e-05, K=24.30, targetK=14.22, count_MAE=10.09, bias=+10.09, knot_F1@0.01=0.548, param_RMSE=4.465e-02, trust_proposal=0.691, trust_subset=0.978
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.281e-05, K=15.53, trust_proposal=0.683, trust_subset=0.960
+  natural_earth_10m_coastline: dense=71.9%, deployment=12.5%, MSE=1.953e-04, K=22.28, trust_proposal=0.734, trust_subset=0.972
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.936e-05, K=21.38, trust_proposal=0.682, trust_subset=0.976
+Epoch 048/60 joint [........................] 1/47 MSE=5.391e-05 pass=37.5% K=18.3 teacherK=16.7 countMAE=9.15
+Epoch 048/60 joint [=====...................] 10/47 MSE=2.505e-05 pass=87.5% K=16.9 teacherK=13.6 countMAE=10.00
+Epoch 048/60 joint [==========..............] 20/47 MSE=3.167e-05 pass=75.0% K=17.1 teacherK=14.8 countMAE=9.86
+Epoch 048/60 joint [===============.........] 30/47 MSE=5.288e-05 pass=56.2% K=18.1 teacherK=16.3 countMAE=10.46
+Epoch 048/60 joint [====================....] 40/47 MSE=4.730e-05 pass=56.2% K=19.4 teacherK=17.8 countMAE=10.11
+Epoch 048/60 joint [========================] 47/47 MSE=3.628e-05 pass=60.7% K=18.5 teacherK=16.5 countMAE=10.45
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 048 val dense=86.4% deployment=51.5% worst-source=12.5% MSE=6.995e-05 K=23.53 mass=23.04 beta=-0.93 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.093e-06, selector=1.093e-05, decoder=1.093e-05
+  training teacher: keep_P/R/F1=0.815/0.957/0.880, false_remove=4.3%, refinement_delta_K=0.498, improved=66.3%, extra_fits=9.0, boundary_loss=1.1337
+  parameter/local: counterfactual=0.2145, local=0.9103, geometry_teacher_delta_K=0.419, geometry_fits=4.0
+  compact teacher: fixed_K=16.86, fixed_pass=79.8%, decoded_pass=95.4%, accepted_delta_K=0.582, geometry_violation=0.0010, extra_refits=901.9, complexity_active=60.1%
+  reachable teacher: checks_total=954, decoded_pass=98.2%, accepted_delta_K=0.582, geometry_targets_total=295, target_K=17.6, target_pass=95.3%
+  compact mask calibration: targets_total=147, target_K=16.92, count_loss=0.0761, ranking_loss=0.8121; targets require smaller count AND decoded feasibility
+  training families: {'simple': 546, 'shape_industrial': 132, 'historical': 575, 'shape_handwriting': 123, 'shape_terrain': 124}
+  Synthetic: dense=86.6%, deployment=52.0%, MSE=6.342e-05, K=24.26, targetK=14.22, count_MAE=10.04, bias=+10.04, knot_F1@0.01=0.548, param_RMSE=4.468e-02, trust_proposal=0.692, trust_subset=0.979
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.313e-05, K=15.59, trust_proposal=0.684, trust_subset=0.962
+  natural_earth_10m_coastline: dense=71.9%, deployment=12.5%, MSE=1.976e-04, K=22.25, trust_proposal=0.735, trust_subset=0.972
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=8.108e-05, K=21.41, trust_proposal=0.683, trust_subset=0.977
+Epoch 049/60 joint [........................] 1/47 MSE=5.256e-05 pass=53.1% K=17.9 teacherK=16.3 countMAE=9.46
+Epoch 049/60 joint [=====...................] 10/47 MSE=4.272e-05 pass=71.9% K=17.4 teacherK=15.1 countMAE=9.60
+Epoch 049/60 joint [==========..............] 20/47 MSE=3.057e-05 pass=78.1% K=18.8 teacherK=15.7 countMAE=10.29
+Epoch 049/60 joint [===============.........] 30/47 MSE=5.181e-05 pass=56.2% K=16.4 teacherK=15.2 countMAE=8.84
+Epoch 049/60 joint [====================....] 40/47 MSE=3.700e-05 pass=68.8% K=19.5 teacherK=17.2 countMAE=10.29
+Epoch 049/60 joint [========================] 47/47 MSE=3.135e-05 pass=75.0% K=18.5 teacherK=15.9 countMAE=10.50
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 049 val dense=86.2% deployment=57.7% worst-source=12.5% MSE=6.422e-05 K=23.69 mass=23.19 beta=-0.99 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=1.041e-06, selector=1.041e-05, decoder=1.041e-05
+  training teacher: keep_P/R/F1=0.813/0.959/0.880, false_remove=4.1%, refinement_delta_K=0.494, improved=64.4%, extra_fits=9.0, boundary_loss=1.1074
+  parameter/local: counterfactual=0.2514, local=0.8847, geometry_teacher_delta_K=0.415, geometry_fits=4.0
+  compact teacher: fixed_K=17.23, fixed_pass=79.7%, decoded_pass=96.1%, accepted_delta_K=0.592, geometry_violation=0.0009, extra_refits=922.9, complexity_active=62.4%
+  reachable teacher: checks_total=947, decoded_pass=98.7%, accepted_delta_K=0.592, geometry_targets_total=296, target_K=18.0, target_pass=96.3%
+  compact mask calibration: targets_total=147, target_K=17.16, count_loss=0.0727, ranking_loss=0.8359; targets require smaller count AND decoded feasibility
+  training families: {'simple': 490, 'shape_industrial': 141, 'historical': 625, 'shape_handwriting': 123, 'shape_terrain': 121}
+  Synthetic: dense=86.4%, deployment=59.4%, MSE=5.740e-05, K=24.41, targetK=14.22, count_MAE=10.19, bias=+10.19, knot_F1@0.01=0.548, param_RMSE=4.485e-02, trust_proposal=0.693, trust_subset=0.980
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.105e-05, K=15.81, trust_proposal=0.685, trust_subset=0.963
+  natural_earth_10m_coastline: dense=71.9%, deployment=12.5%, MSE=1.928e-04, K=22.41, trust_proposal=0.736, trust_subset=0.973
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.548e-05, K=21.50, trust_proposal=0.684, trust_subset=0.977
+Epoch 050/60 joint [........................] 1/47 MSE=4.002e-05 pass=68.8% K=18.2 teacherK=15.7 countMAE=10.52
+Epoch 050/60 joint [=====...................] 10/47 MSE=4.079e-05 pass=62.5% K=17.9 teacherK=15.9 countMAE=9.68
+Epoch 050/60 joint [==========..............] 20/47 MSE=3.730e-05 pass=65.6% K=17.4 teacherK=15.3 countMAE=9.88
+Epoch 050/60 joint [===============.........] 30/47 MSE=3.488e-05 pass=68.8% K=16.5 teacherK=13.9 countMAE=10.73
+Epoch 050/60 joint [====================....] 40/47 MSE=3.829e-05 pass=65.6% K=17.5 teacherK=15.2 countMAE=9.77
+Epoch 050/60 joint [========================] 47/47 MSE=4.599e-05 pass=60.7% K=17.2 teacherK=15.1 countMAE=9.35
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 050 val dense=85.9% deployment=55.5% worst-source=15.6% MSE=6.591e-05 K=23.65 mass=23.16 beta=-0.97 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=9.921e-07, selector=9.921e-06, decoder=9.921e-06
+  training teacher: keep_P/R/F1=0.815/0.959/0.881, false_remove=4.1%, refinement_delta_K=0.505, improved=65.9%, extra_fits=9.0, boundary_loss=1.1419
+  parameter/local: counterfactual=0.2236, local=0.9294, geometry_teacher_delta_K=0.427, geometry_fits=4.0
+  compact teacher: fixed_K=16.96, fixed_pass=80.3%, decoded_pass=96.1%, accepted_delta_K=0.585, geometry_violation=0.0019, extra_refits=911.7, complexity_active=59.0%
+  reachable teacher: checks_total=958, decoded_pass=98.6%, accepted_delta_K=0.585, geometry_targets_total=295, target_K=17.6, target_pass=97.3%
+  compact mask calibration: targets_total=148, target_K=16.86, count_loss=0.0748, ranking_loss=0.8251; targets require smaller count AND decoded feasibility
+  training families: {'shape_industrial': 123, 'simple': 526, 'historical': 598, 'shape_terrain': 124, 'shape_handwriting': 129}
+  Synthetic: dense=86.0%, deployment=56.6%, MSE=5.980e-05, K=24.36, targetK=14.22, count_MAE=10.15, bias=+10.15, knot_F1@0.01=0.548, param_RMSE=4.482e-02, trust_proposal=0.694, trust_subset=0.980
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.148e-05, K=15.78, trust_proposal=0.686, trust_subset=0.964
+  natural_earth_10m_coastline: dense=71.9%, deployment=15.6%, MSE=1.840e-04, K=22.44, trust_proposal=0.737, trust_subset=0.974
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.775e-05, K=21.50, trust_proposal=0.685, trust_subset=0.978
+Epoch 051/60 joint [........................] 1/47 MSE=3.941e-05 pass=75.0% K=17.4 teacherK=15.1 countMAE=9.60
+Epoch 051/60 joint [=====...................] 10/47 MSE=4.182e-05 pass=68.8% K=17.0 teacherK=14.3 countMAE=9.50
+Epoch 051/60 joint [==========..............] 20/47 MSE=3.757e-05 pass=81.2% K=19.8 teacherK=17.6 countMAE=9.52
+Epoch 051/60 joint [===============.........] 30/47 MSE=4.728e-05 pass=68.8% K=20.2 teacherK=17.6 countMAE=10.20
+Epoch 051/60 joint [====================....] 40/47 MSE=4.648e-05 pass=59.4% K=19.0 teacherK=17.3 countMAE=9.65
+Epoch 051/60 joint [========================] 47/47 MSE=3.138e-05 pass=67.9% K=15.6 teacherK=13.3 countMAE=9.25
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 051 val dense=86.1% deployment=59.7% worst-source=15.6% MSE=6.276e-05 K=23.74 mass=23.25 beta=-0.99 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=9.475e-07, selector=9.475e-06, decoder=9.475e-06
+  training teacher: keep_P/R/F1=0.816/0.962/0.883, false_remove=3.8%, refinement_delta_K=0.532, improved=67.1%, extra_fits=9.0, boundary_loss=1.1192
+  parameter/local: counterfactual=0.2572, local=0.9146, geometry_teacher_delta_K=0.418, geometry_fits=4.0
+  compact teacher: fixed_K=17.50, fixed_pass=78.7%, decoded_pass=92.0%, accepted_delta_K=0.600, geometry_violation=0.0025, extra_refits=917.9, complexity_active=61.3%
+  reachable teacher: checks_total=917, decoded_pass=98.0%, accepted_delta_K=0.600, geometry_targets_total=292, target_K=18.3, target_pass=94.5%
+  compact mask calibration: targets_total=146, target_K=17.51, count_loss=0.0732, ranking_loss=0.8524; targets require smaller count AND decoded feasibility
+  training families: {'simple': 521, 'historical': 597, 'shape_terrain': 118, 'shape_handwriting': 134, 'shape_industrial': 130}
+  Synthetic: dense=86.2%, deployment=61.6%, MSE=5.583e-05, K=24.45, targetK=14.22, count_MAE=10.24, bias=+10.24, knot_F1@0.01=0.549, param_RMSE=4.481e-02, trust_proposal=0.694, trust_subset=0.981
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.070e-05, K=15.91, trust_proposal=0.686, trust_subset=0.965
+  natural_earth_10m_coastline: dense=71.9%, deployment=15.6%, MSE=1.917e-04, K=22.50, trust_proposal=0.738, trust_subset=0.975
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.429e-05, K=21.66, trust_proposal=0.686, trust_subset=0.979
+Epoch 052/60 joint [........................] 1/47 MSE=3.072e-05 pass=78.1% K=19.0 teacherK=16.4 countMAE=10.57
+Epoch 052/60 joint [=====...................] 10/47 MSE=4.968e-05 pass=68.8% K=18.3 teacherK=16.6 countMAE=9.16
+Epoch 052/60 joint [==========..............] 20/47 MSE=2.629e-05 pass=75.0% K=14.6 teacherK=12.2 countMAE=9.67
+Epoch 052/60 joint [===============.........] 30/47 MSE=3.419e-05 pass=71.9% K=19.2 teacherK=16.2 countMAE=10.83
+Epoch 052/60 joint [====================....] 40/47 MSE=4.259e-05 pass=78.1% K=18.5 teacherK=16.3 countMAE=9.28
+Epoch 052/60 joint [========================] 47/47 MSE=5.014e-05 pass=71.4% K=18.9 teacherK=16.6 countMAE=9.76
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 052 val dense=86.4% deployment=55.4% worst-source=12.5% MSE=6.790e-05 K=23.52 mass=23.03 beta=-0.94 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=9.070e-07, selector=9.070e-06, decoder=9.070e-06
+  training teacher: keep_P/R/F1=0.816/0.960/0.882, false_remove=4.0%, refinement_delta_K=0.523, improved=65.6%, extra_fits=9.0, boundary_loss=1.1031
+  parameter/local: counterfactual=0.2328, local=0.9282, geometry_teacher_delta_K=0.396, geometry_fits=4.0
+  compact teacher: fixed_K=17.32, fixed_pass=80.3%, decoded_pass=95.2%, accepted_delta_K=0.565, geometry_violation=0.0008, extra_refits=915.3, complexity_active=59.7%
+  reachable teacher: checks_total=962, decoded_pass=98.5%, accepted_delta_K=0.565, geometry_targets_total=297, target_K=18.0, target_pass=96.6%
+  compact mask calibration: targets_total=150, target_K=17.32, count_loss=0.0731, ranking_loss=0.8021; targets require smaller count AND decoded feasibility
+  training families: {'simple': 512, 'historical': 606, 'shape_terrain': 121, 'shape_handwriting': 142, 'shape_industrial': 119}
+  Synthetic: dense=86.6%, deployment=56.8%, MSE=6.083e-05, K=24.25, targetK=14.22, count_MAE=10.03, bias=+10.03, knot_F1@0.01=0.548, param_RMSE=4.483e-02, trust_proposal=0.695, trust_subset=0.981
+  uji_pen_characters_v2: dense=100.0%, deployment=78.1%, MSE=3.484e-05, K=15.50, trust_proposal=0.687, trust_subset=0.965
+  natural_earth_10m_coastline: dense=71.9%, deployment=12.5%, MSE=2.025e-04, K=22.12, trust_proposal=0.738, trust_subset=0.975
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.685e-05, K=21.44, trust_proposal=0.686, trust_subset=0.979
+Epoch 053/60 joint [........................] 1/47 MSE=3.796e-05 pass=68.8% K=16.2 teacherK=13.9 countMAE=9.33
+Epoch 053/60 joint [=====...................] 10/47 MSE=3.767e-05 pass=68.8% K=18.8 teacherK=16.5 countMAE=10.65
+Epoch 053/60 joint [==========..............] 20/47 MSE=5.198e-05 pass=65.6% K=19.5 teacherK=17.4 countMAE=10.20
+Epoch 053/60 joint [===============.........] 30/47 MSE=3.606e-05 pass=71.9% K=16.2 teacherK=13.7 countMAE=9.86
+Epoch 053/60 joint [====================....] 40/47 MSE=3.559e-05 pass=78.1% K=15.8 teacherK=13.2 countMAE=9.52
+Epoch 053/60 joint [========================] 47/47 MSE=3.904e-05 pass=64.3% K=15.8 teacherK=14.0 countMAE=9.11
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 053 val dense=86.1% deployment=55.0% worst-source=12.5% MSE=6.746e-05 K=23.58 mass=23.09 beta=-0.96 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=8.709e-07, selector=8.709e-06, decoder=8.709e-06
+  training teacher: keep_P/R/F1=0.817/0.960/0.883, false_remove=4.0%, refinement_delta_K=0.517, improved=65.7%, extra_fits=9.0, boundary_loss=1.1223
+  parameter/local: counterfactual=0.2276, local=0.9273, geometry_teacher_delta_K=0.414, geometry_fits=4.0
+  compact teacher: fixed_K=17.49, fixed_pass=78.2%, decoded_pass=92.4%, accepted_delta_K=0.543, geometry_violation=0.0018, extra_refits=927.4, complexity_active=59.5%
+  reachable teacher: checks_total=971, decoded_pass=98.4%, accepted_delta_K=0.543, geometry_targets_total=293, target_K=18.2, target_pass=95.9%
+  compact mask calibration: targets_total=147, target_K=17.67, count_loss=0.0708, ranking_loss=0.8128; targets require smaller count AND decoded feasibility
+  training families: {'historical': 613, 'simple': 502, 'shape_industrial': 120, 'shape_handwriting': 139, 'shape_terrain': 126}
+  Synthetic: dense=86.2%, deployment=56.2%, MSE=6.086e-05, K=24.30, targetK=14.22, count_MAE=10.08, bias=+10.08, knot_F1@0.01=0.548, param_RMSE=4.470e-02, trust_proposal=0.696, trust_subset=0.982
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.095e-05, K=15.75, trust_proposal=0.688, trust_subset=0.966
+  natural_earth_10m_coastline: dense=71.9%, deployment=12.5%, MSE=1.976e-04, K=22.31, trust_proposal=0.739, trust_subset=0.976
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.699e-05, K=21.47, trust_proposal=0.687, trust_subset=0.980
+Epoch 054/60 joint [........................] 1/47 MSE=4.143e-05 pass=62.5% K=16.9 teacherK=14.6 countMAE=9.62
+Epoch 054/60 joint [=====...................] 10/47 MSE=3.198e-05 pass=78.1% K=14.6 teacherK=12.2 countMAE=9.12
+Epoch 054/60 joint [==========..............] 20/47 MSE=2.909e-05 pass=84.4% K=17.6 teacherK=14.9 countMAE=10.23
+Epoch 054/60 joint [===============.........] 30/47 MSE=3.600e-05 pass=75.0% K=17.3 teacherK=14.7 countMAE=9.57
+Epoch 054/60 joint [====================....] 40/47 MSE=4.096e-05 pass=65.6% K=18.1 teacherK=16.1 countMAE=9.52
+Epoch 054/60 joint [========================] 47/47 MSE=4.941e-05 pass=57.1% K=17.7 teacherK=15.5 countMAE=9.58
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 054 val dense=86.1% deployment=56.2% worst-source=12.5% MSE=6.705e-05 K=23.60 mass=23.12 beta=-0.97 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=8.393e-07, selector=8.393e-06, decoder=8.393e-06
+  training teacher: keep_P/R/F1=0.813/0.959/0.880, false_remove=4.1%, refinement_delta_K=0.518, improved=66.1%, extra_fits=9.0, boundary_loss=1.1347
+  parameter/local: counterfactual=0.2356, local=0.8906, geometry_teacher_delta_K=0.439, geometry_fits=4.0
+  compact teacher: fixed_K=17.25, fixed_pass=78.7%, decoded_pass=92.0%, accepted_delta_K=0.575, geometry_violation=0.0022, extra_refits=903.4, complexity_active=61.0%
+  reachable teacher: checks_total=937, decoded_pass=97.8%, accepted_delta_K=0.575, geometry_targets_total=293, target_K=17.9, target_pass=94.5%
+  compact mask calibration: targets_total=147, target_K=17.34, count_loss=0.0720, ranking_loss=0.8220; targets require smaller count AND decoded feasibility
+  training families: {'simple': 518, 'historical': 589, 'shape_industrial': 131, 'shape_terrain': 122, 'shape_handwriting': 140}
+  Synthetic: dense=86.2%, deployment=57.6%, MSE=6.048e-05, K=24.32, targetK=14.22, count_MAE=10.10, bias=+10.10, knot_F1@0.01=0.549, param_RMSE=4.473e-02, trust_proposal=0.697, trust_subset=0.983
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.182e-05, K=15.81, trust_proposal=0.689, trust_subset=0.967
+  natural_earth_10m_coastline: dense=71.9%, deployment=12.5%, MSE=1.953e-04, K=22.38, trust_proposal=0.740, trust_subset=0.977
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.680e-05, K=21.50, trust_proposal=0.688, trust_subset=0.981
+Epoch 055/60 joint [........................] 1/47 MSE=4.184e-05 pass=75.0% K=18.4 teacherK=16.3 countMAE=9.83
+Epoch 055/60 joint [=====...................] 10/47 MSE=3.885e-05 pass=68.8% K=16.4 teacherK=14.2 countMAE=9.36
+Epoch 055/60 joint [==========..............] 20/47 MSE=4.632e-05 pass=62.5% K=19.1 teacherK=16.7 countMAE=9.40
+Epoch 055/60 joint [===============.........] 30/47 MSE=2.955e-05 pass=71.9% K=15.3 teacherK=12.8 countMAE=9.05
+Epoch 055/60 joint [====================....] 40/47 MSE=4.318e-05 pass=71.9% K=15.8 teacherK=13.8 countMAE=8.88
+Epoch 055/60 joint [========================] 47/47 MSE=4.197e-05 pass=67.9% K=18.5 teacherK=15.9 countMAE=9.95
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 055 val dense=86.1% deployment=56.0% worst-source=15.6% MSE=6.779e-05 K=23.66 mass=23.17 beta=-0.97 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=8.122e-07, selector=8.122e-06, decoder=8.122e-06
+  training teacher: keep_P/R/F1=0.817/0.960/0.883, false_remove=4.0%, refinement_delta_K=0.536, improved=67.9%, extra_fits=9.0, boundary_loss=1.1364
+  parameter/local: counterfactual=0.2223, local=0.8764, geometry_teacher_delta_K=0.416, geometry_fits=4.0
+  compact teacher: fixed_K=17.59, fixed_pass=79.3%, decoded_pass=96.4%, accepted_delta_K=0.561, geometry_violation=0.0009, extra_refits=921.7, complexity_active=60.3%
+  reachable teacher: checks_total=954, decoded_pass=98.8%, accepted_delta_K=0.561, geometry_targets_total=293, target_K=18.3, target_pass=96.6%
+  compact mask calibration: targets_total=147, target_K=17.69, count_loss=0.0691, ranking_loss=0.8299; targets require smaller count AND decoded feasibility
+  training families: {'simple': 519, 'historical': 614, 'shape_terrain': 120, 'shape_industrial': 124, 'shape_handwriting': 123}
+  Synthetic: dense=86.2%, deployment=57.2%, MSE=6.112e-05, K=24.37, targetK=14.22, count_MAE=10.15, bias=+10.15, knot_F1@0.01=0.548, param_RMSE=4.477e-02, trust_proposal=0.697, trust_subset=0.983
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.075e-05, K=15.84, trust_proposal=0.690, trust_subset=0.968
+  natural_earth_10m_coastline: dense=71.9%, deployment=15.6%, MSE=1.998e-04, K=22.47, trust_proposal=0.741, trust_subset=0.978
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.701e-05, K=21.53, trust_proposal=0.689, trust_subset=0.981
+Epoch 056/60 joint [........................] 1/47 MSE=3.467e-05 pass=71.9% K=17.2 teacherK=14.8 countMAE=9.77
+Epoch 056/60 joint [=====...................] 10/47 MSE=3.352e-05 pass=68.8% K=17.7 teacherK=15.7 countMAE=9.85
+Epoch 056/60 joint [==========..............] 20/47 MSE=4.014e-05 pass=68.8% K=17.7 teacherK=15.5 countMAE=9.54
+Epoch 056/60 joint [===============.........] 30/47 MSE=3.681e-05 pass=78.1% K=17.1 teacherK=14.1 countMAE=9.45
+Epoch 056/60 joint [====================....] 40/47 MSE=3.724e-05 pass=78.1% K=17.9 teacherK=15.8 countMAE=9.71
+Epoch 056/60 joint [========================] 47/47 MSE=4.007e-05 pass=64.3% K=16.8 teacherK=15.1 countMAE=8.48
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 056 val dense=85.9% deployment=57.4% worst-source=15.6% MSE=6.477e-05 K=23.67 mass=23.17 beta=-0.98 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=7.900e-07, selector=7.900e-06, decoder=7.900e-06
+  training teacher: keep_P/R/F1=0.818/0.960/0.883, false_remove=4.0%, refinement_delta_K=0.512, improved=64.4%, extra_fits=9.0, boundary_loss=1.1029
+  parameter/local: counterfactual=0.2653, local=0.9075, geometry_teacher_delta_K=0.419, geometry_fits=4.0
+  compact teacher: fixed_K=17.14, fixed_pass=77.7%, decoded_pass=98.0%, accepted_delta_K=0.555, geometry_violation=0.0006, extra_refits=860.5, complexity_active=60.5%
+  reachable teacher: checks_total=908, decoded_pass=99.0%, accepted_delta_K=0.555, geometry_targets_total=289, target_K=17.9, target_pass=97.2%
+  compact mask calibration: targets_total=144, target_K=17.17, count_loss=0.0805, ranking_loss=0.8194; targets require smaller count AND decoded feasibility
+  training families: {'shape_handwriting': 126, 'simple': 551, 'historical': 577, 'shape_industrial': 135, 'shape_terrain': 111}
+  Synthetic: dense=86.0%, deployment=58.8%, MSE=5.843e-05, K=24.38, targetK=14.22, count_MAE=10.17, bias=+10.17, knot_F1@0.01=0.549, param_RMSE=4.470e-02, trust_proposal=0.698, trust_subset=0.983
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.118e-05, K=15.72, trust_proposal=0.691, trust_subset=0.968
+  natural_earth_10m_coastline: dense=71.9%, deployment=15.6%, MSE=1.875e-04, K=22.50, trust_proposal=0.742, trust_subset=0.978
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.467e-05, K=21.56, trust_proposal=0.690, trust_subset=0.982
+Epoch 057/60 joint [........................] 1/47 MSE=4.200e-05 pass=65.6% K=17.9 teacherK=15.4 countMAE=9.08
+Epoch 057/60 joint [=====...................] 10/47 MSE=3.501e-05 pass=75.0% K=18.8 teacherK=16.3 countMAE=10.12
+Epoch 057/60 joint [==========..............] 20/47 MSE=3.718e-05 pass=68.8% K=17.9 teacherK=15.8 countMAE=9.96
+Epoch 057/60 joint [===============.........] 30/47 MSE=3.525e-05 pass=71.9% K=18.8 teacherK=16.6 countMAE=10.00
+Epoch 057/60 joint [====================....] 40/47 MSE=4.937e-05 pass=62.5% K=18.5 teacherK=16.2 countMAE=9.26
+Epoch 057/60 joint [========================] 47/47 MSE=3.637e-05 pass=71.4% K=16.3 teacherK=13.4 countMAE=10.00
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 057 val dense=85.9% deployment=56.5% worst-source=18.8% MSE=6.589e-05 K=23.63 mass=23.15 beta=-0.97 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=7.725e-07, selector=7.725e-06, decoder=7.725e-06
+  training teacher: keep_P/R/F1=0.816/0.962/0.883, false_remove=3.8%, refinement_delta_K=0.529, improved=66.1%, extra_fits=9.0, boundary_loss=1.0920
+  parameter/local: counterfactual=0.2401, local=0.9036, geometry_teacher_delta_K=0.413, geometry_fits=4.0
+  compact teacher: fixed_K=17.55, fixed_pass=77.7%, decoded_pass=94.6%, accepted_delta_K=0.519, geometry_violation=0.0013, extra_refits=892.6, complexity_active=62.8%
+  reachable teacher: checks_total=960, decoded_pass=98.5%, accepted_delta_K=0.519, geometry_targets_total=289, target_K=18.2, target_pass=95.8%
+  compact mask calibration: targets_total=144, target_K=17.58, count_loss=0.0692, ranking_loss=0.7978; targets require smaller count AND decoded feasibility
+  training families: {'historical': 584, 'simple': 530, 'shape_handwriting': 123, 'shape_terrain': 138, 'shape_industrial': 125}
+  Synthetic: dense=86.0%, deployment=57.6%, MSE=5.969e-05, K=24.34, targetK=14.22, count_MAE=10.12, bias=+10.12, knot_F1@0.01=0.550, param_RMSE=4.477e-02, trust_proposal=0.699, trust_subset=0.984
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.097e-05, K=15.88, trust_proposal=0.691, trust_subset=0.970
+  natural_earth_10m_coastline: dense=71.9%, deployment=18.8%, MSE=1.868e-04, K=22.44, trust_proposal=0.742, trust_subset=0.979
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.681e-05, K=21.53, trust_proposal=0.690, trust_subset=0.982
+Epoch 058/60 joint [........................] 1/47 MSE=3.031e-05 pass=78.1% K=15.9 teacherK=13.7 countMAE=9.71
+Epoch 058/60 joint [=====...................] 10/47 MSE=4.017e-05 pass=65.6% K=16.4 teacherK=14.1 countMAE=9.26
+Epoch 058/60 joint [==========..............] 20/47 MSE=4.261e-05 pass=78.1% K=15.7 teacherK=13.2 countMAE=9.74
+Epoch 058/60 joint [===============.........] 30/47 MSE=3.144e-05 pass=75.0% K=16.7 teacherK=13.8 countMAE=9.50
+Epoch 058/60 joint [====================....] 40/47 MSE=3.154e-05 pass=78.1% K=18.1 teacherK=15.4 countMAE=10.04
+Epoch 058/60 joint [========================] 47/47 MSE=3.669e-05 pass=71.4% K=17.6 teacherK=15.4 countMAE=9.73
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 058 val dense=86.1% deployment=56.7% worst-source=15.6% MSE=7.032e-05 K=23.59 mass=23.11 beta=-0.96 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=7.600e-07, selector=7.600e-06, decoder=7.600e-06
+  training teacher: keep_P/R/F1=0.817/0.960/0.883, false_remove=4.0%, refinement_delta_K=0.523, improved=68.0%, extra_fits=9.0, boundary_loss=1.1043
+  parameter/local: counterfactual=0.2290, local=0.9173, geometry_teacher_delta_K=0.435, geometry_fits=4.0
+  compact teacher: fixed_K=17.33, fixed_pass=79.3%, decoded_pass=95.3%, accepted_delta_K=0.553, geometry_violation=0.0014, extra_refits=874.8, complexity_active=60.7%
+  reachable teacher: checks_total=939, decoded_pass=98.2%, accepted_delta_K=0.553, geometry_targets_total=295, target_K=18.0, target_pass=96.6%
+  compact mask calibration: targets_total=147, target_K=17.45, count_loss=0.0662, ranking_loss=0.8026; targets require smaller count AND decoded feasibility
+  training families: {'historical': 588, 'shape_handwriting': 119, 'shape_industrial': 120, 'simple': 543, 'shape_terrain': 130}
+  Synthetic: dense=86.2%, deployment=58.0%, MSE=6.380e-05, K=24.31, targetK=14.22, count_MAE=10.09, bias=+10.09, knot_F1@0.01=0.546, param_RMSE=4.475e-02, trust_proposal=0.700, trust_subset=0.984
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.103e-05, K=15.84, trust_proposal=0.692, trust_subset=0.970
+  natural_earth_10m_coastline: dense=71.9%, deployment=15.6%, MSE=2.028e-04, K=22.34, trust_proposal=0.743, trust_subset=0.979
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.891e-05, K=21.47, trust_proposal=0.691, trust_subset=0.982
+Epoch 059/60 joint [........................] 1/47 MSE=4.266e-05 pass=68.8% K=18.4 teacherK=16.1 countMAE=9.86
+Epoch 059/60 joint [=====...................] 10/47 MSE=3.167e-05 pass=78.1% K=16.7 teacherK=14.1 countMAE=10.30
+Epoch 059/60 joint [==========..............] 20/47 MSE=4.124e-05 pass=68.8% K=18.4 teacherK=16.0 countMAE=9.91
+Epoch 059/60 joint [===============.........] 30/47 MSE=3.876e-05 pass=65.6% K=18.4 teacherK=15.9 countMAE=10.38
+Epoch 059/60 joint [====================....] 40/47 MSE=4.436e-05 pass=50.0% K=17.0 teacherK=14.8 countMAE=9.95
+Epoch 059/60 joint [========================] 47/47 MSE=3.175e-05 pass=78.6% K=18.1 teacherK=15.5 countMAE=9.37
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 059 val dense=86.1% deployment=58.2% worst-source=15.6% MSE=6.931e-05 K=23.61 mass=23.11 beta=-0.97 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=7.525e-07, selector=7.525e-06, decoder=7.525e-06
+  training teacher: keep_P/R/F1=0.815/0.960/0.882, false_remove=4.0%, refinement_delta_K=0.547, improved=67.5%, extra_fits=9.0, boundary_loss=1.1166
+  parameter/local: counterfactual=0.2597, local=0.8852, geometry_teacher_delta_K=0.413, geometry_fits=4.0
+  compact teacher: fixed_K=17.27, fixed_pass=80.3%, decoded_pass=96.6%, accepted_delta_K=0.551, geometry_violation=0.0010, extra_refits=892.7, complexity_active=60.9%
+  reachable teacher: checks_total=949, decoded_pass=98.9%, accepted_delta_K=0.551, geometry_targets_total=295, target_K=17.9, target_pass=97.3%
+  compact mask calibration: targets_total=148, target_K=17.34, count_loss=0.0675, ranking_loss=0.7972; targets require smaller count AND decoded feasibility
+  training families: {'shape_terrain': 140, 'simple': 508, 'historical': 592, 'shape_handwriting': 133, 'shape_industrial': 127}
+  Synthetic: dense=86.2%, deployment=59.8%, MSE=6.262e-05, K=24.33, targetK=14.22, count_MAE=10.11, bias=+10.11, knot_F1@0.01=0.546, param_RMSE=4.472e-02, trust_proposal=0.700, trust_subset=0.984
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.120e-05, K=15.78, trust_proposal=0.693, trust_subset=0.970
+  natural_earth_10m_coastline: dense=71.9%, deployment=15.6%, MSE=2.021e-04, K=22.38, trust_proposal=0.744, trust_subset=0.979
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.911e-05, K=21.44, trust_proposal=0.692, trust_subset=0.983
+Epoch 060/60 joint [........................] 1/47 MSE=2.949e-05 pass=78.1% K=17.1 teacherK=14.6 countMAE=9.68
+Epoch 060/60 joint [=====...................] 10/47 MSE=4.469e-05 pass=53.1% K=18.2 teacherK=16.7 countMAE=9.48
+Epoch 060/60 joint [==========..............] 20/47 MSE=3.687e-05 pass=71.9% K=18.1 teacherK=15.6 countMAE=9.46
+Epoch 060/60 joint [===============.........] 30/47 MSE=3.312e-05 pass=71.9% K=16.8 teacherK=14.0 countMAE=10.84
+Epoch 060/60 joint [====================....] 40/47 MSE=3.334e-05 pass=75.0% K=17.0 teacherK=14.6 countMAE=9.42
+Epoch 060/60 joint [========================] 47/47 MSE=4.432e-05 pass=60.7% K=18.7 teacherK=16.7 countMAE=9.65
+  validation [=.......................] 1/19 
+  validation [============............] 10/19 
+  validation [========================] 19/19 
+Epoch 060 val dense=85.9% deployment=59.7% worst-source=18.8% MSE=6.346e-05 K=23.70 mass=23.20 beta=-1.00 complexity=1.00->1.00 safety=0+0.00sigma scale=0.00->0.00 target_met=False
+  learning rates: proposal=7.500e-07, selector=7.500e-06, decoder=7.500e-06
+  training teacher: keep_P/R/F1=0.812/0.962/0.881, false_remove=3.8%, refinement_delta_K=0.532, improved=68.1%, extra_fits=9.0, boundary_loss=1.1212
+  parameter/local: counterfactual=0.2180, local=0.8907, geometry_teacher_delta_K=0.431, geometry_fits=4.0
+  compact teacher: fixed_K=17.12, fixed_pass=77.1%, decoded_pass=92.5%, accepted_delta_K=0.555, geometry_violation=0.0022, extra_refits=900.3, complexity_active=62.9%
+  reachable teacher: checks_total=942, decoded_pass=97.9%, accepted_delta_K=0.555, geometry_targets_total=288, target_K=17.8, target_pass=94.8%
+  compact mask calibration: targets_total=144, target_K=17.22, count_loss=0.0772, ranking_loss=0.8235; targets require smaller count AND decoded feasibility
+  training families: {'shape_handwriting': 107, 'simple': 511, 'historical': 626, 'shape_industrial': 128, 'shape_terrain': 128}
+  Synthetic: dense=86.0%, deployment=61.4%, MSE=5.680e-05, K=24.40, targetK=14.22, count_MAE=10.19, bias=+10.19, knot_F1@0.01=0.549, param_RMSE=4.485e-02, trust_proposal=0.701, trust_subset=0.985
+  uji_pen_characters_v2: dense=100.0%, deployment=81.2%, MSE=3.051e-05, K=15.88, trust_proposal=0.693, trust_subset=0.971
+  natural_earth_10m_coastline: dense=71.9%, deployment=18.8%, MSE=1.886e-04, K=22.59, trust_proposal=0.744, trust_subset=0.980
+  usgs_tnm_contours_large_scale: dense=84.4%, deployment=53.1%, MSE=7.528e-05, K=21.62, trust_proposal=0.693, trust_subset=0.983
+Saved best v16: /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_anchored_k32_p12_j48_3090_r1.pt; quality=target_not_met. Last/resume: /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/overnight_anchored_k32_p12_j48_3090_r1.last.pt
