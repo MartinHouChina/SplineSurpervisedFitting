@@ -1,0 +1,32 @@
+{
+  "base_commit": "e9a47c8",
+  "created_date": "2026-09-21",
+  "description": "Opt-in gated interaction depth, synthetic morphological capacity ablations, peak-error loss/reporting, and current paper framework",
+  "scope": "incremental source only; no weights, datasets, previous results or git metadata",
+  "validation": "1253 tests passed; actual tiny CPU warm-start/resume; Bash syntax and dry-run checked; no full new 3090 training; LaTeX source statically checked, not compiled",
+  "files": [
+    "README.md",
+    "docs/overnight_anchored.md",
+    "docs/overnight_granularity.md",
+    "docs/overnight_results_audit_20260921.md",
+    "paper/README.md",
+    "paper/overnight/README.md",
+    "paper/overnight/manuscript.tex",
+    "paper/overnight/references.bib",
+    "scripts/benchmark_v15_datasets.py",
+    "scripts/overnight_linux_preflight.py",
+    "scripts/run_v16_1070_overnight_linux.sh",
+    "scripts/run_v16_granularity_experiments.py",
+    "scripts/train_v16.py",
+    "src/spline_fitting/data/v16_mixed.py",
+    "src/spline_fitting/losses/v16_subset_loss.py",
+    "src/spline_fitting/models/v16_network.py",
+    "tests/test_run_v16_granularity_experiments.py",
+    "tests/test_train_v16_depth_peak.py",
+    "tests/test_train_v16_peak_validation.py",
+    "tests/test_v16_depth_refinement.py",
+    "tests/test_v16_granularity_domains.py",
+    "tests/test_v16_max_point_error.py",
+    "overnight_granularity_update_manifest.json"
+  ]
+}

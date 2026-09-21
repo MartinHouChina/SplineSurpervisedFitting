@@ -128,6 +128,9 @@ class V16SubsetLoss(nn.Module):
         teacher_geometry_trajectory_targets: int = 0,
         teacher_greedy_priority: str = "sequential",
         teacher_compact_mask_weight: float = 0.0,
+        max_point_error_weight: float = 0.0,
+        max_point_error_tolerance: float | None = None,
+        max_point_error_tail_fraction: float = 0.05,
     ) -> None:
         super().__init__()
         if not math.isfinite(mse_tolerance) or mse_tolerance <= 0:
@@ -156,6 +159,7 @@ class V16SubsetLoss(nn.Module):
             ("proposal_ordered_weight", proposal_ordered_weight),
             ("teacher_geometry_distillation_weight", teacher_geometry_distillation_weight),
             ("teacher_compact_mask_weight", teacher_compact_mask_weight),
+            ("max_point_error_weight", max_point_error_weight),
             ("supervised_count_weight", supervised_count_weight),
             ("supervised_over_count_weight", supervised_over_count_weight),
             ("true_parameter_weight", true_parameter_weight),
@@ -217,6 +221,22 @@ class V16SubsetLoss(nn.Module):
         if teacher_greedy_priority not in ("sequential", "compact"):
             raise ValueError("teacher_greedy_priority must be 'sequential' or 'compact'")
         self.teacher_greedy_priority = teacher_greedy_priority
+        if (not math.isfinite(max_point_error_tail_fraction)
+                or not 0 < max_point_error_tail_fraction <= 1):
+            raise ValueError("max_point_error_tail_fraction must lie in (0,1]")
+        if max_point_error_tolerance is not None and (
+            not math.isfinite(max_point_error_tolerance) or max_point_error_tolerance <= 0
+        ):
+            raise ValueError("max_point_error_tolerance must be finite and positive")
+        if max_point_error_weight and max_point_error_tolerance is None:
+            raise ValueError(
+                "max_point_error_weight requires an explicit max_point_error_tolerance "
+                "in squared Euclidean distance units, separate from the MSE tolerance"
+            )
+        self.max_point_error_tolerance = (
+            float(max_point_error_tolerance) if max_point_error_tolerance is not None else None
+        )
+        self.max_point_error_tail_fraction = float(max_point_error_tail_fraction)
 
     @staticmethod
     def _validate_points(points: torch.Tensor, degree: int) -> None:
@@ -327,6 +347,34 @@ class V16SubsetLoss(nn.Module):
         penalties = self._objective_fit_penalty(region_mse, tolerance[:, None])
         per_curve = (penalties * (counts > 0)).sum(-1) / (counts > 0).sum(-1)
         return self._tail_aware_mean(per_curve), region_mse.amax(-1).mean()
+
+    def _max_point_error_penalty(self, squared_error):
+        """Pointwise peak + upper-tail loss on actual normalized refit residuals.
+
+        The exact peak carries a subgradient; a top-fraction mean distributes
+        additional gradient over several poor points. Both use squared Euclidean
+        distance (summed over coordinates), not RMS or a maximum of curve MSEs.
+        This optional training target does not change the MSE pass criterion and
+        does not certify errors between observations or Hausdorff distance.
+        """
+        if (squared_error.ndim != 2 or min(squared_error.shape) < 1
+                or not squared_error.is_floating_point()
+                or not torch.isfinite(squared_error).all()
+                or bool((squared_error < 0).any())):
+            raise ValueError("pointwise squared residuals must be nonempty finite non-negative [B,M]")
+        if self.max_point_error_tolerance is None:
+            raise ValueError("max point error loss requires an explicit squared-error tolerance")
+        maxima = squared_error.amax(-1)
+        tail_count = max(1, math.ceil(squared_error.shape[1] * self.max_point_error_tail_fraction))
+        tail_means = squared_error.topk(tail_count, dim=-1).values.mean(-1)
+        target = squared_error.new_tensor(self.max_point_error_tolerance)
+        # This log-space penalty is stable for large residual/target ratios.
+        # It stays independent of feasible-MSE discounts: a low mean can hide
+        # an isolated spike that the explicit point-error objective must see.
+        penalties = 0.5 * (
+            self._fit_penalty(maxima, target) + self._fit_penalty(tail_means, target)
+        )
+        return self._tail_aware_mean(penalties), maxima, tail_means
 
     @staticmethod
     def _trust_statistics(value, *, prefix, zero):
@@ -1759,7 +1807,7 @@ class V16SubsetLoss(nn.Module):
             proposal_knot_coverage_loss = proposal_knot_nearest_mae = zero
         dense_mask = torch.ones_like(proposals, dtype=torch.bool)
         dense_details = None
-        if self.local_fit_weight:
+        if self.local_fit_weight or self.max_point_error_weight:
             dense_details = self._fit_details(
                 context["proposal_params"], proposals, dense_mask, points, degree,
             )
@@ -1773,6 +1821,13 @@ class V16SubsetLoss(nn.Module):
         proposal_chord_mse = deployment_chord_mse = zero
         proposal_counterfactual_win = deployment_counterfactual_win = zero
         local_fit_loss = local_max_mse = zero
+        max_point_error_loss = zero
+        point_error_metrics = {}
+        dense_maxima = dense_point_tail = None
+        if self.max_point_error_weight:
+            dense_point_error_loss, dense_maxima, dense_point_tail = self._max_point_error_penalty(
+                dense_details["per_point_squared_error"],
+            )
         greedy_metrics = self._greedy_metrics(zero)
         greedy_targets = []
         geometry_distillation_loss = zero
@@ -1837,6 +1892,9 @@ class V16SubsetLoss(nn.Module):
                 local_fit_loss, local_max_mse = self._local_fit_penalty(
                     dense_details["per_point_squared_error"], context["proposal_params"], tolerance,
                 )
+            if self.max_point_error_weight:
+                max_point_error_loss = dense_point_error_loss
+                deployment_maxima, deployment_point_tail = dense_maxima, dense_point_tail
         else:
             logits = context["keep_logits"]
             if logits.shape != proposals.shape or logits.device != points.device:
@@ -1849,6 +1907,7 @@ class V16SubsetLoss(nn.Module):
                 raise ValueError("select_mask must return a boolean [B,K] tensor")
             deployment_output = None
             if (self.parameter_counterfactual_weight or self.local_fit_weight
+                    or self.max_point_error_weight
                     or getattr(model, "parameter_trust_enabled", False)
                     or self.teacher_greedy_steps):
                 deployment_output = self._decode_output(model, context, mask)
@@ -1857,6 +1916,11 @@ class V16SubsetLoss(nn.Module):
                     mask, points, degree,
                 )
                 deployment_mse = deployment_details["per_sample_mse"]
+                if self.max_point_error_weight:
+                    deployment_point_error_loss, deployment_maxima, deployment_point_tail = (
+                        self._max_point_error_penalty(deployment_details["per_point_squared_error"])
+                    )
+                    max_point_error_loss = 0.5 * (dense_point_error_loss + deployment_point_error_loss)
                 if self.local_fit_weight:
                     local_fit_loss, local_max_mse = self._local_fit_penalty(
                         deployment_details["per_point_squared_error"],
@@ -2239,6 +2303,23 @@ class V16SubsetLoss(nn.Module):
             loss = loss + self.parameter_counterfactual_weight * parameter_counterfactual_loss
         if self.local_fit_weight:
             loss = loss + self.local_fit_weight * local_fit_loss
+        if self.max_point_error_weight:
+            loss = loss + self.max_point_error_weight * max_point_error_loss
+            point_error_metrics["max_point_error_loss"] = max_point_error_loss
+            # *_max is a batch maximum: epoch/report aggregation must take max,
+            # not average batch maxima. Means and pass rates are curve-weighted.
+            for prefix, maxima, point_tail in (
+                ("dense", dense_maxima, dense_point_tail),
+                ("deployment", deployment_maxima, deployment_point_tail),
+            ):
+                point_error_metrics.update({
+                    f"{prefix}_max_point_squared_error_mean": maxima.mean(),
+                    f"{prefix}_max_point_squared_error_max": maxima.amax(),
+                    f"{prefix}_point_tail_squared_error_mean": point_tail.mean(),
+                    f"{prefix}_max_point_error_pass_rate": (
+                        maxima <= self.max_point_error_tolerance
+                    ).double().mean(),
+                })
         if self.proposal_ordered_weight:
             loss = loss + self.proposal_ordered_weight * proposal_ordered_loss
         if self.teacher_geometry_distillation_weight:
@@ -2317,5 +2398,6 @@ class V16SubsetLoss(nn.Module):
             **geometry_teacher_metrics,
             **trust_metrics,
             **teacher_match_metrics,
+            **point_error_metrics,
         }
         return loss, {name: value.detach() for name, value in metrics.items()}

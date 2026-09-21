@@ -92,6 +92,8 @@ def parser(*, default_checkpoint: Path | None = None,
     p.add_argument("--samples-per-knot-count", type=int, default=1)
     p.add_argument("--min-knot-count", type=int, default=4)
     p.add_argument("--max-knot-count", type=int, default=20)
+    p.add_argument("--synthetic-source-max-knots", type=int, default=None,
+                   help="Explicit evaluation generator upper source K, independent of a specialist's training range")
     p.add_argument("--scan-size", type=int, default=4096)
     p.add_argument("--seed", type=int, default=20000)
     p.add_argument("--selection-seed", type=int, default=20260908)
@@ -375,6 +377,13 @@ def known_synthetic_seed_ranges(checkpoint: dict) -> list[dict]:
 def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict], list[dict]]:
     cases, provenance = [], []
     config = _dataset_config_from_checkpoint(checkpoint, model_config)
+    source_override = getattr(args, "synthetic_source_max_knots", None)
+    if source_override is not None:
+        if not 4 <= source_override <= config["num_points"] - 4:
+            raise ValueError("synthetic-source-max-knots must be 4..num-points-4")
+        # Keep the shared K4..N test generator identical across specialist
+        # capacities. This is an explicit evaluation protocol, not model input.
+        config = {**config, "min_control_points": 8, "max_control_points": source_override + 4}
     if not args.skip_synthetic:
         train_config = checkpoint.get("training_config", {})
         if args.seed in (train_config.get("train_seed"), train_config.get("val_seed")):

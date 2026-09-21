@@ -90,8 +90,11 @@ class _CompactShapeSyntheticDataset(Dataset):
 
     _FAMILIES = ("shape_industrial", "shape_terrain", "shape_handwriting")
 
-    def __init__(self, config: dict, *, size: int, seed: int) -> None:
+    def __init__(self, config: dict, *, size: int, seed: int, domain: str = "mixed") -> None:
         options = dict(config)
+        if domain not in ("mixed", "industrial", "terrain", "handwriting"):
+            raise ValueError("unknown procedural synthetic shape domain")
+        self.families = self._FAMILIES if domain == "mixed" else ("shape_" + domain,)
         self.size = int(size)
         self.seed = int(seed)
         self.num_points = int(options.get("num_points", 64))
@@ -176,8 +179,8 @@ class _CompactShapeSyntheticDataset(Dataset):
             generator=generator,
             dtype=self.dtype,
         )
-        family = self._FAMILIES[index % len(self._FAMILIES)]
-        complexity = 1 + ((index // len(self._FAMILIES)) % 5)
+        family = self.families[index % len(self.families)]
+        complexity = 1 + ((index // len(self.families)) % 5)
         points = self._base_curve(family, parameters, complexity, generator)
 
         # Apply a deterministic random frame so the network cannot identify a
@@ -359,7 +362,7 @@ class MixedTrainingCurves(Dataset):
     def __init__(self, config, real_sources=(), *, size=4000, seed=42,
                  real_fraction=0.5, epoch=0, resample=True,
                  synthetic_simple_fraction=0.0,
-                 synthetic_shape_fraction=0.0):
+                 synthetic_shape_fraction=0.0, synthetic_shape_domain="mixed"):
         if size < 1 or size >= EPOCH_SEED_STRIDE:
             raise ValueError("training size must be positive and below the epoch seed stride")
         if not 0 <= real_fraction <= 1:
@@ -381,6 +384,9 @@ class MixedTrainingCurves(Dataset):
         self.real_fraction = real_fraction if self.real_sources else 0.0
         self.synthetic_simple_fraction = float(synthetic_simple_fraction)
         self.synthetic_shape_fraction = float(synthetic_shape_fraction)
+        if synthetic_shape_domain not in ("mixed", "industrial", "terrain", "handwriting"):
+            raise ValueError("unknown procedural synthetic shape domain")
+        self.synthetic_shape_domain = synthetic_shape_domain
         self.synthetic_augmentation_enabled = bool(
             self.synthetic_simple_fraction or self.synthetic_shape_fraction
         )
@@ -406,6 +412,7 @@ class MixedTrainingCurves(Dataset):
                 config,
                 size=size,
                 seed=self.seed + SHAPE_SYNTHETIC_SEED_OFFSET,
+                domain=synthetic_shape_domain,
             )
 
     def __len__(self):

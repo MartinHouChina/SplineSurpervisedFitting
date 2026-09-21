@@ -37,6 +37,119 @@ class _SelectionBlock(nn.Module):
         return self.norms[2](tokens + self.feed_forward(tokens))
 
 
+class _LocalResidualRefinement(nn.Module):
+    """Identity-initialized token interaction, with local geometric evidence.
+
+    A zero scalar gate makes adding blocks to a trained model initially exact.
+    The gate receives gradients immediately; attention weights start receiving
+    task gradients once that gate moves.  No fit or discrete search takes place.
+    """
+
+    def __init__(self, width: int, heads: int) -> None:
+        super().__init__()
+        self.width, self.heads = width, heads
+        self.self_attention = nn.MultiheadAttention(width, heads, batch_first=True)
+        self.cross_attention = nn.MultiheadAttention(width, heads, batch_first=True)
+        self.norms = nn.ModuleList([nn.LayerNorm(width) for _ in range(3)])
+        self.feed_forward = nn.Sequential(
+            nn.Linear(width, 2 * width), nn.GELU(), nn.Linear(2 * width, width),
+        )
+        self.residual_gate = nn.Parameter(torch.zeros(()))
+
+    @staticmethod
+    def selected_memory(tokens: torch.Tensor, keep_mask: torch.Tensor) -> tuple:
+        # No removed candidate is ever a key/value. The zero sentinel prevents
+        # all-masked softmax rows, and is hidden for every nonempty subset.
+        memory = torch.cat([tokens, tokens.new_zeros(tokens.shape[0], 1, tokens.shape[2])], 1)
+        padding = torch.cat([~keep_mask, keep_mask.any(-1, keepdim=True)], -1)
+        return memory, padding
+
+    def forward(
+        self, tokens: torch.Tensor, point_memory: torch.Tensor,
+        knots: torch.Tensor, params: torch.Tensor,
+        keep_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        query = self.norms[0](tokens) + KnotHead._sinusoidal_position_encoding(
+            knots, self.width,
+        )
+        if keep_mask is None:
+            memory, padding = query, None
+        else:
+            memory, padding = self.selected_memory(query, keep_mask)
+        self_update, _ = self.self_attention(
+            query, memory, memory, key_padding_mask=padding, need_weights=False,
+        )
+        # A Gaussian attention bias is centred at the CURRENT candidate rather
+        # than its uniform initializer; each new layer can inspect finer local
+        # geometry after the preceding bounded coordinate update.
+        bias = (-0.5 * ((params.unsqueeze(1) - knots.unsqueeze(-1)) / .08).square()).clamp_min(-30)
+        bias = bias.unsqueeze(1).expand(-1, self.heads, -1, -1).reshape(
+            tokens.shape[0] * self.heads, knots.shape[1], params.shape[1],
+        )
+        cross_update, _ = self.cross_attention(
+            self.norms[1](tokens + self_update), point_memory, point_memory,
+            attn_mask=bias, need_weights=False,
+        )
+        update = self_update + cross_update
+        update = update + self.feed_forward(self.norms[2](tokens + update))
+        if keep_mask is not None:
+            update = update * keep_mask.unsqueeze(-1)
+        return tokens + self.residual_gate.tanh() * update
+
+
+class _ProposalResidualRefinement(_LocalResidualRefinement):
+    def __init__(self, width: int, heads: int, min_gap: float) -> None:
+        super().__init__(width, heads)
+        self.min_gap = min_gap
+        self.position_update = nn.Linear(width, 1)
+        nn.init.normal_(self.position_update.weight, std=.01)
+        nn.init.zeros_(self.position_update.bias)
+        self.position_gate = nn.Parameter(torch.zeros(()))
+
+    def forward(
+        self, tokens: torch.Tensor, point_memory: torch.Tensor,
+        knots: torch.Tensor, params: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        tokens = super().forward(tokens, point_memory, knots, params)
+        boundaries = torch.cat([knots.new_zeros(knots.shape[0], 1), knots,
+                                knots.new_ones(knots.shape[0], 1)], -1)
+        gaps = boundaries.diff(dim=-1)
+        room = (torch.minimum(gaps[:, :-1], gaps[:, 1:]) - self.min_gap).clamp_min(0)
+        # Adjacent nodes can each consume < half of the shared free room, so
+        # arbitrary learned signs cannot cross or violate min_knot_gap.
+        shift = .45 * room * self.position_gate.tanh() * self.position_update(tokens).squeeze(-1).tanh()
+        return tokens, knots + shift
+
+
+class _SurvivorResidualRefinement(nn.Module):
+    """Selected-node refinement coupled to point-parameter features."""
+
+    def __init__(self, width: int, heads: int) -> None:
+        super().__init__()
+        self.token_refinement = _LocalResidualRefinement(width, heads)
+        self.parameter_attention = nn.MultiheadAttention(width, heads, batch_first=True)
+        self.parameter_norm = nn.LayerNorm(width)
+        self.parameter_feed_forward = nn.Sequential(
+            nn.Linear(width, 2 * width), nn.GELU(), nn.Linear(2 * width, width),
+        )
+        self.parameter_gate = nn.Parameter(torch.zeros(()))
+
+    def forward(
+        self, survivors: torch.Tensor, point_features: torch.Tensor,
+        point_memory: torch.Tensor, knots: torch.Tensor, params: torch.Tensor,
+        keep_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        survivors = self.token_refinement(survivors, point_memory, knots, params, keep_mask)
+        memory, padding = _LocalResidualRefinement.selected_memory(survivors, keep_mask)
+        update, _ = self.parameter_attention(
+            point_features, memory, memory, key_padding_mask=padding, need_weights=False,
+        )
+        update = update + self.parameter_feed_forward(self.parameter_norm(point_features + update))
+        # With no survivors there is no additional subset evidence to fuse.
+        update = update * keep_mask.any(-1)[:, None, None]
+        return survivors, point_features + self.parameter_gate.tanh() * update
+
+
 class V16CandidateSelectionNetwork(nn.Module):
     """One proposal pass, one structured mask and one joint subset decoder."""
 
@@ -66,6 +179,9 @@ class V16CandidateSelectionNetwork(nn.Module):
         parameter_trust_initial: float = 0.25,
         subset_geometry_mode: str = "legacy",
         subset_geometry_residual_scale: float = 1.0,
+        proposal_refinement_layers: int = 0,
+        selection_refinement_layers: int = 0,
+        survivor_refinement_layers: int = 0,
     ) -> None:
         super().__init__()
         if point_dim < 1 or degree < 1 or hidden_dim < 4:
@@ -74,6 +190,13 @@ class V16CandidateSelectionNetwork(nn.Module):
             raise ValueError("attention_heads must divide hidden_dim")
         if encoder_layers < 1 or selector_layers < 1 or max_internal_knots < 1:
             raise ValueError("layer and candidate counts must be positive")
+        for name, value in {
+            "proposal_refinement_layers": proposal_refinement_layers,
+            "selection_refinement_layers": selection_refinement_layers,
+            "survivor_refinement_layers": survivor_refinement_layers,
+        }.items():
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
         for name, value in {
             "min_parameter_gap": min_parameter_gap,
             "min_knot_gap": min_knot_gap,
@@ -144,6 +267,9 @@ class V16CandidateSelectionNetwork(nn.Module):
             parameter_trust_initial=parameter_trust_initial,
             subset_geometry_mode=subset_geometry_mode,
             subset_geometry_residual_scale=subset_geometry_residual_scale,
+            proposal_refinement_layers=proposal_refinement_layers,
+            selection_refinement_layers=selection_refinement_layers,
+            survivor_refinement_layers=survivor_refinement_layers,
         )
         self.point_dim, self.degree, self.hidden_dim = point_dim, degree, hidden_dim
         self.max_internal_knots = max_internal_knots
@@ -159,6 +285,9 @@ class V16CandidateSelectionNetwork(nn.Module):
         self.parameter_trust_enabled = parameter_trust_enabled
         self.subset_geometry_mode = subset_geometry_mode
         self.subset_geometry_residual_scale = float(subset_geometry_residual_scale)
+        self.proposal_refinement_layers = proposal_refinement_layers
+        self.selection_refinement_layers = selection_refinement_layers
+        self.survivor_refinement_layers = survivor_refinement_layers
         self.encoder = GeometryEncoder(point_dim, hidden_dim, encoder_layers)
         self.parameter_head = ParameterHead(
             hidden_dim, min_parameter_gap, "strict", "chord_residual",
@@ -222,6 +351,21 @@ class V16CandidateSelectionNetwork(nn.Module):
             self.subset_parameter_trust_head = self._make_parameter_trust_head(
                 hidden_dim, parameter_trust_initial,
             )
+        # Append optional modules after ALL historical initialization: a fixed
+        # RNG seed still creates exactly the same legacy tensors. Empty lists
+        # contribute no state keys; default checkpoints remain strict-loadable.
+        self.proposal_refinement_blocks = nn.ModuleList([
+            _ProposalResidualRefinement(hidden_dim, attention_heads, min_knot_gap)
+            for _ in range(proposal_refinement_layers)
+        ])
+        self.selection_refinement_blocks = nn.ModuleList([
+            _LocalResidualRefinement(hidden_dim, attention_heads)
+            for _ in range(selection_refinement_layers)
+        ])
+        self.survivor_refinement_blocks = nn.ModuleList([
+            _SurvivorResidualRefinement(hidden_dim, attention_heads)
+            for _ in range(survivor_refinement_layers)
+        ])
 
     @staticmethod
     def _make_parameter_trust_head(width: int, initial: float) -> nn.Sequential:
@@ -322,6 +466,10 @@ class V16CandidateSelectionNetwork(nn.Module):
             params = ungated_params
         proposal = self.candidate_head(global_features, local, params)
         knots = proposal["candidate_knots"]
+        proposal_tokens = proposal["candidate_tokens"]
+        memory = local + KnotHead._sinusoidal_position_encoding(params, self.hidden_dim)
+        for block in self.proposal_refinement_blocks:
+            proposal_tokens, knots = block(proposal_tokens, memory, knots, params)
         boundaries = torch.cat([knots.new_zeros(knots.shape[0], 1), knots,
                                 knots.new_ones(knots.shape[0], 1)], -1)
         gaps = boundaries.diff(dim=-1)
@@ -330,11 +478,12 @@ class V16CandidateSelectionNetwork(nn.Module):
         tolerance_features = self.tolerance_embedding(
             (tolerance / self.mse_tolerance).log().unsqueeze(-1)
         )
-        memory = local + KnotHead._sinusoidal_position_encoding(params, self.hidden_dim)
-        tokens = (proposal["candidate_tokens"] + self.coverage_embedding(coverage)
+        tokens = (proposal_tokens + self.coverage_embedding(coverage)
                   + tolerance_features.unsqueeze(1))
         for block in self.selection_blocks:
             tokens = block(tokens, memory)
+        for block in self.selection_refinement_blocks:
+            tokens = block(tokens, memory, knots, params)
         raw_importance = self.keep_head(tokens).squeeze(-1)
         if self.one_shot_adaptive_threshold:
             centered_importance = raw_importance - raw_importance.mean(
@@ -582,7 +731,15 @@ class V16CandidateSelectionNetwork(nn.Module):
         point_update, _ = self.parameter_attention(
             point_queries, memory, memory, key_padding_mask=padding, need_weights=False
         )
-        raw = self.parameter_update(self.parameter_norm(point_queries + point_update))[:, :-1, 0]
+        point_features = self.parameter_norm(point_queries + point_update)
+        if self.survivor_refinement_blocks:
+            point_memory = (context["local_features"]
+                            + KnotHead._sinusoidal_position_encoding(old_params, self.hidden_dim))
+            for block in self.survivor_refinement_blocks:
+                survivors, point_features = block(
+                    survivors, point_features, point_memory, knots, old_params, keep_mask,
+                )
+        raw = self.parameter_update(point_features)[:, :-1, 0]
         limit = self.subset_parameter_residual_limit
         correction = limit * torch.tanh((raw - raw.mean(-1, keepdim=True)) / limit)
         free = (old_params.diff(dim=-1) - self.min_parameter_gap).clamp_min(0)

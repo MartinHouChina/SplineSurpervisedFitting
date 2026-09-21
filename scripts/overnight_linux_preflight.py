@@ -89,8 +89,8 @@ with the historical trainer even when training has already finished.
     expected_last = output.with_name(output.stem + ".last.pt")
     if source != expected_last or args.resume is None or args.resume.resolve() != source:
         raise ValueError("resume status requires this output's original .last.pt and matching --resume")
-    if args.real_fraction != 0:
-        raise ValueError("overnight resume requires the original synthetic-only training run")
+    # The immutable configuration check below protects both historical
+    # synthetic-only runs and explicitly selected train-split specialists.
     current = serial_args(args)
     current.update(train_seed=args.seed, train_seed_stride=EPOCH_SEED_STRIDE)
     ignored = {"epochs", "resume", "init_checkpoint", "warm_start_checkpoint", "output", "device", "num_workers",
@@ -191,14 +191,18 @@ def main(argv=None):
     parser.add_argument("--mse-tolerance", type=float, default=5e-5)
     parser.add_argument("--candidate-knots", type=int, default=64,
                         help="Expected shared internal-knot capacity; evaluated weights must match")
+    parser.add_argument("--source-max-knots", type=int, default=24)
+    parser.add_argument("--training-source", choices=("synthetic", "UJI", "NaturalEarth", "USGS", "IndustrialOffset"),
+                        default="synthetic", help="Explicit specialist source; test split remains held out")
+    parser.add_argument("--validation-source", choices=("all", "UJI", "NaturalEarth", "USGS", "IndustrialOffset"), default="all")
     parser.add_argument("--resize-candidate-warm-start", action="store_true",
                         help="Allow a larger full-model initializer, never an evaluation/resume mismatch")
     parser.add_argument("--output", type=Path)
     parser.add_argument("training_arguments", nargs=argparse.REMAINDER,
                         help="For --resume-status only: exact train_v16 options after --")
     args = parser.parse_args(argv)
-    if not 24 <= args.candidate_knots <= 188:
-        parser.error("candidate-knots must be 24..188 for the overnight source range and 192 points")
+    if not 4 <= args.source_max_knots <= args.candidate_knots <= 188:
+        parser.error("require 4 <= source-max-knots <= candidate-knots <= 188")
     if args.resize_candidate_warm_start and (
         args.warm_start_checkpoint is None or args.checkpoint is not None
         or args.initializer is not None or args.resume_status
@@ -239,17 +243,24 @@ def main(argv=None):
         print(json.dumps(record, ensure_ascii=False), flush=True)
         return record
     record.update(candidate_knots=args.candidate_knots,
-                  full_cubic_knot_vector_cap=args.candidate_knots + 8)
+                  full_cubic_knot_vector_cap=args.candidate_knots + 8,
+                  training_source=args.training_source, source_max_knots=args.source_max_knots)
     manifests = parse_manifests(args.manifest, defaults=default_manifests(args.data_root))
     record["datasets"] = {}
-    if args.validate_real_splits:
+    validation_names = ((args.training_source,) if args.training_source != "synthetic"
+                        else (args.validation_source,) if args.validation_source != "all"
+                        else VALIDATION_SOURCE_NAMES if args.validate_real_splits else ())
+    if validation_names:
         from spline_fitting.data.v16_mixed import load_real_sources
         _, provenance = load_real_sources(
-            [manifests[name] for name in VALIDATION_SOURCE_NAMES], num_points=192, point_dim=2,
+            [manifests[name] for name in validation_names], num_points=192, point_dim=2,
             progress=lambda message: print(message, flush=True),
         )
         record["validation_provenance"] = provenance
-        record["real_data_role"] = "validation_only; held-out test excluded from model selection"
+        record["real_data_role"] = (
+            "selected_source_train_and_val_only; held-out test excluded from model selection"
+            if args.training_source != "synthetic" else
+            "validation_only; held-out test excluded from model selection")
     seen_sources = set()
     for name, manifest in manifests.items():
         print(f"{name}: reading required manifest {manifest}", flush=True)
@@ -272,8 +283,9 @@ def main(argv=None):
             "manifest": str(manifest.resolve()), "sha256": file_hash(manifest),
             "test_curves": len(rows), "test_groups": len({row["group_id"] for row in rows}),
             **source_description(name, records),
-            "used_for_validation_by_this_runner": bool(args.validate_real_splits and name in VALIDATION_SOURCE_NAMES),
-            "evaluation_role": "held_out_test_only; extra sources never added to training or checkpoint selection",
+            "used_for_validation_by_this_runner": name in validation_names,
+            "used_train_split_by_this_runner": name == args.training_source,
+            "evaluation_role": "held_out_test_only; this split never enters training or checkpoint selection",
         }
         print(f"{name}: {len(rows)} held-out test curves; point paths checked", flush=True)
     if args.checkpoint:

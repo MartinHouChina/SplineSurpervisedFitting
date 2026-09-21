@@ -1,5 +1,10 @@
 # Computer-Aided Design manuscript
 
+**Current Overnight framework:** use [overnight/README.md](overnight/README.md)
+and [overnight/manuscript.tex](overnight/manuscript.tex). The files described
+below are the preserved historical v5 CountHead/BIC draft, not the current
+algorithm or a verified current journal-submission checklist.
+
 This directory is an anonymized Elsevier `elsarticle` manuscript framework for
 submission to *Computer-Aided Design*.
 

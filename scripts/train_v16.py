@@ -57,6 +57,9 @@ ENHANCED_TRAINING_DEFAULTS = {
     "joint_geometry_calibration_epochs": 0,
     "subset_geometry_mode": "legacy",
     "subset_geometry_residual_scale": 1.0,
+    "max_point_error_weight": 0.0,
+    "max_point_error_tolerance": None,
+    "max_point_error_tail_fraction": 0.05,
     "warm_start_checkpoint": None,
     "resize_candidate_warm_start": False,
     "parameter_trust_enabled": False,
@@ -79,6 +82,10 @@ ENHANCED_TRAINING_DEFAULTS = {
     "count_reserve_alignment": False,
     "synthetic_simple_fraction": 0.0,
     "synthetic_shape_fraction": 0.0,
+    "synthetic_shape_domain": "mixed",
+    "proposal_refinement_layers": 0,
+    "selection_refinement_layers": 0,
+    "survivor_refinement_layers": 0,
 }
 
 
@@ -98,6 +105,8 @@ def parser():
                    help="Training-only fraction of synthetic draws biased to low source K")
     p.add_argument("--synthetic-shape-fraction", type=float, default=0.0,
                    help="Training-only procedural shapes; no fabricated true-knot labels")
+    p.add_argument("--synthetic-shape-domain", choices=("mixed", "industrial", "terrain", "handwriting"),
+                   default="mixed", help="Training-only procedural family restriction; never loads real test points")
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--num-points", type=int, default=192)
     p.add_argument("--point-dim", type=int, choices=(2, 3), default=2)
@@ -120,6 +129,12 @@ def parser():
     p.add_argument("--encoder-layers", type=int, default=3)
     p.add_argument("--attention-heads", type=int, default=4)
     p.add_argument("--selector-layers", type=int, default=2)
+    p.add_argument("--candidate-refinement-layers", dest="proposal_refinement_layers", type=int, default=0,
+                   help="Extra identity-initialized local candidate interaction blocks")
+    p.add_argument("--selection-refinement-layers", type=int, default=0,
+                   help="Extra identity-initialized pre-mask interaction blocks")
+    p.add_argument("--decoder-refinement-layers", dest="survivor_refinement_layers", type=int, default=0,
+                   help="Extra identity-initialized survivor/parameter interaction blocks")
     p.add_argument("--noise-std", type=float, default=0.001)
     p.add_argument(
         "--certified-minimal-source",
@@ -174,6 +189,12 @@ def parser():
                    help="Bounded student-ranking-independent teacher proposals per joint step")
     p.add_argument("--local-fit-weight", type=float, default=0.0,
                    help="Auxiliary local/endpoint residual supervision")
+    p.add_argument("--max-point-error-weight", type=float, default=0.0,
+                   help="Opt-in maximum/tail pointwise squared-distance loss (not MSE)")
+    p.add_argument("--max-point-error-tolerance", type=float, default=None,
+                   help="Explicit squared-distance target for the max-point loss; does not change MSE pass")
+    p.add_argument("--max-point-error-tail-fraction", type=float, default=0.05,
+                   help="Worst-point fraction averaged alongside the exact maximum")
     p.add_argument("--proposal-ordered-weight", type=float, default=0.0,
                    help="Additional ordered one-to-one candidate supervision")
     p.add_argument("--feasible-objective", action="store_true",
@@ -310,6 +331,7 @@ def validate_args(args):
         "teacher_greedy_steps",
         "teacher_greedy_trajectory_checks", "teacher_geometry_trajectory_targets",
         "joint_geometry_calibration_epochs",
+        "proposal_refinement_layers", "selection_refinement_layers", "survivor_refinement_layers",
     ):
         value = getattr(args, key)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -365,11 +387,20 @@ def validate_args(args):
         "parameter_counterfactual_weight", "local_fit_weight", "proposal_ordered_weight",
         "teacher_geometry_distillation_weight", "feasible_fit_weight",
         "teacher_compact_mask_weight",
+        "max_point_error_weight",
     ):
         if not math.isfinite(getattr(args, key)) or getattr(args, key) < 0:
             raise ValueError(f"{key} must be finite and nonnegative")
     if args.joint_final_lr_ratio > 1:
         raise ValueError("joint-final-lr-ratio must lie in (0,1]")
+    if args.max_point_error_tolerance is not None and (
+        not math.isfinite(args.max_point_error_tolerance) or args.max_point_error_tolerance <= 0
+    ):
+        raise ValueError("max-point-error-tolerance must be finite and positive")
+    if args.max_point_error_weight and args.max_point_error_tolerance is None:
+        raise ValueError("max-point-error-weight requires an explicit max-point-error-tolerance")
+    if not math.isfinite(args.max_point_error_tail_fraction) or not 0 < args.max_point_error_tail_fraction <= 1:
+        raise ValueError("max-point-error-tail-fraction must lie in (0,1]")
     if not math.isfinite(args.feasible_fit_margin) or not 0 < args.feasible_fit_margin <= 1:
         raise ValueError("feasible-fit-margin must lie in (0,1]")
     if args.feasible_fit_weight > 1:
@@ -672,6 +703,18 @@ def validate(
                 retained = int(mask.sum())
             if not math.isfinite(float(fit.fit_mse)) or not math.isfinite(float(dense.fit_mse)):
                 raise RuntimeError("non-finite validation fit")
+            # Read pointwise residuals from the very same endpoint-constrained
+            # refits. This adds evaluation only, never another solve/search.
+            # MSE pass/fail remains unchanged: a peak is an extra diagnostic,
+            # not a maximum over curve MSEs or a continuous-curve guarantee.
+            dense_squared_error = (dense.evaluate(proposal_params_cpu[i]) - q).square().sum(-1)
+            deployed_squared_error = (
+                dense_squared_error if output is None else
+                (fit.evaluate(output_params_cpu[i]) - q).square().sum(-1)
+            )
+            if (not torch.isfinite(dense_squared_error).all()
+                    or not torch.isfinite(deployed_squared_error).all()):
+                raise RuntimeError("non-finite validation pointwise squared error")
             supervised_target = None
             if target_count is not None and target_valid is not None and bool(target_valid[i]):
                 supervised_target = int(target_count[i])
@@ -683,6 +726,8 @@ def validate(
                 target_k=supervised_target,
                 probability_mass=float(probability_mass_cpu[i]),
                 adaptive_threshold=float(adaptive_threshold_cpu[i]),
+                dense_max_point_squared_error=float(dense_squared_error.amax()),
+                deployment_max_point_squared_error=float(deployed_squared_error.amax()),
             )
             row.update({key: float(value[i].reshape(())) for key, value in trust_values.items()})
             if (
@@ -726,7 +771,20 @@ def validate(
                 )
             rows.append(row)
         progress(step, len(loader), "  validation", every=log_every)
-    return summarize(rows, tolerance)
+    result = summarize(rows, tolerance)
+    scopes = [(result, rows)] + [
+        (summary, [row for row in rows if row["source"] == source])
+        for source, summary in result["by_source"].items()
+    ]
+    for summary, selected_rows in scopes:
+        for field in ("dense_max_point_squared_error", "deployment_max_point_squared_error"):
+            maxima = [row[field] for row in selected_rows]
+            summary.update({
+                field + "_mean": statistics.fmean(maxima),
+                field + "_p95": float(np.quantile(maxima, .95)),
+                field + "_max": max(maxima),
+            })
+    return result
 
 
 def checkpoint_rank(
@@ -796,6 +854,10 @@ _TRAINING_TRUST_EXTREMA = {
     for gate in ("proposal_parameter_trust", "subset_parameter_trust")
     for statistic, reducer in (("min", min), ("max", max))
 }
+_TRAINING_TRUST_EXTREMA.update({
+    "dense_max_point_squared_error_max": max,
+    "deployment_max_point_squared_error_max": max,
+})
 _TRAINING_SEARCH_COUNTS = {
     "teacher_greedy_trajectory_checks", "teacher_geometry_target_count",
     "teacher_compact_target_count",
@@ -861,6 +923,7 @@ def training_config_changes(current, previous, ignored):
 
 PROPOSAL_PARAMETER_PREFIXES = (
     "encoder.", "parameter_head.", "candidate_head.", "proposal_parameter_trust_head.",
+    "proposal_refinement_blocks.",
 )
 
 
@@ -899,6 +962,7 @@ def build_optimizer(model, args, *, stage):
         "survivor_norm.", "parameter_norm.", "parameter_update.",
         "relocation_update.", "relocation_blend_logit",
         "subset_parameter_trust_head.",
+        "survivor_refinement_blocks.",
     )
     groups = {"proposal": [], "selector": [], "decoder": []}
     for name, parameter in model.named_parameters():
@@ -964,7 +1028,7 @@ def transfer_proposal_weights(model, checkpoint):
     """Warm-start every shape-compatible tensor needed for dense proposals."""
     old_state = checkpoint["model_state_dict"]
     state = model.state_dict()
-    prefixes = ("encoder.", "parameter_head.", "candidate_head.")
+    prefixes = PROPOSAL_PARAMETER_PREFIXES
     copied = {
         key: value for key, value in old_state.items()
         if key.startswith(prefixes) and key in state and state[key].shape == value.shape
@@ -995,6 +1059,18 @@ def transfer_all_weights(model, checkpoint, *, resize_candidate_warm_start=False
     source_model, _, _ = build_model_from_checkpoint(checkpoint)
     source_config, target_config = source_model.get_config(), model.get_config()
     controlled_safety = {"one_shot_safety_sigma", "one_shot_safety_knots"}
+    depth_keys = {"proposal_refinement_layers": "proposal_refinement_blocks",
+                  "selection_refinement_layers": "selection_refinement_blocks",
+                  "survivor_refinement_layers": "survivor_refinement_blocks"}
+    depth_changes, added_prefixes = {}, []
+    for key, prefix in depth_keys.items():
+        old, new = source_config.get(key, 0), target_config.get(key, 0)
+        if new < old:
+            raise ValueError("full warm start cannot silently discard learned refinement blocks")
+        if new > old:
+            depth_changes[key] = {"source": old, "target": new}
+            added_prefixes.extend(f"{prefix}.{index}." for index in range(old, new))
+        controlled_safety.add(key)
     geometry_keys = ("subset_geometry_mode", "subset_geometry_residual_scale")
     geometry_changed = {key: {"source": source_config.get(key), "target": target_config.get(key)}
                         for key in geometry_keys if source_config.get(key) != target_config.get(key)}
@@ -1023,8 +1099,9 @@ def transfer_all_weights(model, checkpoint, *, resize_candidate_warm_start=False
     target_state = model.state_dict()
     missing = set(target_state) - set(source_state)
     trust_prefixes = ("proposal_parameter_trust_head.", "subset_parameter_trust_head.")
-    if set(source_state) - set(target_state) or (
-        missing and not (add_trust and all(key.startswith(trust_prefixes) for key in missing))
+    allowed_missing_prefixes = tuple(added_prefixes) + (trust_prefixes if add_trust else ())
+    if set(source_state) - set(target_state) or any(
+        not key.startswith(allowed_missing_prefixes) for key in missing
     ):
         raise ValueError("full warm start has unexpected missing or extra state tensors")
     adapted = {}
@@ -1083,6 +1160,11 @@ def transfer_all_weights(model, checkpoint, *, resize_candidate_warm_start=False
         transfer_metadata["subset_geometry_transfer"] = dict(
             changes=geometry_changed, optimizer_state="fresh", history="fresh",
             note="Explicit anchor-preserving forward-function migration; revalidation required, not exact resume.",
+        )
+    if depth_changes and transfer_metadata is not None:
+        transfer_metadata["refinement_depth_transfer"] = dict(
+            changes=depth_changes, initialized_tensor_names=sorted(missing),
+            note="Additional residual blocks start with zero gates; fresh optimizer/history, not resume.",
         )
     return tuple(sorted(copied))
 
@@ -1151,6 +1233,9 @@ def main(argv=None):
         parameter_trust_initial=args.parameter_trust_initial,
         subset_geometry_mode=args.subset_geometry_mode,
         subset_geometry_residual_scale=args.subset_geometry_residual_scale,
+        proposal_refinement_layers=args.proposal_refinement_layers,
+        selection_refinement_layers=args.selection_refinement_layers,
+        survivor_refinement_layers=args.survivor_refinement_layers,
         one_shot_selection_policy=args.one_shot_selection_policy,
         one_shot_adaptive_threshold=True,
         one_shot_safety_sigma=args.one_shot_safety_sigma,
@@ -1235,6 +1320,9 @@ def main(argv=None):
             initializer_provenance["subset_geometry_transfer"] = capacity_transfer.pop("subset_geometry_transfer")
             print("Explicit anchored subset-geometry migration: weights copied, forward function changed; "
                   "revalidation required. This is not optimizer resume.", flush=True)
+        if "refinement_depth_transfer" in capacity_transfer:
+            initializer_provenance["refinement_depth_transfer"] = capacity_transfer.pop("refinement_depth_transfer")
+            print("Initialized additional zero-gated refinement blocks; all existing compatible weights copied.", flush=True)
         if capacity_transfer:
             initializer_provenance["capacity_transfer"] = capacity_transfer
             print(f"Explicit candidate-capacity migration: "
@@ -1243,7 +1331,7 @@ def main(argv=None):
                   "interval queries linearly resampled along rank, target anchors regenerated. "
                   "New forward function; no unchanged-accuracy guarantee.", flush=True)
         if initializer_provenance["initialized_tensor_names"]:
-            print("Initialized new parameter trust gates; this migration changes the forward function.", flush=True)
+            print("Initialized explicitly requested new modules; see initializer provenance for tensor names.", flush=True)
     elif args.init_checkpoint:
         source_checkpoint = torch.load(args.init_checkpoint, map_location="cpu", weights_only=True)
         try:
@@ -1274,6 +1362,9 @@ def main(argv=None):
         parameter_counterfactual_weight=args.parameter_counterfactual_weight,
         teacher_geometry_candidates=args.teacher_geometry_candidates,
         local_fit_weight=args.local_fit_weight,
+        max_point_error_weight=args.max_point_error_weight,
+        max_point_error_tolerance=args.max_point_error_tolerance,
+        max_point_error_tail_fraction=args.max_point_error_tail_fraction,
         proposal_ordered_weight=args.proposal_ordered_weight,
         feasible_objective=args.feasible_objective,
         feasible_fit_margin=args.feasible_fit_margin,
@@ -1391,7 +1482,8 @@ def main(argv=None):
         train_data = MixedTrainingCurves(dataset_config, sources, size=args.train_size, seed=args.seed,
             real_fraction=args.real_fraction, epoch=epoch-1, resample=args.resample_train_each_epoch,
             synthetic_simple_fraction=args.synthetic_simple_fraction,
-            synthetic_shape_fraction=args.synthetic_shape_fraction)
+            synthetic_shape_fraction=args.synthetic_shape_fraction,
+            synthetic_shape_domain=args.synthetic_shape_domain)
         loader_generator = torch.Generator().manual_seed(args.seed + epoch)
         train_loader = DataLoader(
             train_data, batch_size=args.batch_size, shuffle=True,
@@ -1596,6 +1688,8 @@ def main(argv=None):
                              feasible_objective=args.feasible_objective,
                              feasible_fit_margin=args.feasible_fit_margin,
                              feasible_fit_weight=args.feasible_fit_weight,
+                             max_point_error_tolerance=args.max_point_error_tolerance,
+                             max_point_error_tail_fraction=args.max_point_error_tail_fraction,
                              count_reserve_alignment=args.count_reserve_alignment,
                              boundary_ranking_candidates=args.boundary_ranking_candidates,
                              ranked_prefix_teacher=objective.ranked_prefix_teacher,
@@ -1612,7 +1706,7 @@ def main(argv=None):
                                   "selected_knot_position_weight", "boundary_ranking_weight",
                                   "parameter_counterfactual_weight", "local_fit_weight",
                                   "proposal_ordered_weight", "teacher_geometry_distillation_weight",
-                                  "teacher_compact_mask_weight")}))
+                                  "teacher_compact_mask_weight", "max_point_error_weight")}))
         payload["qualification"] = assess_v16_checkpoint(
             payload,
             required_pass_rate=V16_FORMAL_PASS_RATE,
@@ -1630,6 +1724,14 @@ def main(argv=None):
               f"safety={safety_knots}+{safety_sigma:.2f}sigma "
               f"scale={applied_safety_scale:.2f}->{selection_safety_scale:.2f} "
               f"target_met={accepted}", flush=True)
+        print("  pointwise MaxSqErr (not MSE/Hausdorff): "
+              f"mean={measured['deployment_max_point_squared_error_mean']:.3e}, "
+              f"P95={measured['deployment_max_point_squared_error_p95']:.3e}, "
+              f"worst={measured['deployment_max_point_squared_error_max']:.3e}", flush=True)
+        if args.max_point_error_weight:
+            print(f"  peak/tail train loss={train_metrics['max_point_error_loss']:.4f}, "
+                  f"squared target={args.max_point_error_tolerance:g}; "
+                  "MSE pass/checkpoint qualification unchanged", flush=True)
         if (args.joint_proposal_lr_scale != 1.0 or args.joint_decoder_lr_scale != 1.0
                 or args.joint_final_lr_ratio != 1.0):
             print("  learning rates: " + ", ".join(

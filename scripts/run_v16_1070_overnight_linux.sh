@@ -14,6 +14,11 @@ BATCH_SIZE=32
 MSE_TOLERANCE=5e-5
 CANDIDATE_KNOTS=64
 CANDIDATE_SPECIFIED=0
+SOURCE_MAX_KNOTS=24
+TRAINING_SOURCE=synthetic
+TRAINING_REAL_FRACTION=0.5
+VALIDATION_SOURCE=all
+EXTRA_LEARNING_ARGS=()
 RESIZE_CANDIDATE_WARM_START=0
 NUM_WORKERS=0
 INIT_CHECKPOINT=outputs/checkpoints/candidate_selection_v16.proposal.pt
@@ -75,6 +80,19 @@ Historical online-teacher architecture; capacity is explicit and shared by all m
   --mse-tolerance X                Shared MSE threshold, not RMS (5e-5)
   --candidate-knots N              Shared INTERNAL knot cap for network + baselines
                                   (legacy default 64; use 32 for the new experiment)
+  --source-max-knots N             Synthetic training source maximum (24); <= candidate cap
+                                  Comparison still tests the SAME synthetic K4..24 curves
+  --training-source NAME           synthetic (default), UJI, NaturalEarth, USGS,
+                                  IndustrialOffset; specialist uses ONLY that train split
+  --training-real-fraction X       Specialist train-split fraction (0.5); remainder synthetic
+  --validation-source NAME         all (three observed sources), or one source above
+  --synthetic-shape-domain NAME    mixed|handwriting|terrain|industrial; synthetic-only specialization
+  --candidate-refinement-layers N  Extra gated candidate interaction blocks (0)
+  --selection-refinement-layers N  Extra gated pre-mask interaction blocks (0)
+  --decoder-refinement-layers N    Extra survivor/parameter interaction blocks (0)
+  --max-point-error-weight X       Optional peak/tail squared-error training weight (0)
+  --max-point-error-tolerance X    Explicit peak SQUARED-distance target; MSE pass unchanged
+  --max-point-error-tail-fraction X  Worst-point training fraction (0.05)
   --init-checkpoint PATH           Historical Proposal warm-start checkpoint
   --warm-start-checkpoint PATH     Copy ALL compatible overnight model weights
                                   into a NEW experiment (not optimizer resume)
@@ -120,6 +138,12 @@ while (($#)); do
     --stable-selection) STABLE_SELECTION=1; shift ;;
     --anchored-selection) ANCHORED_SELECTION=1; shift ;;
     --joint-geometry-calibration-epochs) need_value "$@"; JOINT_GEOMETRY_CALIBRATION_EPOCHS="$2"; shift 2 ;;
+    --source-max-knots) need_value "$@"; SOURCE_MAX_KNOTS="$2"; shift 2 ;;
+    --training-source) need_value "$@"; TRAINING_SOURCE="$2"; shift 2 ;;
+    --training-real-fraction) need_value "$@"; TRAINING_REAL_FRACTION="$2"; shift 2 ;;
+    --validation-source) need_value "$@"; VALIDATION_SOURCE="$2"; shift 2 ;;
+    --synthetic-shape-domain|--synthetic-shape-fraction|--synthetic-simple-fraction|--candidate-refinement-layers|--selection-refinement-layers|--decoder-refinement-layers|--max-point-error-weight|--max-point-error-tolerance|--max-point-error-tail-fraction)
+      need_value "$@"; EXTRA_LEARNING_ARGS+=("$1" "$2"); shift 2 ;;
     --real-val-size) need_value "$@"; REAL_VAL_SIZE="$2"; shift 2 ;;
     --native-baselines) NATIVE_BASELINES=1; shift ;;
     --train-size) need_value "$@"; TRAIN_SIZE="$2"; shift 2 ;;
@@ -152,7 +176,16 @@ done
 ((ENHANCED_SELECTION + RELIABLE_SELECTION + COMPACT_SELECTION + STABLE_SELECTION + ANCHORED_SELECTION <= 1)) || die "choose only one of --enhanced-selection, --reliable-selection, --compact-selection, --stable-selection and --anchored-selection"
 if ((ANCHORED_SELECTION && CANDIDATE_SPECIFIED == 0)); then CANDIDATE_KNOTS=32; fi
 [[ "$CANDIDATE_KNOTS" =~ ^[1-9][0-9]*$ ]] || die "candidate-knots must be a positive integer"
-((CANDIDATE_KNOTS >= 24 && CANDIDATE_KNOTS <= 188)) || die "candidate-knots must be 24..188 for source K4..24 and 192 input points"
+[[ "$SOURCE_MAX_KNOTS" =~ ^[1-9][0-9]*$ ]] || die "source-max-knots must be a positive integer"
+((SOURCE_MAX_KNOTS >= 4 && SOURCE_MAX_KNOTS <= 188)) || die "source-max-knots must be 4..188"
+((CANDIDATE_KNOTS >= SOURCE_MAX_KNOTS && CANDIDATE_KNOTS <= 188)) || die "candidate-knots must be $SOURCE_MAX_KNOTS..188 for this synthetic source range and 192 input points"
+case "$TRAINING_SOURCE" in synthetic|UJI|NaturalEarth|USGS|IndustrialOffset) ;; *) die "unknown training source: $TRAINING_SOURCE" ;; esac
+case "$VALIDATION_SOURCE" in all|UJI|NaturalEarth|USGS|IndustrialOffset) ;; *) die "unknown validation source: $VALIDATION_SOURCE" ;; esac
+if [[ "$TRAINING_SOURCE" != synthetic && "$VALIDATION_SOURCE" != all && "$VALIDATION_SOURCE" != "$TRAINING_SOURCE" ]]; then
+  die "specialist real training and validation must name the same source"
+fi
+if [[ "$TRAINING_SOURCE" != synthetic ]]; then VALIDATION_SOURCE="$TRAINING_SOURCE"; fi
+awk 'BEGIN { n=ARGV[1]+0; exit !(n>0 && n<=1) }' "$TRAINING_REAL_FRACTION" || die "training-real-fraction must be in (0,1]"
 if ((RESIZE_CANDIDATE_WARM_START)); then
   [[ -n "$WARM_START_CHECKPOINT" && -z "$CHECKPOINT" && "$RESUME" == 0 ]] || die "--resize-candidate-warm-start requires a new --warm-start-checkpoint run, not evaluation or resume"
 fi
@@ -232,6 +265,16 @@ else
   LEARNING_ARGS=(--policy-samples 2 --counterfactual-edits 2 --teacher-prefix-search-steps 6)
 fi
 JOINT_GEOMETRY_CALIBRATION_EPOCHS=${JOINT_GEOMETRY_CALIBRATION_EPOCHS:-0}
+# Replace inherited defaults so manifests/dry-runs contain each option once.
+for ((extra=0; extra<${#EXTRA_LEARNING_ARGS[@]}; extra+=2)); do
+  replaced=0
+  for ((index=0; index<${#LEARNING_ARGS[@]}; index++)); do
+    if [[ "${LEARNING_ARGS[index]}" == "${EXTRA_LEARNING_ARGS[extra]}" ]]; then
+      LEARNING_ARGS[index+1]="${EXTRA_LEARNING_ARGS[extra+1]}"; replaced=1; break
+    fi
+  done
+  if ((replaced == 0)); then LEARNING_ARGS+=("${EXTRA_LEARNING_ARGS[extra]}" "${EXTRA_LEARNING_ARGS[extra+1]}"); fi
+done
 [[ "$JOINT_GEOMETRY_CALIBRATION_EPOCHS" =~ ^[0-9]+$ ]] || die "joint-geometry-calibration-epochs must be non-negative"
 if ((JOINT_GEOMETRY_CALIBRATION_EPOCHS > 0)); then
   LEARNING_ARGS+=(--joint-geometry-calibration-epochs "$JOINT_GEOMETRY_CALIBRATION_EPOCHS")
@@ -340,7 +383,7 @@ if ((DRY_RUN == 0)); then
   command -v "$PYTHON_BIN" >/dev/null || die "Python executable not found: $PYTHON_BIN"
   mkdir -p -- "$LOG_DIR" "$OUTPUT_ROOT/checkpoints"
 fi
-printf 'Historical overnight: online Teacher; Kc=%s internal (full cubic vector <= %s); source K=4..24; MSE=%s.\n' "$CANDIDATE_KNOTS" "$((CANDIDATE_KNOTS+8))" "$MSE_TOLERANCE"
+printf 'Historical overnight: online Teacher; Kc=%s internal (full cubic vector <= %s); training source K=4..%s; MSE=%s.\n' "$CANDIDATE_KNOTS" "$((CANDIDATE_KNOTS+8))" "$SOURCE_MAX_KNOTS" "$MSE_TOLERANCE"
 printf 'All six methods use the same internal-knot cap. Pointwise maximum squared error is reported separately; pass remains an MSE test.\n'
 if [[ "$CHECKPOINT" != "$TRAIN_OUTPUT" ]]; then
   printf 'Evaluation-only: using existing checkpoint %s; no training or new model selection.\n' "$CHECKPOINT"
@@ -364,20 +407,30 @@ fi
 if ((JOINT_GEOMETRY_CALIBRATION_EPOCHS > 0)); then
   printf 'First %s Joint epochs freeze dense geometry and pause complexity; remaining %s Joint epochs unfreeze at low LR.\n' "$JOINT_GEOMETRY_CALIBRATION_EPOCHS" "$((EPOCHS-PROPOSAL_EPOCHS-JOINT_GEOMETRY_CALIBRATION_EPOCHS))"
 fi
-if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION || ANCHORED_SELECTION)); then
-  printf 'Real data: validation-only (%s/source); synthetic-only training; held-out test for comparison.\n' "$REAL_VAL_SIZE"
+if [[ "$TRAINING_SOURCE" != synthetic ]]; then
+  printf 'Specialist: %s train split fraction=%s, remaining draws synthetic; selected source val only, ALL test sources held out.\n' "$TRAINING_SOURCE" "$TRAINING_REAL_FRACTION"
+elif ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION || ANCHORED_SELECTION)); then
+  printf 'Real data: validation-only (%s/source, selection=%s); synthetic-only training; held-out test for comparison.\n' "$REAL_VAL_SIZE" "$VALIDATION_SOURCE"
 fi
 printf 'Proposal %s + Joint %s = %s epochs; train/val=%s/%s, batch=%s.\n' \
   "$PROPOSAL_EPOCHS" "$((EPOCHS-PROPOSAL_EPOCHS))" "$EPOCHS" "$TRAIN_SIZE" "$VAL_SIZE" "$BATCH_SIZE"
 fi
 printf 'Six methods: Synthetic + three observed/derived sources + procedural IndustrialOffset, plus explicit extra sources. Profile=%s.\n' "$BENCHMARK_PROFILE"
-printf 'IndustrialOffset is CAD-driven semi-synthetic, not measured industrial data; evaluation-only, not added to model selection.\n'
+printf 'IndustrialOffset is CAD-driven semi-synthetic, not measured industrial data; test split is never used for training or model selection.\n'
 run_logged check_environment "$PYTHON_BIN" scripts/overnight_linux_preflight.py --runtime-only --device "$DEVICE"
 
 UJI="$DATA_ROOT/splits/uji_pen_v2.jsonl"
 NATURAL="$DATA_ROOT/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl"
 USGS="$DATA_ROOT/processed/usgs_contours/large_scale/manifest.jsonl"
 INDUSTRIAL="$DATA_ROOT/processed/industrial_offsets/v1/manifest.jsonl"
+VALIDATION_MANIFEST_ARGS=()
+case "$VALIDATION_SOURCE" in
+  all) VALIDATION_MANIFEST_ARGS=(--real-manifest "$UJI" --real-manifest "$NATURAL" --real-manifest "$USGS") ;;
+  UJI) VALIDATION_MANIFEST_ARGS=(--real-manifest "$UJI") ;;
+  NaturalEarth) VALIDATION_MANIFEST_ARGS=(--real-manifest "$NATURAL") ;;
+  USGS) VALIDATION_MANIFEST_ARGS=(--real-manifest "$USGS") ;;
+  IndustrialOffset) VALIDATION_MANIFEST_ARGS=(--real-manifest "$INDUSTRIAL") ;;
+esac
 if ((PREPARE)); then
   if [[ ! -f "$UJI" ]]; then
     run_logged prepare_uji "$PYTHON_BIN" scripts/prepare_uji_pen.py --download \
@@ -405,7 +458,7 @@ if ((DRY_RUN == 0)); then
   done
 fi
 STAMP="$(date -u +%Y%m%d_%H%M%S)_$$"
-PREFLIGHT_ARGS=(--data-root "$DATA_ROOT" --device "$DEVICE" --mse-tolerance "$MSE_TOLERANCE" --candidate-knots "$CANDIDATE_KNOTS" "${EXTRA_MANIFEST_ARGS[@]}")
+PREFLIGHT_ARGS=(--data-root "$DATA_ROOT" --device "$DEVICE" --mse-tolerance "$MSE_TOLERANCE" --candidate-knots "$CANDIDATE_KNOTS" --source-max-knots "$SOURCE_MAX_KNOTS" --training-source "$TRAINING_SOURCE" --validation-source "$VALIDATION_SOURCE" "${EXTRA_MANIFEST_ARGS[@]}")
 if ((RESIZE_CANDIDATE_WARM_START)); then PREFLIGHT_ARGS+=(--resize-candidate-warm-start); fi
 if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION || ANCHORED_SELECTION)); then PREFLIGHT_ARGS+=(--validate-real-splits); fi
 if [[ "$CHECKPOINT" != "$TRAIN_OUTPUT" ]]; then
@@ -421,17 +474,25 @@ run_logged check_data_and_provenance "$PYTHON_BIN" scripts/overnight_linux_prefl
   "${PREFLIGHT_ARGS[@]}" --output "$PREFLIGHT_OUTPUT"
 
 if [[ "$CHECKPOINT" == "$TRAIN_OUTPUT" ]]; then
+  EFFECTIVE_REAL_FRACTION=0
+  if [[ "$TRAINING_SOURCE" != synthetic ]]; then EFFECTIVE_REAL_FRACTION="$TRAINING_REAL_FRACTION"; fi
   TRAIN_ARGS=(scripts/train_v16.py --epochs "$EPOCHS" --proposal-epochs "$PROPOSAL_EPOCHS"
     --train-size "$TRAIN_SIZE" --val-size "$VAL_SIZE" --batch-size "$BATCH_SIZE"
-    --num-points 192 --min-control-points 8 --max-control-points 28 --candidate-knots "$CANDIDATE_KNOTS"
-    --mse-tolerance "$MSE_TOLERANCE" --real-fraction 0 --proposal-pass-target 0.90
+    --num-points 192 --min-control-points 8 --max-control-points "$((SOURCE_MAX_KNOTS+4))" --candidate-knots "$CANDIDATE_KNOTS"
+    --mse-tolerance "$MSE_TOLERANCE" --real-fraction "$EFFECTIVE_REAL_FRACTION" --proposal-pass-target 0.90
     --deployment-pass-target 0.90 "${LEARNING_ARGS[@]}"
     "${SAFETY_ARGS[@]}"
     --complexity-ramp-epochs "$COMPLEXITY_RAMP_EPOCHS" "${RESAMPLE_ARGS[@]}" --num-workers "$NUM_WORKERS"
     --torch-num-threads 4 --device "$DEVICE" --output "$TRAIN_OUTPUT")
-  if ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION || ANCHORED_SELECTION)); then
+  if [[ "$TRAINING_SOURCE" != synthetic ]]; then
+    case "$TRAINING_SOURCE" in
+      UJI) TRAIN_MANIFEST="$UJI" ;; NaturalEarth) TRAIN_MANIFEST="$NATURAL" ;;
+      USGS) TRAIN_MANIFEST="$USGS" ;; IndustrialOffset) TRAIN_MANIFEST="$INDUSTRIAL" ;;
+    esac
+    TRAIN_ARGS+=(--real-val-size "$REAL_VAL_SIZE" --real-manifest "$TRAIN_MANIFEST")
+  elif [[ "$VALIDATION_SOURCE" != all ]] || ((RELIABLE_SELECTION || COMPACT_SELECTION || STABLE_SELECTION || ANCHORED_SELECTION)); then
     TRAIN_ARGS+=(--real-val-size "$REAL_VAL_SIZE"
-      --real-manifest "$UJI" --real-manifest "$NATURAL" --real-manifest "$USGS")
+      "${VALIDATION_MANIFEST_ARGS[@]}")
   fi
   if ((RESUME)); then
     TRAIN_ARGS+=(--resume "$LAST_PATH")
@@ -484,6 +545,7 @@ if ((RESUME)) && [[ -f "$COMPARISON_DIR/experiment.json" ]]; then BENCHMARK_RESU
 run_logged benchmark_six_methods "$PYTHON_BIN" scripts/benchmark_v16_datasets.py \
   --checkpoint "$CHECKPOINT" --output-dir "$COMPARISON_DIR" --method-set published \
   --samples-per-knot-count "$SYNTHETIC_SAMPLES" --min-knot-count 4 --max-knot-count 24 \
+  --synthetic-source-max-knots 24 \
   --real-samples-per-dataset "$REAL_SAMPLES" --mse-tolerance "$MSE_TOLERANCE" \
   "${MANIFEST_ARGS[@]}" "${BASELINE_ARGS[@]}" "${TIMING_ARGS[@]}" \
   --allow-unqualified-diagnostic "${FORCE_DIAGNOSTIC[@]}" "${BENCHMARK_RESUME[@]}"

@@ -1,0 +1,322 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,bm,booktabs,tabularx}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[colorlinks=true,allcolors=blue]{hyperref}
+\newcommand{\MSE}{\operatorname{MSE}}
+\newcommand{\Peak}{\operatorname{MaxSqErr}}
+\newcommand{\todo}[1]{\par\noindent\textbf{To complete:} #1\par}
+\title{Learning Compact B-Spline Representations through\\
+Candidate Selection and Subset-Conditioned Geometry}
+\author{Author names and affiliations to be supplied}
+\date{Working manuscript framework --- 21 September 2026}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+Selecting a compact knot vector while preserving approximation accuracy is a
+coupled discrete--continuous problem. We describe a learned pipeline that maps
+ordered samples to candidate knots, selects a variable-size subset, and jointly
+updates retained knot positions and point parameters. A curve-adaptive threshold
+controls probability-mass Top-$K$ selection. A subset-conditioned decoder
+preserves the correspondence between parameter updates and knot relocation,
+and standard B-spline least squares determines the control points.
+During training, bounded online counterfactual search supplies verified
+feasible subsets and geometric targets; this search is absent at deployment.
+We specify evaluation on synthetic splines, handwriting strokes, geographic
+curves, and procedural industrial offsets, reporting failures, cardinality,
+pointwise peak error, and complete latency. Current diagnostic runs show that
+improved fit feasibility does not automatically produce more compact
+representations. Established components are therefore separated from planned
+depth, capacity, and peak-error ablations, without claiming universal
+feasibility or globally minimal knot count.
+\end{abstract}
+\noindent\textbf{Keywords:} B-spline fitting; knot selection; parameterization;
+geometric learning; counterfactual supervision.
+
+\section{Introduction}
+Ordered point sequences arise in digitized curves, map polylines, and
+manufacturing-related geometry. Dense spline representations reduce residual
+error but introduce unnecessary degrees of freedom. Conversely, deleting knots
+can invalidate an accurate fit. Selection must therefore be considered together
+with parameterization and the positions of retained knots.
+
+Our aim is to amortize part of numerical knot search into a predictor while
+retaining an explicit standard B-spline output. The implemented design combines:
+\begin{enumerate}
+\item local geometric candidate generation and curve-adaptive one-shot selection;
+\item survivor-conditioned parameter and knot updates anchored to proposal geometry;
+\item online feasible-subset supervision verified through the actual decoder.
+\end{enumerate}
+These are design components, not established novelty or superiority claims.
+The research question is whether learned selection can approach the
+compactness of numerical search while retaining accuracy on unseen curves.
+
+\section{Related work}
+Park and Lee~\cite{park2007} use dominant points for adaptive refinement.
+Liang et al.~\cite{liang2017} investigate initial knot placement and iterative
+insertion for error-bounded fitting. Dung and Tjahjowidodo~\cite{dung2017}
+combine coarse subdivision with local position and continuity optimization.
+Kang et al.~\cite{kang2015} select active knots by sparse optimization and
+subsequently refine the representation. Luo et al.~\cite{luo2022} combine an
+$\ell_{\infty,1}$ sparse stage and differential evolution. The last reference
+is the sparse/DE paper, not another deep-learning paper of the same year.
+
+The repository implements disclosed adaptations, sharing a final-refit and
+evaluation protocol but not every native objective, continuity model, or
+solver. Comparing these implementations is not an exact reproduction of the
+authors' published results.
+\todo{Extend the learning-related discussion using verified primary references.
+Distinguish amortized search from guaranteed constrained optimization.}
+
+\section{Problem and error definitions}
+Let $\bm Q=(\bm q_i)_{i=1}^M$ be normalized ordered observations in
+$\mathbb R^d$, with $0=t_1<\cdots<t_M=1$. A clamped cubic spline is
+\begin{equation}
+\bm C(t)=\sum_{a=1}^{K+4}B_{a,3}(t;\bm U)\bm P_a,\qquad
+\bm U=(0,0,0,0,u_1,\ldots,u_K,1,1,1,1).
+\end{equation}
+$K$ counts interior knots only: $K=32$ means 40 knot-vector entries and
+36 control points. Endpoint-constrained least squares computes
+$\bm P^\star$ for given $\bm t$ and $\bm U$. Define
+\begin{equation}
+e_i=\|\bm C(t_i)-\bm q_i\|_2^2,\qquad
+\MSE=M^{-1}\sum_i e_i,\qquad \Peak=\max_i e_i.
+\end{equation}
+Neither metric is square-rooted or divided by coordinate dimension. The goal is
+\begin{equation}
+\min_{\bm t,\bm U,K}K
+\quad\text{subject to}\quad
+\MSE(\bm t,\bm U,\bm P^\star)\leq\varepsilon,\quad 0\leq K\leq K_c,
+\label{eq:target}
+\end{equation}
+with ordered parameters and admissible knots. A one-shot prediction approximates
+this goal, without certifying feasibility or global minimality. A peak target
+$\delta$, if enabled, is separate from $\varepsilon$. Discrete corresponding-point
+errors are not Hausdorff distances or guarantees between observations.
+
+\section{One-shot prediction framework}
+\subsection{Point features and proposal parameters}
+The geometry encoder consumes coordinates and sequential features, including
+first and second differences. Pointwise and pooled features feed a ParameterHead,
+which predicts monotone parameters relative to chord-length parameters.
+Positive interval constraints, endpoint normalization, and a learned trust
+factor restrict the update. Parameter positional encodings augment point
+features used as attention memory. This head reads encoded observations,
+not ground-truth knots.
+
+\subsection{Candidate generation}
+Candidate queries use local Gaussian-biased cross-attention to read
+parameter-positioned point features. The CandidateKnotHead produces
+$K_c$ ordered interior coordinates $\bm U^{(p)}$ and tokens $\bm h_j$.
+These are learned proposals, not necessarily exact shape-preserving Boehm
+insertions. An explicit redundant input spline is not required at deployment.
+
+\subsection{Adaptive selection and variable cardinality}
+Candidate interaction combines point memory, neighborhood coverage features,
+and a tolerance embedding. With importance scores $a_j$ and a curve-level
+adaptive threshold $\beta$, the profile uses
+\begin{equation}
+p_j=\sigma(a_j-\bar a-\beta),\qquad m=\sum_{j=1}^{K_c}p_j.
+\end{equation}
+For zero safety reserve, requested cardinality is zero if $m<0.5$, and
+$\lceil m\rceil$ otherwise, clipped to its admissible range. In the current
+profile this range is $[4,K_c]$, so a zero raw request still retains at least
+four knots. The highest-probability candidate in each of four nonempty
+parameter bins is given priority when the requested count can accommodate
+all bin anchors; remaining slots follow the probability ranking. KeepMask
+is obtained by one stable Top-$K$ operation on this adjusted ranking. Thus independent
+$p_j\geq0.5$ tests are \emph{not} this profile's selection rule. Optional
+reserve settings and changes to the four-bin coverage rule must be disclosed
+separately. The mask supplies
+the output length; separate decoders for every possible $K$ are not evaluated.
+
+\subsection{KeepMask-conditioned geometry}
+Distances to nearest retained neighbors, retained rank, and retained count
+form a geometry embedding added to each candidate token. Here a
+\emph{keep embedding} means mask-conditioned geometry, not an independent
+binary lookup table. Only retained tokens supply survivor-attention keys and
+values. Point queries also attend to this survivor memory to update parameter
+features. A masked zero sentinel handles empty subsets. Discarded candidates
+are not used as survivor evidence, and candidates are not independent.
+
+\subsection{Anchored parameter--knot coupling}
+Let $\widehat{\bm t}$ denote a monotone subset-conditioned parameter update.
+The decoder limits its difference from proposal parameters and contracts the
+update when required to preserve selected knot gaps:
+\begin{equation}
+\bm t'=\bm t^{(p)}+\gamma s(\widehat{\bm t}-\bm t^{(p)}),
+\qquad 0\leq\gamma,s\leq1.
+\end{equation}
+The same piecewise-linear parameter warp transforms candidate knots.
+A retained warped knot $\widetilde u_j$ is then relocated within free room
+$r_j$ to its nearest retained neighbors:
+\begin{equation}
+u'_j=\widetilde u_j+0.45\,r_j b_j\tanh(v_j),\qquad 0\leq b_j\leq s.
+\end{equation}
+Free room excludes the prescribed minimum gap, preventing crossing under
+simultaneous updates. Unlike the historical decoder, the anchored path has
+no compulsory attraction toward uniformly spaced retained ranks.
+Residual scale zero preserves proposal geometry.
+
+\subsection{Final spline and deployment scope}
+Selected coordinates become the interior of a clamped knot vector. One
+standard endpoint-constrained B-spline least-squares refit produces the control
+points. Deployment consists of one proposal/selection/decoder forward pass
+and one final refit. Teacher search, BIC sweeps, Hard-Concrete sampling,
+and greedy post-pruning are absent. Failed one-shot fits remain failures;
+no hidden repair is used to make their reported results feasible.
+
+\section{Training}
+\subsection{Proposal and joint stages}
+Proposal training emphasizes dense fit, parameter labels where available,
+and ordered knot coverage. Joint training activates selection and
+subset-conditioned fitting. Its initial geometry-calibration interval freezes
+the encoder, ParameterHead, and proposal geometry while selection and the
+subset decoder learn. Proposal geometry is subsequently unfrozen with a
+reduced learning rate. Epoch counts are experiment settings, not fixed
+properties of the method.
+
+\subsection{Online counterfactual feasible teacher}
+Training evaluates stochastic subsets, ranked-prefix alternatives, and bounded
+counterfactual edits. A limited greedy search on selected training curves
+seeks smaller feasible subsets. This is online numerical guidance, not an
+offline cache, a separate pretrained teacher network, or a globally optimal
+oracle.
+
+Fixed-geometry deletion alone is insufficient: a changed mask also changes
+the neural decoder. Teacher masks must therefore be decoded again and
+fitted before acceptance as feasible mask/count labels. Geometric targets
+include both parameters and knot positions. Useful but not yet redecoded-feasible
+targets may supervise geometry; they do not become safe compact mask labels.
+Teacher evaluations are detached targets. Ordinary derivatives through the
+discrete deployed Top-$K$ are not claimed.
+
+\subsection{Loss groups}
+The objective combines fit/violation, local-fit and parameter terms, policy
+and mask distillation, count calibration, boundary ranking, and geometric
+distillation. Supervised source terms are masked out when labels are absent.
+Complexity is encouraged within the configured feasibility-aware protocol,
+not interpreted as proof of Equation~\ref{eq:target}.
+\todo{Export final weights, search budgets, active objective configuration,
+and checkpoint selection into an appendix. Do not replace these with an
+inaccurate generic four-term loss.}
+
+\subsection{Optional peak-error and depth studies}
+For a separately declared squared-error target $\delta$, an optional loss
+combines exact per-curve peak error and the mean of the largest $q$ fraction:
+\begin{equation}
+\mathcal L_{\rm peak}=\mathcal A_b\left[
+\tfrac12\phi(\max_i e_{bi},\delta)+
+\tfrac12\phi(\operatorname{meanTop}_{q}(e_{b:}),\delta)\right].
+\end{equation}
+$\phi$ is the configured normalized log-space fit penalty and $\mathcal A_b$
+its batch tail-aware aggregation. The MSE pass criterion is unchanged.
+Residual gradients do not make hard selection differentiable or guarantee
+between-sample accuracy.
+
+Optional proposal, selection, and survivor refinement depths all default to
+zero extra layers. New residual gates start at zero, preserving the starting
+function under compatible weight transfer, without guaranteeing improved
+learning. Depth and peak-loss extensions have no complete measured results
+in this draft.
+
+\section{Experimental protocol}
+\subsection{Data and supervision}
+Synthetic training includes labelled splines and procedural shape families.
+The audited runs use source $K=4,\ldots,24$, $M=192$, 1500 training curves
+per epoch, and 500 synthetic validation curves. The source minimality audit
+is relative to tested source-subset removals, threshold, and parameterization;
+it does not prove globally minimal free knots for finite noisy data.
+
+External sources are UJI Pen Characters Version 2~\cite{uji2008},
+Natural Earth coastlines~\cite{naturalearth}, and USGS
+contours~\cite{usgscontours}. IndustrialOffset consists of procedurally
+generated CAD-style offsets, not measured industrial observations.
+Audited profiles use synthetic/procedural training and real validation;
+writer or geographic groups separate validation from held-out tests.
+External curves have no ground-truth spline knot vectors.
+
+Input-fitting errors and original-reference-point errors are separate.
+Upsampling short strokes does not create independent measured observations.
+Normalization, resampling, groups, manifests, seeds, and content hashes
+must accompany experiments.
+
+\subsection{Six-method comparison}
+Ours is compared with five disclosed adaptations: Park--Lee, Liang, Dung,
+Kang, and Luo. All receive identical normalized points, the declared common
+interior capacity, and an endpoint-constrained CPU float64 final refit.
+Baselines use chord parameters while Ours predicts parameter residuals;
+a fixed-chord ablation is needed to isolate knot selection.
+
+Dung, Kang, and Luo may use a disclosed threshold-safe wrapper when their
+native adapted result fails the common criterion. Bounded repairs and extra
+refits remain in their results and latency. Native and wrapped settings must
+be distinguished, and neither is an exact author implementation.
+
+\subsection{Metrics, timing, and ablations}
+Report pass fraction over all attempted curves, mean/P95 MSE, average
+interior $K$, per-curve $\Peak$ mean/P95/maximum, and complete latency.
+Exceptions and nonfinite outputs stay in the failure denominator.
+Cardinality comparisons on jointly passing curves must also state sample
+counts. Complete time includes parameterization, method execution, and
+refit; network time is supplementary. GPU Ours versus CPU baselines is not
+a hardware-neutral algorithmic speedup.
+
+Controlled studies should include:
+\begin{enumerate}
+\item proposal/selection/survivor depth at fixed capacity, seed, data, and budget;
+\item unified $K_c=32$ versus morphology-specific capacities chosen on
+validation, without post-hoc selection by test error;
+\item peak-loss on/off at the same MSE tolerance;
+\item teacher geometry, redecoding verification, and parameter coupling.
+\end{enumerate}
+Specialists default to morphology-specific synthetic training with real
+validation/testing only. Explicit real-training-split adaptation is a
+different protocol and must be labelled separately. Test labels and test-fit
+outcomes cannot choose capacity or model.
+
+\section{Results and analysis --- to be completed}
+\todo{Insert frozen paired six-method results, including synthetic strata and
+all four external sources. No figures are required for this framework.}
+\todo{Fill depth/capacity/peak-loss tables only after running the experiments;
+no new improvement numbers currently exist.}
+
+The 21 September audit is a cautionary diagnostic, not a final paper result.
+On 122 identical inputs, Stable K32 and the saved Anchored 12+48 best model
+achieved 60.66\% and 69.67\% pass rates, respectively, while mean knot counts
+increased from 24.04 to 26.19. The latter was saved at epoch13, not epoch60.
+This motivates assessing fit and compactness together. The repository audit
+records conditional teacher denominators; these results must not be silently
+merged with future formal experiments.
+
+\section{Limitations and validity}
+One-shot fits can fail the tolerance and retain too many knots. Candidate
+capacity and proposal quality limit performance before selection. Teacher
+verification covers only selected training curves; feasible targets do not
+guarantee a feasible learned policy. Distribution shift, parameter bias,
+and between-sample oscillation remain unresolved. No minimality theorem or
+continuous error certificate is claimed.
+
+Baseline adaptations show some severe original-reference instability despite
+small input-grid residuals. Such failures need investigation and disclosure,
+not silent removal. Procedural offsets do not establish general performance
+on measured industrial geometry.
+
+\section{Conclusion}
+The framework combines candidate generation, adaptive one-shot selection,
+coupled survivor geometry, and explicit B-spline fitting. Verified online
+numerical guidance is used in training, without iterative subset search at
+deployment. The final conclusion must follow the measured trade-off among
+feasibility, complexity, peak error, and runtime, including unseen-source
+behavior and failures.
+
+\section*{Reproducibility and declarations}
+\todo{Supply code/model hashes, manifests, seeds, commands, hardware, software,
+training/inference budgets, and licenses.}
+\todo{Supply authorship, funding, conflicts, and data availability declarations.}
+\bibliographystyle{plainnat}
+\bibliography{references}
+\end{document}

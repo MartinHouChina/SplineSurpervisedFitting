@@ -1,5 +1,7 @@
 # Minimum-Complexity B-Spline Fitting
 
+最新：[Granularity 实验与运行说明](docs/overnight_granularity.md)、[这次训练结果审计](docs/overnight_results_audit_20260921.md)、[当前算法论文框架](paper/overnight/README.md)。新增三段可选交互层、合成形态专用容量实验、峰值误差训练；默认不改变旧模型。真实训练结果显示拟合提升但节点数尚未改善，新增路线须重新训练检验。
+
 最新短程改进见 [Overnight Anchored：稳定紧凑解码](docs/overnight_anchored.md)：K32、MSE `5e-5`，锚定式参数/节点残差、紧凑教师专项监督及 Joint 内冻结候选几何校准。新增 `--anchored-selection` 一条龙；旧检查点保持原行为，效果须重新验证。
 
 新增 [Overnight K32：统一容量与最大误差](docs/overnight_k32.md)：显式将网络与全部五个数值对照组上限设为 32 个内部节点，支持 K64 权重缩容后重新训练；增加最大单点平方误差、五指标图与六方法案例标注。含 Linux 训练—评测—绘图一条龙，旧实验不覆盖。
@@ -25,6 +27,8 @@
 不取平方根，也不除以坐标维数。默认单曲线阈值为 `2.5e-5`，工程验收指标为每个验证来源至少 90% 的曲线通过该阈值。
 
 ## 当前 v16 流程
+
+> 下文为历史 v16 通用设计与旧参数示例；本轮 Overnight 的实际开关、K32/专用容量、零安全储备、Teacher与合成训练比例，以顶部最新实验说明及checkpoint配置为准。不要把旧K96建议与本轮容量消融混用。
 
 ```text
 有序点 Q + MSE 阈值 ε
