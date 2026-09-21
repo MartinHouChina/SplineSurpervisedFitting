@@ -1,0 +1,6 @@
+
+[plot_four_metrics] /home/feng/anaconda3/bin/python scripts/plot_v16_method_comparison.py --input /home/feng/HouCode/SplineFitting_1070_overnight/outputs/comparisons/universal_m16_m32_3090_r1_m32/comparison.json --output-dir /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/universal_m16_m32_3090_r1_m32/four_metrics --method-set published --dpi 300 --reference --allow-unqualified-diagnostic
+/home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/universal_m16_m32_3090_r1_m32/four_metrics/v16_published_methods_input.png
+/home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/universal_m16_m32_3090_r1_m32/four_metrics/v16_published_methods_five_metrics_input.png
+/home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/universal_m16_m32_3090_r1_m32/four_metrics/v16_published_methods_reference.png
+/home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/universal_m16_m32_3090_r1_m32/four_metrics/v16_published_methods_five_metrics_reference.png

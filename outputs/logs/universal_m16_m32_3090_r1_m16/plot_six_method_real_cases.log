@@ -1,0 +1,171 @@
+
+[plot_six_method_real_cases] /home/feng/anaconda3/bin/python scripts/visualize_v16_real_deployments.py --checkpoint /home/feng/HouCode/SplineFitting_1070_overnight/outputs/checkpoints/universal_m16_m32_3090_r1_m16.pt --real-samples-per-dataset 6 --selection-seed 20260909 --mse-tolerance 5e-5 --manifest UJI=/home/feng/HouCode/SplineSurpervisedFitting/data/splits/uji_pen_v2.jsonl --manifest NaturalEarth=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl --manifest USGS=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/usgs_contours/large_scale/manifest.jsonl --manifest IndustrialOffset=/home/feng/HouCode/SplineSurpervisedFitting/data/processed/industrial_offsets/v1/manifest.jsonl --max-internal-knots 16 --paper-initial-knots 16 --liang-dense-knots 16 --gradient-steps 12 --paper-admm-iterations 400 --paper-lambda-bisections 8 --paper-relocation-iterations 8 --liang-feature-samples 1025 --dung-scan-intervals 10 --dung-optimization-iterations 10 --luo-de-population 10 --luo-de-iterations 50 --published-feasibility-safeguard --network-warmups 3 --network-repeats 100 --end-to-end-repeats 3 --torch-num-threads 4 --device cuda --dpi 240 --allow-unqualified-diagnostic --method-set published --output-dir /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/universal_m16_m32_3090_r1_m16/six_method_real_cases
+[1/24] UJI / uji2_07455_stroke_00
+  Ours v16: MSE=1.614e-05, max SE=2.695e-04, K=15, time=14.90 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.206e-05, max SE=2.945e-04, K=10, time=12.44 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=3.627e-05, max SE=5.882e-04, K=9, time=8.33 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=3.421e-05, max SE=4.035e-04, K=6, time=108.09 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=4.491e-05, max SE=9.642e-04, K=16, time=395.91 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.419e-05, max SE=9.543e-04, K=16, time=1932.41 ms
+[2/24] UJI / uji2_05088_stroke_00
+  Ours v16: MSE=2.151e-05, max SE=4.427e-04, K=15, time=14.58 ms
+  Park & Lee 2007 (DOM adaptation): MSE=3.363e-04, max SE=5.881e-03, K=16, time=19.27 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=1.795e-05, max SE=4.623e-04, K=15, time=14.41 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=3.901e-05, max SE=4.831e-04, K=11, time=149.89 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=7.677e-05, max SE=1.396e-03, K=16, time=5.70 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=7.669e-05, max SE=1.402e-03, K=16, time=586.28 ms
+[3/24] UJI / uji2_07958_stroke_00
+  Ours v16: MSE=4.131e-05, max SE=4.297e-04, K=15, time=14.69 ms
+  Park & Lee 2007 (DOM adaptation): MSE=2.109e-05, max SE=1.033e-04, K=6, time=8.15 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=1.708e-05, max SE=7.143e-05, K=5, time=4.34 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=3.950e-05, max SE=1.344e-04, K=5, time=89.97 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=7.830e-06, max SE=8.176e-05, K=10, time=864.81 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=2.558e-05, max SE=9.423e-05, K=5, time=2356.99 ms
+[4/24] UJI / uji2_10873_stroke_00
+  Ours v16: MSE=3.417e-05, max SE=2.909e-04, K=16, time=14.72 ms
+  Park & Lee 2007 (DOM adaptation): MSE=2.140e-05, max SE=1.211e-04, K=14, time=16.86 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=2.637e-05, max SE=1.656e-04, K=9, time=8.25 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.393e-05, max SE=2.645e-04, K=9, time=155.17 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=1.948e-05, max SE=2.191e-04, K=16, time=392.94 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.175e-05, max SE=2.488e-04, K=9, time=1981.49 ms
+[5/24] UJI / uji2_10402_stroke_02
+  Ours v16: MSE=1.478e-05, max SE=1.549e-04, K=12, time=14.65 ms
+  Park & Lee 2007 (DOM adaptation): MSE=3.264e-05, max SE=2.778e-04, K=1, time=4.38 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=8.906e-06, max SE=7.543e-05, K=4, time=4.48 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=2.541e-05, max SE=2.950e-04, K=2, time=38.41 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=2.525e-05, max SE=1.242e-04, K=1, time=6.75 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=2.626e-05, max SE=1.219e-04, K=2, time=2456.03 ms
+[6/24] UJI / uji2_02386_stroke_01
+  Ours v16: MSE=6.447e-05, max SE=3.755e-04, K=9, time=14.49 ms
+  Park & Lee 2007 (DOM adaptation): MSE=2.124e-05, max SE=1.668e-04, K=0, time=2.25 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=1.571e-05, max SE=1.252e-04, K=4, time=3.34 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=1.668e-05, max SE=1.178e-04, K=2, time=39.02 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=2.124e-05, max SE=1.668e-04, K=0, time=3.07 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=1.291e-05, max SE=1.032e-04, K=3, time=2433.46 ms
+[7/24] NaturalEarth / natural_earth_10m_coastline_6f39c8d2074b_w000_6f39c8d2
+  Ours v16: MSE=1.125e-04, max SE=5.209e-04, K=16, time=14.71 ms
+  Park & Lee 2007 (DOM adaptation): MSE=2.538e-04, max SE=2.988e-03, K=16, time=19.30 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=9.258e-05, max SE=6.156e-04, K=16, time=15.44 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.805e-05, max SE=2.643e-04, K=14, time=267.68 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=1.715e-04, max SE=1.883e-03, K=16, time=5.68 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=1.589e-04, max SE=1.880e-03, K=16, time=543.53 ms
+[8/24] NaturalEarth / natural_earth_10m_coastline_08e9fecdd118_w000_08e9fecd
+  Ours v16: MSE=5.891e-03, max SE=4.274e-02, K=16, time=14.52 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.882e-03, max SE=3.624e-02, K=16, time=19.30 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=2.648e-03, max SE=1.670e-02, K=16, time=15.42 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=5.448e-03, max SE=2.726e-02, K=16, time=506.03 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=5.678e-03, max SE=4.300e-02, K=16, time=5.63 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=5.678e-03, max SE=4.300e-02, K=16, time=592.74 ms
+[9/24] NaturalEarth / natural_earth_10m_coastline_8a97d7af70b1_w000_8a97d7af
+  Ours v16: MSE=1.021e-04, max SE=4.812e-04, K=14, time=14.67 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.603e-05, max SE=4.165e-04, K=11, time=14.41 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=3.734e-05, max SE=3.153e-04, K=12, time=11.26 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.591e-05, max SE=4.742e-04, K=9, time=142.38 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=3.593e-05, max SE=5.283e-04, K=16, time=399.06 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.709e-05, max SE=5.502e-04, K=11, time=1890.43 ms
+[10/24] NaturalEarth / natural_earth_10m_coastline_48ef53b7a2ac_w000_48ef53b7
+  Ours v16: MSE=3.416e-04, max SE=2.477e-03, K=16, time=14.60 ms
+  Park & Lee 2007 (DOM adaptation): MSE=5.155e-04, max SE=5.194e-03, K=16, time=19.36 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=2.354e-04, max SE=1.531e-03, K=16, time=15.58 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=3.085e-04, max SE=2.039e-03, K=16, time=398.95 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=5.525e-04, max SE=4.257e-03, K=16, time=5.65 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.900e-04, max SE=3.926e-03, K=16, time=613.24 ms
+[11/24] NaturalEarth / natural_earth_10m_coastline_e798af85b73b_w000_e798af85
+  Ours v16: MSE=5.693e-05, max SE=3.250e-04, K=16, time=14.59 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.748e-05, max SE=4.085e-04, K=13, time=15.77 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.640e-05, max SE=3.252e-04, K=11, time=10.33 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.524e-05, max SE=2.908e-04, K=10, time=172.25 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=3.055e-05, max SE=4.567e-04, K=16, time=392.90 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=3.905e-05, max SE=3.677e-04, K=11, time=1961.20 ms
+[12/24] NaturalEarth / natural_earth_10m_coastline_933eab98f709_w000_933eab98
+  Ours v16: MSE=4.971e-05, max SE=5.395e-04, K=16, time=14.66 ms
+  Park & Lee 2007 (DOM adaptation): MSE=2.196e-04, max SE=2.893e-03, K=16, time=19.28 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.337e-05, max SE=4.244e-04, K=13, time=12.28 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=3.844e-05, max SE=3.741e-04, K=14, time=230.95 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=5.537e-05, max SE=9.823e-04, K=16, time=5.61 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.847e-05, max SE=3.872e-04, K=15, time=609.25 ms
+[13/24] USGS / usgs_tnm_contours_large_scale_3eb19dbb6d67_w000_3eb19dbb
+  Ours v16: MSE=5.016e-05, max SE=5.645e-04, K=16, time=14.70 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.126e-05, max SE=8.570e-05, K=15, time=18.20 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.978e-05, max SE=1.846e-04, K=9, time=8.34 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=3.660e-05, max SE=1.388e-04, K=8, time=111.78 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=6.005e-06, max SE=6.559e-05, K=14, time=744.35 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=3.169e-05, max SE=2.405e-04, K=7, time=2508.72 ms
+[14/24] USGS / usgs_tnm_contours_large_scale_2cadfb668fb4_w000_2cadfb66
+  Ours v16: MSE=7.776e-05, max SE=6.060e-04, K=12, time=14.70 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.945e-05, max SE=4.692e-04, K=3, time=5.09 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=2.481e-05, max SE=2.004e-04, K=4, time=3.34 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=1.762e-05, max SE=1.243e-04, K=5, time=48.43 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=4.133e-05, max SE=2.674e-04, K=3, time=891.19 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=2.424e-05, max SE=1.099e-04, K=4, time=2481.95 ms
+[15/24] USGS / usgs_tnm_contours_large_scale_ddfe427e4dda_w000_ddfe427e
+  Ours v16: MSE=6.206e-05, max SE=4.178e-04, K=15, time=14.68 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.881e-05, max SE=5.420e-04, K=16, time=19.42 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=3.769e-05, max SE=1.862e-04, K=12, time=11.36 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.800e-05, max SE=2.974e-04, K=11, time=171.08 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=3.916e-05, max SE=3.523e-04, K=16, time=391.30 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.210e-05, max SE=2.365e-04, K=12, time=1268.10 ms
+[16/24] USGS / usgs_tnm_contours_large_scale_8e652f54e742_w000_8e652f54
+  Ours v16: MSE=1.351e-04, max SE=8.676e-04, K=16, time=14.63 ms
+  Park & Lee 2007 (DOM adaptation): MSE=2.686e-04, max SE=2.836e-03, K=16, time=19.40 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=1.221e-04, max SE=5.627e-04, K=16, time=15.39 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=1.013e-04, max SE=5.890e-04, K=16, time=352.77 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=1.314e-04, max SE=9.419e-04, K=16, time=5.66 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=1.275e-04, max SE=9.839e-04, K=16, time=591.81 ms
+[17/24] USGS / usgs_tnm_contours_large_scale_f0e01325c640_w002_0eb6b787
+  Ours v16: MSE=2.805e-04, max SE=1.555e-03, K=16, time=14.67 ms
+  Park & Lee 2007 (DOM adaptation): MSE=2.003e-03, max SE=1.471e-02, K=16, time=19.55 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=2.238e-04, max SE=1.629e-03, K=16, time=15.59 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=2.478e-04, max SE=1.978e-03, K=16, time=410.59 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=2.478e-04, max SE=1.978e-03, K=16, time=5.69 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=2.396e-04, max SE=2.135e-03, K=16, time=616.87 ms
+[18/24] USGS / usgs_tnm_contours_large_scale_f25cc5317711_w000_f25cc531
+  Ours v16: MSE=2.577e-04, max SE=1.349e-03, K=16, time=14.62 ms
+  Park & Lee 2007 (DOM adaptation): MSE=5.502e-04, max SE=4.953e-03, K=16, time=19.30 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=1.450e-04, max SE=5.898e-04, K=16, time=15.44 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=1.339e-04, max SE=7.134e-04, K=16, time=373.77 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=1.700e-04, max SE=9.149e-04, K=16, time=5.67 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=1.686e-04, max SE=8.683e-04, K=16, time=656.69 ms
+[19/24] IndustrialOffset / industrial_offset_keyway_bore_v007_o01_m0p0400
+  Ours v16: MSE=5.821e-05, max SE=9.456e-04, K=16, time=14.70 ms
+  Park & Lee 2007 (DOM adaptation): MSE=6.662e-04, max SE=1.089e-02, K=16, time=19.45 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=5.076e-05, max SE=3.084e-04, K=16, time=15.51 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=4.994e-05, max SE=4.259e-04, K=16, time=188.89 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=2.763e-04, max SE=3.832e-03, K=16, time=5.66 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=2.760e-04, max SE=3.832e-03, K=16, time=549.66 ms
+[20/24] IndustrialOffset / industrial_offset_elliptic_bore_v008_o03_p0p0200
+  Ours v16: MSE=8.276e-07, max SE=3.528e-06, K=13, time=14.60 ms
+  Park & Lee 2007 (DOM adaptation): MSE=4.998e-05, max SE=2.761e-04, K=10, time=12.43 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.783e-05, max SE=1.439e-04, K=5, time=4.35 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=2.293e-05, max SE=1.593e-04, K=6, time=73.15 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=3.089e-06, max SE=2.082e-05, K=12, time=782.46 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=3.354e-05, max SE=2.003e-04, K=6, time=2620.09 ms
+[21/24] IndustrialOffset / industrial_offset_keyway_bore_v008_o03_p0p0200
+  Ours v16: MSE=5.798e-05, max SE=7.270e-04, K=15, time=14.66 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.117e-04, max SE=1.791e-03, K=16, time=19.45 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.398e-05, max SE=2.156e-04, K=13, time=12.41 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=2.733e-05, max SE=3.005e-04, K=15, time=196.93 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=3.503e-04, max SE=5.716e-03, K=16, time=5.69 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=2.742e-04, max SE=5.313e-03, K=16, time=595.32 ms
+[22/24] IndustrialOffset / industrial_offset_naca_airfoil_v005_o04_p0p0400
+  Ours v16: MSE=4.955e-06, max SE=1.506e-04, K=14, time=14.60 ms
+  Park & Lee 2007 (DOM adaptation): MSE=1.949e-05, max SE=5.585e-04, K=15, time=22.71 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=4.851e-05, max SE=6.168e-04, K=6, time=5.35 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=1.909e-05, max SE=5.645e-04, K=6, time=92.15 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=6.341e-05, max SE=1.439e-03, K=16, time=5.63 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=4.557e-05, max SE=1.153e-03, K=14, time=585.74 ms
+[23/24] IndustrialOffset / industrial_offset_lobed_rotor_v001_o00_m0p0800
+  Ours v16: MSE=2.894e-04, max SE=2.673e-03, K=15, time=14.74 ms
+  Park & Lee 2007 (DOM adaptation): MSE=9.565e-05, max SE=4.109e-04, K=16, time=21.48 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=2.059e-04, max SE=9.423e-04, K=16, time=15.60 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=1.173e-04, max SE=4.423e-04, K=16, time=223.48 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=2.814e-04, max SE=1.013e-03, K=16, time=5.60 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=2.732e-04, max SE=1.370e-03, K=16, time=590.57 ms
+[24/24] IndustrialOffset / industrial_offset_naca_airfoil_v011_o03_p0p0200
+  Ours v16: MSE=5.931e-06, max SE=1.797e-04, K=15, time=14.63 ms
+  Park & Lee 2007 (DOM adaptation): MSE=2.084e-05, max SE=5.718e-04, K=10, time=20.90 ms
+  Liang et al. 2017 (feature-IKI adaptation): MSE=3.553e-05, max SE=4.052e-04, K=6, time=5.38 ms
+  Dung & Tjahjowidodo 2017 (serial adaptation) [threshold-safe adaptation]: MSE=2.871e-05, max SE=9.077e-04, K=6, time=78.70 ms
+  Kang 2015 (ADMM adaptation) [threshold-safe adaptation]: MSE=7.544e-05, max SE=1.897e-03, K=16, time=5.68 ms
+  Luo et al. 2022 (l-infinity,1 + DE adaptation) [threshold-safe adaptation]: MSE=5.771e-05, max SE=1.408e-03, K=16, time=595.86 ms
+Saved 24 PNG files and /home/feng/HouCode/SplineFitting_1070_overnight/outputs/figures/universal_m16_m32_3090_r1_m16/six_method_real_cases/deployment_visualizations.json
