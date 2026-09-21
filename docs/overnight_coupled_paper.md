@@ -50,14 +50,14 @@ Teacher评估子集走同一个解码器，额外搜索仅在训练。新块零�
 Windows PowerShell上传：
 
 ```powershell
-scp "E:\SelfSurpervisedSplineFitting\outputs\delivery\overnight_coupled_paper_linux_update.zip" feng@10.76.0.64:/home/feng/HouCode/
+scp "E:\SelfSurpervisedSplineFitting\outputs\delivery\overnight_coupled_clean_comparison_linux_update.zip" feng@10.76.0.64:/home/feng/HouCode/
 ```
 
 Linux激活已有PyTorch环境后执行（先备份服务器未提交的源码修改）：
 
 ```bash
 cd /home/feng/HouCode/SplineFitting_1070_overnight
-unzip /home/feng/HouCode/overnight_coupled_paper_linux_update.zip
+unzip -o /home/feng/HouCode/overnight_coupled_clean_comparison_linux_update.zip
 bash scripts/run_v16_paper_training_linux.sh \
   --device cuda \
   --data-root /home/feng/HouCode/SplineSurpervisedFitting/data \
@@ -69,13 +69,13 @@ bash scripts/run_v16_paper_training_linux.sh \
 
 先追加 `--dry-run`应显示两个独立流程；`--capacities 32`仅运行M32。默认各外部来源最多100条test记录、12条案例PNG，合成K4..24每K10条。**覆盖所有来源不等于遍历所有记录**，如需完整test split，加 `--all-real-test-samples`；测试可能很久，不承诺隔夜时限。
 
-## 原生对照尚未完成：必须披露
+## 对照默认实际运行，图上不加水印
 
-默认 `--baseline-protocol native`拒绝未核实实现。当前五篇均未达到原版资格，结果为 `unavailable` / N/A，不是“拟合失败0%”，不会降级运行适配版。因此目前能完整保存Ours结果，**不能生成有效的六原版方法排名**。
+默认 `--baseline-protocol adaptation`，实际运行仓库当前五篇对照实现，不再因原版资格未核实而跳过方法。公共超阈值补点、满容量均匀回退默认关闭；已确认的额外启发式不进入新默认路径。绘图不加 `DIAGNOSTIC NOT FINAL`、`REDUCED BENCHMARK` 等水印/诊断横幅；资格、来源和实现差异保留在 JSON、图旁元数据与报告中。
 
-见[原论文审计](baseline_native_audit.md)：Dung缺少重数/角度分类且最终求解不同；Kang缺少一般数据Algorithm1/3；其余有全文/公式与作者程序核验缺口。需完成原版实现与论文例子等价验证后才能正式比较。
+见[原论文审计](baseline_native_audit.md)：已取消Dung/Kang公共端点refit，保留算法实际输出。当前Kang比较仍采用已有4/5适配；另外补入的Algorithm1/3实验路径在小样本固定误差约束下失败，未作为默认。其一般数据适用性、有限ADMM与原文CVX的等价性尚未解决。Dung仍缺重数/角度分类，其余有全文/公式与作者程序核验缺口。去掉保护机制可能使部分现有变体表现下降，不能把下降直接归因于原论文方法。
 
-若只想继续探索性比较，可显式加 `--baseline-protocol adaptation`。本新入口仍关闭公共误差修补，并标为**未修补适配版**，不是原版；旧入口默认行为不变。
+这不等于已经完成作者原版复现。需要严格检查原生资格时仍可显式传 `--baseline-protocol native`；该模式对未核实方法报告 unavailable。默认模式下的真实计算异常、超预算和超阈值也必须如实记录，不用伪造曲线或指标填满面板。旧结果不改值，旧安全补点实验也不重新标成无修补实验。
 
 ## 测量保存与PNG
 

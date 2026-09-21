@@ -112,6 +112,8 @@ def test_legacy_four_method_cli_default_remains_unchanged():
     assert args.method_set == "legacy"
     assert args.ours_only is False
     assert args.force_diagnostic is False
+    assert args.published_feasibility_safeguard is False
+    assert entry.parser().parse_args(["--published-feasibility-safeguard"]).published_feasibility_safeguard
     assert entry.METHODS == (
         "ours", "kang_sparse_2015_adaptation", "yeh_feature_cdf_2020",
         "uniform_gradient_pruning",
@@ -167,7 +169,8 @@ def test_selected_case_methods_render_complete_grid_and_record_each_fit(harness,
         assert "max SE=" in axis.get_title()
         assert "ref max SE=" in axis.get_title()
         assert any(line.get_label() == "Final B-spline" for line in axis.lines)
-    assert any("DIAGNOSTIC NOT FINAL" in text.get_text() for text in figure.texts)
+    assert not any("DIAGNOSTIC NOT FINAL" in text.get_text() for text in figure.texts)
+    assert report["watermark_rendered"] is False
     saved = json.loads((harness.args.output_dir / "deployment_visualizations.json").read_text(encoding="utf-8"))
     assert saved == report
 
@@ -310,7 +313,7 @@ def test_unequal_capacity_opt_in_is_visibly_diagnostic(harness):
     assert "Ours Kc=64" in report["capacity_comparison_note"]
     text = "\n".join(item.get_text() for figure in harness.figures for item in figure.texts)
     assert "UNEQUAL-CAPACITY ABLATION" in text
-    assert "DIAGNOSTIC NOT FINAL" in text
+    assert "DIAGNOSTIC NOT FINAL" not in text
     assert "Ours Kc=64" in text and "numerical cap=32" in text
 
 

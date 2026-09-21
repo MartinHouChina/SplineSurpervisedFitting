@@ -6,6 +6,7 @@ import sys
 import matplotlib.pyplot as plt
 import pytest
 import torch
+from matplotlib.figure import Figure
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -88,7 +89,7 @@ def checkpoint(*, stage="joint", quality="deployment_target_met", met=True,
     }
 
 
-def test_qualified_joint_checkpoint_has_no_watermark():
+def test_qualified_joint_checkpoint_has_no_diagnostic_flag():
     assert entry.validate_checkpoint_for_visualization(
         checkpoint(), allow_unqualified_diagnostic=False,
     ) is False
@@ -212,3 +213,26 @@ def test_ours_entry_point_supplies_current_checkpoint_and_output_defaults():
     assert ours_entry.DEFAULT_CHECKPOINT.name == (
         "candidate_selection_v16_simplified_certified_k96.pt"
     )
+
+
+@pytest.mark.parametrize("overview", [False, True])
+def test_ours_figures_leave_diagnostic_status_out_of_png(tmp_path, monkeypatch, overview):
+    case, result = simple_case_and_result()
+    result["fit_pass"] = False
+    captured = []
+    original_savefig = Figure.savefig
+
+    def capture(figure, *args, **kwargs):
+        captured.extend(text.get_text() for text in figure.texts)
+        captured.extend(axis.get_title() for axis in figure.axes)
+        return original_savefig(figure, *args, **kwargs)
+
+    monkeypatch.setattr(Figure, "savefig", capture)
+    if overview:
+        entry.plot_ours_overview(tmp_path / "overview.png", items=[(case, result)],
+                                 tolerance=2.5e-5, diagnostic=True, dpi=40)
+    else:
+        entry.plot_ours_case(tmp_path / "case.png", case=case, result=result,
+                             tolerance=2.5e-5, diagnostic=True, dpi=40)
+    assert not any("DIAGNOSTIC NOT FINAL" in text for text in captured)
+    assert any("FAIL" in text and "MSE=" in text for text in captured)

@@ -1,0 +1,860 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "1b9affad6936b7bf1552642af5256174001e596eb049467f87641e159063be3a",
+  "case_artifact": {
+    "path": "geometry/50820cd78c4eecdf0fcf73f15aabae9b07cdeccc6b3049b518c1feead838eac5/case.json",
+    "sha256": "1ca95f48cb488f299adff87ff585234ff1b37d2d5e92f9863385b22300031b5f"
+  },
+  "measurement": {
+    "dataset": "NaturalEarth",
+    "sample_id": "natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04",
+    "group_id": "natural_earth_10m_coastline:tile:lon-115.000:lat+20.000:size5deg",
+    "source_k": null,
+    "canonical_k": null,
+    "method": "park_dominant_point_2007_adaptation",
+    "has_reference": true,
+    "status": "ok",
+    "mse": 3.5223101604650743e-05,
+    "max_squared_error": 0.0008083802847000149,
+    "fit_pass": true,
+    "reference_mse": 3.65573373000332e-05,
+    "reference_max_squared_error": 0.0009227114678084556,
+    "reference_pass": true,
+    "final_k": 25,
+    "total_ms": 99.58380000898615,
+    "network_ms": null,
+    "knots": [
+      0.09998768823470011,
+      0.17192563452118204,
+      0.24192167098530823,
+      0.25750065900790237,
+      0.2730796290490179,
+      0.29047826517567005,
+      0.3148983843699427,
+      0.3568724013748925,
+      0.39724629139812634,
+      0.4305016978220326,
+      0.449714001132103,
+      0.4934972823854489,
+      0.5548910992916979,
+      0.6018380183565545,
+      0.6242139517935795,
+      0.6431194459403676,
+      0.6641841189180183,
+      0.6847815787958957,
+      0.694846716681648,
+      0.7189549669189325,
+      0.7435304161380802,
+      0.7641976436129188,
+      0.7866131640774361,
+      0.8283379823196345,
+      0.8703405867213748
+    ],
+    "diagnostics": {
+      "network_used": false,
+      "parameterization": "chord_length",
+      "reported_refit": "unregularized standard B-spline least squares with exact endpoint interpolation",
+      "timing_scope": "complete numerical method: chord parameterization, knot selection/relocation, and the algorithm's final reported spline solve",
+      "mse_tolerance": 5e-05,
+      "smoothness_weight": 0.0,
+      "control_ridge": 0.0,
+      "interpolate_endpoints": true,
+      "declared_max_internal_knots": 32,
+      "declared_paper_initial_knots": 32,
+      "method": "park_lee_dom_2007_adaptation",
+      "reference_doi": "10.1016/j.cad.2006.12.006",
+      "knot_placement": "Park-Lee Eq. (4): each interior knot averages degree consecutive dominant-point parameters",
+      "lcm_lower_bound": 0.5088870932072961,
+      "lcm_seed_count": 11,
+      "shape_weight_r": 0.8,
+      "shape_index": "r*K_s,e/K_0,m + (1-r)*L_s,e/L_0,m",
+      "curvature_integral": "trapezoidal in chord parameter",
+      "curvature_source": "generalized local Menger curvature; no optional smoothed base curve",
+      "refinement_region": "segment containing largest sampled parameter-correspondence residual",
+      "refinement_point": "argmin_w |lambda_s,w - lambda_w,e|",
+      "stopping_metric": "mean squared Euclidean parameter-correspondence error",
+      "distance_metric_deviation": "comparison adaptation stops on common MSE; it does not reproduce the paper's maximum-distance or iterative orthogonal-distance criterion",
+      "seed_completion_deviation": "shape-index splits complete degree+1 dominant points when too few LCM seeds exist",
+      "effective_max_internal_knots": 32,
+      "requested_max_internal_knots": 32,
+      "selected_sources": [
+        "endpoint",
+        "endpoint",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split"
+      ],
+      "boundary_knot_clamp_count": 0,
+      "threshold_satisfied": true,
+      "scanned_counts": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25
+      ],
+      "scanned_mse": [
+        0.04475939187152158,
+        0.02668367187907869,
+        0.02429188863273699,
+        0.0117488645850194,
+        0.00969691622238468,
+        0.0056400316583495825,
+        0.0027745692134345454,
+        0.001908293670201001,
+        0.0009799601097790311,
+        0.0008078628051997805,
+        0.0003359873232125808,
+        0.00020186510789286738,
+        0.00020140585486617415,
+        0.00017252176418627746,
+        0.00015579423168240225,
+        0.00014693640434885598,
+        0.0001507436318623331,
+        0.00012903996713699807,
+        0.00012655229965813909,
+        0.00010929323219784309,
+        8.089455711065005e-05,
+        6.556419443263709e-05,
+        5.910451165881825e-05,
+        5.018882495055986e-05,
+        5.1090224293670436e-05,
+        3.5223101604650743e-05
+      ],
+      "scanned_max_parameter_residual": [
+        0.3981832446483494,
+        0.2919014707641886,
+        0.27828666922767703,
+        0.20211753529689047,
+        0.20317575319849684,
+        0.15213118910153964,
+        0.10902992882895289,
+        0.10560945442380476,
+        0.09742013541517837,
+        0.08991158188921768,
+        0.06462694672676216,
+        0.03624084731936956,
+        0.03734795728318113,
+        0.037832046868821405,
+        0.038143030048804795,
+        0.036277475016382045,
+        0.03382921791909162,
+        0.032509322696822614,
+        0.03226879037997598,
+        0.03226934634993492,
+        0.028745960598572977,
+        0.02878295662167276,
+        0.028442468042664478,
+        0.028431472445318177,
+        0.028431523950888292,
+        0.028432029204754537
+      ],
+      "exact_refit_count": 26,
+      "method_fidelity": "DOM-inspired repository implementation with common-MSE stopping; complete source-algorithm reproduction remains unverified",
+      "baseline_protocol": "adaptation",
+      "baseline_provenance": {
+        "audit_version": "source_paper_audit_20260921_v1",
+        "method": "park_dominant_point_2007_adaptation",
+        "reproduction_status": "reproduction_unverified",
+        "native_available": false,
+        "native_comparison_available": false,
+        "implementation_origin": "repository_implementation",
+        "author_code_executed": false,
+        "reference_doi": "10.1016/j.cad.2006.12.006",
+        "source_url": "https://www.sciencedirect.com/science/article/pii/S0010448507000024",
+        "source_access": "publisher abstract/introduction; full implementation not verified",
+        "author_code_url": null,
+        "author_code_sha256": null,
+        "known_departures": [
+          "Common-MSE stopping replaces the source error-bound protocol; no iterative orthogonal-distance parameter update.",
+          "Degree-compatible shape-seed completion, endpoint knot clamps, and endpoint-constrained refits are repository choices, not independently source-verified.",
+          "Discrete Menger curvature and incremental LCM-seed consumption have not been checked against an author-code reference."
+        ],
+        "audit_document": "docs/baseline_native_audit.md"
+      },
+      "reproduction_status": "reproduction_unverified",
+      "native_comparison_available": false,
+      "source_native_algorithm_executed": false,
+      "reported_geometry_scope": "repository adaptation with endpoint-constrained refit",
+      "legacy_native_fields_scope": "Historical native_* and comparison_feasibility_native_* keys describe pre-safeguard repository adaptations, not verified source-paper output.",
+      "repeated_complete_timing": {
+        "repeats": 1,
+        "samples_ms": [
+          99.58380000898615
+        ],
+        "p50_ms": 99.58380000898615,
+        "mean_ms": 99.58380000898615
+      }
+    },
+    "error": null,
+    "baseline_protocol": "adaptation",
+    "provenance": {
+      "audit_version": "source_paper_audit_20260921_v1",
+      "method": "park_dominant_point_2007_adaptation",
+      "reproduction_status": "reproduction_unverified",
+      "native_available": false,
+      "native_comparison_available": false,
+      "implementation_origin": "repository_implementation",
+      "author_code_executed": false,
+      "reference_doi": "10.1016/j.cad.2006.12.006",
+      "source_url": "https://www.sciencedirect.com/science/article/pii/S0010448507000024",
+      "source_access": "publisher abstract/introduction; full implementation not verified",
+      "author_code_url": null,
+      "author_code_sha256": null,
+      "known_departures": [
+        "Common-MSE stopping replaces the source error-bound protocol; no iterative orthogonal-distance parameter update.",
+        "Degree-compatible shape-seed completion, endpoint knot clamps, and endpoint-constrained refits are repository choices, not independently source-verified.",
+        "Discrete Menger curvature and incremental LCM-seed consumption have not been checked against an author-code reference."
+      ],
+      "audit_document": "docs/baseline_native_audit.md"
+    },
+    "source_kind": "observed_or_derived_real_world",
+    "source_note": "External held-out observations; no ground-truth B-spline knots.",
+    "dataset_label": "NaturalEarth",
+    "split": "test",
+    "attempt_wall_ms": 105.39899999275804,
+    "timing_status": "completed_method"
+  },
+  "spline": {
+    "degree": 3,
+    "internal_knots": [
+      0.09998768823470011,
+      0.17192563452118204,
+      0.24192167098530823,
+      0.25750065900790237,
+      0.2730796290490179,
+      0.29047826517567005,
+      0.3148983843699427,
+      0.3568724013748925,
+      0.39724629139812634,
+      0.4305016978220326,
+      0.449714001132103,
+      0.4934972823854489,
+      0.5548910992916979,
+      0.6018380183565545,
+      0.6242139517935795,
+      0.6431194459403676,
+      0.6641841189180183,
+      0.6847815787958957,
+      0.694846716681648,
+      0.7189549669189325,
+      0.7435304161380802,
+      0.7641976436129188,
+      0.7866131640774361,
+      0.8283379823196345,
+      0.8703405867213748
+    ],
+    "full_knot_vector": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.09998768823470011,
+      0.17192563452118204,
+      0.24192167098530823,
+      0.25750065900790237,
+      0.2730796290490179,
+      0.29047826517567005,
+      0.3148983843699427,
+      0.3568724013748925,
+      0.39724629139812634,
+      0.4305016978220326,
+      0.449714001132103,
+      0.4934972823854489,
+      0.5548910992916979,
+      0.6018380183565545,
+      0.6242139517935795,
+      0.6431194459403676,
+      0.6641841189180183,
+      0.6847815787958957,
+      0.694846716681648,
+      0.7189549669189325,
+      0.7435304161380802,
+      0.7641976436129188,
+      0.7866131640774361,
+      0.8283379823196345,
+      0.8703405867213748,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "control_points_normalized": [
+      [
+        -0.8216975927352905,
+        0.03237299993634224
+      ],
+      [
+        -0.8354284344135503,
+        0.2387136622436885
+      ],
+      [
+        -0.5458738500443402,
+        0.3995304268164601
+      ],
+      [
+        -0.2171108179071778,
+        0.6805982960078765
+      ],
+      [
+        0.015599479467393974,
+        0.8413577282950614
+      ],
+      [
+        0.16391043053848214,
+        0.963777732380336
+      ],
+      [
+        0.22669038036531777,
+        0.8837806702783447
+      ],
+      [
+        0.33072284148804415,
+        0.8369799173315058
+      ],
+      [
+        0.40151415553850134,
+        0.7164645987194576
+      ],
+      [
+        0.30617209802730133,
+        0.5125337103489335
+      ],
+      [
+        0.31010189703328944,
+        0.3198300187783295
+      ],
+      [
+        0.2234774388836258,
+        0.14316464119960565
+      ],
+      [
+        0.33479552219453296,
+        0.001702591576320705
+      ],
+      [
+        0.43952185750598527,
+        -0.18616884110964482
+      ],
+      [
+        0.5957869351190809,
+        -0.4332121771624987
+      ],
+      [
+        0.605530822796329,
+        -0.6569543635556577
+      ],
+      [
+        0.5958235463070374,
+        -0.8351865555546937
+      ],
+      [
+        0.4573116909366912,
+        -0.8095790024255302
+      ],
+      [
+        0.3674609488781293,
+        -0.8060061461444723
+      ],
+      [
+        0.24861160944119046,
+        -0.8207949886352739
+      ],
+      [
+        0.20212202674999796,
+        -0.75817001580722
+      ],
+      [
+        0.22537603154628102,
+        -0.6234183813416423
+      ],
+      [
+        0.19509389293456347,
+        -0.5302153086520115
+      ],
+      [
+        0.2277698283580355,
+        -0.3600906165871474
+      ],
+      [
+        0.05112982452058274,
+        -0.3839373094069343
+      ],
+      [
+        -0.11957441448270632,
+        -0.33277177448427625
+      ],
+      [
+        -0.5443182708291621,
+        -0.5515475420398382
+      ],
+      [
+        -0.6653105700261868,
+        -0.10923455426321384
+      ],
+      [
+        -0.8216975927352905,
+        0.03237299993634224
+      ]
+    ],
+    "sample_parameters": [
+      0.0,
+      0.005266166075100524,
+      0.01053233336273168,
+      0.0157984994378322,
+      0.02106466740308979,
+      0.02633083618869705,
+      0.031597001443448916,
+      0.036859701042266345,
+      0.04202685033803514,
+      0.04729301635721746,
+      0.052559184052718796,
+      0.05782535510086088,
+      0.06309153152341905,
+      0.06835769049187208,
+      0.07362387026706545,
+      0.07889002923551848,
+      0.08415618485132882,
+      0.08942236462652219,
+      0.09468852024233253,
+      0.09995470001752589,
+      0.10522085563333623,
+      0.11048703439764447,
+      0.11575319538787515,
+      0.1210193610616244,
+      0.1262855374841826,
+      0.1315517008161587,
+      0.13681786180638938,
+      0.14208402950189072,
+      0.14735019719739206,
+      0.15261636723465885,
+      0.15788252822488955,
+      0.16314870698919778,
+      0.16841487468469912,
+      0.17368103365315216,
+      0.17894720571218084,
+      0.18421336904415697,
+      0.18947950677232867,
+      0.19474567454294409,
+      0.20001183902046227,
+      0.2052780078984543,
+      0.2105441773265057,
+      0.21581034730461654,
+      0.22107650032674975,
+      0.22634266965166502,
+      0.2316088478806709,
+      0.23687500245713045,
+      0.2421411647271437,
+      0.24740735121430912,
+      0.2526735399017121,
+      0.25728112574959605,
+      0.26254731137239906,
+      0.2678134596105572,
+      0.27307962546619174,
+      0.278345802070292,
+      0.2836119546078347,
+      0.28887811401439656,
+      0.29414429061849684,
+      0.29941045002505867,
+      0.30467663092854913,
+      0.3094770341295523,
+      0.3147429977174454,
+      0.3200091698836083,
+      0.3252753613947057,
+      0.3305415086770695,
+      0.33580766895521724,
+      0.3410738507938419,
+      0.3463400077486844,
+      0.35160620147532157,
+      0.3568723725337073,
+      0.3621385198160711,
+      0.36740470165469574,
+      0.37267086082506956,
+      0.37793701349755404,
+      0.3832031953361787,
+      0.38846937717480334,
+      0.39373551256915906,
+      0.39900169551555864,
+      0.4042678816365349,
+      0.40953403161395896,
+      0.414800186501988,
+      0.42006634725965397,
+      0.425332501039908,
+      0.43059870419925383,
+      0.435573888226936,
+      0.4408400645870146,
+      0.44610625536563864,
+      0.45137240169275655,
+      0.45663858346850555,
+      0.46190474555050276,
+      0.4671709239504564,
+      0.4724370866654542,
+      0.47770325198298996,
+      0.48296941097011925,
+      0.4882222657270852,
+      0.49348842030599915,
+      0.49875457242384985,
+      0.504020808213449,
+      0.5092868963480606,
+      0.5145530779972026,
+      0.5198192596463447,
+      0.5250853871565114,
+      0.5303516254064382,
+      0.5356177455326687,
+      0.5408839050329761,
+      0.5461500940645737,
+      0.5514162781740457,
+      0.5566824278330609,
+      0.5619485479592914,
+      0.5670936582870992,
+      0.5723597854833213,
+      0.5776259676816315,
+      0.5828921612165382,
+      0.5881582774123427,
+      0.593424526285533,
+      0.5986906534817551,
+      0.6039568136792299,
+      0.6092229852133026,
+      0.6144891234099423,
+      0.619755338945683,
+      0.6238101681646889,
+      0.6290763482703666,
+      0.6343425283760443,
+      0.6396086593150053,
+      0.6448748999231311,
+      0.6501409590239144,
+      0.6554072109677634,
+      0.6606733305709936,
+      0.6659395158416345,
+      0.6712056962825947,
+      0.6764718213860474,
+      0.6817380678296742,
+      0.6870041870976409,
+      0.6908687279039988,
+      0.6961348712544395,
+      0.7014011025919437,
+      0.7066672350433043,
+      0.7119334112895932,
+      0.7171995987328671,
+      0.7224657088895575,
+      0.7277319073312142,
+      0.7329980945758862,
+      0.7382642159295614,
+      0.7435304472670655,
+      0.7487965850190137,
+      0.7540627503662201,
+      0.759328937809494,
+      0.7645950755614421,
+      0.7686689174678205,
+      0.7739350197964734,
+      0.779201191046111,
+      0.7844673882531199,
+      0.7897335591656572,
+      0.7949997188959409,
+      0.8002658420255366,
+      0.8055320261662549,
+      0.8107982101384206,
+      0.8160643930759713,
+      0.8213305779075424,
+      0.8265754992030455,
+      0.8318416824207964,
+      0.8371078039812719,
+      0.8423739881997063,
+      0.8476401431911784,
+      0.8529062931496504,
+      0.8581725442300764,
+      0.8634386096814255,
+      0.8687048207820245,
+      0.8739709638482341,
+      0.8792371468942697,
+      0.8845033072621753,
+      0.889769530288038,
+      0.8946767306730414,
+      0.8999428684009314,
+      0.9052090082002415,
+      0.9104751932410752,
+      0.9157413672304513,
+      0.9210075985485314,
+      0.9262736624862713,
+      0.9315398562756839,
+      0.9368060391293741,
+      0.9420721668415174,
+      0.9473383519981107,
+      0.9526045808975967,
+      0.9578707130997565,
+      0.9631368431147724,
+      0.968403013707715,
+      0.9736691493063414,
+      0.9789354415491541,
+      0.9842015721109559,
+      0.98946769911865,
+      0.9947338145490765,
+      1.0
+    ],
+    "control_points_original": [
+      [
+        -1445.3799415500835,
+        129.76385735496297
+      ],
+      [
+        -1470.239523136372,
+        503.34201442598913
+      ],
+      [
+        -946.0032102811076,
+        794.4995103040188
+      ],
+      [
+        -350.7803090579637,
+        1303.3706916323501
+      ],
+      [
+        70.53986628950025,
+        1594.4243878552336
+      ],
+      [
+        339.05568452440014,
+        1816.0648488453414
+      ],
+      [
+        452.718293217528,
+        1671.230792886734
+      ],
+      [
+        641.0682513266216,
+        1586.4983953073645
+      ],
+      [
+        769.2353723578333,
+        1368.3063524861777
+      ],
+      [
+        596.61932209363,
+        999.0910723014093
+      ],
+      [
+        603.7341924924168,
+        650.2025442104213
+      ],
+      [
+        446.90128776603007,
+        330.351258302404
+      ],
+      [
+        648.4418079279016,
+        74.2353226317093
+      ],
+      [
+        838.0480198347914,
+        -265.90443850066345
+      ],
+      [
+        1120.964722032382,
+        -713.1744683982924
+      ],
+      [
+        1138.6059545479172,
+        -1118.2579488772758
+      ],
+      [
+        1121.0310063021525,
+        -1440.9459400525302
+      ],
+      [
+        870.2563742780108,
+        -1394.5836651711886
+      ],
+      [
+        707.5823077399068,
+        -1388.115036787273
+      ],
+      [
+        492.40650719979334,
+        -1414.8901205790373
+      ],
+      [
+        408.23748093725413,
+        -1301.508096531446
+      ],
+      [
+        450.33867494901216,
+        -1057.5413150786617
+      ],
+      [
+        395.5130995717054,
+        -888.7978801230906
+      ],
+      [
+        454.67262537515603,
+        -580.7884542388109
+      ],
+      [
+        134.8672784274778,
+        -623.9627052867476
+      ],
+      [
+        -174.19141266110987,
+        -531.3279040400166
+      ],
+      [
+        -943.1868462649903,
+        -927.4197220136776
+      ],
+      [
+        -1162.242458708866,
+        -126.61551321431614
+      ],
+      [
+        -1445.3799415500835,
+        129.76385735496297
+      ]
+    ]
+  },
+  "geometry_evaluation_error": null,
+  "errors_normalized": {
+    "mse": 3.5223101604650743e-05,
+    "max_squared_error": 0.0008083802847000149,
+    "reference_mse": 3.65573373000332e-05,
+    "reference_max_squared_error": 0.0009227114678084556
+  },
+  "errors_original": {
+    "mse": 115.45716936030323,
+    "max_squared_error": 2649.775152845039,
+    "reference_mse": 119.83063647791774,
+    "reference_max_squared_error": 3024.539275535817
+  },
+  "arrays_file": "116b5be8a575e8f8912c.npz",
+  "arrays_sha256": "31152447b5f8d615ba4ac954a90e648311ccd181a5f8ad0b0f196533bededcfa",
+  "array_shapes": {
+    "sample_parameters": [
+      192
+    ],
+    "internal_knots": [
+      25
+    ],
+    "full_knot_vector": [
+      33
+    ],
+    "control_points_normalized": [
+      29,
+      2
+    ],
+    "fitted_input_normalized": [
+      192,
+      2
+    ],
+    "input_residual_vectors_normalized": [
+      192,
+      2
+    ],
+    "input_squared_residuals_normalized": [
+      192
+    ],
+    "dense_parameters": [
+      512
+    ],
+    "dense_curve_normalized": [
+      512,
+      2
+    ],
+    "knot_positions_normalized": [
+      25,
+      2
+    ],
+    "reference_parameters": [
+      768
+    ],
+    "fitted_reference_normalized": [
+      768,
+      2
+    ],
+    "reference_residual_vectors_normalized": [
+      768,
+      2
+    ],
+    "reference_squared_residuals_normalized": [
+      768
+    ],
+    "control_points_original": [
+      29,
+      2
+    ],
+    "fitted_input_original": [
+      192,
+      2
+    ],
+    "input_residual_vectors_original": [
+      192,
+      2
+    ],
+    "input_squared_residuals_original": [
+      192
+    ],
+    "dense_curve_original": [
+      512,
+      2
+    ],
+    "knot_positions_original": [
+      25,
+      2
+    ],
+    "fitted_reference_original": [
+      768,
+      2
+    ],
+    "reference_residual_vectors_original": [
+      768,
+      2
+    ],
+    "reference_squared_residuals_original": [
+      768
+    ]
+  },
+  "timing_scope": "Export, dense evaluation, metrics and plotting are excluded from successful method/network timings. The spline is from the final timed repetition; reported times are medians of all recorded timed repetitions.",
+  "coordinate_error_scaling": "Original-coordinate squared errors = normalized squared errors * scalar_scale**2; reported benchmark pass/fail uses normalized input MSE only."
+}

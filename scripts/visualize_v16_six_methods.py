@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from benchmark_geometry import case_key, file_sha256, load_geometry_artifact  # noqa: E402
+from plot_v16_method_comparison import validate_v16_benchmark  # noqa: E402
 
 
 def parser():
@@ -111,14 +112,13 @@ def _plot_case(case, source_arrays, results, metadata, path, dpi):
         axis.grid(alpha=.15)
         axis.tick_params(labelsize=7)
         axis.legend(fontsize=6, loc="best")
-    banner = "DIAGNOSTIC NOT FINAL | " if metadata.get("diagnostic_not_final") else ""
     figure.suptitle(
-        f"{banner}{case.get('dataset_label') or case['dataset']} | {case['sample_id']}\n"
-        f"{_protocol_text(metadata)}\n"
-        "Saved measured geometry only; discrete corresponding-point squared errors; normalized coordinates",
+        f"{case.get('dataset_label') or case['dataset']} | {case['sample_id']}\n"
+        "Corresponding-point squared errors; normalized coordinates",
         fontsize=10,
     )
-    figure.tight_layout(rect=(0, .01, 1, .89))
+    figure.text(.02, .012, _protocol_text(metadata), fontsize=7, color="0.4")
+    figure.tight_layout(rect=(0, .04, 1, .92))
     return _save_png(figure, path, dpi)
 
 
@@ -139,7 +139,8 @@ def _plot_dataset_summary(dataset, rows, metadata, path, dpi):
         evaluated = len(values) - unavailable
         title = metadata.get("method_labels", {}).get(method, method).replace(" (", "\n(")
         pass_text = f"{passed}/{evaluated}" if evaluated else "N/A"
-        tick_labels.append(f"{title}\npass {pass_text}; unavailable {unavailable}")
+        tick_labels.append(f"{title}\npass {pass_text}" +
+                           (f"; unavailable {unavailable}" if unavailable else ""))
     for axis, (field, title) in zip(axes.flat, fields):
         for index, method in enumerate(methods):
             valid = [row for row in by_method[method] if row["status"] == "ok"]
@@ -153,10 +154,10 @@ def _plot_dataset_summary(dataset, rows, metadata, path, dpi):
         axis.set_xticks(range(len(methods)), tick_labels, rotation=20, ha="right", fontsize=6)
         axis.set_title(title, fontsize=10)
         axis.grid(axis="y", alpha=.2)
-    banner = "DIAGNOSTIC NOT FINAL | " if metadata.get("diagnostic_not_final") else ""
     label = next((row.get("dataset_label") for row in rows if row.get("dataset_label")), dataset)
-    figure.suptitle(f"{banner}{label}\n{_protocol_text(metadata)}\nActual failed runs stay in pass-rate denominators; unavailable methods were not run and remain N/A", fontsize=10)
-    figure.tight_layout(rect=(0, 0, 1, .91))
+    figure.suptitle(label, fontsize=12)
+    figure.text(.02, .012, _protocol_text(metadata), fontsize=7, color="0.4")
+    figure.tight_layout(rect=(0, .04, 1, .95))
     return _save_png(figure, path, dpi)
 
 
@@ -168,6 +169,10 @@ def run(args):
     metadata, measurements = report["metadata"], report["measurements"]
     if not measurements or any(not row.get("geometry_artifact") for row in measurements):
         raise ValueError("Saved measured geometry is missing; cannot reconstruct legacy fits without rerunning, which this plotter forbids")
+    # Recompute the metadata fingerprint too, so edited labels or protocols
+    # cannot silently relabel historical fits by retaining an old hash string.
+    validate_v16_benchmark(report, methods=tuple(metadata["methods"]),
+                           allow_unqualified_diagnostic=True)
     grouped = defaultdict(dict)
     dataset_rows = defaultdict(list)
     for row in measurements:
@@ -211,6 +216,10 @@ def run(args):
         "source_comparison": str(source.resolve()), "source_comparison_sha256": file_sha256(source),
         "benchmark_fingerprint": metadata["fingerprint"], "reran_methods": False,
         "diagnostic_not_final": metadata.get("diagnostic_not_final", True),
+        "diagnostic_reasons": metadata.get("diagnostic_reasons", []),
+        "checkpoint_qualification": metadata.get("checkpoint_qualification"),
+        "published_baseline_protocol": metadata.get("published_baseline_protocol", {}),
+        "watermark_rendered": False,
         "plot_selection": {"seed": args.selection_seed, "max_cases_per_dataset": args.max_cases_per_dataset,
                            "rule": "seeded random sample without ranking by error, success, knots or runtime"},
         "requested_measurements": len(measurements),

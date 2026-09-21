@@ -29,7 +29,7 @@ def test_anchored_short_profile_preserves_six_method_pipeline(tmp_path, best):
         assert {value.split("=", 1)[0] for value in args.manifest} == {
             "UJI", "NaturalEarth", "USGS", "IndustrialOffset"}
         assert args.max_internal_knots == 32
-        assert args.published_feasibility_safeguard
+        assert not args.published_feasibility_safeguard
     assert {"plot_four_metrics", "inspect_checkpoint"} <= commands.keys()
     assert list(tmp_path.iterdir()) == [best]
 

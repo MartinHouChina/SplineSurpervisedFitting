@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 import torch
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -21,6 +22,14 @@ from spline_fitting.evaluation.sparse_knot_paper import (
     _relocate_clusters,
     fit_sparse_knots_paper,
 )
+
+
+@pytest.fixture(autouse=True)
+def _single_thread_for_small_reference_solves():
+    previous = torch.get_num_threads()
+    torch.set_num_threads(1)
+    yield
+    torch.set_num_threads(previous)
 
 
 class SparseKnotPaperTests(unittest.TestCase):
@@ -124,7 +133,7 @@ class SparseKnotPaperTests(unittest.TestCase):
         self.assertTrue(result.final_threshold_satisfied)
         self.assertGreaterEqual(result.local_refit_count, 0)
 
-    def test_singleton_active_cluster_is_locally_relocated(self) -> None:
+    def test_singleton_extra_search_is_explicit_opt_in(self) -> None:
         parameters = torch.linspace(0.0, 1.0, 101, dtype=self.dtype)
         true_knot = torch.tensor([0.31], dtype=self.dtype)
         controls = torch.tensor(
@@ -139,6 +148,13 @@ class SparseKnotPaperTests(unittest.TestCase):
         )
         starting = torch.tensor([0.5], dtype=self.dtype)
 
+        unchanged, no_refits = _relocate_clusters(
+            parameters, points, [starting], degree=3, initial_spacing=0.25,
+            tolerance=1e-4, max_iterations=12,
+        )
+        torch.testing.assert_close(unchanged, starting, rtol=0.0, atol=0.0)
+        self.assertEqual(no_refits, 0)
+
         relocated, refits = _relocate_clusters(
             parameters,
             points,
@@ -147,6 +163,7 @@ class SparseKnotPaperTests(unittest.TestCase):
             initial_spacing=0.25,
             tolerance=1e-4,
             max_iterations=12,
+            singleton_interval_search=True,
         )
 
         self.assertGreater(refits, 0)
@@ -248,6 +265,8 @@ class SparseKnotPaperTests(unittest.TestCase):
             data_tolerance=2.5e-5,
             admm_max_iterations=400,
             relocation_max_iterations=6,
+            retain_nonclear_clusters=True,
+            relocation_algorithm="clusters",
         )
         absolute_only = fit_sparse_knots_paper(
             sample.parameters,

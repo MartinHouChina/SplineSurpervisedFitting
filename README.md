@@ -1,6 +1,6 @@
 # Minimum-Complexity B-Spline Fitting
 
-当前更新：[M16/M32 数值耦合与论文输出](docs/overnight_coupled_paper.md)。逐轮更新参数t和节点U、弦长参考、较长训练及完整案例导出；[原生基线审计](docs/baseline_native_audit.md)发现现有五篇均未获原版资格，严格模式显示N/A，不再把未修补适配版称原版。新架构尚待长程训练，未宣称效果已提升。
+当前更新：[M16/M32 数值耦合与论文输出](docs/overnight_coupled_paper.md)。逐轮更新参数t和节点U、弦长参考、较长训练及完整案例导出。六方法默认实际运行当前实现，关闭附加可行性补点，PNG不加诊断水印；[原生基线审计](docs/baseline_native_audit.md)与JSON保留实现差异。严格原生资格模式仅显式启用。新架构尚待长程训练，未宣称效果已提升。
 
 最新：[M16/M32 两个通用模型及一条龙指令](docs/overnight_m16_m32.md)、[Granularity 架构与实验说明](docs/overnight_granularity.md)、[这次训练结果审计](docs/overnight_results_audit_20260921.md)、[当前算法论文框架](paper/overnight/README.md)。容量路线只训练最大16、32个内部候选的两个通用模型，不再按数据集分别训练；均使用混合合成训练、真实验证/测试，默认三段各加2层并启用峰值误差损失。旧检查点行为不变，新模型尚需重新训练验证，未宣称效果已提升。
 

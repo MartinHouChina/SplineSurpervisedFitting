@@ -1,0 +1,104 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "b404d2737aee31006bc57ac62f460ceac8dc730698bbd77c4205d24cec61edd8",
+  "dataset": "NaturalEarth",
+  "sample_id": "natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04",
+  "group_id": "natural_earth_10m_coastline:tile:lon-115.000:lat+20.000:size5deg",
+  "split": "test",
+  "source_kind": "observed_or_derived_real_world",
+  "source_note": "External held-out observations; no ground-truth B-spline knots.",
+  "dataset_label": "NaturalEarth",
+  "source_k": null,
+  "canonical_k": null,
+  "source_dataset": "natural_earth_10m_coastline",
+  "source_manifest": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\natural_earth\\v5.1.2_10m_coastline\\manifest.jsonl",
+  "source_manifest_record": {
+    "group_id": "natural_earth_10m_coastline:tile:lon-115.000:lat+20.000:size5deg",
+    "has_knot_labels": false,
+    "metadata": {
+      "group_strategy": "centroid spatial tile (5 degrees)",
+      "knot_labels": "unavailable",
+      "preprocessing_version": "geospatial_curves_v1",
+      "projected_length_m": 9874.90270663669,
+      "projection": {
+        "center_latitude_deg": 24.827684689402712,
+        "center_longitude_deg": -110.5724675215697,
+        "earth_radius_m": 6371008.8,
+        "name": "local_azimuthal_equidistant_spherical",
+        "source_crs": "EPSG:4326",
+        "unit": "meter"
+      },
+      "reference_normalization_transform": {
+        "center_m": [
+          48.47933848295361,
+          70.66464905999601
+        ],
+        "definition": "subtract mean, divide by maximum radial norm",
+        "note": "RealWorldCurveDataset recomputes this transform after network-input resampling.",
+        "scale_m": 1820.027862179244
+      },
+      "reference_point_count": 768,
+      "reference_sampling": "uniform_projected_chord",
+      "source_feature_id": "feature_00003729",
+      "source_geometry_sha256": "625e1d04cc464b62025a4d3622837f228f2599d64d0bf78caa7f66240dfcc5ba",
+      "source_part_index": 0,
+      "source_properties": {
+        "featurecla": "Coastline",
+        "min_zoom": 6,
+        "scalerank": 6
+      },
+      "source_sha256": "6f75ae0e0de157b14946e2255eb1f5486d9a13819032e26d4610852d296788f6",
+      "source_url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_coastline.geojson",
+      "source_version": "v5.1.2",
+      "source_vertex_count": 14,
+      "source_window_index": 0,
+      "split_seed": 20260904,
+      "stored_coordinate_space": "local_metric"
+    },
+    "num_points": 768,
+    "point_dim": 2,
+    "points_path": "curves/natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04.npy",
+    "sample_id": "natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04",
+    "source_dataset": "natural_earth_10m_coastline",
+    "split": "test"
+  },
+  "source_points_path": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\natural_earth\\v5.1.2_10m_coastline\\curves\\natural_earth_10m_coastline_625e1d04cc46_w000_625e1d04.npy",
+  "source_points_sha256": "afb94dd406dc89ce42b4c73fca989ebff123cf71e4a1e64b2ff8cc8be35370f0",
+  "normalization": {
+    "available": true,
+    "definition": "normalized = (original - center) / scalar_scale",
+    "center": [
+      42.2971305847168,
+      71.15279388427734
+    ],
+    "scale": 1810.4921875,
+    "original_input_note": "Inverse transformed actual model inputs; may differ from pre-normalization resampling by floating-point rounding."
+  },
+  "arrays_file": "case.npz",
+  "arrays_sha256": "ff3abb5c11fb211734c0a4025e7161667f757a09313da2dca8c61a44c99e2576",
+  "array_shapes": {
+    "input_points_normalized": [
+      192,
+      2
+    ],
+    "normalization_center": [
+      2
+    ],
+    "normalization_scale": [],
+    "input_points_original": [
+      192,
+      2
+    ],
+    "reference_points_normalized": [
+      768,
+      2
+    ],
+    "reference_chord_parameters": [
+      768
+    ],
+    "reference_points_original": [
+      768,
+      2
+    ]
+  }
+}

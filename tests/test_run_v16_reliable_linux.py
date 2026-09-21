@@ -18,7 +18,7 @@ def test_reliable_profile_is_synthetic_train_with_real_validation(tmp_path):
     assert train.allow_infeasible_proposals
     assert "--validate-real-splits" in commands["check_data_and_provenance"]
     for name in ("benchmark_six_methods", "plot_ours_cases", "plot_six_method_real_cases"):
-        assert _parsed(commands[name]).published_feasibility_safeguard
+        assert not _parsed(commands[name]).published_feasibility_safeguard
     assert not list(tmp_path.iterdir())
 
 

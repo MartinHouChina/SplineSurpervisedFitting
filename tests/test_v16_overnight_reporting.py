@@ -91,6 +91,10 @@ def test_six_methods_four_datasets_preserve_entire_failed_method_and_render(
         path = plotting.render_comparison(paired_report, tmp_path, dpi=50, reference=reference)
         assert path.is_file()
         assert path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+        figure_metadata = json.loads(path.with_suffix(".metadata.json").read_text(encoding="utf-8"))
+        assert figure_metadata["diagnostic_not_final"] is True
+        assert figure_metadata["diagnostic_reasons"] == paired_report["metadata"]["diagnostic_reasons"]
+        assert figure_metadata["watermark_rendered"] is False
     assert paired_report == before
     for fig, dataset_count in zip(captured, (4, 3)):
         assert len(fig.axes) == 4
@@ -98,7 +102,9 @@ def test_six_methods_four_datasets_preserve_entire_failed_method_and_render(
         assert len(fig.axes[3].patches) == 6 * dataset_count
         assert len(fig.axes[0].patches) == 5 * dataset_count
         assert len(fig.axes[2].patches) == 5 * dataset_count
-        assert any("REDUCED BENCHMARK PROTOCOL" in text.get_text() for text in fig.texts)
+        assert not any("REDUCED BENCHMARK PROTOCOL" in text.get_text() or
+                       "DIAGNOSTIC NOT FINAL" in text.get_text() for text in fig.texts)
+        assert not any(text.get_rotation() != 0 for text in fig.texts)
         assert any("N/A" in text.get_text() for text in fig.axes[0].texts)
     # Canonical reference K must remain visible even above all retained-K bars.
     assert captured[0].axes[2].get_ylim()[1] > 12.0
@@ -110,6 +116,37 @@ def test_all_failed_reference_method_stays_in_markdown_table(tmp_path, paired_re
     assert "| UJI | Luo et al. 2022 (l-infinity,1 + DE adaptation) | 0.0% | — |" in text
     assert "quick or reduced benchmark protocol" in text
     assert "UNQUALIFIED CHECKPOINT" not in text
+
+
+@pytest.mark.parametrize("returned_solver", [False, True])
+@pytest.mark.parametrize("missing_peak", [False, True])
+def test_five_metric_caption_matches_recorded_solver_and_actual_missing_data(
+    tmp_path, paired_report, monkeypatch, returned_solver, missing_peak,
+):
+    rows = [row for row in paired_report["measurements"] if row["method"] == "ours"]
+    for row in rows:
+        row["max_squared_error"] = None if missing_peak else 2 * row["mse"]
+    paired_report["measurements"] = rows
+    paired_report["summary"] = benchmark.summarize(rows)
+    if returned_solver:
+        paired_report["metadata"]["published_baseline_protocol"] = {
+            "returned_fit_policy": {"ours": "algorithm-returned curve"},
+        }
+    captured = []
+    original_savefig = Figure.savefig
+
+    def capture(self, *args, **kwargs):
+        captured.append(self)
+        return original_savefig(self, *args, **kwargs)
+
+    monkeypatch.setattr(Figure, "savefig", capture)
+    plotting.render_comparison(paired_report, tmp_path, methods=("ours",),
+                               dpi=35, include_max_error=True)
+    figure_text = "\n".join(item.get_text() for item in captured[0].texts)
+    assert ("returned-fit and optional repair policies are method-specific" in figure_text) is returned_solver
+    assert ("common endpoint-constrained" in figure_text) is (not returned_solver)
+    definition_text = captured[0].axes[5].texts[0].get_text()
+    assert ("N/A" in definition_text) is missing_peak
 
 
 def test_plot_rejects_dropped_failure_even_when_summary_matches_remaining_rows(paired_report):
@@ -213,7 +250,7 @@ def test_benchmark_executes_selected_methods_and_records_diagnostic_protocol(
     assert qualification_calls[0]["allow_unqualified_diagnostic"] is False
     plotting.validate_v16_benchmark(report, allow_unqualified_diagnostic=True)
 
-    # A watermark override never permits a different network structure.
+    # A diagnostic rendering override never permits a different network structure.
     config["structure_mode"] = "not_the_historical_one_shot_model"
     rejected_output = tmp_path / "structurally_rejected"
     with pytest.raises(SystemExit) as error:

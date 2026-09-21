@@ -1,7 +1,8 @@
 """Shared, network-free baselines for synthetic and real-curve comparisons.
 
-All reported errors come from unregularized, endpoint-constrained standard
-B-spline least squares.  The elapsed time covers the entire numerical method,
+Reported errors come from the actual returned standard B-spline. Dung and
+Kang preserve their unconstrained least-squares output; the other historical
+adapters still use endpoint-constrained solves as documented. The elapsed time covers the entire numerical method,
 including chord parameterization and the final reported fit.  Published
 methods are disclosed repository adaptations, not the authors' original code.
 """
@@ -53,7 +54,7 @@ _COMMON_REFIT = (
 )
 _TIMING_SCOPE = (
     "complete numerical method: chord parameterization, knot selection/relocation, "
-    "and final endpoint-constrained refit"
+    "and the algorithm's final reported spline solve"
 )
 _SAFEGUARD_METHODS = frozenset({
     "dung_direct_knot_2017_adaptation",
@@ -302,6 +303,7 @@ def run_published_baseline(
     paper_admm_iterations: int = 400,
     paper_lambda_bisections: int = 8,
     paper_relocation_iterations: int = 8,
+    paper_relocation_algorithm: str = "clusters",
     park_shape_weight: float = 0.8,
     liang_dense_knots: int | None = None,
     liang_initial_knots: int = 4,
@@ -314,7 +316,7 @@ def run_published_baseline(
     luo_de_population: int = 10,
     luo_de_iterations: int = 50,
     luo_seed: int = 2022,
-    published_feasibility_safeguard: bool = True,
+    published_feasibility_safeguard: bool = False,
     baseline_protocol: str = "adaptation",
 ) -> PublishedBaselineResult:
     """Run a baseline on a single already-normalized ordered CPU float64 curve.
@@ -337,8 +339,9 @@ def run_published_baseline(
     ``baseline_protocol='native'`` requires a verified, complete source-paper
     implementation. It fails before numerical execution when one is missing;
     it never silently runs an adaptation, even with the safeguard disabled.
-    The historical adaptation protocol and its safeguard default are retained
-    for reproducibility, not endorsed as an original-method comparison.
+    The adaptation protocol executes the current implementations. Extra
+    residual-driven insertion and uniform-capacity fallback are off by default;
+    the safeguard must be requested explicitly as a repository ablation.
     """
     if method not in COMPARISON_BASELINE_METHODS:
         raise ValueError(f"unknown baseline method: {method!r}")
@@ -350,6 +353,8 @@ def run_published_baseline(
     _integer_bound(paper_admm_iterations, "paper_admm_iterations", 1)
     _integer_bound(paper_lambda_bisections, "paper_lambda_bisections", 1)
     _integer_bound(paper_relocation_iterations, "paper_relocation_iterations", 1)
+    if paper_relocation_algorithm not in {"clusters", "general"}:
+        raise ValueError("paper_relocation_algorithm must be 'clusters' or 'general'")
     if liang_dense_knots is None:
         liang_dense_knots = paper_initial_knots
     _integer_bound(liang_dense_knots, "liang_dense_knots", 0)
@@ -541,24 +546,21 @@ def run_published_baseline(
                 initial_internal_knot_count=paper_initial_knots,
                 data_tolerance=mse_tolerance,
                 jump_threshold=1e-7,
-                relative_jump_threshold=1e-3,
+                relative_jump_threshold=None,
                 admm_rho=1e4,
                 admm_max_iterations=paper_admm_iterations,
                 admm_tolerance=1e-6,
                 lambda_bisection_iterations=paper_lambda_bisections,
                 relocation_max_iterations=paper_relocation_iterations,
                 feasibility_repair=False,
+                relocation_algorithm=paper_relocation_algorithm,
             )
-            # Preserve the native unconstrained result for auditing.  The
-            # endpoint constraint is applied uniformly to the reported metric.
-            fit = refit_bspline_control_points(
-                parameters,
-                observed,
-                result.knots,
-                degree=degree,
-                smoothness_weight=0.0,
-                control_ridge=0.0,
-                interpolate_endpoints=True,
+            # Report the algorithm's final spline instead of changing it by
+            # adding the repository's endpoint interpolation constraints.
+            fit = result.final_fit
+            diagnostics["interpolate_endpoints"] = False
+            diagnostics["reported_refit"] = (
+                "unregularized standard B-spline least squares without forced endpoint interpolation"
             )
             safeguard_candidates = torch.cat((
                 result.active_internal_knots,
@@ -612,13 +614,25 @@ def run_published_baseline(
                 "method_note": result.method,
                 "relocation_method": result.relocation_method,
                 "algorithm4_cluster_relocation_applied": (
-                    result.local_refit_count > 0
+                    paper_relocation_algorithm == "clusters" and result.local_refit_count > 0
                 ),
+                "algorithm1_general_relocation_applied": paper_relocation_algorithm == "general",
+                "paper_relocation_algorithm": paper_relocation_algorithm,
+                "relocation_applicability": (
+                    "Algorithms 4/5 assume clearly separated active groups; not a general-data fidelity claim"
+                    if paper_relocation_algorithm == "clusters"
+                    else "experimental Algorithms 1/3 vector-ADMM path; infeasible fixed-error solves raise explicitly"
+                ),
+                "relocation_diagnostics": result.relocation_diagnostics,
                 "absolute_jump_threshold": result.jump_threshold,
                 "relative_jump_threshold": result.relative_jump_threshold,
                 "effective_jump_threshold": result.effective_jump_threshold,
                 "native_final_fit_mse_without_endpoint_constraint": float(result.final_fit.fit_mse),
-                "native_endpoint_constrained_mse": float(fit.fit_mse),
+                "native_endpoint_constrained_mse": None,
+                "post_algorithm_endpoint_refit_applied": False,
+                "cluster_gap_factor": 1.0,
+                "nonpaper_singleton_interval_search": False,
+                "nonpaper_long_cluster_retention": False,
                 "endpoint_constraint_fallback": "disabled",
             })
         elif method == "luo_linf_de_2022_adaptation":
@@ -658,6 +672,7 @@ def run_published_baseline(
                     result.sparse_fit_mse <= mse_tolerance + 1e-12
                 ),
                 "jump_local_maximum_eta": luo_eta,
+                "nonpaper_force_nonempty_candidates": False,
                 "candidate_internal_knot_count": int(
                     result.candidate_knots.numel()
                 ),
@@ -740,6 +755,11 @@ def run_published_baseline(
                 mse_tolerance=mse_tolerance,
             )
             diagnostics.update(safeguard_diagnostics)
+            if safeguard_diagnostics["comparison_feasibility_final_source"] in {
+                "residual_guided_augmentation", "uniform_capacity_fallback"
+            }:
+                diagnostics["interpolate_endpoints"] = True
+                diagnostics["reported_refit"] = _COMMON_REFIT
         else:
             diagnostics.update({
                 "comparison_feasibility_safeguard_enabled": False,
@@ -774,7 +794,11 @@ def run_published_baseline(
         "reported_geometry_scope": (
             "repository numerical control with endpoint-constrained refit"
             if method in NUMERICAL_BASELINE_METHODS
-            else "repository adaptation with common endpoint-constrained refit"
+            else (
+                "repository adaptation with endpoint-constrained refit"
+                if diagnostics["interpolate_endpoints"]
+                else "repository adaptation algorithm output without extra endpoint refit"
+            )
         ),
         "legacy_native_fields_scope": (
             "Historical native_* and comparison_feasibility_native_* keys describe "

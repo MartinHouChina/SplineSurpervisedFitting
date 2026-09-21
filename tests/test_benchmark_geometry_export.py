@@ -157,9 +157,63 @@ def test_native_benchmark_exports_unavailable_and_plotter_uses_saved_results_onl
     assert figure_manifest["requested_measurements"] == 12
     assert figure_manifest["evaluated_measurements"] == 2
     assert figure_manifest["unavailable_measurements"] == 10
+    assert figure_manifest["diagnostic_not_final"] is True
+    assert figure_manifest["diagnostic_reasons"] == report["metadata"]["diagnostic_reasons"]
+    assert figure_manifest["published_baseline_protocol"] == report["metadata"]["published_baseline_protocol"]
+    assert figure_manifest["watermark_rendered"] is False
     assert len(figure_manifest["case_figures"]) == 1
     for item in figure_manifest["case_figures"] + figure_manifest["summary_figures"]:
         assert Path(item["image"]["path"]).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    original_report = (directory / "comparison.json").read_text(encoding="utf-8")
+    for field, replacement in (
+        ("published_baseline_protocol", {"baseline_protocol": "adaptation"}),
+        ("method_labels", {"ours": "Changed historical identity"}),
+        ("diagnostic_not_final", False),
+    ):
+        modified_report = json.loads(original_report)
+        modified_report["metadata"][field] = replacement
+        (directory / "comparison.json").write_text(json.dumps(modified_report), encoding="utf-8")
+        with pytest.raises(ValueError, match="fingerprint does not match"):
+            plotter.main(["--benchmark-dir", str(directory), "--output-dir", str(tmp_path / "tampered")])
+        assert not (tmp_path / "tampered").exists()
+    (directory / "comparison.json").write_text(original_report, encoding="utf-8")
+
+
+@pytest.mark.parametrize("diagnostic", [False, True])
+def test_saved_figures_have_no_diagnostic_watermarks_and_keep_measured_errors(
+    tmp_path, monkeypatch, measured_case, diagnostic,
+):
+    case, row, fit, parameters = measured_case
+    source = write_case_geometry(tmp_path, case, fingerprint="fixture")
+    artifact = write_method_geometry(tmp_path, case, row, fit, parameters,
+                                     case_artifact=source, fingerprint="fixture", dense_points=64)
+    _, arrays = load_geometry_artifact(tmp_path, artifact)
+    _, source_arrays = load_geometry_artifact(tmp_path, source)
+    metadata = {"methods": ["ours"], "method_labels": {"ours": "Ours"},
+                "diagnostic_not_final": diagnostic,
+                "diagnostic_reasons": ["REDUCED BENCHMARK PROTOCOL"],
+                "published_baseline_protocol": {"baseline_protocol": "adaptation",
+                                               "feasibility_safeguard_enabled": False}}
+    captured = []
+
+    def capture(figure, path, dpi):
+        captured.append(figure)
+        plotter.plt.close(figure)
+        return {"path": str(path)}
+
+    monkeypatch.setattr(plotter, "_save_png", capture)
+    plotter._plot_case(case, source_arrays, {"ours": (row, arrays)}, metadata,
+                       tmp_path / "case.png", 50)
+    plotter._plot_dataset_summary(case["dataset"], [row], metadata,
+                                  tmp_path / "summary.png", 50)
+    for figure in captured:
+        texts = [item.get_text() for item in figure.texts]
+        texts.extend(item.get_text() for axis in figure.axes for item in axis.texts)
+        assert not any("DIAGNOSTIC" in text or "REDUCED BENCHMARK" in text for text in texts)
+        assert not any(item.get_rotation() for item in figure.texts)
+        assert any("Repository adaptations" in text for text in texts)
+    assert f"MSE={row['mse']:.3e}" in captured[0].axes[0].get_title()
+    assert "max SE=" in captured[0].axes[0].get_title()
 
 
 def test_plotter_refuses_to_invent_historical_geometry(tmp_path):

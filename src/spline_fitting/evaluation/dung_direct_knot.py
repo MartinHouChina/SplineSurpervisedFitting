@@ -25,7 +25,7 @@ _ADAPTATION_LIMITS = (
     "serial bisection only; parallel split/join/shift is not implemented",
     "simple interior knots only; multiplicity and continuity classification are omitted",
     "default native max-error epsilon is sqrt(mse_tolerance), which is a unit conversion rather than an equivalent constraint",
-    "capacity overflow is handled by deterministic uniform coarse-break subsampling before relocation",
+    "capacity overflow raises an explicit error by default; optional uniform subsampling is a repository extension",
     "guarded float64 least squares and finite-difference Gauss-Newton replace MATLAB numerical edge behavior",
 )
 
@@ -413,6 +413,7 @@ def fit_dung_direct_knots(
     max_error: float | None = None,
     scan_intervals: int = 10,
     optimization_iterations: int = 10,
+    capacity_policy: str = "error",
 ) -> DungDirectKnotResult:
     """Fit one normalized ordered curve with the disclosed serial adaptation.
 
@@ -432,6 +433,8 @@ def fit_dung_direct_knots(
         scan_intervals=scan_intervals,
         optimization_iterations=optimization_iterations,
     )
+    if capacity_policy not in {"error", "uniform_subsample"}:
+        raise ValueError("capacity_policy must be 'error' or 'uniform_subsample'")
     started = time.perf_counter()
     observed = points.detach()
     parameters = chord_length_parameters(observed)
@@ -454,6 +457,12 @@ def fit_dung_direct_knots(
 
     proposed_count = len(coarse_break_indices)
     capacity_exceeded = proposed_count > max_internal_knots
+    if capacity_exceeded and capacity_policy == "error":
+        raise ValueError(
+            "Dung capacity limit exceeded: serial segmentation proposes "
+            f"{proposed_count} internal knots, but the shared budget is "
+            f"{max_internal_knots}; no boundaries were silently discarded."
+        )
     retained_breaks = _uniform_capacity_indices(proposed_count, max_internal_knots)
     capacity_handling = (
         "uniform_coarse_break_subsample"
@@ -483,17 +492,10 @@ def fit_dung_direct_knots(
     native_fit, _, native_maximum = _native_refit(
         parameters, observed, knots, degree=degree
     )
-    final_fit = refit_bspline_control_points(
-        parameters,
-        observed,
-        knots,
-        degree=degree,
-        smoothness_weight=0.0,
-        control_ridge=0.0,
-        interpolate_endpoints=True,
-    )
-    final_residuals = (final_fit.reconstructed_points - observed).norm(dim=-1)
-    final_maximum = float(final_residuals.max()) if final_residuals.numel() else 0.0
+    # Preserve the algorithm's unconstrained least-squares output. A forced
+    # endpoint interpolation is not merely metric reporting: it changes the curve.
+    final_fit = native_fit
+    final_maximum = native_maximum
     diagnostics: dict[str, object] = {
         "paper": "Dung and Tjahjowidodo, PLOS ONE 2017, doi:10.1371/journal.pone.0173857",
         "variant": "serial_bisection_simple_knot_adaptation",
@@ -529,12 +531,14 @@ def fit_dung_direct_knots(
             single_piece_evaluations
             + scan_evaluations
             + optimization_evaluations
-            + 2
+            + 1
         ),
         "gauss_newton_fallback_count": fallback_count,
         "capacity_exceeded": capacity_exceeded,
         "capacity_handling": capacity_handling,
-        "reported_refit": "unregularized endpoint-constrained standard B-spline least squares",
+        "capacity_policy": capacity_policy,
+        "interpolate_endpoints": False,
+        "reported_refit": "unregularized standard B-spline least squares without forced endpoint interpolation",
         "adaptation_limits": _ADAPTATION_LIMITS,
     }
     return DungDirectKnotResult(

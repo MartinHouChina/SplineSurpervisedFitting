@@ -1,0 +1,635 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "1b9affad6936b7bf1552642af5256174001e596eb049467f87641e159063be3a",
+  "case_artifact": {
+    "path": "geometry/81602836d27de2603647a9377e94d97f5a7b5f6c96636f9245f614d6b135de8d/case.json",
+    "sha256": "d7edfc749d4bcca7ed876c385f61d399795ad83f540faf71c9d117a137a092e8"
+  },
+  "measurement": {
+    "dataset": "IndustrialOffset",
+    "sample_id": "industrial_offset_naca_airfoil_v011_o04_p0p0400",
+    "group_id": "industrial_model_offset_curves:naca_airfoil:variant-011:seed-20260914",
+    "source_k": null,
+    "canonical_k": null,
+    "method": "park_dominant_point_2007_adaptation",
+    "has_reference": true,
+    "status": "ok",
+    "mse": 2.381573674028621e-05,
+    "max_squared_error": 0.000591138974103891,
+    "fit_pass": true,
+    "reference_mse": 2.4177675601122053e-05,
+    "reference_max_squared_error": 0.0006052041666982077,
+    "reference_pass": true,
+    "final_k": 10,
+    "total_ms": 94.01790000265464,
+    "network_ms": null,
+    "knots": [
+      0.04015817288972863,
+      0.20091293481082584,
+      0.35809703539428434,
+      0.4925656863773882,
+      0.4977226683491544,
+      0.5043835184238147,
+      0.61764751495435,
+      0.7326590765358724,
+      0.8532428751423522,
+      0.9056610750152844
+    ],
+    "diagnostics": {
+      "network_used": false,
+      "parameterization": "chord_length",
+      "reported_refit": "unregularized standard B-spline least squares with exact endpoint interpolation",
+      "timing_scope": "complete numerical method: chord parameterization, knot selection/relocation, and the algorithm's final reported spline solve",
+      "mse_tolerance": 5e-05,
+      "smoothness_weight": 0.0,
+      "control_ridge": 0.0,
+      "interpolate_endpoints": true,
+      "declared_max_internal_knots": 32,
+      "declared_paper_initial_knots": 32,
+      "method": "park_lee_dom_2007_adaptation",
+      "reference_doi": "10.1016/j.cad.2006.12.006",
+      "knot_placement": "Park-Lee Eq. (4): each interior knot averages degree consecutive dominant-point parameters",
+      "lcm_lower_bound": 0.36428917447738707,
+      "lcm_seed_count": 7,
+      "shape_weight_r": 0.8,
+      "shape_index": "r*K_s,e/K_0,m + (1-r)*L_s,e/L_0,m",
+      "curvature_integral": "trapezoidal in chord parameter",
+      "curvature_source": "generalized local Menger curvature; no optional smoothed base curve",
+      "refinement_region": "segment containing largest sampled parameter-correspondence residual",
+      "refinement_point": "argmin_w |lambda_s,w - lambda_w,e|",
+      "stopping_metric": "mean squared Euclidean parameter-correspondence error",
+      "distance_metric_deviation": "comparison adaptation stops on common MSE; it does not reproduce the paper's maximum-distance or iterative orthogonal-distance criterion",
+      "seed_completion_deviation": "shape-index splits complete degree+1 dominant points when too few LCM seeds exist",
+      "effective_max_internal_knots": 32,
+      "requested_max_internal_knots": 32,
+      "selected_sources": [
+        "endpoint",
+        "endpoint",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "lcm_seed",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split",
+        "adaptive_shape_split"
+      ],
+      "boundary_knot_clamp_count": 0,
+      "threshold_satisfied": true,
+      "scanned_counts": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "scanned_mse": [
+        0.03948767656021522,
+        0.009599610480917415,
+        0.006574936194267324,
+        0.004148334386593266,
+        0.002875006391942355,
+        0.002427397543818219,
+        0.0007766612244274092,
+        0.0004446650966476742,
+        0.00024664170140681894,
+        6.310585427945181e-05,
+        2.381573674028621e-05
+      ],
+      "scanned_max_parameter_residual": [
+        0.4324509651035456,
+        0.24936837940548146,
+        0.22856053081066965,
+        0.18863230243427942,
+        0.16281900712031722,
+        0.1505155588725355,
+        0.09000386541883053,
+        0.07496097775453672,
+        0.06096703501923795,
+        0.02871807318114111,
+        0.024313349709653154
+      ],
+      "exact_refit_count": 11,
+      "method_fidelity": "DOM-inspired repository implementation with common-MSE stopping; complete source-algorithm reproduction remains unverified",
+      "baseline_protocol": "adaptation",
+      "baseline_provenance": {
+        "audit_version": "source_paper_audit_20260921_v1",
+        "method": "park_dominant_point_2007_adaptation",
+        "reproduction_status": "reproduction_unverified",
+        "native_available": false,
+        "native_comparison_available": false,
+        "implementation_origin": "repository_implementation",
+        "author_code_executed": false,
+        "reference_doi": "10.1016/j.cad.2006.12.006",
+        "source_url": "https://www.sciencedirect.com/science/article/pii/S0010448507000024",
+        "source_access": "publisher abstract/introduction; full implementation not verified",
+        "author_code_url": null,
+        "author_code_sha256": null,
+        "known_departures": [
+          "Common-MSE stopping replaces the source error-bound protocol; no iterative orthogonal-distance parameter update.",
+          "Degree-compatible shape-seed completion, endpoint knot clamps, and endpoint-constrained refits are repository choices, not independently source-verified.",
+          "Discrete Menger curvature and incremental LCM-seed consumption have not been checked against an author-code reference."
+        ],
+        "audit_document": "docs/baseline_native_audit.md"
+      },
+      "reproduction_status": "reproduction_unverified",
+      "native_comparison_available": false,
+      "source_native_algorithm_executed": false,
+      "reported_geometry_scope": "repository adaptation with endpoint-constrained refit",
+      "legacy_native_fields_scope": "Historical native_* and comparison_feasibility_native_* keys describe pre-safeguard repository adaptations, not verified source-paper output.",
+      "repeated_complete_timing": {
+        "repeats": 1,
+        "samples_ms": [
+          94.01790000265464
+        ],
+        "p50_ms": 94.01790000265464,
+        "mean_ms": 94.01790000265464
+      }
+    },
+    "error": null,
+    "baseline_protocol": "adaptation",
+    "provenance": {
+      "audit_version": "source_paper_audit_20260921_v1",
+      "method": "park_dominant_point_2007_adaptation",
+      "reproduction_status": "reproduction_unverified",
+      "native_available": false,
+      "native_comparison_available": false,
+      "implementation_origin": "repository_implementation",
+      "author_code_executed": false,
+      "reference_doi": "10.1016/j.cad.2006.12.006",
+      "source_url": "https://www.sciencedirect.com/science/article/pii/S0010448507000024",
+      "source_access": "publisher abstract/introduction; full implementation not verified",
+      "author_code_url": null,
+      "author_code_sha256": null,
+      "known_departures": [
+        "Common-MSE stopping replaces the source error-bound protocol; no iterative orthogonal-distance parameter update.",
+        "Degree-compatible shape-seed completion, endpoint knot clamps, and endpoint-constrained refits are repository choices, not independently source-verified.",
+        "Discrete Menger curvature and incremental LCM-seed consumption have not been checked against an author-code reference."
+      ],
+      "audit_document": "docs/baseline_native_audit.md"
+    },
+    "source_kind": "procedural_cad_offset",
+    "source_note": "Procedurally generated CAD-style offset curves; not measured industrial data; no ground-truth B-spline knots.",
+    "dataset_label": "IndustrialOffset (procedural CAD; not measured)",
+    "split": "test",
+    "attempt_wall_ms": 98.09679997852072,
+    "timing_status": "completed_method"
+  },
+  "spline": {
+    "degree": 3,
+    "internal_knots": [
+      0.04015817288972863,
+      0.20091293481082584,
+      0.35809703539428434,
+      0.4925656863773882,
+      0.4977226683491544,
+      0.5043835184238147,
+      0.61764751495435,
+      0.7326590765358724,
+      0.8532428751423522,
+      0.9056610750152844
+    ],
+    "full_knot_vector": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.04015817288972863,
+      0.20091293481082584,
+      0.35809703539428434,
+      0.4925656863773882,
+      0.4977226683491544,
+      0.5043835184238147,
+      0.61764751495435,
+      0.7326590765358724,
+      0.8532428751423522,
+      0.9056610750152844,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "control_points_normalized": [
+      [
+        -0.9660242199897766,
+        -0.019077567383646965
+      ],
+      [
+        -0.9638043861317255,
+        -0.09652417238277297
+      ],
+      [
+        -0.6971971044637516,
+        -0.17962185429205768
+      ],
+      [
+        -0.19229212429887707,
+        -0.1774740549839338
+      ],
+      [
+        0.4226477179726237,
+        -0.11959866525115133
+      ],
+      [
+        0.845316527334821,
+        -0.10068155350038184
+      ],
+      [
+        1.0230062197623842,
+        -0.02656143134671873
+      ],
+      [
+        0.8591628976479977,
+        0.06424824723350675
+      ],
+      [
+        0.5364955791634728,
+        0.10242287685999289
+      ],
+      [
+        0.06248658134738777,
+        0.18462302358546928
+      ],
+      [
+        -0.3422320870440976,
+        0.204775664239088
+      ],
+      [
+        -0.7014720486141194,
+        0.17099115252767685
+      ],
+      [
+        -0.9219555967033571,
+        0.10979242523617348
+      ],
+      [
+        -0.9660242199897766,
+        -0.019077567383646965
+      ]
+    ],
+    "sample_parameters": [
+      0.0,
+      0.00523024092538552,
+      0.010459252946955072,
+      0.01569208837667482,
+      0.02092758800596157,
+      0.026166449954046496,
+      0.03140670839440724,
+      0.036648248842787855,
+      0.04189034385672475,
+      0.04713267812672246,
+      0.05237514367769628,
+      0.05761771882364009,
+      0.06286036472586869,
+      0.06810302916737414,
+      0.07334572054775083,
+      0.07858844837137911,
+      0.08383118575377413,
+      0.0890739474781448,
+      0.0943166897378388,
+      0.09955945347291491,
+      0.10480221938915298,
+      0.11004498017001783,
+      0.11528775465256083,
+      0.12053052196294177,
+      0.12577330010805518,
+      0.13101608210181645,
+      0.1362588481542989,
+      0.14150162919243114,
+      0.14674442254177508,
+      0.1519872021715287,
+      0.1572299772774405,
+      0.1624727678552186,
+      0.16771553712435047,
+      0.17295830979797425,
+      0.1782010955252375,
+      0.18344387882920388,
+      0.18868663873196703,
+      0.19392942175711161,
+      0.19917220937888042,
+      0.20441499299696955,
+      0.20965776690502777,
+      0.21490054754958138,
+      0.2201433133803951,
+      0.22538609854665725,
+      0.23062888285120683,
+      0.23587165915527322,
+      0.24111443332577243,
+      0.24635721446974077,
+      0.2516000077220371,
+      0.25684278489068524,
+      0.2620855643898957,
+      0.2673283429499251,
+      0.2725711518794782,
+      0.2778139150795985,
+      0.28305667100010656,
+      0.2882994746901127,
+      0.29354227008658684,
+      0.29878502748970365,
+      0.3040278140952544,
+      0.3092706249366941,
+      0.3145133826134889,
+      0.31975616175774624,
+      0.32499898398246946,
+      0.33024173121752226,
+      0.33548451935324936,
+      0.3407273141696726,
+      0.34597007152377024,
+      0.3512128581200492,
+      0.3564556599496753,
+      0.3616984215727358,
+      0.3669412085670229,
+      0.372184004140306,
+      0.3774267330461094,
+      0.3826695258559026,
+      0.38791236592432576,
+      0.39315510173300416,
+      0.3983979196871629,
+      0.4036407162576103,
+      0.4088834794966213,
+      0.4141262828793992,
+      0.4193690311902094,
+      0.42461177383427684,
+      0.4298545736662983,
+      0.435097361294935,
+      0.4403401821735613,
+      0.4455829547009854,
+      0.45082572679877597,
+      0.45606849798666604,
+      0.46131131528503444,
+      0.46655404936369327,
+      0.4717968715698626,
+      0.47703963367203706,
+      0.4822824270369211,
+      0.4874945266886771,
+      0.4924798897563371,
+      0.49772264268715044,
+      0.5029654726039755,
+      0.5072196410618397,
+      0.5124624399803178,
+      0.5177052201705493,
+      0.5229479514167072,
+      0.5281907583940461,
+      0.533433483839818,
+      0.5386763343368758,
+      0.5439190869503927,
+      0.5491619486416592,
+      0.5544046650264982,
+      0.5596474374525106,
+      0.5648902591009755,
+      0.5701330173446236,
+      0.5753758029790387,
+      0.5806185762877253,
+      0.5858612924251148,
+      0.5911041915937012,
+      0.5963468707009439,
+      0.6015897046475421,
+      0.6068324937840612,
+      0.6120751955809002,
+      0.617318064673474,
+      0.6225608225621161,
+      0.6278035695252214,
+      0.6330463719718633,
+      0.6382891759375093,
+      0.6435319310369905,
+      0.6487746766044045,
+      0.6540175580150246,
+      0.659260255220563,
+      0.6645030767871608,
+      0.6697458463782973,
+      0.6749885609254552,
+      0.6802314282712071,
+      0.6854741809330211,
+      0.6907169361517361,
+      0.6959597717597844,
+      0.7012025409537334,
+      0.7064453440600962,
+      0.7116880440947958,
+      0.7169309318471047,
+      0.7221736081431639,
+      0.7274163900629054,
+      0.732659208482025,
+      0.737901941519229,
+      0.7431447568967611,
+      0.7483874714673348,
+      0.7536302608202268,
+      0.7588730971483106,
+      0.7641158569732457,
+      0.7693586443959761,
+      0.7746013984765834,
+      0.7798441918871518,
+      0.7850869655503724,
+      0.7903297633751333,
+      0.7955725319677631,
+      0.80081524474056,
+      0.8060580223720687,
+      0.8113008195712221,
+      0.8165435827748213,
+      0.8217863543313288,
+      0.8270291901596075,
+      0.8322719075382986,
+      0.8375146322787568,
+      0.842757399739743,
+      0.8480001573485424,
+      0.8532429220976855,
+      0.8584856651183699,
+      0.8637283582501109,
+      0.8689710683808738,
+      0.8742138357997575,
+      0.879456553173685,
+      0.8846993528271666,
+      0.8899420085936295,
+      0.8951847818063218,
+      0.9004274462749976,
+      0.9056701725481541,
+      0.9109128873801832,
+      0.9161555756816573,
+      0.9213982954000148,
+      0.9266407970400469,
+      0.9318834774668344,
+      0.9371260606931432,
+      0.9423687548187751,
+      0.9476112782768785,
+      0.9528536885538449,
+      0.9580959727612945,
+      0.9633381898360596,
+      0.9685801839063487,
+      0.9738216619595692,
+      0.9790623150433332,
+      0.9843006558878564,
+      0.9895369593292282,
+      0.9947692318975528,
+      1.0
+    ],
+    "control_points_original": [
+      [
+        -3.3187050579645074,
+        0.6418860348131545
+      ],
+      [
+        -3.1289985835034173,
+        -5.976682440515825
+      ],
+      [
+        19.65519640813914,
+        -13.0781906068701
+      ],
+      [
+        62.80425613507687,
+        -12.894640187942857
+      ],
+      [
+        115.35686905242633,
+        -7.94862312254541
+      ],
+      [
+        151.47804514763467,
+        -6.331971243753159
+      ],
+      [
+        166.66336407420664,
+        0.002316797398598247
+      ],
+      [
+        152.66135266709995,
+        7.762890368217104
+      ],
+      [
+        125.08628023926772,
+        11.025285152418068
+      ],
+      [
+        84.57758382832462,
+        18.050090175062948
+      ],
+      [
+        49.99042251862954,
+        19.772330060545073
+      ],
+      [
+        19.289860696034836,
+        16.885113711034958
+      ],
+      [
+        0.4473890250225594,
+        11.655085006918483
+      ],
+      [
+        -3.3187050579645074,
+        0.6418860348131545
+      ]
+    ]
+  },
+  "geometry_evaluation_error": null,
+  "errors_normalized": {
+    "mse": 2.381573674028621e-05,
+    "max_squared_error": 0.000591138974103891,
+    "reference_mse": 2.4177675601122053e-05,
+    "reference_max_squared_error": 0.0006052041666982077
+  },
+  "errors_original": {
+    "mse": 0.17393516150692426,
+    "max_squared_error": 4.317307251716041,
+    "reference_mse": 0.17657853529382975,
+    "reference_max_squared_error": 4.4200305716870805
+  },
+  "arrays_file": "116b5be8a575e8f8912c.npz",
+  "arrays_sha256": "e62b5caed8684010fd4da2fe4722d93be6f3494a251ba49414c7e882f1666366",
+  "array_shapes": {
+    "sample_parameters": [
+      192
+    ],
+    "internal_knots": [
+      10
+    ],
+    "full_knot_vector": [
+      18
+    ],
+    "control_points_normalized": [
+      14,
+      2
+    ],
+    "fitted_input_normalized": [
+      192,
+      2
+    ],
+    "input_residual_vectors_normalized": [
+      192,
+      2
+    ],
+    "input_squared_residuals_normalized": [
+      192
+    ],
+    "dense_parameters": [
+      512
+    ],
+    "dense_curve_normalized": [
+      512,
+      2
+    ],
+    "knot_positions_normalized": [
+      10,
+      2
+    ],
+    "reference_parameters": [
+      768
+    ],
+    "fitted_reference_normalized": [
+      768,
+      2
+    ],
+    "reference_residual_vectors_normalized": [
+      768,
+      2
+    ],
+    "reference_squared_residuals_normalized": [
+      768
+    ],
+    "control_points_original": [
+      14,
+      2
+    ],
+    "fitted_input_original": [
+      192,
+      2
+    ],
+    "input_residual_vectors_original": [
+      192,
+      2
+    ],
+    "input_squared_residuals_original": [
+      192
+    ],
+    "dense_curve_original": [
+      512,
+      2
+    ],
+    "knot_positions_original": [
+      10,
+      2
+    ],
+    "fitted_reference_original": [
+      768,
+      2
+    ],
+    "reference_residual_vectors_original": [
+      768,
+      2
+    ],
+    "reference_squared_residuals_original": [
+      768
+    ]
+  },
+  "timing_scope": "Export, dense evaluation, metrics and plotting are excluded from successful method/network timings. The spline is from the final timed repetition; reported times are medians of all recorded timed repetitions.",
+  "coordinate_error_scaling": "Original-coordinate squared errors = normalized squared errors * scalar_scale**2; reported benchmark pass/fail uses normalized input MSE only."
+}

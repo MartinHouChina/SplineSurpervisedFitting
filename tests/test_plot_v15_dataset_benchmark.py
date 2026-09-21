@@ -139,7 +139,7 @@ def test_reference_plot_is_skipped_when_reference_metrics_are_absent(tmp_path, r
     assert not (tmp_path / "comparison_reference_metrics.png").exists()
 
 
-def test_diagnostic_report_is_watermarked(tmp_path, report, monkeypatch) -> None:
+def test_diagnostic_status_stays_in_report_not_png_watermark(tmp_path, report, monkeypatch) -> None:
     report["metadata"]["diagnostic_not_final"] = True
     labels = []
     original = Figure.text
@@ -150,4 +150,6 @@ def test_diagnostic_report_is_watermarked(tmp_path, report, monkeypatch) -> None
 
     monkeypatch.setattr(Figure, "text", capture)
     plotting.render_report(report, tmp_path, dpi=40)
-    assert any("DIAGNOSTIC NOT FINAL" in text for text in labels)
+    assert not any("DIAGNOSTIC NOT FINAL" in text for text in labels)
+    assert report["metadata"]["diagnostic_not_final"] is True
+    assert any("threshold" in text for text in labels)

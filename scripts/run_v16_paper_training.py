@@ -1,8 +1,8 @@
 """Two independent capacity models, coupled t/U training and auditable paper exports.
 
 This is a training protocol, NOT a claim of achieved accuracy or native-paper
-reproduction. Native baselines without a verified implementation are reported
-unavailable, never replaced by the historical repaired adaptations.
+reproduction. Existing repository baselines run without extra feasibility
+repairs by default; implementation provenance stays in the saved reports.
 """
 from __future__ import annotations
 
@@ -42,7 +42,8 @@ def parser():
                    help="Optional fixed-blend ablation; default uses chord as learned-update evidence only")
     p.add_argument("--coupled-proposal-steps", type=int, default=2)
     p.add_argument("--coupled-subset-steps", type=int, default=2)
-    p.add_argument("--baseline-protocol", choices=("native", "adaptation"), default="native")
+    p.add_argument("--baseline-protocol", choices=("native", "adaptation"), default="adaptation",
+                   help="Run existing unrepaired implementations (default); native is an optional strict fidelity audit")
     p.add_argument("--real-samples-per-dataset", type=int, default=100)
     p.add_argument("--visual-samples-per-dataset", type=int, default=12)
     p.add_argument("--all-real-test-samples", action="store_true")
@@ -104,7 +105,10 @@ def build_plan(args, *, root=None):
                          initializer=str(checkpoint), command=command))
     return dict(schema_version=1, root=str(root), run_prefix=args.run_prefix,
                 run_count=len(runs), runs=runs, baseline_protocol=args.baseline_protocol,
-                native_fidelity="unverified methods are unavailable, never silently adapted",
+                native_fidelity=("unverified methods are unavailable, never silently adapted"
+                                 if args.baseline_protocol == "native" else
+                                 "existing implementations run without extra feasibility repair; original-paper fidelity remains unverified"),
+                figure_policy="no watermarks; provenance and qualification retained in result files",
                 training="mixed synthetic only; external validation/test splits disjoint",
                 test_scope="all sources; all test records" if args.all_real_test_samples else
                            f"all sources; up to {args.real_samples_per_dataset} held-out curves/source",

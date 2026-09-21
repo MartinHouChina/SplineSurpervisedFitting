@@ -1,0 +1,118 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "27b9e3c544544ac4235ab09eed41cd4edfc8c044519338fedabffea316abcb69",
+  "dataset": "USGS",
+  "sample_id": "usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04",
+  "group_id": "usgs_tnm_contours_large_scale:tile:lon-105.500:lat+39.750:size0.25deg",
+  "split": "test",
+  "source_kind": "observed_or_derived_real_world",
+  "source_note": "External held-out observations; no ground-truth B-spline knots.",
+  "dataset_label": "USGS",
+  "source_k": null,
+  "canonical_k": null,
+  "source_dataset": "usgs_tnm_contours_large_scale",
+  "source_manifest": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\usgs_contours\\large_scale\\manifest.jsonl",
+  "source_manifest_record": {
+    "group_id": "usgs_tnm_contours_large_scale:tile:lon-105.500:lat+39.750:size0.25deg",
+    "has_knot_labels": false,
+    "metadata": {
+      "group_strategy": "centroid spatial tile (0.25 degrees)",
+      "knot_labels": "unavailable",
+      "preprocessing_version": "geospatial_curves_v1",
+      "projected_length_m": 396.36611055770993,
+      "projection": {
+        "center_latitude_deg": 39.951935430425074,
+        "center_longitude_deg": -105.35272156737474,
+        "earth_radius_m": 6371008.8,
+        "name": "local_azimuthal_equidistant_spherical",
+        "source_crs": "EPSG:4326",
+        "unit": "meter"
+      },
+      "reference_normalization_transform": {
+        "center_m": [
+          -3.7763217673636973,
+          1.4259312855040964
+        ],
+        "definition": "subtract mean, divide by maximum radial norm",
+        "note": "RealWorldCurveDataset recomputes this transform after network-input resampling.",
+        "scale_m": 84.31489942095763
+      },
+      "reference_point_count": 768,
+      "reference_sampling": "uniform_projected_chord",
+      "source_feature_id": "fc670c8c-31b9-4517-9675-b4740f4076aa",
+      "source_geometry_sha256": "9f99fb041980d79f7de7dadf8d6a6e188d2a608470cb8765c4abe884801d9e9c",
+      "source_part_index": 0,
+      "source_properties": {
+        "Shape__Length": 0.003985465397580554,
+        "cell_id": 13879,
+        "contourelevation": 7640,
+        "contourinterval": 40,
+        "contourunits": 1,
+        "fcode": 10101,
+        "globalid": "{DF4608A1-C373-47A1-BE55-FEABE3D6F161}",
+        "loaddate": 1646229848000,
+        "nedresolution": 100,
+        "objectid": 46928382,
+        "permanent_identifier": "fc670c8c-31b9-4517-9675-b4740f4076aa",
+        "preparation_source_index": 0,
+        "preparation_source_sha256": "7bace9e848a8da3a198c91ed75926a7b9e378cc3b3a402f7725555bf5c2ecfd1",
+        "source_datadesc": "Contours derived from the National Elevation Dataset",
+        "source_datasetid": "99a1d718-3c9d-4e5e-996f-43e22928ee7b",
+        "source_featureid": null,
+        "source_originator": "US Geological Survey"
+      },
+      "source_sha256": "99ca5c323b3c18f59410a6fd8aebc90c93266e9e15a5300e6339182cda86f324",
+      "source_url": "https://cartowfs.nationalmap.gov/arcgis/rest/services/contours/FeatureServer/5",
+      "source_version": "FeatureServer-layer-5-cached-snapshot",
+      "source_vertex_count": 23,
+      "source_window_index": 0,
+      "split_seed": 2,
+      "stored_coordinate_space": "local_metric"
+    },
+    "num_points": 768,
+    "point_dim": 2,
+    "points_path": "curves/usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04.npy",
+    "sample_id": "usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04",
+    "source_dataset": "usgs_tnm_contours_large_scale",
+    "split": "test"
+  },
+  "source_points_path": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\usgs_contours\\large_scale\\curves\\usgs_tnm_contours_large_scale_9f99fb041980_w000_9f99fb04.npy",
+  "source_points_sha256": "d341e53a59eb9062b65011739560b72a3d3e6be685d633707c0596206602e049",
+  "normalization": {
+    "available": true,
+    "definition": "normalized = (original - center) / scalar_scale",
+    "center": [
+      -3.996772050857544,
+      1.5356584787368774
+    ],
+    "scale": 84.51582336425781,
+    "original_input_note": "Inverse transformed actual model inputs; may differ from pre-normalization resampling by floating-point rounding."
+  },
+  "arrays_file": "case.npz",
+  "arrays_sha256": "184d167f153a65adffd2a9fe71c7fab40694363927bb8aeed805ed2b51e4bf50",
+  "array_shapes": {
+    "input_points_normalized": [
+      192,
+      2
+    ],
+    "normalization_center": [
+      2
+    ],
+    "normalization_scale": [],
+    "input_points_original": [
+      192,
+      2
+    ],
+    "reference_points_normalized": [
+      768,
+      2
+    ],
+    "reference_chord_parameters": [
+      768
+    ],
+    "reference_points_original": [
+      768,
+      2
+    ]
+  }
+}

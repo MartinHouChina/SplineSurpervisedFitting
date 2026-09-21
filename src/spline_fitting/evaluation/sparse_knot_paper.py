@@ -11,16 +11,19 @@ problem is convex.  It is solved here by a deliberately simple ADMM routine;
 the constraint is enforced approximately by a monotone penalty/bisection
 search, rather than by CVX as in the paper.
 
-The second stage is an auditable adaptation of Algorithms 4 and 5.  Nearby
-active uniform knots are clustered by their initial spacing.  Each clear,
-short cluster is represented by its two boundary knots, narrowed with the
+The experimental general-data second stage follows Algorithms 1 and 3: test each adjacent
+interval by inserting its midpoint and resolving the constrained sparse fit,
+then narrow only accepted intervals. The current Algorithms 4/5 variant is
+appropriate only for clearly separated groups. Nearby
+active uniform knots are clustered by their initial spacing.  Each
+cluster is represented by its two boundary knots, narrowed with the
 paper's left/right least-squares comparisons, and collapsed to either one or
 two coincident knots using the paper's ``2 E_p < E_d`` test.  The paper says
 Algorithm 4 is intended only when the active knots form obvious groups; for
 general data it recommends Algorithm 1, and one numerical example skips the
-second stage.  Since this repository does not reproduce Algorithm 1's repeated
-convex solves, a long/non-obvious active run is now retained unchanged rather
-than being incorrectly collapsed to one or two knots.
+second stage. Both variants reuse the vector group-L1 ADMM approximation,
+not the original scalar CVX solver. The historical degree-based long-cluster retention heuristic is
+available only as an explicitly requested repository extension.
 The returned curve is always an exact, unregularized standard B-spline refit.
 """
 
@@ -39,9 +42,13 @@ from .knot_diagnostics import build_open_knot_vector
 
 _ADAPTATION_LABEL = (
     "Vector-valued group-L1 ADMM adaptation of Kang et al. (2015) equation "
-    "(12), followed by Algorithms 4-5 only for clear short active clusters; "
-    "long general-data runs retain their active knots because Algorithm 1 is "
-    "not reproduced; not the paper's scalar CVX implementation."
+    "(12), with source-paper interval relocation and finite ADMM/bisection "
+    "budgets; not the paper's scalar CVX implementation."
+)
+_GENERAL_RELOCATION_LABEL = (
+    "Algorithms 1/3 general-data interval relocation: midpoint insertion, "
+    "re-solve the sparse constraint at the initial active-vector LS error, "
+    "three-jump candidate test, then left/right least-squares narrowing."
 )
 _RELOCATION_LABEL = (
     "Algorithms 4-5 adaptation: classify adjacent active uniform knots by "
@@ -50,10 +57,10 @@ _RELOCATION_LABEL = (
     "single/double-knot decision."
 )
 _NO_CLEAR_CLUSTER_LABEL = (
-    "Algorithms 4-5 skipped: the active knots do not form clear short groups; "
+    "Repository extension: Algorithms 4-5 skipped by a degree+1 cluster-size gate; "
     "retain the sparse-stage active vector instead of applying Algorithm 4 "
-    "outside the regime recommended by Kang et al. Algorithm 1 is not "
-    "reproduced by this adaptation."
+    "outside the regime recommended by Kang et al. This legacy extension "
+    "is not a substitute for the experimental Algorithm 1/3 path."
 )
 _REPAIR_LABEL = (
     "Post-relocation feasibility repair (not in Kang et al.): auditable greedy "
@@ -64,6 +71,14 @@ _NO_REPAIR_LABEL = (
     "Disabled: report the Algorithms-4-and-5-inspired relocated result without "
     "the repository-specific feasibility add-back."
 )
+
+
+class KangIntervalSolveError(ValueError):
+    """Algorithm 3 did not complete; diagnostics are not a successful fit."""
+
+    def __init__(self, message: str, diagnostics: dict[str, object]):
+        super().__init__(message)
+        self.solver_diagnostics = diagnostics
 
 
 @dataclass(frozen=True)
@@ -103,6 +118,7 @@ class SparseKnotPaperResult:
     relocation_seconds: float
     repair_seconds: float
     elapsed_seconds: float
+    relocation_diagnostics: dict[str, object]
 
     @property
     def knots(self) -> torch.Tensor:
@@ -456,8 +472,12 @@ def _cluster_active_knots(
     """Classify active knots as Algorithm 5 does, using uniform knot spacing."""
     if active_knots.numel() == 0:
         return []
+    # Float64 linspace subtraction can exceed its nominal spacing by a few
+    # ulps. This arithmetic tolerance must not become a geometric 1.25 factor.
+    roundoff = 8.0 * torch.finfo(active_knots.dtype).eps
     split = torch.nonzero(
-        active_knots[1:] - active_knots[:-1] > spacing * cluster_gap_factor,
+        active_knots[1:] - active_knots[:-1]
+        > spacing * cluster_gap_factor + roundoff,
         as_tuple=False,
     ).flatten()
     clusters: list[torch.Tensor] = []
@@ -473,12 +493,10 @@ def _algorithm4_clusters_are_clear(
     clusters: list[torch.Tensor],
     degree: int,
 ) -> bool:
-    """Whether Algorithm 4's one-knot/one-double-knot group model is plausible.
+    """Historical repository heuristic, not a gate specified by Algorithm 4.
 
-    For a degree-p source knot the sparse theorem motivates a compact run of
-    adjacent active grid knots.  A run longer than ``p+1`` cannot be represented
-    faithfully by Algorithm 4's final single/double-knot branch and is treated
-    as the paper's general-data regime instead of being collapsed wholesale.
+    Retained only for explicitly requested legacy ablations. It does not
+    implement the source's repeated-convex-solve general-data algorithm.
     """
 
     return not clusters or max(int(cluster.numel()) for cluster in clusters) <= degree + 1
@@ -501,6 +519,120 @@ def _refit_mse(
     ).fit_mse
 
 
+def _relocate_general_intervals(
+    parameters: torch.Tensor,
+    points: torch.Tensor,
+    active_knots: torch.Tensor,
+    degree: int,
+    *,
+    tolerance: float,
+    max_iterations: int,
+    rho: float,
+    admm_max_iterations: int,
+    admm_tolerance: float,
+    bisection_iterations: int,
+) -> tuple[torch.Tensor, int, dict[str, object]]:
+    """Algorithms 1 and 3, with the same disclosed vector sparse solver.
+
+    ``Err`` is fixed by Algorithm 1 line 2, not refreshed after each merge.
+    The only candidate rule is Algorithm 3's strict three-jump comparison;
+    there is no cluster-size gate, residual add-back, or fallback fit.
+    """
+    current = active_knots.detach().clone()
+    fixed_error = float(_refit_mse(parameters, points, current, degree))
+    refits = 1
+    sparse_solves = 0
+    sparse_iterations = 0
+    sparse_seconds = 0.0
+    merged = 0
+    rejected = 0
+    narrowing_iterations = 0
+    truncated = 0
+    index = 0
+    while index + 1 < current.numel():
+        middle = 0.5 * (current[index] + current[index + 1])
+        trial = torch.cat((current[: index + 1], middle.reshape(1), current[index + 1 :]))
+        full_knots = build_open_knot_vector(trial, degree)
+        controls_count = trial.numel() + degree + 1
+        basis = bspline_basis_matrix(parameters, full_knots, degree, controls_count)
+        jump_matrix = _pth_derivative_jump_matrix(full_knots, degree, controls_count)
+        solve_started = time.perf_counter()
+        try:
+            state, iterations = _select_constrained_sparse_state(
+                basis, points, jump_matrix, fixed_error, rho=rho,
+                max_iterations=admm_max_iterations, admm_tolerance=admm_tolerance,
+                bisection_iterations=bisection_iterations,
+            )
+        except ValueError as error:
+            minimum_error = float(_least_squares_state(basis, points, jump_matrix).fit_mse)
+            raise KangIntervalSolveError(
+                "Kang Algorithm 3 interval sparse solve is infeasible at the "
+                f"fixed Algorithm 1 error {fixed_error:.9g} (pair {index}); "
+                "no non-paper fallback or tolerance relaxation was applied",
+                {
+                    "algorithm_completed": False,
+                    "fixed_initial_active_ls_mse": fixed_error,
+                    "trial_unconstrained_minimum_mse": minimum_error,
+                    "trial_minimum_minus_fixed_error": minimum_error - fixed_error,
+                    "trial_minimum_over_fixed_error": (
+                        minimum_error / fixed_error if fixed_error > 0.0 else None
+                    ),
+                    "failed_pair_index": index,
+                    "candidate_interval_sparse_solves_completed": sparse_solves,
+                    "candidate_interval_sparse_iterations": sparse_iterations,
+                    "candidate_interval_sparse_seconds": sparse_seconds + time.perf_counter() - solve_started,
+                    "candidate_intervals_merged": merged,
+                    "candidate_intervals_rejected": rejected,
+                    "narrowing_budget_truncated_intervals": truncated,
+                    "partial_internal_knots": current.tolist(),
+                    "partial_geometry_role": "unfinished internal state, not a method result",
+                },
+            ) from error
+        sparse_seconds += time.perf_counter() - solve_started
+        sparse_solves += 1
+        sparse_iterations += iterations
+        jumps = state.jump_vectors[index : index + 3].norm(dim=-1)
+        # Source Algorithm 3: the midpoint being strictly smallest rejects
+        # the interval; ties keep flag=1 as written in the paper.
+        candidate = not bool((jumps[1] < jumps[0]) & (jumps[1] < jumps[2]))
+        if candidate:
+            step = 0
+            while float(current[index + 1] - current[index]) > tolerance and step < max_iterations:
+                middle = 0.5 * (current[index] + current[index + 1])
+                left_trial = current.clone()
+                left_trial[index + 1] = middle
+                right_trial = current.clone()
+                right_trial[index] = middle
+                left_error = _refit_mse(parameters, points, left_trial, degree)
+                right_error = _refit_mse(parameters, points, right_trial, degree)
+                refits += 2
+                current = right_trial if float(right_error) < float(left_error) else left_trial
+                step += 1
+            narrowing_iterations += step
+            truncated += int(float(current[index + 1] - current[index]) > tolerance)
+            middle = 0.5 * (current[index] + current[index + 1])
+            current = torch.cat((current[:index], middle.reshape(1), current[index + 2 :]))
+            merged += 1
+        else:
+            rejected += 1
+        index += 1
+    return current, refits, {
+        "algorithm": "Kang Algorithms 1 and 3 vector-ADMM adaptation",
+        "algorithm_completed": True,
+        "fixed_initial_active_ls_mse": fixed_error,
+        "candidate_interval_sparse_solves": sparse_solves,
+        "candidate_interval_sparse_iterations": sparse_iterations,
+        "candidate_interval_sparse_seconds": sparse_seconds,
+        "candidate_intervals_merged": merged,
+        "candidate_intervals_rejected": rejected,
+        "narrowing_iterations": narrowing_iterations,
+        "narrowing_tolerance": tolerance,
+        "narrowing_iteration_budget": max_iterations,
+        "narrowing_budget_truncated_intervals": truncated,
+        "narrowing_reached_tolerance": truncated == 0,
+    }
+
+
 def _relocate_clusters(
     parameters: torch.Tensor,
     points: torch.Tensor,
@@ -510,6 +642,7 @@ def _relocate_clusters(
     initial_spacing: float,
     tolerance: float,
     max_iterations: int,
+    singleton_interval_search: bool = False,
 ) -> tuple[torch.Tensor, int]:
     """Apply the boundary-pair and multiplicity logic of Algorithms 4 and 5.
 
@@ -519,9 +652,8 @@ def _relocate_clusters(
     error.  Earlier repository revisions replaced every run by its mean, which
     omitted that branch and made long active runs collapse unconditionally.
 
-    Singleton runs have no boundary pair.  They retain the previous local
-    one-knot interval search, which is the disclosed adaptation needed for a
-    numerically thresholded ADMM result containing isolated active knots.
+    Singleton runs have no boundary pair and remain unchanged by default.
+    The historical extra interval search is a named opt-in repository extension.
     """
     if not clusters:
         return parameters.new_empty(0), 0
@@ -544,6 +676,8 @@ def _relocate_clusters(
         return torch.sort(torch.cat(values)).values
 
     for index, cluster in enumerate(clusters):
+        if cluster.numel() == 1 and not singleton_interval_search:
+            continue
         if cluster.numel() == 1:
             left = float(cluster[0]) - initial_spacing
             right = float(cluster[0]) + initial_spacing
@@ -733,8 +867,11 @@ def fit_sparse_knots_paper(
     lambda_bisection_iterations: int = 10,
     relocation_tolerance: float | None = None,
     relocation_max_iterations: int = 12,
-    cluster_gap_factor: float = 1.25,
+    cluster_gap_factor: float = 1.0,
     feasibility_repair: bool = False,
+    relocation_algorithm: str = "clusters",
+    retain_nonclear_clusters: bool = False,
+    singleton_interval_search: bool = False,
 ) -> SparseKnotPaperResult:
     """Fit a vector-valued curve by the sparse-knot paper adaptation.
 
@@ -749,6 +886,12 @@ def fit_sparse_knots_paper(
     paper does not greedily add knots after relocation, so
     ``feasibility_repair`` defaults to ``False``.  Set it to ``True`` only for
     the explicitly labelled repository ablation used by older experiments.
+    ``retain_nonclear_clusters`` and ``singleton_interval_search`` likewise
+    reproduce extra repository heuristics only when explicitly requested.
+    ``relocation_algorithm='clusters'`` retains the current Algorithms-4/5
+    variant. ``'general'`` implements the source Algorithms-1/3 control flow
+    using this module's finite vector sparse solver; it raises rather than
+    relaxing the source fixed error if a subsequent sparse solve is infeasible.
     """
     _validate_inputs(
         parameters,
@@ -766,6 +909,17 @@ def fit_sparse_knots_paper(
         relocation_max_iterations,
         cluster_gap_factor,
     )
+    for name, value in (
+        ("feasibility_repair", feasibility_repair),
+        ("retain_nonclear_clusters", retain_nonclear_clusters),
+        ("singleton_interval_search", singleton_interval_search),
+    ):
+        if not isinstance(value, bool):
+            raise ValueError(f"{name} must be boolean")
+    if relocation_algorithm not in {"general", "clusters"}:
+        raise ValueError("relocation_algorithm must be 'general' or 'clusters'")
+    if relocation_algorithm == "general" and (retain_nonclear_clusters or singleton_interval_search):
+        raise ValueError("cluster-specific extensions require relocation_algorithm='clusters'")
     started = time.perf_counter()
     count = (
         max(8, parameters.numel() // 2 - 1)
@@ -819,7 +973,18 @@ def fit_sparse_knots_paper(
     clusters = _cluster_active_knots(active_knots, spacing, cluster_gap_factor)
     relocation_started = time.perf_counter()
     clear_clusters = _algorithm4_clusters_are_clear(clusters, degree)
-    if clear_clusters:
+    relocation_diagnostics: dict[str, object] = {"algorithm": relocation_algorithm}
+    if relocation_algorithm == "general":
+        final_knots, local_refit_count, relocation_diagnostics = _relocate_general_intervals(
+            parameters, points, active_knots, degree,
+            tolerance=spacing / 32.0 if relocation_tolerance is None else relocation_tolerance,
+            max_iterations=relocation_max_iterations,
+            rho=admm_rho, admm_max_iterations=admm_max_iterations,
+            admm_tolerance=admm_tolerance,
+            bisection_iterations=lambda_bisection_iterations,
+        )
+        relocation_method = _GENERAL_RELOCATION_LABEL
+    elif clear_clusters or not retain_nonclear_clusters:
         final_knots, local_refit_count = _relocate_clusters(
             parameters,
             points,
@@ -832,6 +997,7 @@ def fit_sparse_knots_paper(
                 else relocation_tolerance
             ),
             max_iterations=relocation_max_iterations,
+            singleton_interval_search=singleton_interval_search,
         )
         relocation_method = _RELOCATION_LABEL
     else:
@@ -904,4 +1070,5 @@ def fit_sparse_knots_paper(
         relocation_seconds=relocation_seconds,
         repair_seconds=repair_seconds,
         elapsed_seconds=time.perf_counter() - started,
+        relocation_diagnostics=relocation_diagnostics,
     )

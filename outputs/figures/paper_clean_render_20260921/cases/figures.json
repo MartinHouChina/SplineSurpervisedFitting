@@ -1,0 +1,234 @@
+{
+  "source_comparison": "E:\\SelfSurpervisedSplineFitting\\outputs\\comparisons\\paper_adaptation_export_smoke_20260921_r1\\comparison.json",
+  "source_comparison_sha256": "4af20231567ddb97fd0d6a0e59c315ae4e4b9980a5ec6a1a42fed8e4ccfff564",
+  "benchmark_fingerprint": "dc9a7c46775fdab5339c8013e249ba96d73685fab593f15557c860637ae6b85d",
+  "reran_methods": false,
+  "diagnostic_not_final": true,
+  "diagnostic_reasons": [
+    "joint simplification curriculum was not mature when saved",
+    "certified synthetic count MAE exceeds the formal limit 2",
+    "certified synthetic knot-match F1 is below the formal minimum 0.6",
+    "observed worst-source deployment pass rate 53.125% is below the required 90.000%",
+    "observed worst-source dense proposal pass rate 81.250% is below the required 90.000%",
+    "proposal feasibility gate was not satisfied",
+    "infeasible-proposal ablation was enabled",
+    "checkpoint MSE tolerance 5e-05 differs from the requested formal tolerance 2.5e-05",
+    "Forced diagnostic: quick or reduced benchmark protocol"
+  ],
+  "checkpoint_qualification": {
+    "schema_version": 2,
+    "required_reporting_pass_rate": 0.9,
+    "required_mse_tolerance": 2.5e-05,
+    "configured_proposal_pass_target": 0.9,
+    "configured_deployment_pass_target": 0.9,
+    "observed_worst_dense_pass_rate": 0.8125,
+    "observed_worst_deployment_pass_rate": 0.53125,
+    "recorded_mse_tolerance": 5e-05,
+    "recorded_knot_match_tolerance": 0.01,
+    "candidate_knot_capacity": 32.0,
+    "observed_mean_retained_knots": 26.607382550335572,
+    "configured_target_met": false,
+    "configured_checkpoint_accepted": false,
+    "architecture_revision": "v16_ranked_prefix_count_coupled_mass_topk",
+    "selection_policy": "mass_topk",
+    "adaptive_keep_threshold": true,
+    "simplification_contract": "ranked_prefix_certified_cardinality_adaptive_complexity_v1",
+    "simplification_ready": false,
+    "final_safety_sigma": 0.0,
+    "applied_safety_sigma": 0.0,
+    "final_safety_knots": 0,
+    "applied_safety_knots": 0,
+    "synthetic_count_mae": 12.71,
+    "synthetic_knot_match_f1": 0.5179604335779906,
+    "synthetic_knot_matched_mae": 0.00460266740428739,
+    "formal_synthetic_count_mae_max": 2.0,
+    "formal_synthetic_knot_f1_min": 0.6,
+    "formal_synthetic_matched_mae_max": 0.005,
+    "synthetic_data_contract": "source_subset_threshold_minimal_v1",
+    "certified_minimal_source": true,
+    "synthetic_certificate_rms_tolerance": 0.007071067811865475,
+    "synthetic_minimality_margin": 0.2,
+    "synthetic_minimality_audit_points": 512,
+    "formal_reporting_eligible": false,
+    "reasons": [
+      "joint simplification curriculum was not mature when saved",
+      "certified synthetic count MAE exceeds the formal limit 2",
+      "certified synthetic knot-match F1 is below the formal minimum 0.6",
+      "observed worst-source deployment pass rate 53.125% is below the required 90.000%",
+      "observed worst-source dense proposal pass rate 81.250% is below the required 90.000%",
+      "proposal feasibility gate was not satisfied",
+      "infeasible-proposal ablation was enabled",
+      "checkpoint MSE tolerance 5e-05 differs from the requested formal tolerance 2.5e-05"
+    ]
+  },
+  "published_baseline_protocol": {
+    "baseline_protocol": "adaptation",
+    "method_provenance": {
+      "park_dominant_point_2007_adaptation": {
+        "audit_version": "source_paper_audit_20260921_v1",
+        "method": "park_dominant_point_2007_adaptation",
+        "reproduction_status": "reproduction_unverified",
+        "native_available": false,
+        "native_comparison_available": false,
+        "implementation_origin": "repository_implementation",
+        "author_code_executed": false,
+        "reference_doi": "10.1016/j.cad.2006.12.006",
+        "source_url": "https://www.sciencedirect.com/science/article/pii/S0010448507000024",
+        "source_access": "publisher abstract/introduction; full implementation not verified",
+        "author_code_url": null,
+        "author_code_sha256": null,
+        "known_departures": [
+          "Common-MSE stopping replaces the source error-bound protocol; no iterative orthogonal-distance parameter update.",
+          "Degree-compatible shape-seed completion, endpoint knot clamps, and endpoint-constrained refits are repository choices, not independently source-verified.",
+          "Discrete Menger curvature and incremental LCM-seed consumption have not been checked against an author-code reference."
+        ],
+        "audit_document": "docs/baseline_native_audit.md"
+      },
+      "liang_feature_iki_2017_adaptation": {
+        "audit_version": "source_paper_audit_20260921_v1",
+        "method": "liang_feature_iki_2017_adaptation",
+        "reproduction_status": "reproduction_unverified",
+        "native_available": false,
+        "native_comparison_available": false,
+        "implementation_origin": "repository_implementation",
+        "author_code_executed": false,
+        "reference_doi": "10.1088/1361-6501/aa6a05",
+        "source_url": "https://doi.org/10.1088/1361-6501/aa6a05",
+        "source_access": "abstract/preview only; exact feature equation and IKI details unavailable",
+        "author_code_url": null,
+        "author_code_sha256": null,
+        "known_departures": [
+          "The normalized arc/unsigned-turning-angle feature blend (default 0.5) is a repository construction, not a verified original equation.",
+          "Sampled feature-CDF inversion and worst-residual span bisection replace unverified analytic-feature/IKI details.",
+          "Common-MSE stopping, dense/initial knot counts, and endpoint-constrained fits are comparison settings."
+        ],
+        "audit_document": "docs/baseline_native_audit.md"
+      },
+      "dung_direct_knot_2017_adaptation": {
+        "audit_version": "source_paper_audit_20260921_v1",
+        "method": "dung_direct_knot_2017_adaptation",
+        "reproduction_status": "reproduction_unverified",
+        "native_available": false,
+        "native_comparison_available": false,
+        "implementation_origin": "repository_implementation",
+        "author_code_executed": false,
+        "reference_doi": "10.1371/journal.pone.0173857",
+        "source_url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0173857",
+        "source_access": "full primary article and official S1 MATLAB source inspected; not executed",
+        "author_code_url": "https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0173857.s006&type=supplementary",
+        "author_code_sha256": "2fc1830966f71ce77f7c29e33ecf321b5fddca5f5bfca75458d667a1d1ce0399",
+        "known_departures": [
+          "Only simple knots are optimized; the author's multiplicity 1..degree+1 and joining-angle/continuity classifier are absent.",
+          "Only serial splitting is implemented; parallel split/join/shift is absent (serial is itself a published variant).",
+          "Capacity overflow uniformly discards coarse breaks; this is not an author-code operation.",
+          "The final endpoint-constrained refit changes the author's unconstrained least-squares spline.",
+          "sqrt(mse_tolerance) is not an equivalent native maximum-error constraint; finite-difference solver/search and short-tail guards are repository choices."
+        ],
+        "audit_document": "docs/baseline_native_audit.md"
+      },
+      "kang_sparse_2015_adaptation": {
+        "audit_version": "source_paper_audit_20260921_v1",
+        "method": "kang_sparse_2015_adaptation",
+        "reproduction_status": "reproduction_unverified",
+        "native_available": false,
+        "native_comparison_available": false,
+        "implementation_origin": "repository_implementation",
+        "author_code_executed": false,
+        "reference_doi": "10.1016/j.cad.2014.08.022",
+        "source_url": "https://www.sciencedirect.com/science/article/pii/S0010448514001912",
+        "source_access": "full primary article inspected in existing tmp/Kang2015.pdf",
+        "author_code_url": null,
+        "author_code_sha256": null,
+        "known_departures": [
+          "Scalar constrained l1 optimization is changed to vector group-l1 with approximate ADMM/penalty bisection instead of the source CVX solve.",
+          "Algorithms 1/3 (repeated convex solves for general-data relocation) are absent; long active runs are returned without that stage.",
+          "The degree+1 cluster-size gate, 1.25 spacing factor, singleton interval search, and absolute/relative jump cutoffs are repository choices.",
+          "The comparison wrapper replaces the final unconstrained spline by an endpoint-constrained refit."
+        ],
+        "audit_document": "docs/baseline_native_audit.md"
+      },
+      "luo_linf_de_2022_adaptation": {
+        "audit_version": "source_paper_audit_20260921_v1",
+        "method": "luo_linf_de_2022_adaptation",
+        "reproduction_status": "reproduction_unverified",
+        "native_available": false,
+        "native_comparison_available": false,
+        "implementation_origin": "repository_implementation",
+        "author_code_executed": false,
+        "reference_doi": "10.4208/jcm.2012-m2020-0203",
+        "source_url": "https://www.global-sci.com/JCM/article/view/12502",
+        "source_access": "publisher abstract and preview; full source/author-code equivalence not verified",
+        "author_code_url": null,
+        "author_code_sha256": null,
+        "known_departures": [
+          "Regularization is selected by a common-MSE search instead of a verified source-paper parameter protocol.",
+          "DE fitness and the reported spline use endpoint-constrained least squares; a source-native solver/output is not preserved.",
+          "Fallback to the largest jump when no peak survives, minimum-gap projections, random population initialization, and finite DE budgets are unverified implementation choices.",
+          "The ADMM realization, local-maxima edge cases, and DE variant have no author-code/paper-example equivalence validation."
+        ],
+        "audit_document": "docs/baseline_native_audit.md"
+      }
+    },
+    "feasibility_safeguard_enabled": false,
+    "feasibility_safeguard_version": "bounded_common_mse_v1",
+    "methods": [
+      "dung_direct_knot_2017_adaptation",
+      "kang_sparse_2015_adaptation",
+      "luo_linf_de_2022_adaptation"
+    ],
+    "label": "unrepaired repository adaptation",
+    "native_definition": "baseline_protocol=native requires a verified source-paper implementation; historical diagnostic fields named comparison_feasibility_native_* mean pre-repair repository adaptation, NOT original-native reproduction",
+    "repair": "only when native common refit misses tolerance; bounded residual-guided augmentation and uniform-capacity fallback; preserve best fit",
+    "capacity": "Dung: max_internal_knots; Kang/Luo: paper_initial_knots; neither cap is exceeded",
+    "timing": "all native algorithm work and safeguard refits included in complete time; Ours network-only remains separate",
+    "kang_long_cluster_correction_always_enabled": true,
+    "evaluation_code_sha256": {
+      "src\\spline_fitting\\evaluation\\__init__.py": "b07e71d60baa59d38eb800926b83a224467b20e8f30b70c0c468890d2280538e",
+      "src\\spline_fitting\\evaluation\\bspline_inference.py": "fa543e6337e16148105d62518016ac8b35ebedab3d368ee2b325b9007d820629",
+      "src\\spline_fitting\\evaluation\\certified_real_world.py": "741b836240502337036c6a51fcc689be98415896f529ca493515bee92041ddeb",
+      "src\\spline_fitting\\evaluation\\dung_direct_knot.py": "a99f3300f44518d16d3ccee24201f479e962e3e48d9efdc072fa64bb6d1703de",
+      "src\\spline_fitting\\evaluation\\feature_cdf_knot_placement.py": "dab111dc8d56d5aa64170588805a2fcdd3832e8ea2734b826666f2b8b990c6a9",
+      "src\\spline_fitting\\evaluation\\gradient_knot_pruning.py": "ed174bc2014a3cb0ad180e6e98c42d6f7283b4ed6bbe26b34bb693d8b4a8665f",
+      "src\\spline_fitting\\evaluation\\hybrid_knot_search.py": "09f673fb727b9f22ea3f662eff7a368d29b9780f12eec0c15198dd71ff0566ae",
+      "src\\spline_fitting\\evaluation\\knot_diagnostics.py": "c34b9f323cf708c2a1732982778053b2e885b7de8382df25d81ed9fb5bfb4e81",
+      "src\\spline_fitting\\evaluation\\liang_feature_iki.py": "f51209e6f0a419be1b9a5ba30d1539c7481470cf9498b8eb4a3066291c4880f9",
+      "src\\spline_fitting\\evaluation\\luo_linf_de.py": "9fec6149a2b36ad52c0d7aae9ff11b40c2275e9c9e3be1f52832e9126437edc3",
+      "src\\spline_fitting\\evaluation\\minimal_knot_pruning.py": "c6cca0c4fc3dc7222a1d0bb88c63ddf8f72686e9ca31f276f2832ed4c0dd1b62",
+      "src\\spline_fitting\\evaluation\\native_protocol.py": "f18d1fe0a0b33e42c65976c9890f4c4b71443df291b593209095691b29ceebde",
+      "src\\spline_fitting\\evaluation\\park_dominant_point.py": "a2c638bd548ca2560a460b2f74946f32639b1cb0435b74476454c26be9bd2f5c",
+      "src\\spline_fitting\\evaluation\\published_baselines.py": "c8bc4606c79b4a02d9d24edba2561c97c6da4d89c5f0c8c3f9e9f90f98fe6cb6",
+      "src\\spline_fitting\\evaluation\\sparse_knot_paper.py": "e26b1acc357c3238178bb10946f9f2a9d0f64714993a670bc4c7dc86abd1de4b",
+      "src\\spline_fitting\\evaluation\\timing.py": "60debbfed834859a6f3957e2660094f63c9df2268187c2901f9864c7321daef0",
+      "src\\spline_fitting\\evaluation\\verified_knot_repair.py": "bcf5848cd0e602aa3ca51ad5eb71dc3fb6a3a87360b2b3ca3268b8b5b0882c86"
+    }
+  },
+  "watermark_rendered": false,
+  "plot_selection": {
+    "seed": 20260908,
+    "max_cases_per_dataset": 0,
+    "rule": "seeded random sample without ranking by error, success, knots or runtime"
+  },
+  "requested_measurements": 6,
+  "evaluated_measurements": 6,
+  "unavailable_measurements": 0,
+  "evaluated_cases": 1,
+  "case_figures": [
+    {
+      "dataset": "UJI",
+      "sample_id": "uji2_07539_stroke_00",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\paper_clean_render_20260921\\cases\\case_bc87a9d934cfa9d3e3c0836e04dc790ae87ea2e5033e6bb8878dbd7ee939b67f.png",
+        "sha256": "2d503b139ef326db8f49f682d7dbc2a4dd0b3ef74f57e34e5a43ca5a31f90966"
+      }
+    }
+  ],
+  "summary_figures": [
+    {
+      "dataset": "UJI",
+      "image": {
+        "path": "E:\\SelfSurpervisedSplineFitting\\outputs\\figures\\paper_clean_render_20260921\\cases\\summary_f6c1fd051041bc8736b3.png",
+        "sha256": "b7a03b01621c73a133672d6159e4432255535cd112ace26b55012d8e296e8ba2"
+      }
+    }
+  ]
+}

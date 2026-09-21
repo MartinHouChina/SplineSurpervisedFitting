@@ -32,7 +32,7 @@ def benchmark_parser():
 def test_benchmark_and_case_cli_forward_identical_safeguard_option(enabled):
     flag = "--published-feasibility-safeguard" if enabled else "--no-published-feasibility-safeguard"
     for parser in (benchmark_parser(), cases.parser()):
-        assert parser.parse_args([]).published_feasibility_safeguard is True
+        assert parser.parse_args([]).published_feasibility_safeguard is False
         args = parser.parse_args([flag, "--max-internal-knots", "64", "--paper-initial-knots", "64"])
         for warmup in (False, True):
             kwargs = benchmark.published_baseline_kwargs(args, degree=3, warmup=warmup)
@@ -42,6 +42,7 @@ def test_benchmark_and_case_cli_forward_identical_safeguard_option(enabled):
 
 def test_protocol_fingerprint_changes_for_flag_and_evaluation_code(monkeypatch):
     args = benchmark_parser().parse_args([])
+    args.published_feasibility_safeguard = True
     protocol = benchmark.published_baseline_protocol(args)
     fingerprint = plotting16._metadata_fingerprint({"published_baseline_protocol": protocol})
     for name in ("published_baselines.py", "sparse_knot_paper.py", "dung_direct_knot.py", "luo_linf_de.py"):
@@ -49,7 +50,7 @@ def test_protocol_fingerprint_changes_for_flag_and_evaluation_code(monkeypatch):
                    for path in protocol["evaluation_code_sha256"])
     args.published_feasibility_safeguard = False
     disabled = benchmark.published_baseline_protocol(args)
-    assert disabled["kang_long_cluster_correction_always_enabled"] is True
+    assert disabled["kang_long_cluster_correction_always_enabled"] is False
     assert plotting16._metadata_fingerprint({"published_baseline_protocol": disabled}) != fingerprint
     args.published_feasibility_safeguard = True
     monkeypatch.setattr(benchmark, "sha256_file", lambda path: "changed source hash")

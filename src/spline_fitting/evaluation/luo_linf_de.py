@@ -238,6 +238,8 @@ def _local_maximum_candidates(
     knots: torch.Tensor,
     jumps: torch.Tensor,
     eta: float,
+    *,
+    force_nonempty_candidates: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     values = jumps.abs().amax(dim=-1) if jumps.numel() else knots.new_empty(0)
     if values.numel() == 0 or float(values.max()) <= 0.0:
@@ -256,7 +258,7 @@ def _local_maximum_candidates(
         local = middle[keep]
     cutoff = eta * float(values.max())
     indices = local[values[local] > cutoff]
-    if indices.numel() == 0:
+    if indices.numel() == 0 and force_nonempty_candidates:
         indices = values.argmax().reshape(1)
     return indices, knots[indices], values
 

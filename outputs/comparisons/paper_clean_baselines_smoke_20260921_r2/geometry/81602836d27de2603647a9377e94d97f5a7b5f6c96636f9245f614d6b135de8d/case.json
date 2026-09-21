@@ -1,0 +1,99 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "b404d2737aee31006bc57ac62f460ceac8dc730698bbd77c4205d24cec61edd8",
+  "dataset": "IndustrialOffset",
+  "sample_id": "industrial_offset_naca_airfoil_v011_o04_p0p0400",
+  "group_id": "industrial_model_offset_curves:naca_airfoil:variant-011:seed-20260914",
+  "split": "test",
+  "source_kind": "procedural_cad_offset",
+  "source_note": "Procedurally generated CAD-style offset curves; not measured industrial data; no ground-truth B-spline knots.",
+  "dataset_label": "IndustrialOffset (procedural CAD; not measured)",
+  "source_k": null,
+  "canonical_k": null,
+  "source_dataset": "industrial_model_offset_curves",
+  "source_manifest": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\industrial_offsets\\v1\\manifest.jsonl",
+  "source_manifest_record": {
+    "group_id": "industrial_model_offset_curves:naca_airfoil:variant-011:seed-20260914",
+    "has_knot_labels": false,
+    "metadata": {
+      "benchmark_kind": "cad_driven_semi_synthetic_offset_curve",
+      "generation_seed": 20260914,
+      "group_strategy": "all offsets of one base profile stay together",
+      "knot_labels": "unavailable",
+      "miter_limit": 4.0,
+      "offset_distance_mm": 3.2802012274098296,
+      "offset_fraction_of_half_max_extent": 0.04,
+      "offset_geometry_sha256": "5d7527d576700e89c711f5c338de8a77365f7d3f32ac1cef1f83e3b3065113c7",
+      "offset_join": "miter_with_bevel_limit",
+      "offset_side": "outward",
+      "preprocessing_version": "industrial-offset-curves-v1",
+      "profile_family": "naca_airfoil",
+      "profile_parameters": {
+        "camber_position_fraction": 0.30561186032947496,
+        "chord_mm": 163.97353535957978,
+        "maximum_camber_fraction": 0.020780437345112146,
+        "thickness_fraction": 0.15102975996475365
+      },
+      "profile_variant": 11,
+      "reference_normalization_transform": {
+        "center_mm": [
+          79.60886360958102,
+          2.27799975668313
+        ],
+        "definition": "subtract mean, divide by maximum radial norm",
+        "scale_mm": 85.13247110885968
+      },
+      "reference_point_count": 768,
+      "reference_sampling": "uniform_offset_polyline_chord",
+      "source_geometry_sha256": "e821b78efecf53b67ad92fa3f5a7f182c6d312ec56a9938f1655e0d1d7dc06bf",
+      "split_seed": 20260914,
+      "stored_coordinate_space": "millimetre",
+      "topology_policy": "reject self-intersection, collapse, orientation reversal, and non-finite geometry"
+    },
+    "num_points": 768,
+    "point_dim": 2,
+    "points_path": "curves/industrial_offset_naca_airfoil_v011_o04_p0p0400.npy",
+    "sample_id": "industrial_offset_naca_airfoil_v011_o04_p0p0400",
+    "source_dataset": "industrial_model_offset_curves",
+    "split": "test"
+  },
+  "source_points_path": "E:\\SelfSurpervisedSplineFitting\\data\\processed\\industrial_offsets\\v1\\curves\\industrial_offset_naca_airfoil_v011_o04_p0p0400.npy",
+  "source_points_sha256": "6a5aadc903fc4b5bdfe835bb237a810d9e225c5068fd26b9b6b067d292c1333b",
+  "normalization": {
+    "available": true,
+    "definition": "normalized = (original - center) / scalar_scale",
+    "center": [
+      79.23749542236328,
+      2.2722504138946533
+    ],
+    "scale": 85.45976257324219,
+    "original_input_note": "Inverse transformed actual model inputs; may differ from pre-normalization resampling by floating-point rounding."
+  },
+  "arrays_file": "case.npz",
+  "arrays_sha256": "3ded9c5464369a03ebd7953a8731111e898ceb9a2ec5fba68715894080d3da00",
+  "array_shapes": {
+    "input_points_normalized": [
+      192,
+      2
+    ],
+    "normalization_center": [
+      2
+    ],
+    "normalization_scale": [],
+    "input_points_original": [
+      192,
+      2
+    ],
+    "reference_points_normalized": [
+      768,
+      2
+    ],
+    "reference_chord_parameters": [
+      768
+    ],
+    "reference_points_original": [
+      768,
+      2
+    ]
+  }
+}

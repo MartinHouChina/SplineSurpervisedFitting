@@ -91,7 +91,7 @@ def test_compact_keeps_six_methods_four_metrics_and_three_real_test_sources(tmp_
     for stage in ("benchmark_six_methods", "plot_ours_cases", "plot_six_method_real_cases"):
         args = _parsed(commands[stage])
         assert {value.split("=", 1)[0] for value in args.manifest} == {"UJI", "NaturalEarth", "USGS", "IndustrialOffset"}
-        assert args.published_feasibility_safeguard
+        assert not args.published_feasibility_safeguard
     assert _parsed(commands["plot_four_metrics"]).method_set == "published"
 
 

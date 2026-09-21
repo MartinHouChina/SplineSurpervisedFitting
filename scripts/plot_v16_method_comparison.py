@@ -29,7 +29,6 @@ from plot_v15_dataset_benchmark import (
     DATASET_LABELS,
     DATASET_ORDER,
     METHODS,
-    _diagnostic_label,
     _network_caption,
     _num_points,
     model_version,
@@ -79,7 +78,7 @@ def validate_v16_benchmark(
     if metadata.get("diagnostic_not_final") and not allow_unqualified_diagnostic:
         raise ValueError(
             "The report uses an unqualified checkpoint or diagnostic protocol; pass "
-            "--allow-unqualified-diagnostic only for visibly watermarked debugging"
+            "--allow-unqualified-diagnostic to render it while retaining its diagnostic status in metadata"
         )
     fingerprint = metadata.get("fingerprint")
     if not isinstance(fingerprint, str) or len(fingerprint) != 64:
@@ -415,21 +414,6 @@ def render_comparison(
             frameon=False,
             fontsize=9.6,
         )
-        if metadata.get("diagnostic_not_final"):
-            fig.text(
-                0.5,
-                0.5,
-                _diagnostic_label(metadata),
-                ha="center",
-                va="center",
-                rotation=24,
-                fontsize=28,
-                color="crimson",
-                alpha=0.20,
-                weight="bold",
-                zorder=100,
-            )
-
         tick_labels = []
         for dataset in datasets:
             counts = sorted(int(index[(dataset, method)]["n"]) for method in methods)
@@ -541,6 +525,13 @@ def render_comparison(
 
         if include_max_error:
             axes[2, 1].set_axis_off()
+            missing_peak = any(index[(dataset, method)].get(peak_key) is None
+                               for dataset in datasets for method in methods)
+            peak_note = (
+                "\n\nN/A: maximum-error measurements unavailable.\n"
+                "Historical MSE alone cannot recover maximum error."
+                if missing_peak else ""
+            )
             axes[2, 1].text(
                 0.04, 0.88,
                 "Maximum-error definition\n\n"
@@ -550,9 +541,7 @@ def render_comparison(
                 "No square root; normalized coordinates.\n\n"
                 "This is an observed-point maximum, not a certified\n"
                 "continuous or Hausdorff bound. The pass criterion\n"
-                "remains mean squared error, not maximum error.\n\n"
-                "N/A: maximum-error measurements unavailable.\n"
-                "Historical MSE alone cannot recover maximum error.",
+                "remains mean squared error, not maximum error." + peak_note,
                 transform=axes[2, 1].transAxes, va="top", fontsize=10.5,
                 color="#444444", linespacing=1.35,
             )
@@ -561,6 +550,9 @@ def render_comparison(
             0.07,
             0.118,
             (
+                "Measured paired benchmark: timing includes each complete method and its recorded final solver; "
+                "returned-fit and optional repair policies are method-specific."
+                if metadata.get("published_baseline_protocol", {}).get("returned_fit_policy") else
                 "Measured paired benchmark only: timing includes each complete method and the common "
                 "endpoint-constrained standard B-spline refit."
             ),
@@ -608,6 +600,18 @@ def render_comparison(
         target = output_dir / f"v16_published_methods_{metric_prefix}{suffix}.png"
         fig.savefig(target, dpi=dpi)
         plt.close(fig)
+        target.with_suffix(".metadata.json").write_text(json.dumps({
+            "benchmark_fingerprint": metadata["fingerprint"],
+            "checkpoint": metadata.get("checkpoint"),
+            "diagnostic_not_final": metadata.get("diagnostic_not_final", True),
+            "diagnostic_reasons": metadata.get("diagnostic_reasons", []),
+            "checkpoint_qualification": metadata.get("checkpoint_qualification"),
+            "published_baseline_protocol": metadata.get("published_baseline_protocol", {}),
+            "reference_points": reference,
+            "include_max_error": include_max_error,
+            "methods": list(methods),
+            "watermark_rendered": False,
+        }, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     return target
 
 
@@ -645,7 +649,7 @@ def main() -> None:
     parser.add_argument(
         "--allow-unqualified-diagnostic",
         action="store_true",
-        help="Permit an unqualified report only with a visible diagnostic watermark",
+        help="Permit an unqualified report; diagnostic status remains in the report and figure metadata, without a watermark",
     )
     args = parser.parse_args()
     if args.dpi <= 0:

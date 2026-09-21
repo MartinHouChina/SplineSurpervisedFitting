@@ -32,7 +32,7 @@ ANCHORED_SELECTION=0
 JOINT_GEOMETRY_CALIBRATION_EPOCHS=""
 COMPLEXITY_RAMP_EPOCHS=8
 REAL_VAL_SIZE=32
-NATIVE_BASELINES=0
+NATIVE_BASELINES=1
 BASELINE_PROTOCOL=adaptation
 PAPER_OUTPUT=0
 ALL_REAL_TEST_SAMPLES=0
@@ -76,7 +76,7 @@ Historical online-teacher architecture; capacity is explicit and shared by all m
                                   Freeze dense geometry and pause complexity for
                                   first N Joint epochs (anchored 6; otherwise 0)
   --real-val-size N               Reliable/compact/stable: real val curves/source (32)
-  --native-baselines              Disable explicit MSE repair for Dung/Kang/Luo;
+  --native-baselines              Disable explicit MSE repair for Dung/Kang/Luo (default);
                                   NOT a certificate of original-paper fidelity
   --baseline-protocol adaptation|native
                                   Native rejects unverified reproductions (N/A), never silently repairs
@@ -117,7 +117,7 @@ Historical online-teacher architecture; capacity is explicit and shared by all m
   --prepare-real-data              Prepare missing real manifests without overwriting
                                   IndustrialOffset is generated locally, not measured
   --output-root PATH               Default repository outputs/
-  --benchmark-profile quick|full  Default full; quick is visibly diagnostic
+  --benchmark-profile quick|full  Default full; quick is recorded as diagnostic in reports
   --synthetic-samples-per-k N       Full 2 / quick 1 (source K=4..24)
   --real-samples-per-dataset N      Full 8 / quick 2 (test split only)
   --visual-samples-per-dataset N    Full 2 / quick 1
@@ -544,7 +544,7 @@ if run_logged inspect_checkpoint "$PYTHON_BIN" scripts/inspect_v16_checkpoint.py
   --checkpoint "$CHECKPOINT" --mse-tolerance "$MSE_TOLERANCE"; then
   printf 'Checkpoint inspection completed.\n'
 else
-  printf 'Checkpoint is not qualified for formal reporting; continue only with diagnostic labels.\n'
+  printf 'Checkpoint qualification status is retained in reports; figures have no diagnostic watermarks.\n'
 fi
 MANIFEST_ARGS=(--manifest "UJI=$UJI" --manifest "NaturalEarth=$NATURAL" --manifest "USGS=$USGS"
   --manifest "IndustrialOffset=$INDUSTRIAL" "${EXTRA_MANIFEST_ARGS[@]}")

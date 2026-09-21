@@ -7,6 +7,7 @@ import sys
 import numpy as np
 import pytest
 import torch
+from matplotlib.figure import Figure
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -104,6 +105,15 @@ def test_tiny_v16_checkpoint_exports_one_refit_with_correct_units(
 
     monkeypatch.setattr(entry, "refit_bspline_control_points", counted_refit)
     monkeypatch.setattr(V16CandidateSelectionNetwork, "forward_deployment", counted_forward)
+    figure_texts = []
+    original_savefig = Figure.savefig
+
+    def checked_savefig(figure, *args, **kwargs):
+        figure_texts.extend(text.get_text() for text in figure.texts)
+        figure_texts.extend(axis.get_title() for axis in figure.axes)
+        return original_savefig(figure, *args, **kwargs)
+
+    monkeypatch.setattr(Figure, "savefig", checked_savefig)
     base_command = ["--checkpoint", str(checkpoint_path), "--point-cloud", str(input_path),
                     "--output-dir", str(output_dir), "--device", "cpu", "--mse-tolerance", "1e-5",
                     "--network-warmups", "1", "--network-repeats", "2"]
@@ -134,6 +144,9 @@ def test_tiny_v16_checkpoint_exports_one_refit_with_correct_units(
     assert result["timing"]["deployment_ms"] > 0
     assert result["timing"]["network_ms"] > 0
     assert result["diagnostic_not_final"]
+    assert result["watermark_rendered"] is False
+    assert not any("DIAGNOSTIC NOT FINAL" in text for text in figure_texts)
+    assert any("normalized MSE=" in text and "network median=" in text for text in figure_texts)
     assert not result["checkpoint_qualification"]["formal_reporting_eligible"]
     assert (output_dir / "fit.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     raw_report = (output_dir / "report.json").read_text(encoding="utf-8")

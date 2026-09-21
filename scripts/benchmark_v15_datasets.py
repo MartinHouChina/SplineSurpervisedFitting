@@ -158,8 +158,8 @@ def parser(*, default_checkpoint: Path | None = None,
     )
     p.add_argument(
         "--published-feasibility-safeguard", action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Enable disclosed, capacity-bounded common-MSE repair for Dung/Kang/Luo; complete timing includes every repair refit",
+        default=False,
+        help="Opt into historical non-paper common-MSE repair for Dung/Kang/Luo (disabled by default); complete timing includes every repair refit",
     )
     p.add_argument("--network-warmups", type=int, default=3)
     p.add_argument("--network-repeats", type=int, default=10)
@@ -303,7 +303,7 @@ def published_baseline_kwargs(args, *, degree: int, warmup: bool = False) -> dic
         "luo_de_population": 5 if warmup else args.luo_de_population,
         "luo_de_iterations": 1 if warmup else args.luo_de_iterations,
         "luo_seed": args.luo_seed,
-        "published_feasibility_safeguard": getattr(args, "published_feasibility_safeguard", True),
+        "published_feasibility_safeguard": getattr(args, "published_feasibility_safeguard", False),
         "baseline_protocol": getattr(args, "baseline_protocol", "adaptation"),
     }
     return values
@@ -317,7 +317,7 @@ SAFEGUARDED_PUBLISHED_METHODS = (
 
 def published_baseline_protocol(args) -> dict:
     """Fingerprint the disclosed comparison wrapper and its implementation."""
-    enabled = bool(getattr(args, "published_feasibility_safeguard", True))
+    enabled = bool(getattr(args, "published_feasibility_safeguard", False))
     protocol = getattr(args, "baseline_protocol", "adaptation")
     return {
         "baseline_protocol": protocol,
@@ -329,10 +329,19 @@ def published_baseline_protocol(args) -> dict:
         "label": ("strict verified native implementations only" if protocol == "native" else
                   "threshold-safe adaptation" if enabled else "unrepaired repository adaptation"),
         "native_definition": "baseline_protocol=native requires a verified source-paper implementation; historical diagnostic fields named comparison_feasibility_native_* mean pre-repair repository adaptation, NOT original-native reproduction",
-        "repair": "only when native common refit misses tolerance; bounded residual-guided augmentation and uniform-capacity fallback; preserve best fit",
-        "capacity": "Dung: max_internal_knots; Kang/Luo: paper_initial_knots; neither cap is exceeded",
+        "repair": ("explicit historical extension: residual-guided augmentation and uniform-capacity fallback"
+                   if enabled else "disabled; no residual-guided augmentation or uniform-capacity fallback"),
+        "capacity": "Dung: max_internal_knots with explicit overflow error; Kang/Luo: initial/final paper_initial_knots cap. Kang Algorithm 3 temporarily inserts one midpoint into an interval-test vector, as required by that algorithm.",
         "timing": "all native algorithm work and safeguard refits included in complete time; Ours network-only remains separate",
-        "kang_long_cluster_correction_always_enabled": True,
+        "kang_long_cluster_correction_always_enabled": False,
+        "kang_relocation": "existing Algorithms 4/5 vector-ADMM adaptation without repository cluster-retention/repair heuristics; valid general-data equivalence remains unverified. Algorithms 1/3 are an explicit experimental API path, not the comparison default.",
+        "returned_fit_policy": {
+            "ours": "endpoint-constrained deployment refit",
+            "dung_direct_knot_2017_adaptation": "algorithm-returned unconstrained least-squares fit; no extra endpoint refit; over-budget boundaries raise an explicit capacity error",
+            "kang_sparse_2015_adaptation": "algorithm-returned unconstrained least-squares fit; no extra endpoint refit",
+            "other_methods": "retain the existing solver path; source-paper equivalence remains unverified",
+            "reporting": "evaluate the returned curve without replacing its control points; record any explicitly enabled historical repair",
+        },
         "evaluation_code_sha256": {
             str(path.relative_to(ROOT)): sha256_file(path)
             for path in sorted((ROOT / "src/spline_fitting/evaluation").glob("*.py"))
@@ -830,8 +839,12 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
             "不是 Hausdorff 距离或连续曲线最大误差保证。通过率仍由 MSE 阈值判断。"
         ),
         (
-            "所有方法接收相同归一化有序点，并以 CPU float64、端点插值、"
-            "无正则标准 B 样条最小二乘作为最终报告拟合。"
+            "所有方法接收相同归一化有序点。新协议直接评估实际返回的曲线："
+            "Dung/Kang 保留算法内无端点强制约束的最小二乘解，不再附加公共端点 refit；"
+            "Ours 使用自身部署 refit，其余对照保留当前求解路径，详见结果中的逐方法协议。"
+            if protocol.get("returned_fit_policy") else
+            "此历史报告按当时的公共 CPU float64、端点插值、无正则标准 B 样条最小二乘协议生成；"
+            "不将旧结果重新解释为新协议。"
         ),
         (
             "参数化并非完全相同：所有方法都以弦长参数为起点；数值基线固定弦长参数，"
@@ -913,7 +926,8 @@ def write_reports(directory: Path, metadata: dict, rows: list[dict]):
     if audit:
         lines += [
             "", "## 原生适配与最终结果审计", "",
-            "native 指修正后的仓库适配在公共可行性修复前的端点约束 refit，非作者原版复现。"
+            "native 字段指仓库实现执行公共可行性修复前的拟合结果，非作者原版复现；"
+            "具体端点约束由当次保存的逐方法协议决定。"
             "下表均值仅对有记录值计算；逐样本 native/final K、MSE、修复动作、额外 refit 次数和完整耗时见 "
             "`native_baseline_summary.csv`（旧记录缺少原生信息时留空，不补造）。",
             "",

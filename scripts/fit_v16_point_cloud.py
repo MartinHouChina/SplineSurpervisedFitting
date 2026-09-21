@@ -59,7 +59,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--allow-unqualified-diagnostic", action="store_true",
         help=("Permit proposal-stage or target-not-met weights for troubleshooting; "
-              "the JSON and PNG are marked DIAGNOSTIC NOT FINAL"),
+              "qualification is recorded in JSON; the PNG has no watermark"),
     )
     result.add_argument("--overwrite", action="store_true",
                         help="Allow replacing report.json and fit.png in the output directory")
@@ -150,12 +150,6 @@ def plot_fit(path: Path, *, source: torch.Tensor, resampled: torch.Tensor,
         f"network median={report['timing']['network_ms']:.2f} ms | "
         f"network + one refit={report['timing']['deployment_ms']:.2f} ms"
     )
-    if report.get("diagnostic_not_final"):
-        figure.text(
-            0.5, 0.5, "DIAGNOSTIC NOT FINAL — UNQUALIFIED CHECKPOINT",
-            ha="center", va="center", rotation=24, fontsize=27,
-            color="crimson", alpha=0.22, weight="bold", zorder=100,
-        )
     knot_axis = figure.add_subplot(layout[1])
     knots = fit.internal_knots.numpy()
     knot_axis.axhline(0, color="0.5", linewidth=1)
@@ -201,7 +195,7 @@ def run(args: argparse.Namespace) -> dict:
         raise ValueError(
             "v16 checkpoint is not eligible for formal deployment: "
             + "; ".join(qualification["reasons"])
-            + ". Use --allow-unqualified-diagnostic for marked troubleshooting."
+            + ". Use --allow-unqualified-diagnostic for troubleshooting recorded in JSON."
         )
     model, config, _ = build_model_from_checkpoint(checkpoint)
     model = model.eval().to(device)
@@ -305,6 +299,7 @@ def run(args: argparse.Namespace) -> dict:
                      "torch_threads": torch.get_num_threads(),
                      "gpu": torch.cuda.get_device_name(device) if device.type == "cuda" else None},
         "figure": str(image_path.resolve()),
+        "watermark_rendered": False,
     }
     # Validate JSON finiteness before creating any artifacts.
     serialized = json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False)

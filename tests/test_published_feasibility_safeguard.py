@@ -60,7 +60,9 @@ def test_full_overnight_budget_repairs_multiscale_failure_within_same_capacity(m
     native = baselines.run_published_baseline(
         method, points, published_feasibility_safeguard=False, **options,
     )
-    repaired = baselines.run_published_baseline(method, points, **options)
+    repaired = baselines.run_published_baseline(
+        method, points, published_feasibility_safeguard=True, **options
+    )
     d = repaired.diagnostics
     assert float(repaired.fit.fit_mse) <= options["mse_tolerance"]
     assert repaired.fit.internal_knots.numel() <= 64
@@ -76,10 +78,9 @@ def test_full_overnight_budget_repairs_multiscale_failure_within_same_capacity(m
     if method == "kang_sparse_2015_adaptation":
         # This was a single 62-knot active run collapsed to one knot at d473159.
         assert max(d["cluster_sizes"]) > 4
-        assert not d["algorithm4_cluster_relocation_applied"]
-        assert native.fit.internal_knots.numel() == d["active_internal_knot_count"]
-        assert not d["comparison_feasibility_safeguard_used"]
-        torch.testing.assert_close(repaired.fit.internal_knots, native.fit.internal_knots)
+        assert d["algorithm4_cluster_relocation_applied"]
+        assert not d["algorithm1_general_relocation_applied"]
+        assert native.fit.internal_knots.numel() < d["active_internal_knot_count"]
     else:
         assert float(native.fit.fit_mse) > options["mse_tolerance"]
         assert d["comparison_feasibility_safeguard_used"]
@@ -95,7 +96,9 @@ def test_line_with_zero_capacity_is_unchanged_and_needs_no_repair(method):
     native = baselines.run_published_baseline(
         method, points, published_feasibility_safeguard=False, **options,
     )
-    repaired = baselines.run_published_baseline(method, points, **options)
+    repaired = baselines.run_published_baseline(
+        method, points, published_feasibility_safeguard=True, **options
+    )
     assert repaired.fit.internal_knots.numel() == 0
     torch.testing.assert_close(repaired.fit.control_points, native.fit.control_points, atol=0, rtol=0)
     assert repaired.diagnostics["comparison_feasibility_status"] == "native_feasible"
@@ -108,10 +111,20 @@ def test_insufficient_capacity_remains_honestly_infeasible_and_never_worsens(met
     t = torch.linspace(0.0, 1.0, 57, dtype=torch.float64)
     points = torch.stack((t, 0.25 * torch.sin(6 * torch.pi * t)), dim=-1)
     options = tiny_options(1, 1e-8)
+    if method == "dung_direct_knot_2017_adaptation":
+        for safeguard in (False, True):
+            with pytest.raises(ValueError, match="capacity limit exceeded"):
+                baselines.run_published_baseline(
+                    method, points, published_feasibility_safeguard=safeguard,
+                    **options,
+                )
+        return
     native = baselines.run_published_baseline(
         method, points, published_feasibility_safeguard=False, **options,
     )
-    repaired = baselines.run_published_baseline(method, points, **options)
+    repaired = baselines.run_published_baseline(
+        method, points, published_feasibility_safeguard=True, **options
+    )
     assert float(repaired.fit.fit_mse) > 1e-8
     assert float(repaired.fit.fit_mse) <= float(native.fit.fit_mse) + 1e-14
     assert repaired.fit.internal_knots.numel() <= 1
@@ -187,6 +200,7 @@ def test_safeguard_refits_are_inside_end_to_end_timer(monkeypatch):
     monkeypatch.setattr(baselines, "_common_mse_feasibility_safeguard", repair)
     result = baselines.run_published_baseline(
         "luo_linf_de_2022_adaptation", multiscale_curve(), **tiny_options(28, 1e-4),
+        published_feasibility_safeguard=True,
     )
     assert events[0] == "start" and events[-2:] == ["repair", "stop"]
     assert result.elapsed_ms == 2000.0

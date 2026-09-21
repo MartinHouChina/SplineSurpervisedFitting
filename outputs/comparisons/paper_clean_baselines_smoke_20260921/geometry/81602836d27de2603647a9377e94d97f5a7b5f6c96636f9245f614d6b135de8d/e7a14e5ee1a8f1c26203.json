@@ -1,0 +1,528 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "27b9e3c544544ac4235ab09eed41cd4edfc8c044519338fedabffea316abcb69",
+  "case_artifact": {
+    "path": "geometry/81602836d27de2603647a9377e94d97f5a7b5f6c96636f9245f614d6b135de8d/case.json",
+    "sha256": "0261de744dab685180094c0f89626b8517eaa25742fadb7b84b9bd3865f92118"
+  },
+  "measurement": {
+    "dataset": "IndustrialOffset",
+    "sample_id": "industrial_offset_naca_airfoil_v011_o04_p0p0400",
+    "group_id": "industrial_model_offset_curves:naca_airfoil:variant-011:seed-20260914",
+    "source_k": null,
+    "canonical_k": null,
+    "method": "luo_linf_de_2022_adaptation",
+    "has_reference": true,
+    "status": "ok",
+    "mse": 0.0005913550986427644,
+    "max_squared_error": 0.002739713732324979,
+    "fit_pass": false,
+    "reference_mse": 0.0005944984592834526,
+    "reference_max_squared_error": 0.002756626746239446,
+    "reference_pass": false,
+    "final_k": 3,
+    "total_ms": 6965.202400053386,
+    "network_ms": null,
+    "knots": [
+      0.480191683254786,
+      0.4876403233760648,
+      0.5513145373435863
+    ],
+    "diagnostics": {
+      "network_used": false,
+      "parameterization": "chord_length",
+      "reported_refit": "unregularized standard B-spline least squares with exact endpoint interpolation",
+      "timing_scope": "complete numerical method: chord parameterization, knot selection/relocation, and the algorithm's final reported spline solve",
+      "mse_tolerance": 5e-05,
+      "smoothness_weight": 0.0,
+      "control_ridge": 0.0,
+      "interpolate_endpoints": true,
+      "declared_max_internal_knots": 32,
+      "declared_paper_initial_knots": 32,
+      "reference_doi": "10.4208/jcm.2012-m2020-0203",
+      "variant": "linf1_jump_sparsity_plus_differential_evolution",
+      "initial_internal_knot_count": 32,
+      "dense_initial_fit_mse": 5.845695748076454e-06,
+      "dense_initial_threshold_satisfied": true,
+      "selected_regularization": 5.264800859008414e-06,
+      "sparse_stage_mse": 4.996515014851188e-05,
+      "sparse_stage_threshold_satisfied": true,
+      "jump_local_maximum_eta": 0.5,
+      "candidate_internal_knot_count": 3,
+      "initial_to_candidate_compression_ratio": 0.09375,
+      "candidate_refit_mse_before_de": 0.0006197709995855995,
+      "candidate_refit_threshold_satisfied_before_de": false,
+      "candidate_selection_lost_sparse_feasibility": true,
+      "de_population": 10,
+      "de_iterations": 50,
+      "de_evaluations": 510,
+      "de_initial_max_error": 0.05641806975595058,
+      "de_final_max_error": 0.052342274810376545,
+      "de_restored_common_mse_feasibility": false,
+      "paper_native_objective": "nonsquared Frobenius data term plus l-infinity,1 derivative-jump penalty; DE minimizes maximum Euclidean error",
+      "comparison_wrapper": "regularization is selected against the common MSE budget and the final fit uses the common endpoint-constrained refit",
+      "method_fidelity": "repository mixed-norm, local-maximum selection, and DE stages; complete source-algorithm and numerical equivalence remain unverified",
+      "native_common_refit_mse": 0.0005913550986427644,
+      "native_common_refit_k": 3,
+      "native_common_refit_threshold_satisfied": false,
+      "comparison_method_capacity": 32,
+      "comparison_feasibility_safeguard_enabled": false,
+      "comparison_feasibility_safeguard_used": false,
+      "comparison_feasibility_safeguard_attempted": false,
+      "comparison_feasibility_safeguard_role": "disabled; unrepaired disclosed adaptation is reported, not the source-native method",
+      "comparison_feasibility_native_mse": 0.0005913550986427644,
+      "comparison_feasibility_native_k": 3,
+      "comparison_feasibility_final_mse": 0.0005913550986427644,
+      "comparison_feasibility_final_k": 3,
+      "comparison_feasibility_refit_count": 0,
+      "comparison_feasibility_added_knots": [],
+      "comparison_feasibility_final_source": "native",
+      "comparison_feasibility_capacity": 32,
+      "comparison_feasibility_threshold_satisfied": false,
+      "comparison_feasibility_status": "disabled",
+      "comparison_method_label": "unrepaired disclosed adaptation",
+      "baseline_protocol": "adaptation",
+      "baseline_provenance": {
+        "audit_version": "source_paper_audit_20260921_v1",
+        "method": "luo_linf_de_2022_adaptation",
+        "reproduction_status": "reproduction_unverified",
+        "native_available": false,
+        "native_comparison_available": false,
+        "implementation_origin": "repository_implementation",
+        "author_code_executed": false,
+        "reference_doi": "10.4208/jcm.2012-m2020-0203",
+        "source_url": "https://www.global-sci.com/JCM/article/view/12502",
+        "source_access": "publisher abstract and preview; full source/author-code equivalence not verified",
+        "author_code_url": null,
+        "author_code_sha256": null,
+        "known_departures": [
+          "Regularization is selected by a common-MSE search instead of a verified source-paper parameter protocol.",
+          "DE fitness and the reported spline use endpoint-constrained least squares; a source-native solver/output is not preserved.",
+          "Minimum-gap projections, random population initialization, and finite DE budgets are unverified implementation choices; the forced-largest-jump fallback is now disabled.",
+          "The ADMM realization, local-maxima edge cases, and DE variant have no author-code/paper-example equivalence validation."
+        ],
+        "audit_document": "docs/baseline_native_audit.md"
+      },
+      "reproduction_status": "reproduction_unverified",
+      "native_comparison_available": false,
+      "source_native_algorithm_executed": false,
+      "reported_geometry_scope": "repository adaptation with endpoint-constrained refit",
+      "legacy_native_fields_scope": "Historical native_* and comparison_feasibility_native_* keys describe pre-safeguard repository adaptations, not verified source-paper output.",
+      "threshold_satisfied": false,
+      "repeated_complete_timing": {
+        "repeats": 1,
+        "samples_ms": [
+          6965.202400053386
+        ],
+        "p50_ms": 6965.202400053386,
+        "mean_ms": 6965.202400053386
+      }
+    },
+    "error": null,
+    "baseline_protocol": "adaptation",
+    "provenance": {
+      "audit_version": "source_paper_audit_20260921_v1",
+      "method": "luo_linf_de_2022_adaptation",
+      "reproduction_status": "reproduction_unverified",
+      "native_available": false,
+      "native_comparison_available": false,
+      "implementation_origin": "repository_implementation",
+      "author_code_executed": false,
+      "reference_doi": "10.4208/jcm.2012-m2020-0203",
+      "source_url": "https://www.global-sci.com/JCM/article/view/12502",
+      "source_access": "publisher abstract and preview; full source/author-code equivalence not verified",
+      "author_code_url": null,
+      "author_code_sha256": null,
+      "known_departures": [
+        "Regularization is selected by a common-MSE search instead of a verified source-paper parameter protocol.",
+        "DE fitness and the reported spline use endpoint-constrained least squares; a source-native solver/output is not preserved.",
+        "Minimum-gap projections, random population initialization, and finite DE budgets are unverified implementation choices; the forced-largest-jump fallback is now disabled.",
+        "The ADMM realization, local-maxima edge cases, and DE variant have no author-code/paper-example equivalence validation."
+      ],
+      "audit_document": "docs/baseline_native_audit.md"
+    },
+    "source_kind": "procedural_cad_offset",
+    "source_note": "Procedurally generated CAD-style offset curves; not measured industrial data; no ground-truth B-spline knots.",
+    "dataset_label": "IndustrialOffset (procedural CAD; not measured)",
+    "split": "test",
+    "attempt_wall_ms": 6967.769099981524,
+    "timing_status": "completed_method"
+  },
+  "spline": {
+    "degree": 3,
+    "internal_knots": [
+      0.480191683254786,
+      0.4876403233760648,
+      0.5513145373435863
+    ],
+    "full_knot_vector": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.480191683254786,
+      0.4876403233760648,
+      0.5513145373435863,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "control_points_normalized": [
+      [
+        -0.9660242199897766,
+        -0.019077567383646965
+      ],
+      [
+        -0.46431331515723945,
+        -0.3179886629609831
+      ],
+      [
+        0.40167907027687694,
+        -0.1363876135327957
+      ],
+      [
+        1.0223013860458858,
+        -0.0151083271663338
+      ],
+      [
+        0.2951132110266316,
+        0.1508049644517424
+      ],
+      [
+        -0.48373764633833644,
+        0.36596277034622016
+      ],
+      [
+        -0.9660242199897766,
+        -0.019077567383646965
+      ]
+    ],
+    "sample_parameters": [
+      0.0,
+      0.00523024092538552,
+      0.010459252946955072,
+      0.01569208837667482,
+      0.02092758800596157,
+      0.026166449954046496,
+      0.03140670839440724,
+      0.036648248842787855,
+      0.04189034385672475,
+      0.04713267812672246,
+      0.05237514367769628,
+      0.05761771882364009,
+      0.06286036472586869,
+      0.06810302916737414,
+      0.07334572054775083,
+      0.07858844837137911,
+      0.08383118575377413,
+      0.0890739474781448,
+      0.0943166897378388,
+      0.09955945347291491,
+      0.10480221938915298,
+      0.11004498017001783,
+      0.11528775465256083,
+      0.12053052196294177,
+      0.12577330010805518,
+      0.13101608210181645,
+      0.1362588481542989,
+      0.14150162919243114,
+      0.14674442254177508,
+      0.1519872021715287,
+      0.1572299772774405,
+      0.1624727678552186,
+      0.16771553712435047,
+      0.17295830979797425,
+      0.1782010955252375,
+      0.18344387882920388,
+      0.18868663873196703,
+      0.19392942175711161,
+      0.19917220937888042,
+      0.20441499299696955,
+      0.20965776690502777,
+      0.21490054754958138,
+      0.2201433133803951,
+      0.22538609854665725,
+      0.23062888285120683,
+      0.23587165915527322,
+      0.24111443332577243,
+      0.24635721446974077,
+      0.2516000077220371,
+      0.25684278489068524,
+      0.2620855643898957,
+      0.2673283429499251,
+      0.2725711518794782,
+      0.2778139150795985,
+      0.28305667100010656,
+      0.2882994746901127,
+      0.29354227008658684,
+      0.29878502748970365,
+      0.3040278140952544,
+      0.3092706249366941,
+      0.3145133826134889,
+      0.31975616175774624,
+      0.32499898398246946,
+      0.33024173121752226,
+      0.33548451935324936,
+      0.3407273141696726,
+      0.34597007152377024,
+      0.3512128581200492,
+      0.3564556599496753,
+      0.3616984215727358,
+      0.3669412085670229,
+      0.372184004140306,
+      0.3774267330461094,
+      0.3826695258559026,
+      0.38791236592432576,
+      0.39315510173300416,
+      0.3983979196871629,
+      0.4036407162576103,
+      0.4088834794966213,
+      0.4141262828793992,
+      0.4193690311902094,
+      0.42461177383427684,
+      0.4298545736662983,
+      0.435097361294935,
+      0.4403401821735613,
+      0.4455829547009854,
+      0.45082572679877597,
+      0.45606849798666604,
+      0.46131131528503444,
+      0.46655404936369327,
+      0.4717968715698626,
+      0.47703963367203706,
+      0.4822824270369211,
+      0.4874945266886771,
+      0.4924798897563371,
+      0.49772264268715044,
+      0.5029654726039755,
+      0.5072196410618397,
+      0.5124624399803178,
+      0.5177052201705493,
+      0.5229479514167072,
+      0.5281907583940461,
+      0.533433483839818,
+      0.5386763343368758,
+      0.5439190869503927,
+      0.5491619486416592,
+      0.5544046650264982,
+      0.5596474374525106,
+      0.5648902591009755,
+      0.5701330173446236,
+      0.5753758029790387,
+      0.5806185762877253,
+      0.5858612924251148,
+      0.5911041915937012,
+      0.5963468707009439,
+      0.6015897046475421,
+      0.6068324937840612,
+      0.6120751955809002,
+      0.617318064673474,
+      0.6225608225621161,
+      0.6278035695252214,
+      0.6330463719718633,
+      0.6382891759375093,
+      0.6435319310369905,
+      0.6487746766044045,
+      0.6540175580150246,
+      0.659260255220563,
+      0.6645030767871608,
+      0.6697458463782973,
+      0.6749885609254552,
+      0.6802314282712071,
+      0.6854741809330211,
+      0.6907169361517361,
+      0.6959597717597844,
+      0.7012025409537334,
+      0.7064453440600962,
+      0.7116880440947958,
+      0.7169309318471047,
+      0.7221736081431639,
+      0.7274163900629054,
+      0.732659208482025,
+      0.737901941519229,
+      0.7431447568967611,
+      0.7483874714673348,
+      0.7536302608202268,
+      0.7588730971483106,
+      0.7641158569732457,
+      0.7693586443959761,
+      0.7746013984765834,
+      0.7798441918871518,
+      0.7850869655503724,
+      0.7903297633751333,
+      0.7955725319677631,
+      0.80081524474056,
+      0.8060580223720687,
+      0.8113008195712221,
+      0.8165435827748213,
+      0.8217863543313288,
+      0.8270291901596075,
+      0.8322719075382986,
+      0.8375146322787568,
+      0.842757399739743,
+      0.8480001573485424,
+      0.8532429220976855,
+      0.8584856651183699,
+      0.8637283582501109,
+      0.8689710683808738,
+      0.8742138357997575,
+      0.879456553173685,
+      0.8846993528271666,
+      0.8899420085936295,
+      0.8951847818063218,
+      0.9004274462749976,
+      0.9056701725481541,
+      0.9109128873801832,
+      0.9161555756816573,
+      0.9213982954000148,
+      0.9266407970400469,
+      0.9318834774668344,
+      0.9371260606931432,
+      0.9423687548187751,
+      0.9476112782768785,
+      0.9528536885538449,
+      0.9580959727612945,
+      0.9633381898360596,
+      0.9685801839063487,
+      0.9738216619595692,
+      0.9790623150433332,
+      0.9843006558878564,
+      0.9895369593292282,
+      0.9947692318975528,
+      1.0
+    ],
+    "control_points_original": [
+      [
+        -3.3187050579645074,
+        0.6418860348131545
+      ],
+      [
+        39.55738974943063,
+        -24.902985223733694
+      ],
+      [
+        113.56489339886585,
+        -9.38340265654918
+      ],
+      [
+        166.6031291521411,
+        0.9810963613809018
+      ],
+      [
+        104.45780036892634,
+        15.160006870806788
+      ],
+      [
+        37.89739101855005,
+        33.54734187832858
+      ],
+      [
+        -3.3187050579645074,
+        0.6418860348131545
+      ]
+    ]
+  },
+  "geometry_evaluation_error": null,
+  "errors_normalized": {
+    "mse": 0.0005913550986427644,
+    "max_squared_error": 0.002739713732324979,
+    "reference_mse": 0.0005944984592834526,
+    "reference_max_squared_error": 0.002756626746239446
+  },
+  "errors_original": {
+    "mse": 4.31888568940976,
+    "max_squared_error": 20.00914587322385,
+    "reference_mse": 4.341842818415462,
+    "reference_max_squared_error": 20.13266788889198
+  },
+  "arrays_file": "e7a14e5ee1a8f1c26203.npz",
+  "arrays_sha256": "11c7c2bd992cb8fb8d462e3bfe32e5e7275586bf4a4482e6d5106ca1b9636381",
+  "array_shapes": {
+    "sample_parameters": [
+      192
+    ],
+    "internal_knots": [
+      3
+    ],
+    "full_knot_vector": [
+      11
+    ],
+    "control_points_normalized": [
+      7,
+      2
+    ],
+    "fitted_input_normalized": [
+      192,
+      2
+    ],
+    "input_residual_vectors_normalized": [
+      192,
+      2
+    ],
+    "input_squared_residuals_normalized": [
+      192
+    ],
+    "dense_parameters": [
+      512
+    ],
+    "dense_curve_normalized": [
+      512,
+      2
+    ],
+    "knot_positions_normalized": [
+      3,
+      2
+    ],
+    "reference_parameters": [
+      768
+    ],
+    "fitted_reference_normalized": [
+      768,
+      2
+    ],
+    "reference_residual_vectors_normalized": [
+      768,
+      2
+    ],
+    "reference_squared_residuals_normalized": [
+      768
+    ],
+    "control_points_original": [
+      7,
+      2
+    ],
+    "fitted_input_original": [
+      192,
+      2
+    ],
+    "input_residual_vectors_original": [
+      192,
+      2
+    ],
+    "input_squared_residuals_original": [
+      192
+    ],
+    "dense_curve_original": [
+      512,
+      2
+    ],
+    "knot_positions_original": [
+      3,
+      2
+    ],
+    "fitted_reference_original": [
+      768,
+      2
+    ],
+    "reference_residual_vectors_original": [
+      768,
+      2
+    ],
+    "reference_squared_residuals_original": [
+      768
+    ]
+  },
+  "timing_scope": "Export, dense evaluation, metrics and plotting are excluded from successful method/network timings. The spline is from the final timed repetition; reported times are medians of all recorded timed repetitions.",
+  "coordinate_error_scaling": "Original-coordinate squared errors = normalized squared errors * scalar_scale**2; reported benchmark pass/fail uses normalized input MSE only."
+}

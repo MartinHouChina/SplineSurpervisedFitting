@@ -18,7 +18,7 @@ def argument(command, key):
     return command[command.index(key) + 1]
 
 
-def test_formal_plan_keeps_two_independent_capacities_and_truthful_native_policy():
+def test_formal_plan_keeps_two_independent_capacities_and_runs_unrepaired_baselines():
     plan = entry.build_plan(options())
     assert plan["run_count"] == 2
     for run in plan["runs"]:
@@ -27,13 +27,23 @@ def test_formal_plan_keeps_two_independent_capacities_and_truthful_native_policy
         assert f"m{run['capacity']}.pt" in argument(command, "--warm-start-checkpoint")
         assert argument(command, "--epochs") == "60"
         assert argument(command, "--proposal-epochs") == "12"
-        assert argument(command, "--baseline-protocol") == "native"
+        assert argument(command, "--baseline-protocol") == "adaptation"
         assert "--paper-output" in command and "--native-baselines" in command
         assert "--resize-candidate-warm-start" not in command
         assert argument(command, "--coupled-proposal-steps") == "2"
         assert argument(command, "--coupled-subset-steps") == "2"
         assert argument(command, "--joint-decoder-lr-scale") == "0.25"
         assert argument(command, "--real-samples-per-dataset") == "100"
+    assert "unverified" in plan["native_fidelity"]
+    assert "no watermarks" in plan["figure_policy"]
+
+
+def test_strict_native_audit_remains_explicit_opt_in():
+    plan = entry.build_plan(options("--baseline-protocol", "native"))
+    assert plan["baseline_protocol"] == "native"
+    assert "unavailable" in plan["native_fidelity"]
+    assert all(argument(run["command"], "--baseline-protocol") == "native"
+               for run in plan["runs"])
 
 
 def test_all_real_records_is_explicit_and_dry_run_does_not_read_weights(tmp_path):

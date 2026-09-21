@@ -54,8 +54,8 @@ _PROVENANCE = {
         (
             "Only simple knots are optimized; the author's multiplicity 1..degree+1 and joining-angle/continuity classifier are absent.",
             "Only serial splitting is implemented; parallel split/join/shift is absent (serial is itself a published variant).",
-            "Capacity overflow uniformly discards coarse breaks; this is not an author-code operation.",
-            "The final endpoint-constrained refit changes the author's unconstrained least-squares spline.",
+            "The shared comparison knot budget is external to the source algorithm; overflow now fails explicitly rather than silently subsampling coarse breaks.",
+            "The returned final curve now preserves unconstrained least squares; multiplicity and solver equivalence remain unverified.",
             "sqrt(mse_tolerance) is not an equivalent native maximum-error constraint; finite-difference solver/search and short-tail guards are repository choices.",
         ),
         author_code_url="https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0173857.s006&type=supplementary",
@@ -67,9 +67,9 @@ _PROVENANCE = {
         "full primary article inspected in existing tmp/Kang2015.pdf",
         (
             "Scalar constrained l1 optimization is changed to vector group-l1 with approximate ADMM/penalty bisection instead of the source CVX solve.",
-            "Algorithms 1/3 (repeated convex solves for general-data relocation) are absent; long active runs are returned without that stage.",
-            "The degree+1 cluster-size gate, 1.25 spacing factor, singleton interval search, and absolute/relative jump cutoffs are repository choices.",
-            "The comparison wrapper replaces the final unconstrained spline by an endpoint-constrained refit.",
+            "The default remains a limited Algorithms-4/5 adaptation; experimental Algorithms 1/3 reuse vector group-l1 finite ADMM and can become infeasible at the source's fixed initial error after merges.",
+            "An absolute floating-point jump cutoff remains a solver setting; relative-maximum filtering, degree+1 retention, expanded spacing, and singleton interval search are disabled by default.",
+            "The final unconstrained spline is now preserved; numerical equivalence with the original scalar objective and author examples remains unverified.",
         ),
     ),
     "luo_linf_de_2022_adaptation": _Provenance(
@@ -79,7 +79,7 @@ _PROVENANCE = {
         (
             "Regularization is selected by a common-MSE search instead of a verified source-paper parameter protocol.",
             "DE fitness and the reported spline use endpoint-constrained least squares; a source-native solver/output is not preserved.",
-            "Fallback to the largest jump when no peak survives, minimum-gap projections, random population initialization, and finite DE budgets are unverified implementation choices.",
+            "Minimum-gap projections, random population initialization, and finite DE budgets are unverified implementation choices; the forced-largest-jump fallback is now disabled.",
             "The ADMM realization, local-maxima edge cases, and DE variant have no author-code/paper-example equivalence validation.",
         ),
     ),

@@ -51,6 +51,18 @@ def test_candidate_window_matches_algorithm31_interior_index_range() -> None:
     torch.testing.assert_close(candidates, knots[2:3])
 
 
+def test_empty_candidate_set_does_not_force_global_jump_maximum() -> None:
+    knots = torch.linspace(0.1, 0.9, 5, dtype=torch.float64)
+    jumps = torch.arange(1.0, 6.0, dtype=torch.float64).unsqueeze(1)
+    indices, candidates, _ = _local_maximum_candidates(knots, jumps, eta=0.5)
+    assert indices.numel() == candidates.numel() == 0
+    old_indices, old_candidates, _ = _local_maximum_candidates(
+        knots, jumps, eta=0.5, force_nonempty_candidates=True,
+    )
+    torch.testing.assert_close(old_indices, torch.tensor([4]))
+    torch.testing.assert_close(old_candidates, knots[4:5])
+
+
 def test_luo_two_stage_adaptation_is_deterministic_and_refits_endpoints() -> None:
     parameters, points = _curve()
     options = dict(

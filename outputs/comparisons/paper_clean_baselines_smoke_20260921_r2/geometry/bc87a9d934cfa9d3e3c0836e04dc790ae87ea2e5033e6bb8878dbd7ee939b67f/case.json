@@ -1,0 +1,90 @@
+{
+  "schema_version": "paired_measured_geometry_v1",
+  "fingerprint": "b404d2737aee31006bc57ac62f460ceac8dc730698bbd77c4205d24cec61edd8",
+  "dataset": "UJI",
+  "sample_id": "uji2_07539_stroke_00",
+  "group_id": "tst_UPV_W39",
+  "split": "test",
+  "source_kind": "observed_or_derived_real_world",
+  "source_note": "External held-out observations; no ground-truth B-spline knots.",
+  "dataset_label": "UJI",
+  "source_k": null,
+  "canonical_k": null,
+  "source_dataset": "uji_pen_characters_v2",
+  "source_manifest": "E:\\SelfSurpervisedSplineFitting\\data\\splits\\uji_pen_v2.jsonl",
+  "source_manifest_record": {
+    "group_id": "tst_UPV_W39",
+    "has_knot_labels": false,
+    "metadata": {
+      "character": "!",
+      "consecutive_duplicates_removed": 1,
+      "coordinate_orientation": "x_right_y_down",
+      "coordinate_units": "millimetres",
+      "group_strategy": "writer_disjoint_official_test",
+      "knot_label_policy": "absent_not_inferred_from_polyline_vertices",
+      "native_units_per_millimetre": 152.0,
+      "official_partition": "tst",
+      "pen_up_joined": false,
+      "preprocessing_version": "uji-stroke-curves-v1",
+      "raw_num_points": 22,
+      "repetition": "02",
+      "session_id": "tst_UPV_W39-02",
+      "short_writer_id": "W39",
+      "site": "UPV",
+      "source_line": 30854,
+      "source_sample_id": "tst_UPV_W39-02:U+0021",
+      "source_sample_index": 7539,
+      "source_sha256": "cc56f72f8477e763dd06a44746ba05a679e9232468aac93b3a7aad46a0300d61",
+      "source_url": "https://archive.ics.uci.edu/static/public/177/uji%2Bpen%2Bcharacters%2Bversion%2B2.zip",
+      "source_version": "UCI dataset 177",
+      "stroke_count": 2,
+      "stroke_index": 0,
+      "writer_id": "tst_UPV_W39"
+    },
+    "num_points": 21,
+    "point_dim": 2,
+    "points_path": "../processed/uji_pen_v2/curves/uji2_07539_stroke_00.npy",
+    "sample_id": "uji2_07539_stroke_00",
+    "source_dataset": "uji_pen_characters_v2",
+    "split": "test"
+  },
+  "source_points_path": "E:\\SelfSurpervisedSplineFitting\\data\\splits\\..\\processed\\uji_pen_v2\\curves\\uji2_07539_stroke_00.npy",
+  "source_points_sha256": "5becd7f7ccae660226dece41a84191d2f1340c90350ad1aec081ba0623afe8ec",
+  "normalization": {
+    "available": true,
+    "definition": "normalized = (original - center) / scalar_scale",
+    "center": [
+      3.7792320251464844,
+      7.271541118621826
+    ],
+    "scale": 2.362170696258545,
+    "original_input_note": "Inverse transformed actual model inputs; may differ from pre-normalization resampling by floating-point rounding."
+  },
+  "arrays_file": "case.npz",
+  "arrays_sha256": "3b549d248cfc098cd8d2cd28a9f4b0490d1d0edc4a1ef618628c2945d50c8919",
+  "array_shapes": {
+    "input_points_normalized": [
+      192,
+      2
+    ],
+    "normalization_center": [
+      2
+    ],
+    "normalization_scale": [],
+    "input_points_original": [
+      192,
+      2
+    ],
+    "reference_points_normalized": [
+      21,
+      2
+    ],
+    "reference_chord_parameters": [
+      21
+    ],
+    "reference_points_original": [
+      21,
+      2
+    ]
+  }
+}

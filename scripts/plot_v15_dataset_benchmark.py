@@ -121,13 +121,6 @@ def _network_caption(index: dict, datasets: list[str]) -> str:
     )
 
 
-def _diagnostic_label(metadata: dict) -> str:
-    qualification = metadata.get("checkpoint_qualification") or {}
-    if metadata.get("configuration", {}).get("force_diagnostic") and qualification.get("formal_reporting_eligible"):
-        return "DIAGNOSTIC NOT FINAL — REDUCED BENCHMARK PROTOCOL"
-    return "DIAGNOSTIC NOT FINAL — CHECKPOINT / PROTOCOL NOT QUALIFIED"
-
-
 def published_safeguard_mode(metadata: dict) -> bool | None:
     """Missing historical metadata is unknown, never an enabled repair."""
     protocol = metadata.get("published_baseline_protocol", {})
@@ -155,8 +148,8 @@ def published_protocol_caption(metadata: dict) -> str:
         return ("Dung/Kang/Luo: threshold-safe adaptations, not paper-original algorithms; "
                 "extra repair refits included in total time. Native/final K, MSE and refits: native_baseline_summary.csv.")
     if mode is False:
-        return ("Published methods: disclosed native repository adaptations; common-MSE safeguard disabled; "
-                "Kang long-cluster correction retained. Not exact paper reproductions.")
+        return ("Published methods: disclosed repository adaptations; common-MSE safeguard disabled. "
+                "Not exact paper reproductions.")
     return ("Published methods: disclosed repository adaptations, not exact paper reproductions. "
             "Historical report does not record a feasibility-safeguard policy.")
 
@@ -172,7 +165,6 @@ def render_report(report: dict, output_dir: Path, *, dpi: int = 220, reference: 
     index = {(row["dataset"], row["method"]): row for row in rows}
     methods = [method for method in METHODS if any((name, method) in index for name in datasets)]
     tolerance = metadata["mse_tolerance"]
-    diagnostic = bool(metadata.get("diagnostic_not_final", False))
     mse_key = "reference_mse_mean" if reference else "mse_mean"
     pass_key = "reference_pass_rate" if reference else "fit_pass_rate"
     metric_keys = (mse_key, pass_key, "total_ms_mean")
@@ -194,12 +186,6 @@ def render_report(report: dict, output_dir: Path, *, dpi: int = 220, reference: 
             f"{_num_points(metadata)} input points per curve"
         )
         fig.text(0.5, 0.914, subtitle, ha="center", fontsize=11.5, color="#444444")
-        if diagnostic:
-            fig.text(
-                0.5, 0.5, _diagnostic_label(metadata),
-                ha="center", va="center", rotation=24, fontsize=30,
-                color="crimson", alpha=0.20, weight="bold", zorder=100,
-            )
         legend = [Patch(facecolor=COLORS[method], label=labels[method]) for method in methods]
         fig.legend(
             handles=legend,

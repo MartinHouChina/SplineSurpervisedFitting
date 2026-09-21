@@ -62,7 +62,7 @@ def _run(method: str, **kwargs: object) -> baselines.PublishedBaselineResult:
 
 
 @pytest.mark.parametrize("method", baselines.COMPARISON_BASELINE_METHODS)
-def test_baselines_report_common_endpoint_refit_and_euclidean_mse(method: str) -> None:
+def test_baselines_report_actual_spline_and_euclidean_mse(method: str) -> None:
     result = _run(method)
     points = _points()
     fit = result.fit
@@ -72,7 +72,7 @@ def test_baselines_report_common_endpoint_refit_and_euclidean_mse(method: str) -
         fit.internal_knots,
         smoothness_weight=0.0,
         control_ridge=0.0,
-        interpolate_endpoints=True,
+        interpolate_endpoints=result.diagnostics["interpolate_endpoints"],
     )
 
     assert result.method == method
@@ -80,14 +80,16 @@ def test_baselines_report_common_endpoint_refit_and_euclidean_mse(method: str) -
     torch.testing.assert_close(fit.fit_mse, reference.fit_mse, atol=1e-14, rtol=1e-10)
     expected_mse = (fit.reconstructed_points - points).square().sum(dim=-1).mean()
     torch.testing.assert_close(fit.fit_mse, expected_mse)
-    torch.testing.assert_close(fit.reconstructed_points[[0, -1]], points[[0, -1]])
+    if result.diagnostics["interpolate_endpoints"]:
+        torch.testing.assert_close(fit.reconstructed_points[[0, -1]], points[[0, -1]])
     assert result.diagnostics["network_used"] is False
     assert result.diagnostics["threshold_satisfied"] == (float(expected_mse) <= 1e-4)
     if method == "kang_sparse_2015_adaptation":
         assert result.diagnostics["non_paper_feasibility_repair_enabled"] is False
         assert result.diagnostics["paper_feasibility_repair_used"] is False
         assert "native_final_fit_mse_without_endpoint_constraint" in result.diagnostics
-        assert result.diagnostics["native_endpoint_constrained_mse"] == float(fit.fit_mse)
+        assert result.diagnostics["native_endpoint_constrained_mse"] is None
+        assert result.diagnostics["post_algorithm_endpoint_refit_applied"] is False
         assert result.diagnostics["relocated_internal_knot_count"] == sum(
             result.diagnostics["relocated_knot_multiplicities"]
         )
@@ -125,7 +127,7 @@ def test_repository_numerical_control_is_not_mislabeled_as_published() -> None:
     assert baselines.PUBLISHED_BASELINE_METHODS == baselines.PUBLISHED_ADAPTATION_METHODS
 
 
-def test_timing_encloses_parameterization_search_and_common_final_refit(monkeypatch) -> None:
+def test_kang_timing_encloses_algorithm_without_extra_endpoint_refit(monkeypatch) -> None:
     events: list[str] = []
 
     def clock() -> float:
@@ -158,7 +160,7 @@ def test_timing_encloses_parameterization_search_and_common_final_refit(monkeypa
     monkeypatch.setattr(baselines, "refit_bspline_control_points", refit)
     result = _run("kang_sparse_2015_adaptation")
 
-    assert events == ["start", "parameterization", "search", "common_refit", "stop"]
+    assert events == ["start", "parameterization", "search", "stop"]
     assert result.elapsed_ms == 3000.0
 
 
@@ -238,7 +240,9 @@ def test_common_safeguard_recovers_collapsed_published_adaptations(
         published_feasibility_safeguard=False,
         **options,
     )
-    safeguarded = baselines.run_published_baseline(method, points, **options)
+    safeguarded = baselines.run_published_baseline(
+        method, points, published_feasibility_safeguard=True, **options
+    )
 
     assert float(native.fit.fit_mse) > options["mse_tolerance"]
     assert float(safeguarded.fit.fit_mse) <= options["mse_tolerance"] + 1e-12
@@ -257,25 +261,19 @@ def test_common_safeguard_recovers_collapsed_published_adaptations(
     ]
 
 
-def test_kang_general_data_skips_invalid_cluster_collapse() -> None:
+def test_kang_fixed_error_infeasibility_is_reported_without_nonpaper_rescue() -> None:
     points = _collapse_regression_points()
-    result = baselines.run_published_baseline(
-        "kang_sparse_2015_adaptation",
-        points,
-        mse_tolerance=1e-4,
-        max_internal_knots=28,
-        paper_initial_knots=28,
-        paper_admm_iterations=15,
-        paper_lambda_bisections=1,
-        paper_relocation_iterations=1,
-    )
-
-    assert result.diagnostics["cluster_sizes"] == (28,)
-    assert result.diagnostics["algorithm4_cluster_relocation_applied"] is False
-    assert "skipped" in result.diagnostics["relocation_method"]
-    assert result.diagnostics["comparison_feasibility_safeguard_used"] is False
-    assert result.fit.internal_knots.numel() == 28
-    assert float(result.fit.fit_mse) <= 1e-4
+    # This concrete curve previously received a hidden long-cluster retention
+    # repair. The source fixed-Err test becomes infeasible after earlier merges
+    # under the finite vector solver. Do not raise Err or return a repaired fit.
+    with pytest.raises(ValueError, match="Kang Algorithm 3 interval sparse solve is infeasible"):
+        baselines.run_published_baseline(
+            "kang_sparse_2015_adaptation", points,
+            mse_tolerance=1e-4, max_internal_knots=28, paper_initial_knots=28,
+            paper_admm_iterations=15, paper_lambda_bisections=1,
+            paper_relocation_iterations=1,
+            paper_relocation_algorithm="general",
+        )
 
 
 def test_unknown_method_and_wrong_numeric_dtype_are_rejected() -> None:

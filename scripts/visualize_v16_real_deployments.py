@@ -1,8 +1,8 @@
 """Visualize v16 deployments and independent baselines on held-out curves.
 
 Each PNG uses the same normalized ordered observations for all selected methods.
-The plotted curve is the final endpoint-constrained, unregularized standard
-B-spline fit.  Original reference observations are evaluation-only and never
+The plotted curve and errors come from each method's returned final fit;
+no display-only refit or repair is applied. Original reference observations are evaluation-only and never
 participate in a refit.  ``--ours-only`` produces paper-ready single-method
 figures with indexed control vertices and an explicit internal-knot strip.
 """
@@ -99,8 +99,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--method-set", choices=("legacy", "published"), default="legacy")
     result.add_argument(
         "--published-feasibility-safeguard", action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Enable disclosed threshold-safe Dung/Kang/Luo adaptations; include every repair refit in complete timing",
+        default=False,
+        help="Historical opt-in threshold-safe Dung/Kang/Luo repairs; disabled by default and every repair refit is timed",
     )
     result.add_argument("--force-diagnostic", action="store_true",
                         help="Mark reduced-budget case studies as diagnostic")
@@ -130,7 +130,7 @@ def parser() -> argparse.ArgumentParser:
         "--allow-unqualified-diagnostic", action="store_true",
         help=(
             "Permit a proposal-stage or target-not-met joint checkpoint for troubleshooting only. "
-            "Every PNG and report is marked DIAGNOSTIC NOT FINAL."
+            "Qualification remains recorded in the report; PNGs have no watermark."
         ),
     )
     result.add_argument(
@@ -148,7 +148,7 @@ def validate_checkpoint_for_visualization(
     checkpoint: dict, *, allow_unqualified_diagnostic: bool,
     required_mse_tolerance: float | None = None,
 ) -> bool:
-    """Return whether results require an unqualified-checkpoint watermark."""
+    """Return whether the report must record unqualified-checkpoint status."""
     objective = checkpoint.get("objective_version")
     if objective != V16_COUNTERFACTUAL_SUBSET_OBJECTIVE_VERSION:
         raise ValueError(
@@ -166,7 +166,7 @@ def validate_checkpoint_for_visualization(
             "v16 checkpoint is not eligible for formal reporting: "
             + "; ".join(qualification["reasons"])
             + "; use a qualified final checkpoint, or pass "
-            "--allow-unqualified-diagnostic for visibly watermarked troubleshooting"
+            "--allow-unqualified-diagnostic for troubleshooting recorded in the report"
         )
     return not qualified
 
@@ -239,8 +239,8 @@ def _run_method(method, *, model, points, case, device, args, objective_version)
         raise RuntimeError("method produced a non-finite fit metric")
     return {
         "method": method,
-        "label": _method_label(method, safeguard_enabled=getattr(args, "published_feasibility_safeguard", True)),
-        "published_feasibility_safeguard": getattr(args, "published_feasibility_safeguard", True),
+        "label": _method_label(method, safeguard_enabled=getattr(args, "published_feasibility_safeguard", False)),
+        "published_feasibility_safeguard": getattr(args, "published_feasibility_safeguard", False),
         "fit": fit,
         "parameters": parameters,
         **errors,
@@ -445,12 +445,6 @@ def plot_ours_case(
         f"Held-out Ours deployment: {case.get('dataset_label', case['dataset'])} / {case['sample_id']}",
         fontsize=14,
     )
-    if diagnostic:
-        figure.text(
-            0.5, 0.5, "DIAGNOSTIC NOT FINAL - CHECKPOINT / PROTOCOL NOT QUALIFIED",
-            ha="center", va="center", rotation=24, fontsize=30,
-            color="crimson", alpha=0.22, weight="bold", zorder=100,
-        )
     try:
         figure.savefig(path, dpi=dpi)
     finally:
@@ -500,12 +494,6 @@ def plot_ours_overview(
         fontsize=8, frameon=True,
     )
     figure.tight_layout(rect=(0.0, 0.075, 1.0, 0.96))
-    if diagnostic:
-        figure.text(
-            0.5, 0.5, "DIAGNOSTIC NOT FINAL - CHECKPOINT / PROTOCOL NOT QUALIFIED",
-            ha="center", va="center", rotation=24, fontsize=32,
-            color="crimson", alpha=0.22, weight="bold", zorder=100,
-        )
     try:
         figure.savefig(path, dpi=dpi, bbox_inches="tight")
     finally:
@@ -561,8 +549,7 @@ def plot_case(path: Path, *, case: dict, results: list[dict],
             has_fit_legend = True
     title = (
         f"Held-out external curve: {case.get('dataset_label', case['dataset'])} / {case['sample_id']}\n"
-        f"shared MSE tolerance={tolerance:.3e}; endpoint-constrained, "
-        "unregularized standard B-spline fits\n"
+        f"shared MSE tolerance={tolerance:.3e}; curves and errors from each method's returned fit\n"
         "max SE = maximum observed-point squared Euclidean error (no square root; not the MSE pass criterion)"
     )
     if any(result.get("published_feasibility_safeguard") and result["method"] in SAFEGUARDED_PUBLISHED_METHODS for result in results):
@@ -571,12 +558,6 @@ def plot_case(path: Path, *, case: dict, results: list[dict],
         title += "\n" + capacity_note
     title = "\n".join(textwrap.fill(line, width=56 * columns) for line in title.splitlines())
     figure.suptitle(title, fontsize=15)
-    if diagnostic:
-        figure.text(
-            0.5, 0.5, "DIAGNOSTIC NOT FINAL — CHECKPOINT / PROTOCOL NOT QUALIFIED",
-            ha="center", va="center", rotation=24, fontsize=32,
-            color="crimson", alpha=0.22, weight="bold", zorder=100,
-        )
     try:
         figure.savefig(path, dpi=dpi)
     finally:
@@ -705,8 +686,8 @@ def run(args: argparse.Namespace) -> dict:
             except (RuntimeError, ValueError) as error:
                 result = {
                     "method": method,
-                    "label": _method_label(method, safeguard_enabled=getattr(args, "published_feasibility_safeguard", True)),
-                    "published_feasibility_safeguard": getattr(args, "published_feasibility_safeguard", True),
+                    "label": _method_label(method, safeguard_enabled=getattr(args, "published_feasibility_safeguard", False)),
+                    "published_feasibility_safeguard": getattr(args, "published_feasibility_safeguard", False),
                     "status": "failed",
                     "error": f"{type(error).__name__}: {error}",
                     "fit": None,
@@ -797,6 +778,7 @@ def run(args: argparse.Namespace) -> dict:
             "checkpoint_quality": checkpoint.get("checkpoint_quality"),
             "checkpoint_qualification": qualification,
             "diagnostic_not_final": diagnostic,
+            "watermark_rendered": False,
             "unequal_capacity_ablation": unequal_capacity_ablation,
             "capacity_comparison_note": capacity_note,
             "mse_tolerance": args.mse_tolerance,

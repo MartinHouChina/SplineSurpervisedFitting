@@ -23,7 +23,7 @@ def _oscillating_curve(sample_count: int = 49) -> torch.Tensor:
     )
 
 
-def test_straight_curve_uses_native_max_error_and_common_endpoint_refit() -> None:
+def test_straight_curve_preserves_algorithm_least_squares_output() -> None:
     parameter = torch.linspace(0.0, 1.0, 17, dtype=torch.float64)
     points = torch.stack([parameter, 2.0 * parameter - 0.3], dim=-1)
     result = fit_dung_direct_knots(
@@ -41,6 +41,8 @@ def test_straight_curve_uses_native_max_error_and_common_endpoint_refit() -> Non
     assert result.scan_evaluations == result.optimization_evaluations == 0
     assert result.capacity_handling == "none"
     assert result.diagnostics["native_control_norm"] == "maximum Euclidean point residual"
+    assert result.final_fit is result.native_fit
+    assert result.diagnostics["interpolate_endpoints"] is False
     torch.testing.assert_close(result.final_fit.reconstructed_points[0], points[0])
     torch.testing.assert_close(result.final_fit.reconstructed_points[-1], points[-1])
 
@@ -79,6 +81,7 @@ def test_capacity_overflow_is_explicit_and_uniformly_subsampled() -> None:
         max_internal_knots=1,
         scan_intervals=2,
         optimization_iterations=1,
+        capacity_policy="uniform_subsample",
     )
 
     assert result.proposed_internal_knot_count > 1
@@ -88,6 +91,14 @@ def test_capacity_overflow_is_explicit_and_uniformly_subsampled() -> None:
     assert result.diagnostics["retained_internal_knot_count"] == 1
     assert "capacity overflow" in " ".join(result.adaptation_limits)
     assert torch.isfinite(result.final_fit.fit_mse)
+
+
+def test_default_capacity_overflow_does_not_silently_discard_boundaries() -> None:
+    with pytest.raises(ValueError, match="capacity limit exceeded"):
+        fit_dung_direct_knots(
+            _oscillating_curve(57), mse_tolerance=1e-8, max_error=1e-4,
+            max_internal_knots=1, scan_intervals=2, optimization_iterations=1,
+        )
 
 
 @pytest.mark.parametrize(

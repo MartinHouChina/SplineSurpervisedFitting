@@ -88,10 +88,10 @@ def test_unknown_baseline_has_no_implicit_native_certification() -> None:
         baseline_provenance("kang_sparse_2015_original")
 
 
-def test_historical_adaptation_defaults_are_preserved() -> None:
+def test_current_adaptations_run_without_extra_repair_by_default() -> None:
     parameters = inspect.signature(baselines.run_published_baseline).parameters
     assert parameters["baseline_protocol"].default == "adaptation"
-    assert parameters["published_feasibility_safeguard"].default is True
+    assert parameters["published_feasibility_safeguard"].default is False
 
 
 @pytest.mark.parametrize("method", baselines.PUBLISHED_ADAPTATION_METHODS)
