@@ -1,20 +1,17 @@
-\documentclass[11pt,a4paper]{article}
-\usepackage[margin=25mm]{geometry}
+\documentclass[preprint,12pt]{elsarticle}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{amsmath,amssymb,bm,booktabs,tabularx}
-\usepackage[numbers,sort&compress]{natbib}
 \usepackage[colorlinks=true,allcolors=blue]{hyperref}
 \newcommand{\MSE}{\operatorname{MSE}}
 \newcommand{\Peak}{\operatorname{MaxSqErr}}
 \newcommand{\todo}[1]{\par\noindent\textbf{To complete:} #1\par}
-\title{Learning Compact B-Spline Representations through\\
+\journal{Computer-Aided Design}
+\begin{document}
+\begin{frontmatter}
+\title{Learning Compact B-Spline Representations through
 Candidate Selection and Subset-Conditioned Geometry}
 \author{Author names and affiliations to be supplied}
-\date{Working manuscript framework --- 21 September 2026}
-
-\begin{document}
-\maketitle
 \begin{abstract}
 Selecting a compact knot vector while preserving approximation accuracy is a
 coupled discrete--continuous problem. We describe a learned pipeline that maps
@@ -33,8 +30,11 @@ representations. Established components are therefore separated from planned
 depth, capacity, and peak-error ablations, without claiming universal
 feasibility or globally minimal knot count.
 \end{abstract}
-\noindent\textbf{Keywords:} B-spline fitting; knot selection; parameterization;
-geometric learning; counterfactual supervision.
+\begin{keyword}
+B-spline fitting \sep knot selection \sep parameterization \sep
+geometric learning \sep counterfactual supervision
+\end{keyword}
+\end{frontmatter}
 
 \section{Introduction}
 Ordered point sequences arise in digitized curves, map polylines, and
@@ -64,8 +64,8 @@ subsequently refine the representation. Luo et al.~\cite{luo2022} combine an
 $\ell_{\infty,1}$ sparse stage and differential evolution. The last reference
 is the sparse/DE paper, not another deep-learning paper of the same year.
 
-The repository implements disclosed adaptations, sharing a final-refit and
-evaluation protocol but not every native objective, continuity model, or
+The repository implements disclosed adaptations, sharing input and
+evaluation definitions but not every native objective, continuity model, or
 solver. Comparing these implementations is not an exact reproduction of the
 authors' published results.
 \todo{Extend the learning-related discussion using verified primary references.
@@ -114,6 +114,16 @@ parameter-positioned point features. The CandidateKnotHead produces
 $K_c$ ordered interior coordinates $\bm U^{(p)}$ and tokens $\bm h_j$.
 These are learned proposals, not necessarily exact shape-preserving Boehm
 insertions. An explicit redundant input spline is not required at deployment.
+For one attention head, the local geometric readout has the form
+\begin{equation}
+ A_{ji}=\operatorname{softmax}_{i}\left(
+ \frac{(W_Qh_j)^\top(W_KF_i)}{\sqrt{d_h}}
+ -\frac{(t_i-u_j)^2}{2\sigma^2}\right),\qquad
+ \widehat h_j=\sum_i A_{ji}W_VF_i.
+\end{equation}
+Positional encodings, learned projections, residual connections, and
+normalization are included in the implementation. The Gaussian term is a
+locality bias, not a guarantee that attention finds curvature extrema.
 
 \subsection{Adaptive selection and variable cardinality}
 Candidate interaction combines point memory, neighborhood coverage features,
@@ -162,6 +172,34 @@ simultaneous updates. Unlike the historical decoder, the anchored path has
 no compulsory attraction toward uniformly spaced retained ranks.
 Residual scale zero preserves proposal geometry.
 
+\subsection{Fixed-depth numerical coupling}
+Feature refinement and coordinate refinement are distinct. The current
+training profile adds two numerical proposal blocks and two numerical
+survivor blocks. Each block receives the updated coordinates and features
+from its predecessor; the survivor blocks keep the same discrete mask.
+Let $c_i$ be normalized cumulative chord length and $g_i=t_{i+1}-t_i$.
+The parameter head in a numerical block reads point features together with
+$(c_i,t_i-c_i)$. With minimum gap $\eta$, a bounded log-gap correction is
+\begin{align}
+ d_i&=L\tanh(\alpha)\tanh(r_i-\bar r),\\
+ w_i&=\frac{(g_i-\eta)_+\exp(d_i)}
+ {\sum_l(g_l-\eta)_+\exp(d_l)},\\
+ \widehat g_i&=\eta+[1-(M-1)\eta]w_i.
+\end{align}
+Cumulative sums produce a proposed parameter vector. The implementation
+subtracts the zero-correction normalization to make the new block initially
+an identity, then applies the anchored trust and gap safeguards described
+above. Knots follow the piecewise-linear map
+\begin{equation}
+ \mathcal W(u;\bm t,\bm t')=
+ t'_i+\frac{u-t_i}{t_{i+1}-t_i}(t'_{i+1}-t'_i),
+ \quad u\in[t_i,t_{i+1}],
+\end{equation}
+before bounded survivor-relative displacement. This aligns coordinate
+systems but is not an exact shape-preserving reparameterization of a cubic
+spline. Chord length is evidence, not a forced replacement for learned
+parameters. There is no least-squares solve inside these blocks.
+
 \subsection{Final spline and deployment scope}
 Selected coordinates become the interior of a clamped knot vector. One
 standard endpoint-constrained B-spline least-squares refit produces the control
@@ -201,9 +239,7 @@ and mask distillation, count calibration, boundary ranking, and geometric
 distillation. Supervised source terms are masked out when labels are absent.
 Complexity is encouraged within the configured feasibility-aware protocol,
 not interpreted as proof of Equation~\ref{eq:target}.
-\todo{Export final weights, search budgets, active objective configuration,
-and checkpoint selection into an appendix. Do not replace these with an
-inaccurate generic four-term loss.}
+\input{training_details}
 
 \subsection{Optional peak-error and depth studies}
 For a separately declared squared-error target $\delta$, an optional loss
@@ -227,8 +263,8 @@ in this draft.
 \section{Experimental protocol}
 \subsection{Data and supervision}
 Synthetic training includes labelled splines and procedural shape families.
-The audited runs use source $K=4,\ldots,24$, $M=192$, 1500 training curves
-per epoch, and 500 synthetic validation curves. The new two-model study
+The current launcher specifies $M=192$, 3000 training curves
+per epoch, and 500 synthetic validation curves. The two-model study
 trains general-purpose M16 and M32 models, with $K_c=16$ and $K_c=32$,
 respectively. Both use mixed synthetic shapes, not dataset-specific models.
 Their default labelled source ranges are $K=4,\ldots,16$ and
@@ -259,15 +295,33 @@ must accompany experiments.
 
 \subsection{Six-method comparison}
 Ours is compared with five disclosed adaptations: Park--Lee, Liang, Dung,
-Kang, and Luo. All receive identical normalized points, the declared common
-interior capacity, and an endpoint-constrained CPU float64 final refit.
+Kang, and Luo. All receive identical normalized points and the declared common
+interior capacity. Ours uses endpoint-constrained least squares; the current
+Dung and Kang paths retain their own unconstrained control-point solutions.
+Other adapters retain their documented refit rules. These constraints differ
+and must not be described as one identical native solver for all methods.
 Baselines use chord parameters while Ours predicts parameter residuals;
 a fixed-chord ablation is needed to isolate knot selection.
 
-Dung, Kang, and Luo may use a disclosed threshold-safe wrapper when their
-native adapted result fails the common criterion. Bounded repairs and extra
-refits remain in their results and latency. Native and wrapped settings must
-be distinguished, and neither is an exact author implementation.
+The present protocol disables the extra common-MSE repair wrapper for every
+baseline. Failed or over-capacity results remain in the denominator. Kang's
+default cluster-relocation adaptation and Dung's missing multiplicity branch
+remain reproduction limitations, not evidence against the original papers.
+
+\subsection{Frozen ten-percent external evaluation}
+The evaluation-only launcher loads
+\texttt{paper\_coupled\_clean\_3090\_r2\_m16.pt} and
+\texttt{paper\_coupled\_clean\_3090\_r3\_m32.pt}; it does not train or update
+either model. For each external source with $N_s$ held-out test records,
+it selects $n_s=\lceil0.1N_s\rceil$ records uniformly without replacement
+using seed 20260922. All six methods and both models use these same external
+records. The four sources include procedural offsets, explicitly labelled
+as such. Synthetic tests use ten curves per source $K=4,\ldots,24$ and
+seed 20000; the $K>16$ stratum exceeds M16's candidate capacity and is
+reported separately when interpreting capacity effects. Sampling is not
+conditioned on success, error, runtime, or predicted count.
+All selected cases are exported and plotted, including failed cases with
+their recorded failure reason rather than invented geometry.
 
 \subsection{Metrics, timing, and ablations}
 Report pass fraction over all attempted curves, mean/P95 MSE, average
@@ -290,8 +344,12 @@ The default two-model experiment uses the same depth and peak-loss variant
 for M16 and M32: two added refinement blocks per module and a peak-loss
 weight of $0.05$ with squared-error target $5\times10^{-4}$.
 The MSE tolerance remains $5\times10^{-5}$. Each model is initialized from
-the same shallow K32 checkpoint; resizing candidate queries for M16
-requires retraining and is not a function-preserving capacity reduction.
+its own same-capacity checkpoint, not by resizing a common K32 checkpoint.
+The formal launcher uses 12 proposal epochs and 48 joint epochs, with the
+first eight joint epochs freezing proposal geometry. Batch size is 32;
+joint learning rate is $10^{-5}$, with proposal and decoder multipliers
+0.1 and 0.25. Saved checkpoint configuration and histories, rather than
+filenames or launcher defaults, determine the actual reported settings.
 Within each six-method comparison all methods share that model's capacity;
 M16 and M32 tables remain separate. No dataset router, test-error-based
 model selection, or automatic M16-to-M32 fallback is introduced.
@@ -301,7 +359,8 @@ capacity or model.
 
 \section{Results and analysis --- to be completed}
 \todo{Insert frozen paired six-method results, including synthetic strata and
-all four external sources. No figures are required for this framework.}
+all four external sources. Include a pipeline diagram, per-source metric
+panels, paired compactness plots, and representative success and failure cases.}
 \todo{Fill depth/capacity/peak-loss tables only after running the experiments;
 no new improvement numbers currently exist.}
 
@@ -338,6 +397,6 @@ behavior and failures.
 \todo{Supply code/model hashes, manifests, seeds, commands, hardware, software,
 training/inference budgets, and licenses.}
 \todo{Supply authorship, funding, conflicts, and data availability declarations.}
-\bibliographystyle{plainnat}
+\bibliographystyle{elsarticle-num}
 \bibliography{references}
 \end{document}

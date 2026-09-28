@@ -105,6 +105,8 @@ def parser(*, default_checkpoint: Path | None = None,
     p.add_argument("--seed", type=int, default=20000)
     p.add_argument("--selection-seed", type=int, default=20260908)
     p.add_argument("--real-samples-per-dataset", type=int, default=10)
+    p.add_argument("--real-test-fraction", type=float, default=None,
+                   help="Uniform sampling without replacement of ceil(fraction*N) real test records")
     p.add_argument("--all-real-test-samples", action="store_true",
                    help="Evaluate every test-split curve in each selected manifest; never include train/validation splits")
     p.add_argument("--geometry-dense-points", type=int, default=512,
@@ -207,6 +209,15 @@ def recover_journal(path: Path) -> list[dict]:
         with path.open("ab") as handle:
             handle.write(b"\n")
     return rows
+
+
+def select_real_test_indices(records, count, seed, *, fraction=None, all_test=False):
+    if fraction is not None:
+        if not 0 < fraction <= 1 or all_test:
+            raise ValueError("fraction must be in (0,1] and excludes all_test")
+        size = math.ceil(len(records) * fraction)
+        return sorted(random.Random(seed).sample(range(len(records)), size))
+    return balanced_indices(records, len(records) if all_test else count, seed)
 
 
 def balanced_indices(records: list[dict], count: int, seed: int) -> list[int]:
@@ -506,7 +517,9 @@ def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict
         if not len(dataset):
             raise ValueError(f"No test curves in {path}")
         all_test = bool(getattr(args, "all_real_test_samples", False))
-        indices = balanced_indices(dataset.records, len(dataset) if all_test else args.real_samples_per_dataset, args.selection_seed)
+        fraction = getattr(args, "real_test_fraction", None)
+        indices = select_real_test_indices(dataset.records, args.real_samples_per_dataset,
+                                          args.selection_seed, fraction=fraction, all_test=all_test)
         for i in indices:
             sample = dataset[i]
             if sample["points"].shape[-1] != config["point_dim"]:
@@ -536,7 +549,9 @@ def prepare_cases(args, checkpoint: dict, model_config: dict) -> tuple[list[dict
             "available_test_groups": len({r["group_id"] for r in dataset.records}),
             "selected_count": len(indices), "selected_indices": indices,
             "selected_groups": len({dataset.records[i]["group_id"] for i in indices}),
-            "has_knot_labels": False, "sampling": "all_test_seeded_group_round_robin" if all_test else "seeded_group_round_robin",
+            "has_knot_labels": False, "sampling": ("uniform_without_replacement" if fraction is not None else
+                "all_test_seeded_group_round_robin" if all_test else "seeded_group_round_robin"),
+            "test_fraction": fraction, "selection_seed": args.selection_seed,
             "all_test_samples": all_test,
             **description,
             "present_in_checkpoint_validation_manifests": str(path.resolve()) in {
@@ -1012,6 +1027,10 @@ def main(argv=None, *, expected_objective=V15_DEPLOYMENT_ALIGNED_OBJECTIVE_VERSI
     p = parser(default_checkpoint=default_checkpoint,
                default_output_dir=default_output_dir)
     args = p.parse_args(argv)
+    if args.real_test_fraction is not None and (
+        not 0 < args.real_test_fraction <= 1 or args.all_real_test_samples
+    ):
+        p.error("real-test-fraction must be in (0,1] and excludes all-real-test-samples")
     if args.baseline_protocol == "native":
         args.published_feasibility_safeguard = False
     methods = PUBLISHED_METHODS if args.method_set == "published" else METHODS

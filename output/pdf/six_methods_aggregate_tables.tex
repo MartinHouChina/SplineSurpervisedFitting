@@ -1,0 +1,107 @@
+\documentclass[10pt]{article}
+\usepackage[a4paper,margin=18mm]{geometry}
+\usepackage{booktabs,longtable,amsmath}
+\begin{document}
+\begin{table}[htbp]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\caption{Aggregate six-method results on 61 test curves (historical 32-knot experiment).}
+\label{tab:six-methods-overall}
+\begin{tabular}{llrrrrr}
+\toprule
+Method & Finite/total & Mean $K$ & Pass (\%) & Mean MSE & Worst MaxSE & Time (ms) \\
+\midrule
+Ours & 61/61 & 16.64 & 78.7 & $7.528\times10^{-5}$ & $2.984\times10^{-3}$ & 625.87 \\
+Park & 61/61 & 21.10 & 59.0 & $1.145\times10^{-4}$ & $1.041\times10^{-2}$ & 106.38 \\
+Liang & 61/61 & 19.39 & 67.2 & $8.861\times10^{-5}$ & $3.710\times10^{-3}$ & 78.58 \\
+Dung & 60/61 & 16.78 & 80.3 & $5.565\times10^{-5}$ & $3.575\times10^{-3}$ & 1033.40 \\
+Kang & 61/61 & 18.31 & 77.0 & $6.434\times10^{-5}$ & $3.578\times10^{-3}$ & 2348.05 \\
+Luo & 61/61 & 18.30 & 78.7 & $6.952\times10^{-5}$ & $7.326\times10^{-3}$ & 5452.86 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textit{Notes.}
+The cohort contains 61 curves: 21 synthetic curves and 10 curves from each of UJI handwriting, Natural Earth coastline, USGS contours, and industrial offsets.
+This is not a 10\% sample of each dataset. Industrial offsets are procedurally generated industrial-model curves.
+The maximum internal-knot budget is 32.
+
+Let $e_{s,i}=\|C_s(t_{s,i})-Q_{s,i}\|_2^2$.
+For curve $s$, $\mathrm{MSE}_s=N_s^{-1}\sum_i e_{s,i}$ and $\mathrm{MaxSE}_s=\max_i e_{s,i}$.
+Mean MSE is the arithmetic mean over finite returned fits, including tolerance violations.
+Worst MaxSE is $\max_{s,i}e_{s,i}$ over all finite fits in the reported group, not the average of per-curve maxima.
+Errors use normalized coordinates, with no square root or coordinate-dimension division.
+A curve passes only if $\mathrm{MSE}_s\leq5\times10^{-5}$ and $\mathrm{MaxSE}_s\leq5\times10^{-4}$.
+Pass rates include every requested curve and algorithm failure in the denominator.
+Mean $K$ also uses finite returned fits; one Natural Earth fit failed for Dung (9/10 finite, 60/61 overall).
+
+Time is the mean measured total time over requested cases, including the original method and all numerical postprocessing; it is not network-only time.
+These are local exploratory single-run timings, not a controlled hardware speedup study.
+Historical protocol: all six methods use insertion repair, while only Ours additionally uses redundant-knot post-pruning.
+Literature methods are repository adaptations.
+Displayed values are preserved from the source report; no aggregate has been recomputed from rounded entries.
+\clearpage
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{longtable}{llrrrrr}
+\caption{Six-method results by data source. Statistics include finite fits that violate the tolerances.}
+\label{tab:six-methods-by-source}\\
+\toprule
+Method & Finite/total & Mean $K$ & Pass (\%) & Mean MSE & Worst MaxSE & Time (ms) \\
+\midrule
+\endfirsthead
+\multicolumn{7}{l}{\textit{Table \thetable\ continued}}\\
+\toprule
+Method & Finite/total & Mean $K$ & Pass (\%) & Mean MSE & Worst MaxSE & Time (ms) \\
+\midrule
+\endhead
+\midrule
+\multicolumn{7}{r}{\textit{Continued on next page}}\\
+\endfoot
+\bottomrule
+\endlastfoot
+
+\multicolumn{7}{l}{\textbf{Synthetic (21 curves)}}\\
+Ours & 21/21 & 20.48 & 76.2 & $6.523\times10^{-5}$ & $1.107\times10^{-3}$ & 590.73 \\
+Park & 21/21 & 30.43 & 28.6 & $1.452\times10^{-4}$ & $1.041\times10^{-2}$ & 132.48 \\
+Liang & 21/21 & 27.52 & 38.1 & $1.206\times10^{-4}$ & $3.710\times10^{-3}$ & 107.57 \\
+Dung & 21/21 & 23.24 & 66.7 & $5.264\times10^{-5}$ & $6.890\times10^{-4}$ & 1453.25 \\
+Kang & 21/21 & 24.43 & 57.1 & $6.105\times10^{-5}$ & $2.005\times10^{-3}$ & 2105.10 \\
+Luo & 21/21 & 25.24 & 61.9 & $6.883\times10^{-5}$ & $1.850\times10^{-3}$ & 4192.71 \\
+\addlinespace[5pt]
+\multicolumn{7}{l}{\textbf{UJI handwriting (10 curves)}}\\
+Ours & 10/10 & 4.40 & 100.0 & $3.697\times10^{-5}$ & $4.647\times10^{-4}$ & 898.58 \\
+Park & 10/10 & 6.00 & 100.0 & $2.366\times10^{-5}$ & $4.537\times10^{-4}$ & 53.50 \\
+Liang & 10/10 & 6.20 & 100.0 & $2.471\times10^{-5}$ & $4.577\times10^{-4}$ & 36.97 \\
+Dung & 10/10 & 4.30 & 100.0 & $2.590\times10^{-5}$ & $4.698\times10^{-4}$ & 380.82 \\
+Kang & 10/10 & 5.80 & 100.0 & $3.094\times10^{-5}$ & $4.891\times10^{-4}$ & 2604.92 \\
+Luo & 10/10 & 6.00 & 100.0 & $2.019\times10^{-5}$ & $3.980\times10^{-4}$ & 7896.61 \\
+\addlinespace[5pt]
+\multicolumn{7}{l}{\textbf{Natural Earth coastline (10 curves)}}\\
+Ours & 10/10 & 24.70 & 70.0 & $1.721\times10^{-4}$ & $2.984\times10^{-3}$ & 625.00 \\
+Park & 10/10 & 23.30 & 60.0 & $2.292\times10^{-4}$ & $6.928\times10^{-3}$ & 129.59 \\
+Liang & 10/10 & 22.20 & 70.0 & $1.645\times10^{-4}$ & $3.049\times10^{-3}$ & 79.92 \\
+Dung & 9/10 & 20.11 & 70.0 & $1.244\times10^{-4}$ & $3.575\times10^{-3}$ & 1140.19 \\
+Kang & 10/10 & 21.30 & 70.0 & $1.425\times10^{-4}$ & $3.578\times10^{-3}$ & 2037.87 \\
+Luo & 10/10 & 21.70 & 70.0 & $1.666\times10^{-4}$ & $7.326\times10^{-3}$ & 5013.54 \\
+\addlinespace[5pt]
+\multicolumn{7}{l}{\textbf{USGS contours (10 curves)}}\\
+Ours & 10/10 & 20.10 & 50.0 & $7.240\times10^{-5}$ & $1.317\times10^{-3}$ & 434.44 \\
+Park & 10/10 & 21.10 & 50.0 & $9.884\times10^{-5}$ & $2.592\times10^{-3}$ & 111.54 \\
+Liang & 10/10 & 20.40 & 60.0 & $6.235\times10^{-5}$ & $6.931\times10^{-4}$ & 71.79 \\
+Dung & 10/10 & 19.40 & 80.0 & $5.031\times10^{-5}$ & $1.356\times10^{-3}$ & 1157.33 \\
+Kang & 10/10 & 19.50 & 80.0 & $5.729\times10^{-5}$ & $8.766\times10^{-4}$ & 2397.48 \\
+Luo & 10/10 & 19.40 & 80.0 & $5.652\times10^{-5}$ & $9.357\times10^{-4}$ & 5086.26 \\
+\addlinespace[5pt]
+\multicolumn{7}{l}{\textbf{Industrial offsets (10 curves)}}\\
+Ours & 10/10 & 9.30 & 100.0 & $4.076\times10^{-5}$ & $4.943\times10^{-4}$ & 619.27 \\
+Park & 10/10 & 14.40 & 90.0 & $4.149\times10^{-5}$ & $1.674\times10^{-3}$ & 76.09 \\
+Liang & 10/10 & 11.70 & 100.0 & $3.582\times10^{-5}$ & $4.895\times10^{-4}$ & 64.76 \\
+Dung & 10/10 & 10.10 & 100.0 & $3.522\times10^{-5}$ & $4.403\times10^{-4}$ & 573.55 \\
+Kang & 10/10 & 13.80 & 100.0 & $3.355\times10^{-5}$ & $3.805\times10^{-4}$ & 2862.14 \\
+Luo & 10/10 & 11.50 & 100.0 & $3.621\times10^{-5}$ & $4.825\times10^{-4}$ & 6461.36 \\
+\addlinespace[5pt]
+\end{longtable}
+\end{document}
+

@@ -46,6 +46,21 @@ def test_strict_native_audit_remains_explicit_opt_in():
                for run in plan["runs"])
 
 
+def test_m64_requires_explicit_initializer_or_scratch():
+    with pytest.raises(ValueError, match="M64 requires"):
+        entry.build_plan(options("--capacities", "64"))
+    plan = entry.build_plan(options("--capacities", "64", "--from-scratch",
+                                    "--epochs", "112", "--proposal-epochs", "64"))
+    run = plan["runs"][0]
+    assert run["initializer"] is None
+    assert "--no-init-checkpoint" in run["command"]
+    assert "--warm-start-checkpoint" not in run["command"]
+    assert argument(run["command"], "--candidate-knots") == "64"
+    assert argument(run["command"], "--source-max-knots") == "24"
+    warm = entry.build_plan(options("--capacities", "64", "--m64-checkpoint", "existing64.pt"))
+    assert warm["runs"][0]["initializer"].endswith("existing64.pt")
+
+
 def test_all_real_records_is_explicit_and_dry_run_does_not_read_weights(tmp_path):
     args = options("--capacities", "16", "--all-real-test-samples")
     plan = entry.build_plan(args)

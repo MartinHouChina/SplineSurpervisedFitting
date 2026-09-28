@@ -1,0 +1,72 @@
+The following equations specify the main implemented terms; enabled weights
+and optional branches must be exported from each checkpoint's configuration.
+They are not a replacement objective used only for presentation.
+For error $e$ and tolerance $\varepsilon$, the base fit penalty is
+\begin{equation}
+ \phi(e,\varepsilon)=\log(1+e/\varepsilon+10^{-12})
+ +[\log(e/\varepsilon+10^{-12})]_+.
+\end{equation}
+The feasibility-aware option reduces its weight to $w_f$ below a safety
+margin $a\varepsilon$ and subtracts $(1-w_f)\log(1+a+10^{-12})$
+above that margin, preserving continuity for the configured $a\leq1$.
+Batch aggregation is the mean plus a weighted upper-tail mean, emphasizing
+hard curves rather than only the average. Denote that aggregation by
+$\mathcal A$ and the configured fit penalty by $\phi_f$.
+The joint selected-fit term averages the actual deployment mask and the
+teacher-selected mask after decoding both:
+\begin{equation}
+ L_{\rm sel}=\tfrac12\mathcal A[\phi_f(e_{\rm deploy},\varepsilon)]
+             +\tfrac12\mathcal A[\phi_f(e_{\rm teacher},\varepsilon)].
+\end{equation}
+The finite teacher search compares feasible masks by increasing cardinality
+and then error. If no evaluated mask is feasible, it selects the lowest-error
+alternative; such a fallback must not be counted as a feasible teacher.
+The basic feasibility-first subset cost is
+\begin{equation}
+ J(S)=\begin{cases}
+ (|S|+0.25\min(e_S/\varepsilon,1))/(K_c+1),&e_S\leq\varepsilon,\\
+ 2+[\log(e_S/\varepsilon+10^{-12})]_+,&e_S>\varepsilon.
+ \end{cases}
+\end{equation}
+Additional configured search costs or budgets must be reported separately.
+
+For teacher mask $y_j$ and selector probability $p_j$, the unaligned mask
+distillation term is weighted binary cross entropy:
+\begin{equation}
+ L_{\rm mask}=-\frac1{K_c}\sum_j[1+(w_+-1)y_j]
+ [y_j\log p_j+(1-y_j)\log(1-p_j)].
+\end{equation}
+If count-reserve alignment is enabled, the implemented soft aligned targets
+replace $y_j$. Requested count score $s$ is trained toward
+$k^*=\max(|S^*|-0.25,0)$, inside the relevant ceiling interval:
+\begin{equation}
+ L_{\rm count}=\operatorname{SmoothL1}(\log(1+\max(s,0)),\log(1+k^*)).
+\end{equation}
+Positive--negative teacher pairs also receive a ranking term
+$\operatorname{softplus}(\mu-\ell_j+\ell_k)$, where $y_j=1$, $y_k=0$,
+and $\ell$ are selector logits. Ordered assignment and knot-position labels
+are meaningful only in a shared parameterization. Label-free procedural
+training examples do not receive invented source-knot supervision.
+
+Writing each enabled term explicitly, the implemented joint objective is
+\begin{align}
+ L={}&\lambda_{\rm sel}L_{\rm sel}+\lambda_dL_d
+ +\lambda_\pi L_\pi+\lambda_mL_{\rm mask}+\lambda_cL_{\rm count}
+ +\lambda_rL_{\rm rank}+\lambda_hL_{\rm entropy}
+ +s_c\lambda_KL_{\rm complexity}\nonumber\\
+ &+\lambda_{sc}L_{\rm sourceCount}+\lambda_{oc}L_{\rm overCount}
+ +\lambda_tL_{\rm parameter}+\lambda_{cv}L_{\rm coverage}
+ +\lambda_uL_{\rm position}+\lambda_bL_{\rm boundary}\nonumber\\
+ &+\lambda_{cf}L_{\rm chordCounterfactual}+\lambda_lL_{\rm local}
+ +\lambda_pL_{\rm peak}+\lambda_oL_{\rm ordered}
+ +\lambda_gL_{\rm teacherGeometry}+\lambda_{cm}L_{\rm compactMask}.
+\end{align}
+Here $L_\pi$ denotes stochastic-subset policy learning, $L_d$ dense proposal
+fit, and $s_c$ the scheduled complexity scale. Source-count and excess-count
+penalties use feasibility-dependent eligibility, so a true-count label does
+not force further pruning of an already infeasible subset. The proposal stage
+uses its proposal-specific branch rather than the entire joint sum. The source
+of truth is \texttt{V16SubsetLoss.forward}; a zero coefficient disables a term.
+Teacher labels are detached, while redecoded continuous geometry and refits
+provide geometry gradients. No ordinary gradient through hard Top-$K$ is
+assumed. Online search budgets affect training time but are absent at inference.

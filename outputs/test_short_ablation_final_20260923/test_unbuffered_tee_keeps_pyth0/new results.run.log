@@ -1,0 +1,17 @@
+unbuffered=1
+argument=<-u>
+argument=<scripts/run_v16_short_ablation.py>
+argument=<--output-dir>
+argument=</e/SelfSurpervisedSplineFitting/outputs/test_short_ablation_final_20260923/test_unbuffered_tee_keeps_pyth0/new results>
+argument=<--checkpoint>
+argument=<path with spaces.pt>
+intentional failure
+unbuffered=1
+argument=<-u>
+argument=<scripts/run_v16_short_ablation.py>
+argument=<--output-dir>
+argument=</e/SelfSurpervisedSplineFitting/outputs/test_short_ablation_final_20260923/test_unbuffered_tee_keeps_pyth0/new results>
+argument=<--checkpoint>
+argument=<path with spaces.pt>
+argument=<--resume>
+intentional failure

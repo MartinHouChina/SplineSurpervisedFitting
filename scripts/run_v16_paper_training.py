@@ -1,4 +1,4 @@
-"""Two independent capacity models, coupled t/U training and auditable paper exports.
+"""Independent capacity models, coupled t/U training and auditable paper exports.
 
 This is a training protocol, NOT a claim of achieved accuracy or native-paper
 reproduction. Existing repository baselines run without extra feasibility
@@ -28,7 +28,11 @@ def parser():
                    default=Path("outputs/checkpoints/universal_m16_m32_3090_r1_m16.pt"))
     p.add_argument("--m32-checkpoint", type=Path,
                    default=Path("outputs/checkpoints/universal_m16_m32_3090_r1_m32.pt"))
-    p.add_argument("--capacities", nargs="+", type=int, choices=(16, 32), default=[16, 32])
+    p.add_argument("--m64-checkpoint", type=Path, default=None,
+                   help="Optional existing same-capacity M64 initializer")
+    p.add_argument("--from-scratch", action="store_true",
+                   help="Explicit random initialization; no warm-start checkpoints are read")
+    p.add_argument("--capacities", nargs="+", type=int, choices=(16, 32, 64), default=[16, 32])
     p.add_argument("--data-root", type=Path, default=ROOT / "data")
     p.add_argument("--device", choices=("cpu", "cuda", "auto"), default="cuda")
     p.add_argument("--epochs", type=int, default=60)
@@ -47,6 +51,8 @@ def parser():
     p.add_argument("--real-samples-per-dataset", type=int, default=100)
     p.add_argument("--visual-samples-per-dataset", type=int, default=12)
     p.add_argument("--all-real-test-samples", action="store_true")
+    p.add_argument("--real-test-fraction", type=float, default=None,
+                   help="Uniform random fraction per real test split; all selected cases are plotted")
     p.add_argument("--prepare-real-data", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--bash", default="bash")
@@ -72,12 +78,17 @@ def build_plan(args, *, root=None):
            args.real_samples_per_dataset, args.visual_samples_per_dataset) < 1:
         raise ValueError("dataset sizes and batch size must be positive")
     runs = []
+    if args.real_test_fraction is not None:
+        if not 0 < args.real_test_fraction <= 1 or args.all_real_test_samples:
+            raise ValueError("real-test-fraction must be in (0,1] and excludes all-real-test-samples")
     for capacity in args.capacities:
-        checkpoint = getattr(args, f"m{capacity}_checkpoint").resolve()
+        checkpoint = getattr(args, f"m{capacity}_checkpoint")
+        if not args.from_scratch and checkpoint is None:
+            raise ValueError("M64 requires --m64-checkpoint or explicit --from-scratch")
+        checkpoint = None if args.from_scratch else checkpoint.resolve()
         command = [args.bash, str(root / "scripts/run_v16_1070_overnight_linux.sh"),
                    "--python", args.python, "--anchored-selection", "--paper-output",
                    "--native-baselines", "--baseline-protocol", args.baseline_protocol,
-                   "--warm-start-checkpoint", str(checkpoint),
                    "--run-name", f"{args.run_prefix}_m{capacity}",
                    "--data-root", str(args.data_root.resolve()), "--device", args.device,
                    "--candidate-knots", str(capacity), "--source-max-knots", str(min(capacity, 24)),
@@ -97,12 +108,16 @@ def build_plan(args, *, root=None):
                    "--benchmark-profile", "full", "--synthetic-samples-per-k", "10",
                    "--real-samples-per-dataset", str(args.real_samples_per_dataset),
                    "--visual-samples-per-dataset", str(args.visual_samples_per_dataset)]
+        command += (["--no-init-checkpoint"] if checkpoint is None else
+                    ["--warm-start-checkpoint", str(checkpoint)])
         if args.prepare_real_data:
             command += ["--prepare-real-data"]
         if args.all_real_test_samples:
             command += ["--all-real-test-samples"]
+        if args.real_test_fraction is not None:
+            command += ["--real-test-fraction", str(args.real_test_fraction)]
         runs.append(dict(run_name=f"{args.run_prefix}_m{capacity}", capacity=capacity,
-                         initializer=str(checkpoint), command=command))
+                         initializer=str(checkpoint) if checkpoint is not None else None, command=command))
     return dict(schema_version=1, root=str(root), run_prefix=args.run_prefix,
                 run_count=len(runs), runs=runs, baseline_protocol=args.baseline_protocol,
                 native_fidelity=("unverified methods are unavailable, never silently adapted"
@@ -110,9 +125,12 @@ def build_plan(args, *, root=None):
                                  "existing implementations run without extra feasibility repair; original-paper fidelity remains unverified"),
                 figure_policy="no watermarks; provenance and qualification retained in result files",
                 training="mixed synthetic only; external validation/test splits disjoint",
-                test_scope="all sources; all test records" if args.all_real_test_samples else
-                           f"all sources; up to {args.real_samples_per_dataset} held-out curves/source",
-                source_ranges="M16 K4..16; M32 K4..24; not a pure capacity-only ablation",
+                test_scope=(f"uniform random ceil(N*{args.real_test_fraction}) per real test split; plot all selected"
+                            if args.real_test_fraction is not None else
+                            "all sources; all test records" if args.all_real_test_samples else
+                            f"all sources; up to {args.real_samples_per_dataset} held-out curves/source"),
+                source_ranges="M16 K4..16; M32/M64 K4..24; initialization/data must match for capacity-only ablations",
+                initialization="random" if args.from_scratch else "same-capacity warm start",
                 deployment="one discrete mask; fixed-depth numerical t/U updates; one final refit",
                 chord_reference=("every coupled step reads chord and t-minus-chord; no fixed initial blend"
                                  if args.parameter_chord_blend == 0 else
@@ -134,6 +152,8 @@ def main(argv=None):
             raise ValueError(f"Bash executable not found: {args.bash}")
         import torch
         for run in plan["runs"]:
+            if run["initializer"] is None:
+                continue
             path = Path(run["initializer"])
             if not path.is_file():
                 raise ValueError(f"initializer does not exist: {path}")

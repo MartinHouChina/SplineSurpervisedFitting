@@ -1,0 +1,56 @@
+\documentclass{article}
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{booktabs}
+\begin{document}
+\begin{table}[htbp]\centering\small
+\caption{Six-method comparison on five selected curve cases (historical 32-knot experiment).}
+\label{tab:selected-cases}
+\begin{tabular}{llrrrrl}
+\toprule
+Source & Method & $K$ & MSE ($10^{-5}$) & MaxSE ($10^{-4}$) & Time (ms) & Pass \\
+\midrule
+Synthetic & Ours & \textbf{19} & \textbf{3.694} & 3.674 & 1191.40 & Yes \\
+ & Park & 32 & 6.451 & 4.621 & 103.96 & No \\
+ & Liang & 32 & 5.119 & \textbf{2.050} & \textbf{92.61} & No \\
+ & Dung & 25 & 4.802 & 3.156 & 1683.14 & Yes \\
+ & Kang & 26 & 4.882 & 2.112 & 1292.60 & Yes \\
+ & Luo & 30 & 4.871 & 2.789 & 1294.84 & Yes \\
+\midrule
+UJI handwriting & Ours & \textbf{3} & 4.767 & 1.766 & 829.14 & Yes \\
+ & Park & 5 & 4.183 & 4.150 & \textbf{18.51} & Yes \\
+ & Liang & 5 & 4.721 & 2.766 & 27.39 & Yes \\
+ & Dung & 4 & \textbf{3.097} & \textbf{1.510} & 189.76 & Yes \\
+ & Kang & \textbf{3} & 4.297 & 4.696 & 3450.89 & Yes \\
+ & Luo & \textbf{3} & 4.035 & 1.792 & 8508.51 & Yes \\
+\midrule
+Natural Earth & Ours & 13 & 4.385 & 3.807 & 1710.59 & Yes \\
+ & Park & \textbf{12} & 2.608 & \textbf{2.451} & \textbf{69.56} & Yes \\
+ & Liang & 13 & 4.236 & 4.359 & 99.82 & Yes \\
+ & Dung & 14 & \textbf{2.192} & 3.076 & 1097.47 & Yes \\
+ & Kang & 13 & 4.018 & 4.036 & 2005.55 & Yes \\
+ & Luo & 13 & 3.729 & 4.266 & 8258.45 & Yes \\
+\midrule
+USGS contours & Ours & \textbf{13} & 4.196 & \textbf{2.188} & 710.59 & Yes \\
+ & Park & 18 & \textbf{3.596} & 3.634 & 143.21 & Yes \\
+ & Liang & 16 & 4.330 & 2.895 & \textbf{41.62} & Yes \\
+ & Dung & 14 & 4.870 & 4.607 & 700.94 & Yes \\
+ & Kang & 14 & 4.075 & 4.152 & 1815.06 & Yes \\
+ & Luo & 14 & 4.973 & 4.106 & 6488.42 & Yes \\
+\midrule
+Industrial offsets & Ours & \textbf{5} & 2.843 & 1.582 & 540.77 & Yes \\
+ & Park & 6 & 3.801 & 2.331 & 35.58 & Yes \\
+ & Liang & 6 & 3.820 & 1.686 & \textbf{14.50} & Yes \\
+ & Dung & 6 & 2.719 & \textbf{1.093} & 325.56 & Yes \\
+ & Kang & 8 & \textbf{1.831} & 2.522 & 3132.55 & Yes \\
+ & Luo & 6 & 4.176 & 1.591 & 6822.16 & Yes \\
+\bottomrule
+\end{tabular}
+\par\smallskip\begin{minipage}{\textwidth}\footnotesize
+Selected illustrative cases (one per source), not dataset averages. K denotes internal knots; capacity is 32.\par
+MSE and MaxSE are mean and maximum pointwise squared Euclidean errors in normalized coordinates (no square root).\par
+Pass requires MSE $\leq$ 5e-5 and MaxSE $\leq$ 5e-4. Total time includes measured numerical postprocessing.\par
+Historical protocol: all six methods use insertion repair; only Ours additionally uses post-pruning. Baselines are repository adaptations.\par
+Bold marks the minimum in each numerical column within a case (ties included); lower error alone does not imply the best simplification.\par
+\end{minipage}
+\end{table}
+\end{document}

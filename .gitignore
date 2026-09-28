@@ -21,3 +21,16 @@ paper/*.fls
 paper/*.log
 paper/*.out
 paper/*.pdf
+
+
+# 交付压缩包
+*.zip
+
+# 大型或可再生的实验中间结果
+outputs/**/*.npz
+outputs/**/geometry/
+outputs/**/runs/
+outputs/**/case_panels_data/
+
+# 若不希望提交实验汇总 JSON，只限制 outputs
+outputs/**/*.json

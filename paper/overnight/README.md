@@ -10,7 +10,11 @@
 - `references.bib`：五个对照论文及三个真实数据来源的基础书目。
 - [结果审计](../../docs/overnight_results_audit_20260921.md)：本次服务器结果的数字、来源、失败和解释边界。
 
-使用通用 `article` 类，不依赖 `elsarticle`。这不是 CAD 最终排版或投稿合规声明；内容稳定后再转入期刊当时提供的模板。作者、基金、声明、最终实验表和学习领域相关文献仍需补充。
+2026-09-22改为 Elsevier `elsarticle` preprint 结构，使用 frontmatter、关键词、编号公式与 `elsarticle-num` 书目样式。新增 `training_details.tex`：拟合惩罚、可行性优先teacher代价、mask/数量/排序监督以及完整损失分组。补全固定深度参数—节点数值耦合，修正旧版共同K32初始化、1500训练样本及所有方法共同端点refit的过时描述。
+
+这不是CAD最终投稿合规声明。官方[作者指南](https://www.sciencedirect.com/journal/computer-aided-design/publish/guide-for-authors)本次访问403，未据此编造最新字数/排版要求。采用通用Elsevier LaTeX结构；作者、基金、声明、最终实验表和学习领域相关文献仍需补充。当前环境没有LaTeX编译器，未声称已编译PDF。
+
+已训练检查点的新评估协议见[10%随机测试说明](../../docs/saved_models_test10pct.md)。实际训练配置应以这两份检查点与history为准，不能把默认60轮当成已完成轮数。结果部分仍保留待填标记，不写未经此次评估得到的优势数值。
 
 框架明确区分：
 

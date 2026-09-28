@@ -101,9 +101,11 @@ def write_case_geometry(directory: Path, case: dict, *, fingerprint: str) -> dic
 
 
 def write_method_geometry(directory: Path, case: dict, row: dict, fit, parameters,
-                          *, case_artifact: dict, fingerprint: str, dense_points: int) -> dict:
+                          *, case_artifact: dict, fingerprint: str, dense_points: int,
+                          timing_scope: str | None = None, pass_criterion: str | None = None) -> dict:
     """Capture even failed/unavailable rows; absent outputs remain genuinely absent."""
     destination = directory / "geometry" / case_key(case)
+    destination.mkdir(parents=True, exist_ok=True)
     method_key = hashlib.sha256(row["method"].encode()).hexdigest()[:20]
     document_path = destination / f"{method_key}.json"
     arrays_path = destination / f"{method_key}.npz"
@@ -163,8 +165,8 @@ def write_method_geometry(directory: Path, case: dict, row: dict, fit, parameter
                             for name in metric_names},
         "arrays_file": arrays_path.name, "arrays_sha256": file_sha256(arrays_path),
         "array_shapes": {name: list(_tensor(value).shape) for name, value in arrays.items()},
-        "timing_scope": "Export, dense evaluation, metrics and plotting are excluded from successful method/network timings. The spline is from the final timed repetition; reported times are medians of all recorded timed repetitions.",
-        "coordinate_error_scaling": "Original-coordinate squared errors = normalized squared errors * scalar_scale**2; reported benchmark pass/fail uses normalized input MSE only.",
+        "timing_scope": timing_scope or "Export, dense evaluation, metrics and plotting are excluded from successful method/network timings. The spline is from the final timed repetition; reported times are medians of all recorded timed repetitions.",
+        "coordinate_error_scaling": "Original-coordinate squared errors = normalized squared errors * scalar_scale**2; " + (pass_criterion or "reported benchmark pass/fail uses normalized input MSE only."),
     }
     _json_write(document_path, document)
     return {"path": document_path.relative_to(directory).as_posix(), "sha256": file_sha256(document_path)}

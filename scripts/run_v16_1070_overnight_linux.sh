@@ -36,6 +36,7 @@ NATIVE_BASELINES=1
 BASELINE_PROTOCOL=adaptation
 PAPER_OUTPUT=0
 ALL_REAL_TEST_SAMPLES=0
+REAL_TEST_FRACTION=""
 CHECKPOINT=""
 DATA_ROOT=""
 EXTRA_MANIFESTS=()
@@ -82,6 +83,7 @@ Historical online-teacher architecture; capacity is explicit and shared by all m
                                   Native rejects unverified reproductions (N/A), never silently repairs
   --paper-output                  Save full per-case results; draw from saved fits, without reruns
   --all-real-test-samples          Evaluate every held-out test record in every real manifest
+  --real-test-fraction X           Random fraction per real test split; plot all sampled cases (paper output)
   --train-size N --val-size N      Synthetic training/validation (1500/500)
   --batch-size N --num-workers N   Default 32/0
   --mse-tolerance X                Shared MSE threshold, not RMS (5e-5)
@@ -159,6 +161,7 @@ while (($#)); do
     --baseline-protocol) need_value "$@"; BASELINE_PROTOCOL="$2"; shift 2 ;;
     --paper-output) PAPER_OUTPUT=1; shift ;;
     --all-real-test-samples) ALL_REAL_TEST_SAMPLES=1; shift ;;
+    --real-test-fraction) need_value "$@"; REAL_TEST_FRACTION="$2"; shift 2 ;;
     --train-size) need_value "$@"; TRAIN_SIZE="$2"; shift 2 ;;
     --val-size) need_value "$@"; VAL_SIZE="$2"; shift 2 ;;
     --batch-size) need_value "$@"; BATCH_SIZE="$2"; shift 2 ;;
@@ -188,6 +191,10 @@ while (($#)); do
 done
 ((ENHANCED_SELECTION + RELIABLE_SELECTION + COMPACT_SELECTION + STABLE_SELECTION + ANCHORED_SELECTION <= 1)) || die "choose only one of --enhanced-selection, --reliable-selection, --compact-selection, --stable-selection and --anchored-selection"
 if ((ANCHORED_SELECTION && CANDIDATE_SPECIFIED == 0)); then CANDIDATE_KNOTS=32; fi
+if [[ -n "$REAL_TEST_FRACTION" ]]; then
+  ((ALL_REAL_TEST_SAMPLES == 0)) || die "real-test-fraction conflicts with all-real-test-samples"
+  awk 'BEGIN { n=ARGV[1]+0; exit !(n>0 && n<=1) }' "$REAL_TEST_FRACTION" || die "real-test-fraction must be in (0,1]"
+fi
 [[ "$CANDIDATE_KNOTS" =~ ^[1-9][0-9]*$ ]] || die "candidate-knots must be a positive integer"
 [[ "$SOURCE_MAX_KNOTS" =~ ^[1-9][0-9]*$ ]] || die "source-max-knots must be a positive integer"
 ((SOURCE_MAX_KNOTS >= 4 && SOURCE_MAX_KNOTS <= 188)) || die "source-max-knots must be 4..188"
@@ -249,7 +256,9 @@ if ((COMPACT_SELECTION || STABLE_SELECTION || ANCHORED_SELECTION)); then
   if ((ANCHORED_SELECTION)); then SAFETY_ARGS[${#SAFETY_ARGS[@]}-1]=4; fi
   RESAMPLE_ARGS=(--resample-train-each-epoch)
   if [[ -z "$CHECKPOINT" && "$RESUME" == 0 ]]; then
-    [[ -n "$WARM_START_CHECKPOINT" ]] || die "compact/stable/anchored selection requires an explicit --warm-start-checkpoint for a new run (use the selected best .pt, not .last.pt)"
+    if [[ -z "$WARM_START_CHECKPOINT" ]]; then
+      ((INIT_SPECIFIED == 1)) && [[ -z "$INIT_CHECKPOINT" ]] || die "selection training requires --warm-start-checkpoint or explicit --no-init-checkpoint for random initialization"
+    fi
   fi
 elif ((RELIABLE_SELECTION)); then
   RUN_NAME=${RUN_NAME:-overnight_reliable_3090_r1}
@@ -563,6 +572,7 @@ BENCHMARK_RESUME=()
 PAPER_BENCHMARK_ARGS=()
 if ((PAPER_OUTPUT)); then PAPER_BENCHMARK_ARGS+=(--baseline-protocol "$BASELINE_PROTOCOL"); fi
 if ((ALL_REAL_TEST_SAMPLES)); then PAPER_BENCHMARK_ARGS+=(--all-real-test-samples); fi
+if [[ -n "$REAL_TEST_FRACTION" ]]; then PAPER_BENCHMARK_ARGS+=(--real-test-fraction "$REAL_TEST_FRACTION"); fi
 if ((RESUME)) && [[ -f "$COMPARISON_DIR/experiment.json" ]]; then BENCHMARK_RESUME=(--resume); fi
 run_logged benchmark_six_methods "$PYTHON_BIN" scripts/benchmark_v16_datasets.py \
   --checkpoint "$CHECKPOINT" --output-dir "$COMPARISON_DIR" --method-set published \
@@ -580,9 +590,11 @@ CASE_ARGS=(--checkpoint "$CHECKPOINT" --real-samples-per-dataset "$VISUAL_SAMPLE
   "${MANIFEST_ARGS[@]}" "${BASELINE_ARGS[@]}" "${TIMING_ARGS[@]}"
   --dpi 240 --allow-unqualified-diagnostic "${FORCE_DIAGNOSTIC[@]}")
 if ((PAPER_OUTPUT)); then
+  SAVED_CASE_LIMIT="$VISUAL_SAMPLES"
+  if [[ -n "$REAL_TEST_FRACTION" ]]; then SAVED_CASE_LIMIT=0; fi
   run_logged plot_saved_six_method_cases "$PYTHON_BIN" scripts/visualize_v16_six_methods.py \
     --benchmark-dir "$COMPARISON_DIR" --output-dir "$FIGURE_DIR/saved_cases" \
-    --max-cases-per-dataset "$VISUAL_SAMPLES"
+    --max-cases-per-dataset "$SAVED_CASE_LIMIT"
 else
   run_logged plot_ours_cases "$PYTHON_BIN" scripts/visualize_v16_ours_cases.py \
     "${CASE_ARGS[@]}" --output-dir "$FIGURE_DIR/ours_cases"
