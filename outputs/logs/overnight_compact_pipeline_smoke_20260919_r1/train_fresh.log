@@ -1,0 +1,72 @@
+
+[train_fresh] /e/ProgramData/anaconda3/python.exe scripts/train_v16.py --epochs 3 --proposal-epochs 1 --train-size 4 --val-size 2 --batch-size 2 --num-points 192 --min-control-points 8 --max-control-points 28 --candidate-knots 64 --mse-tolerance 5e-5 --real-fraction 0 --proposal-pass-target 0.90 --deployment-pass-target 0.90 --policy-samples 2 --counterfactual-edits 4 --teacher-prefix-search-steps 6 --lr 2e-5 --joint-lr 3e-5 --teacher-refinement-steps 1 --teacher-refinement-candidates 3 --boundary-ranking-weight 0.5 --boundary-ranking-candidates 4 --joint-proposal-lr-scale 0.1 --joint-decoder-lr-scale 0.25 --joint-final-lr-ratio 0.25 --parameter-trust-enabled --parameter-trust-initial 0.25 --parameter-counterfactual-weight 0.25 --teacher-geometry-candidates 4 --local-fit-weight 0.1 --proposal-ordered-weight 0.5 --allow-infeasible-proposals --simplification-controller per_curve --complexity-max-scale 1.0 --feasible-objective --feasible-fit-margin 0.8 --feasible-fit-weight 0.02 --teacher-greedy-steps 16 --teacher-greedy-max-curves 2 --teacher-geometry-distillation-weight 0.2 --count-reserve-alignment --synthetic-simple-fraction 0.35 --synthetic-shape-fraction 0.25 --one-shot-safety-sigma 0 --one-shot-safety-knots 0 --final-safety-sigma 0 --final-safety-knots 0 --safety-anneal-epochs 8 --complexity-ramp-epochs 8 --resample-train-each-epoch --num-workers 0 --torch-num-threads 4 --device cpu --output /e/SelfSurpervisedSplineFitting/outputs/checkpoints/overnight_compact_pipeline_smoke_20260919_r1.pt --real-val-size 1 --real-manifest /e/SelfSurpervisedSplineFitting/data/splits/uji_pen_v2.jsonl --real-manifest /e/SelfSurpervisedSplineFitting/data/processed/natural_earth/v5.1.2_10m_coastline/manifest.jsonl --real-manifest /e/SelfSurpervisedSplineFitting/data/processed/usgs_contours/large_scale/manifest.jsonl --warm-start-checkpoint /e/SelfSurpervisedSplineFitting/outputs/checkpoints/overnight_reliable_3090_r1.pt
+Checking real manifests and train/val/test group separation...
+  Reading manifest: E:\SelfSurpervisedSplineFitting\data\splits\uji_pen_v2.jsonl
+  Checking groups/files: 2000/18219
+  Checking groups/files: 4000/18219
+  Checking groups/files: 6000/18219
+  Checking groups/files: 8000/18219
+  Checking groups/files: 10000/18219
+  Checking groups/files: 12000/18219
+  Checking groups/files: 14000/18219
+  Checking groups/files: 16000/18219
+  Checking groups/files: 18000/18219
+  Checking groups/files: 18219/18219
+  Ready uji_pen_characters_v2: train=9670, val=2456 (test excluded from training)
+  Reading manifest: E:\SelfSurpervisedSplineFitting\data\processed\natural_earth\v5.1.2_10m_coastline\manifest.jsonl
+  Checking groups/files: 2000/3908
+  Checking groups/files: 3908/3908
+  Ready natural_earth_10m_coastline: train=2625, val=750 (test excluded from training)
+  Reading manifest: E:\SelfSurpervisedSplineFitting\data\processed\usgs_contours\large_scale\manifest.jsonl
+  Checking groups/files: 820/820
+  Ready usgs_tnm_contours_large_scale: train=427, val=192 (test excluded from training)
+Transferred all 125 model tensors including selector/decoder; fresh optimizer, history, safety curriculum and proposal gate.
+v16 adaptive mass_topk: cpu, Kc=64 internal (full cubic knot vector at all-keep=72), MSE tolerance=5e-05; 4 train draws, 5 validation curves; real sources=3
+Synthetic source contract: clean source-subset threshold-minimal certificate at RMS=0.00707107, margin=20%, audit_points=512
+Simplification curriculum: training-only ranked-prefix teacher steps=6; certified over-count weight=1, symmetric true-count weight=1; complexity multiplier 0..1; safety 0+0sigma -> 0+0sigma. Deployment still uses one network forward and one final refit.
+Validation checkpoint quality uses the worst source pass rate. Additional subset fits run only during training.
+Per-curve simplification: scheduled complexity ramp; infeasible training curves receive no complexity pressure. Worst-source validation still governs checkpoint selection, not the training ramp.
+Training-only synthetic mixture: low-K=35%, procedural-shape=25%, historical=40%; procedural shapes have no true-knot/count labels; validation distribution is unchanged.
+Real sources are VALIDATION ONLY; training uses synthetic labels, and test splits are excluded from model selection.
+Online teacher refinement: 1 rounds x 3 deletion candidates; boundary ranking weight=0.5, candidates=4. Teacher mask agreement below is a training signal, not ground-truth knot F1.
+Epoch 001/3 proposal [============............] 1/2 MSE=5.979e-07 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+Epoch 001/3 proposal [========================] 2/2 MSE=2.254e-06 pass=100.0% K=64.0 teacherK=64.0 countMAE=0.00
+  validation [========................] 1/3 
+  validation [========================] 3/3 
+Epoch 001 val dense=100.0% deployment=100.0% worst-source=100.0% MSE=1.112e-06 K=64.00 mass=26.94 beta=1.98 complexity=0.00->0.00 safety=0+0.00sigma scale=1.00->1.00 target_met=False
+  learning rates: all=2.000e-05
+  parameter/local: counterfactual=2.3084, local=0.0010, geometry_teacher_delta_K=0.000, geometry_fits=0.0
+  training families: {'historical': 2, 'simple': 1, 'shape_terrain': 1}
+  Synthetic: dense=100.0%, deployment=100.0%, MSE=1.192e-06, K=64.00, targetK=13.00, count_MAE=51.00, bias=+51.00, knot_F1@0.01=0.338, param_RMSE=3.999e-02, trust_proposal=0.417
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=1.436e-07, K=64.00, trust_proposal=0.390
+  natural_earth_10m_coastline: dense=100.0%, deployment=100.0%, MSE=2.247e-06, K=64.00, trust_proposal=0.427
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.850e-07, K=64.00, trust_proposal=0.440
+Epoch 002/3 joint [============............] 1/2 MSE=1.399e-05 pass=100.0% K=12.0 teacherK=8.0 countMAE=7.00
+Epoch 002/3 joint [========================] 2/2 MSE=1.506e-05 pass=100.0% K=17.5 teacherK=12.0 countMAE=9.00
+  validation [========................] 1/3 
+  validation [========================] 3/3 
+Epoch 002 val dense=100.0% deployment=60.0% worst-source=0.0% MSE=3.291e-05 K=26.00 mass=25.56 beta=2.25 complexity=0.00->0.12 safety=0+0.00sigma scale=1.00->0.88 target_met=False
+  learning rates: proposal=3.000e-06, selector=3.000e-05, decoder=7.500e-06
+  training teacher: keep_P/R/F1=0.662/0.979/0.790, false_remove=2.1%, refinement_delta_K=0.750, improved=75.0%, extra_fits=9.0, boundary_loss=1.6483
+  parameter/local: counterfactual=0.0335, local=0.0307, geometry_teacher_delta_K=0.250, geometry_fits=4.0
+  compact teacher: fixed_K=8.50, fixed_pass=100.0%, decoded_pass=50.0%, accepted_delta_K=0.500, geometry_violation=0.3834, extra_refits=251.0, complexity_active=100.0%
+  training families: {'historical': 2, 'simple': 1, 'shape_handwriting': 1}
+  Synthetic: dense=100.0%, deployment=50.0%, MSE=4.556e-05, K=26.00, targetK=13.00, count_MAE=13.00, bias=+13.00, knot_F1@0.01=0.256, param_RMSE=3.766e-02, trust_proposal=0.417, trust_subset=0.254
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=6.804e-06, K=20.00, trust_proposal=0.390, trust_subset=0.254
+  natural_earth_10m_coastline: dense=100.0%, deployment=0.0%, MSE=5.887e-05, K=28.00, trust_proposal=0.427, trust_subset=0.254
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.747e-06, K=30.00, trust_proposal=0.440, trust_subset=0.254
+Epoch 003/3 joint [============............] 1/2 MSE=4.024e-05 pass=50.0% K=19.5 teacherK=16.5 countMAE=13.00
+Epoch 003/3 joint [========================] 2/2 MSE=7.764e-06 pass=100.0% K=14.0 teacherK=8.0 countMAE=7.00
+  validation [========................] 1/3 
+  validation [========================] 3/3 
+Epoch 003 val dense=100.0% deployment=60.0% worst-source=0.0% MSE=3.245e-05 K=26.00 mass=25.41 beta=2.28 complexity=0.12->0.25 safety=0+0.00sigma scale=0.88->0.75 target_met=False
+  learning rates: proposal=7.500e-07, selector=7.500e-06, decoder=1.875e-06
+  training teacher: keep_P/R/F1=0.670/0.955/0.780, false_remove=4.5%, refinement_delta_K=0.750, improved=75.0%, extra_fits=9.0, boundary_loss=1.2451
+  parameter/local: counterfactual=3.3495, local=0.6556, geometry_teacher_delta_K=0.250, geometry_fits=4.0
+  compact teacher: fixed_K=10.00, fixed_pass=100.0%, decoded_pass=50.0%, accepted_delta_K=0.250, geometry_violation=0.3721, extra_refits=260.5, complexity_active=75.0%
+  training families: {'historical': 1, 'shape_industrial': 1, 'simple': 1, 'shape_terrain': 1}
+  Synthetic: dense=100.0%, deployment=50.0%, MSE=4.442e-05, K=26.00, targetK=13.00, count_MAE=13.00, bias=+13.00, knot_F1@0.01=0.282, param_RMSE=3.764e-02, trust_proposal=0.417, trust_subset=0.254
+  uji_pen_characters_v2: dense=100.0%, deployment=100.0%, MSE=6.917e-06, K=20.00, trust_proposal=0.390, trust_subset=0.254
+  natural_earth_10m_coastline: dense=100.0%, deployment=0.0%, MSE=5.874e-05, K=28.00, trust_proposal=0.427, trust_subset=0.254
+  usgs_tnm_contours_large_scale: dense=100.0%, deployment=100.0%, MSE=7.740e-06, K=30.00, trust_proposal=0.440, trust_subset=0.254
+Saved best v16: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\overnight_compact_pipeline_smoke_20260919_r1.pt; quality=target_not_met. Last/resume: E:\SelfSurpervisedSplineFitting\outputs\checkpoints\overnight_compact_pipeline_smoke_20260919_r1.last.pt

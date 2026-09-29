@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import math
 import random
+<<<<<<< Updated upstream
 from collections import defaultdict
 from pathlib import Path
 
@@ -14,10 +15,205 @@ from .real_world import RealWorldCurveDataset, read_curve_manifest, resolve_poin
 from .synthetic import SyntheticCubicBSplineDataset, generate_sampling_parameters
 
 
+=======
+from collections import defaultdict
+from pathlib import Path
+
+import torch
+from torch.utils.data import Dataset
+
+from .real_world import RealWorldCurveDataset, read_curve_manifest, resolve_points_path
+from .synthetic import SyntheticCubicBSplineDataset, generate_sampling_parameters
+
+
+>>>>>>> Stashed changes
 EPOCH_SEED_STRIDE = 10_000_000
 SHAPE_SYNTHETIC_SEED_OFFSET = 2_000_000_000_000
 LOW_K_MIN = 4
 LOW_K_MAX = 8
+<<<<<<< Updated upstream
+=======
+
+
+def _namespaced_seed(seed: int, namespace: str) -> int:
+    """Derive a stable PyTorch seed without relying on large integer offsets."""
+    digest = hashlib.sha256(f"v16:{namespace}:{seed}".encode("ascii")).digest()
+    # The CPU generator aliases seeds that differ only above the low 32 bits.
+    # Use those bits deliberately so each namespace gets an independent stream.
+    return int.from_bytes(digest[:4], "little")
+
+
+class _LowKCertifiedSyntheticView(Dataset):
+    """Generate certified K=4..8 samples with full-range target padding."""
+
+    def __init__(self, config: dict, *, size: int, seed: int) -> None:
+        options = dict(config)
+        if not options.get("certified_minimal_source", False):
+            raise ValueError(
+                "synthetic_simple_fraction requires certified_minimal_source=True"
+            )
+        degree = 3
+        min_control_points = int(options.get("min_control_points", 5))
+        max_control_points = int(options.get("max_control_points", 10))
+        self.low_control_min = max(min_control_points, LOW_K_MIN + degree + 1)
+        self.low_control_max = min(max_control_points, LOW_K_MAX + degree + 1)
+        if self.low_control_min > self.low_control_max:
+            raise ValueError(
+                "synthetic_simple_fraction requires the configured source range "
+                "to overlap internal K=4..8"
+            )
+        self.max_internal_knots = max_control_points - degree - 1
+        options.update(
+            min_control_points=self.low_control_min,
+            max_control_points=self.low_control_max,
+            return_ground_truth=False,
+            cache_samples=False,
+        )
+        self.size = int(size)
+        self.dataset = SyntheticCubicBSplineDataset(
+            size=size,
+            seed=seed,
+            **options,
+        )
+
+    def __len__(self) -> int:
+        return self.size
+
+    def __getitem__(self, index: int) -> dict:
+        if index < 0 or index >= self.size:
+            raise IndexError(index)
+        sample = self.dataset[index]
+        knots = sample["true_internal_knots"]
+        if knots.numel() == self.max_internal_knots:
+            return sample
+
+        # The dedicated low-K generator pads to its own K<=8 capacity. Preserve
+        # the historical mixed-dataset contract by extending only the compact
+        # label tensors to the original configured source width.
+        result = dict(sample)
+        padded_knots = knots.new_zeros(self.max_internal_knots)
+        padded_mask = torch.zeros(self.max_internal_knots, dtype=torch.bool)
+        padded_knots[: knots.numel()] = knots
+        padded_mask[: knots.numel()] = sample["true_internal_knot_mask"]
+        result["true_internal_knots"] = padded_knots
+        result["true_internal_knot_mask"] = padded_mask
+        return result
+
+
+class _CompactShapeSyntheticDataset(Dataset):
+    """Deterministic, smooth procedural curves without fabricated knot labels."""
+
+    _FAMILIES = ("shape_industrial", "shape_terrain", "shape_handwriting")
+
+    def __init__(self, config: dict, *, size: int, seed: int) -> None:
+        options = dict(config)
+        self.size = int(size)
+        self.seed = int(seed)
+        self.num_points = int(options.get("num_points", 64))
+        self.point_dim = int(options.get("point_dim", 2))
+        self.sampling_nonuniformity = float(
+            options.get("sampling_nonuniformity", 0.45)
+        )
+        self.dtype = options.get("dtype", torch.float32)
+        if self.point_dim not in (2, 3):
+            raise ValueError(
+                "synthetic_shape_fraction supports only point_dim 2 or 3"
+            )
+        if self.num_points < 2:
+            raise ValueError("num_points must be at least 2")
+
+    def __len__(self) -> int:
+        return self.size
+
+    @staticmethod
+    def _uniform(generator: torch.Generator, low: float, high: float) -> float:
+        value = float(torch.rand((), generator=generator, dtype=torch.float64))
+        return low + (high - low) * value
+
+    def _base_curve(
+        self,
+        family: str,
+        parameters: torch.Tensor,
+        complexity: int,
+        generator: torch.Generator,
+    ) -> torch.Tensor:
+        t = parameters
+        phase = self._uniform(generator, -math.pi, math.pi)
+        amplitude = self._uniform(generator, 0.75, 1.15)
+        points = torch.zeros(self.num_points, self.point_dim, dtype=self.dtype)
+
+        if family == "shape_industrial":
+            # An open arc blended with one or two smooth inflections. This
+            # resembles a designed profile without introducing sharp corners.
+            span = math.pi * (0.55 + 0.08 * complexity)
+            angle = span * (t - 0.5) + 0.2 * phase
+            points[:, 0] = torch.sin(angle)
+            points[:, 1] = amplitude * (
+                0.72 * torch.cos(angle)
+                + 0.08 * complexity * torch.sin(2.0 * math.pi * t + phase)
+            )
+        elif family == "shape_terrain":
+            # Monotone progress with bounded multi-scale undulation: a compact
+            # analogue of coastline/contour geometry.
+            # Keep the highest case comfortably inside the configured K<=24
+            # source regime while retaining distinct low/high frequencies.
+            frequency = 1 + ((complexity + 1) // 2)
+            points[:, 0] = 2.0 * t - 1.0
+            points[:, 1] = amplitude * (
+                0.42 * torch.sin(frequency * math.pi * t + phase)
+                + 0.13 * torch.sin((frequency + 2) * math.pi * t - 0.5 * phase)
+            )
+        else:
+            # A loop-and-tail open stroke. The sin(pi*t) envelope keeps the
+            # endpoints distinct while varying the number of interior turns.
+            turns = 0.80 + 0.10 * complexity
+            angle = 2.0 * math.pi * turns * t + phase
+            envelope = 0.25 + 0.75 * torch.sin(math.pi * t)
+            points[:, 0] = 1.5 * (t - 0.5) + 0.24 * envelope * torch.sin(angle)
+            points[:, 1] = amplitude * (
+                0.36 * envelope * torch.cos(angle) + 0.12 * torch.sin(math.pi * t)
+            )
+
+        if self.point_dim == 3:
+            depth_frequency = 1 + (complexity % 3)
+            points[:, 2] = 0.22 * amplitude * torch.sin(
+                depth_frequency * math.pi * t - 0.35 * phase
+            )
+        return points
+
+    def __getitem__(self, index: int) -> dict:
+        if index < 0 or index >= self.size:
+            raise IndexError(index)
+        generator = torch.Generator().manual_seed(self.seed + index)
+        parameters = generate_sampling_parameters(
+            self.num_points,
+            nonuniformity=self.sampling_nonuniformity,
+            generator=generator,
+            dtype=self.dtype,
+        )
+        family = self._FAMILIES[index % len(self._FAMILIES)]
+        complexity = 1 + ((index // len(self._FAMILIES)) % 5)
+        points = self._base_curve(family, parameters, complexity, generator)
+
+        # Apply a deterministic random frame so the network cannot identify a
+        # family from a fixed axis convention.
+        frame = torch.randn(
+            self.point_dim,
+            self.point_dim,
+            generator=generator,
+            dtype=self.dtype,
+        )
+        orthogonal, _ = torch.linalg.qr(frame)
+        points = points @ orthogonal.transpose(0, 1)
+        center = points.mean(dim=0, keepdim=True)
+        points = points - center
+        scale = points.norm(dim=-1).amax().clamp_min(1e-8)
+        points = points / scale
+        return {
+            "points": points,
+            "synthetic_family": family,
+        }
+>>>>>>> Stashed changes
 
 
 def _namespaced_seed(seed: int, namespace: str) -> int:
@@ -362,7 +558,11 @@ class MixedTrainingCurves(Dataset):
     def __init__(self, config, real_sources=(), *, size=4000, seed=42,
                  real_fraction=0.5, epoch=0, resample=True,
                  synthetic_simple_fraction=0.0,
+<<<<<<< Updated upstream
                  synthetic_shape_fraction=0.0, synthetic_shape_domain="mixed"):
+=======
+                 synthetic_shape_fraction=0.0):
+>>>>>>> Stashed changes
         if size < 1 or size >= EPOCH_SEED_STRIDE:
             raise ValueError("training size must be positive and below the epoch seed stride")
         if not 0 <= real_fraction <= 1:
@@ -384,9 +584,12 @@ class MixedTrainingCurves(Dataset):
         self.real_fraction = real_fraction if self.real_sources else 0.0
         self.synthetic_simple_fraction = float(synthetic_simple_fraction)
         self.synthetic_shape_fraction = float(synthetic_shape_fraction)
+<<<<<<< Updated upstream
         if synthetic_shape_domain not in ("mixed", "industrial", "terrain", "handwriting"):
             raise ValueError("unknown procedural synthetic shape domain")
         self.synthetic_shape_domain = synthetic_shape_domain
+=======
+>>>>>>> Stashed changes
         self.synthetic_augmentation_enabled = bool(
             self.synthetic_simple_fraction or self.synthetic_shape_fraction
         )
@@ -412,12 +615,20 @@ class MixedTrainingCurves(Dataset):
                 config,
                 size=size,
                 seed=self.seed + SHAPE_SYNTHETIC_SEED_OFFSET,
+<<<<<<< Updated upstream
                 domain=synthetic_shape_domain,
             )
 
     def __len__(self):
         return self.size
 
+=======
+            )
+
+    def __len__(self):
+        return self.size
+
+>>>>>>> Stashed changes
     def __getitem__(self, index):
         rng = random.Random(self.seed + index + 2**40)
         if self.real_sources and rng.random() < self.real_fraction:
@@ -463,6 +674,51 @@ class MixedTrainingCurves(Dataset):
                 self.certified_synthetic_targets
                 and family in {"historical", "simple"}
             ),
+<<<<<<< Updated upstream
+=======
+        )
+        if self.synthetic_augmentation_enabled:
+            record["synthetic_family"] = family
+        return record
+
+
+class ValidationCurves(Dataset):
+    def __init__(self, config, real_sources=(), *, size=1000, seed=1_000_000,
+                 real_per_source=100):
+        if size < 1 or real_per_source < 1:
+            raise ValueError("validation counts must be positive")
+        options = dict(config)
+        self.certified_synthetic_targets = bool(
+            options.get("certified_minimal_source", False)
+        )
+        options.update(
+            return_ground_truth=False,
+            cache_samples=True,
+        )
+        self.synthetic = SyntheticCubicBSplineDataset(size=size, seed=seed, **options)
+        self.entries = [("Synthetic", self.synthetic, i) for i in range(size)]
+        self.selected_real_ids = {}
+        for source_index, (label, _, val) in enumerate(real_sources):
+            chosen = grouped_indices(val.records, real_per_source, seed + source_index)
+            self.entries.extend((label, val, i) for i in chosen)
+            self.selected_real_ids[label] = [val.records[i]["sample_id"] for i in chosen]
+
+    def __len__(self):
+        return len(self.entries)
+
+    def __getitem__(self, index):
+        label, dataset, i = self.entries[index]
+        sample = dataset[i]
+        is_certified_synthetic = (
+            label == "Synthetic" and self.certified_synthetic_targets
+        )
+        return _curve_record(
+            sample["points"],
+            label,
+            max_internal_knots=self.synthetic.max_internal_knots,
+            synthetic_sample=sample if is_certified_synthetic else None,
+            certified=is_certified_synthetic,
+>>>>>>> Stashed changes
         )
         if self.synthetic_augmentation_enabled:
             record["synthetic_family"] = family

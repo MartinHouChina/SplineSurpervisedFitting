@@ -1,0 +1,2 @@
+
+[check_environment] /e/SelfSurpervisedSplineFitting/outputs/test-compact-runner-suite-ecebdefd947c455080d818d1195fdd42/test_shell_resume_status_contr1/stub\ python scripts/overnight_linux_preflight.py --runtime-only --device cuda

@@ -124,6 +124,7 @@ class V16SubsetLoss(nn.Module):
         teacher_greedy_max_curves: int = 2,
         teacher_geometry_distillation_weight: float = 0.0,
         count_reserve_alignment: bool = False,
+<<<<<<< Updated upstream
         teacher_greedy_trajectory_checks: int = 0,
         teacher_geometry_trajectory_targets: int = 0,
         teacher_greedy_priority: str = "sequential",
@@ -131,6 +132,8 @@ class V16SubsetLoss(nn.Module):
         max_point_error_weight: float = 0.0,
         max_point_error_tolerance: float | None = None,
         max_point_error_tail_fraction: float = 0.05,
+=======
+>>>>>>> Stashed changes
     ) -> None:
         super().__init__()
         if not math.isfinite(mse_tolerance) or mse_tolerance <= 0:
@@ -144,8 +147,11 @@ class V16SubsetLoss(nn.Module):
             ("teacher_geometry_candidates", teacher_geometry_candidates, 0),
             ("teacher_greedy_steps", teacher_greedy_steps, 0),
             ("teacher_greedy_max_curves", teacher_greedy_max_curves, 1),
+<<<<<<< Updated upstream
             ("teacher_greedy_trajectory_checks", teacher_greedy_trajectory_checks, 0),
             ("teacher_geometry_trajectory_targets", teacher_geometry_trajectory_targets, 0),
+=======
+>>>>>>> Stashed changes
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
                 raise ValueError(f"{name} must be an integer >= {minimum}")
@@ -158,8 +164,11 @@ class V16SubsetLoss(nn.Module):
             ("local_fit_weight", local_fit_weight),
             ("proposal_ordered_weight", proposal_ordered_weight),
             ("teacher_geometry_distillation_weight", teacher_geometry_distillation_weight),
+<<<<<<< Updated upstream
             ("teacher_compact_mask_weight", teacher_compact_mask_weight),
             ("max_point_error_weight", max_point_error_weight),
+=======
+>>>>>>> Stashed changes
             ("supervised_count_weight", supervised_count_weight),
             ("supervised_over_count_weight", supervised_over_count_weight),
             ("true_parameter_weight", true_parameter_weight),
@@ -214,6 +223,7 @@ class V16SubsetLoss(nn.Module):
         self.feasible_fit_weight = float(feasible_fit_weight)
         self.teacher_greedy_steps = teacher_greedy_steps
         self.teacher_greedy_max_curves = teacher_greedy_max_curves
+<<<<<<< Updated upstream
         if teacher_geometry_trajectory_targets and not teacher_greedy_trajectory_checks:
             raise ValueError("trajectory geometry targets require trajectory decode checks")
         self.teacher_greedy_trajectory_checks = teacher_greedy_trajectory_checks
@@ -237,6 +247,8 @@ class V16SubsetLoss(nn.Module):
             float(max_point_error_tolerance) if max_point_error_tolerance is not None else None
         )
         self.max_point_error_tail_fraction = float(max_point_error_tail_fraction)
+=======
+>>>>>>> Stashed changes
 
     @staticmethod
     def _validate_points(points: torch.Tensor, degree: int) -> None:
@@ -914,12 +926,15 @@ class V16SubsetLoss(nn.Module):
             "teacher_greedy_verification_refits", "teacher_greedy_decode_refits",
             "teacher_greedy_refits", "teacher_geometry_distillation_loss",
             "teacher_geometry_fit_violation", "teacher_geometry_aux_refits",
+<<<<<<< Updated upstream
             "teacher_greedy_trajectory_checks", "teacher_greedy_trajectory_pass_rate",
             "teacher_greedy_trajectory_accepted_delta_k", "teacher_geometry_target_count",
             "teacher_geometry_target_k_mean", "teacher_geometry_target_pass_rate",
             "teacher_compact_mask_loss", "teacher_compact_bce_loss",
             "teacher_compact_count_loss", "teacher_compact_ranking_loss",
             "teacher_compact_target_count", "teacher_compact_target_k_mean",
+=======
+>>>>>>> Stashed changes
         )}
 
     @staticmethod
@@ -931,6 +946,7 @@ class V16SubsetLoss(nn.Module):
         }
 
     @torch.no_grad()
+<<<<<<< Updated upstream
     def _greedy_priority_rows(self, best_mask, best_mse, deployment_mask, tolerance,
                               minimum, *, deployment_mse=None, supervised_counts=None,
                               supervised_valid=None):
@@ -981,6 +997,10 @@ class V16SubsetLoss(nn.Module):
     @torch.no_grad()
     def _fixed_geometry_greedy(self, model, context, parameters, knots, mask,
                                points, degree, tolerance, minimum, *, trajectory=None):
+=======
+    def _fixed_geometry_greedy(self, model, context, parameters, knots, mask,
+                               points, degree, tolerance, minimum):
+>>>>>>> Stashed changes
         """Full single-deletion scan, bounded by accepted steps, on one curve.
 
         The batched solver examines EVERY selected location in a round. The
@@ -1029,14 +1049,18 @@ class V16SubsetLoss(nn.Module):
                 checks += 1
                 if bool((verified <= tolerance).all()):
                     mask, current_mse = trial, verified
+<<<<<<< Updated upstream
                     if trajectory is not None:
                         trajectory.append((mask.detach().clone(), current_mse.detach().clone()))
+=======
+>>>>>>> Stashed changes
                     accepted = True
                     break
             if not accepted:
                 break
         return mask, current_mse, scans, checks
 
+<<<<<<< Updated upstream
     @staticmethod
     def _trajectory_check_indices(length, budget):
         """Bounded samples including one deletion and the final deletion.
@@ -1197,11 +1221,20 @@ class V16SubsetLoss(nn.Module):
         """Discover compact fixed geometry, then admit ONLY decoded-feasible labels.
 
         Up to max_curves rows are searched using the configured priority.
+=======
+    @torch.no_grad()
+    def _greedy_teacher(self, model, context, best_mask, best_mse, deployment_mask,
+                        deployment_output, points, degree, tolerance, minimum):
+        """Discover compact fixed geometry, then admit ONLY decoded-feasible labels.
+
+        Up to max_curves rows (shuffled by the training loader) are searched.
+>>>>>>> Stashed changes
         Each distinct seed, incumbent teacher and deployed mask, receives the
         configured number of accepted deletion steps. A fixed-geometry target
         that the current decoder cannot realize is auxiliary geometry training
         data, NEVER a feasible mask/count label.
         """
+<<<<<<< Updated upstream
         rows = self._greedy_priority_rows(
             best_mask, best_mse, deployment_mask, tolerance, minimum,
             deployment_mse=deployment_mse, supervised_counts=supervised_counts,
@@ -1212,6 +1245,8 @@ class V16SubsetLoss(nn.Module):
                 model, context, best_mask, best_mse, deployment_mask,
                 deployment_output, points, degree, tolerance, minimum, row_indices=rows,
             )
+=======
+>>>>>>> Stashed changes
         zero = best_mse.new_zeros(())
         metrics = self._greedy_metrics(zero)
         batch = points.shape[0]
@@ -1220,7 +1255,11 @@ class V16SubsetLoss(nn.Module):
         targets = []
         fixed_counts, fixed_pass, decoded_pass, fixed_delta = [], [], [], []
         scans = checks = decoded_refits = 0
+<<<<<<< Updated upstream
         for row in rows:
+=======
+        for row in range(min(batch, self.teacher_greedy_max_curves)):
+>>>>>>> Stashed changes
             row_context = self._row_context(context, row, batch)
             row_points, row_tolerance = points[row:row + 1], tolerance[row:row + 1]
             seeds = [original_mask[row:row + 1]]
@@ -1267,7 +1306,11 @@ class V16SubsetLoss(nn.Module):
                 fixed_pass.append(1.0)
                 decoded_pass.append(float(target["decoded_feasible"]))
                 fixed_delta.append(int(original_mask[row].sum()) - target["rank"][0])
+<<<<<<< Updated upstream
         searched = len(rows)
+=======
+        searched = min(batch, self.teacher_greedy_max_curves)
+>>>>>>> Stashed changes
         changed = (best_mask != original_mask).any(-1)
         metrics.update(
             teacher_greedy_curve_fraction=zero.new_tensor(searched / batch),
@@ -1307,6 +1350,7 @@ class V16SubsetLoss(nn.Module):
             violations.append(violation)
             losses.append(parameter_loss + position_loss + violation)
         zero = points.new_zeros(())
+<<<<<<< Updated upstream
         if losses and self.teacher_geometry_trajectory_targets:
             # A curve with two frontier targets must not receive twice the
             # weight of a curve with only one reachable compact state.
@@ -1396,6 +1440,11 @@ class V16SubsetLoss(nn.Module):
         )
         return loss, metrics
 
+=======
+        return (torch.stack(losses).mean() if losses else zero,
+                torch.stack(violations).mean() if violations else zero, len(losses))
+
+>>>>>>> Stashed changes
     @staticmethod
     def _count_aligned_targets(mask, *, sigma, reserve, dtype):
         """Soft BCE targets whose MASS + safety maps to the teacher cardinality.
@@ -1821,6 +1870,7 @@ class V16SubsetLoss(nn.Module):
         proposal_chord_mse = deployment_chord_mse = zero
         proposal_counterfactual_win = deployment_counterfactual_win = zero
         local_fit_loss = local_max_mse = zero
+<<<<<<< Updated upstream
         max_point_error_loss = zero
         point_error_metrics = {}
         dense_maxima = dense_point_tail = None
@@ -1832,6 +1882,11 @@ class V16SubsetLoss(nn.Module):
         greedy_targets = []
         geometry_distillation_loss = zero
         compact_mask_loss = zero
+=======
+        greedy_metrics = self._greedy_metrics(zero)
+        greedy_targets = []
+        geometry_distillation_loss = zero
+>>>>>>> Stashed changes
         complexity_active_fraction = zero
         aligned_target_mass = count_reserve_infeasible_fraction = zero
         counterfactual_refits = 0
@@ -1907,7 +1962,10 @@ class V16SubsetLoss(nn.Module):
                 raise ValueError("select_mask must return a boolean [B,K] tensor")
             deployment_output = None
             if (self.parameter_counterfactual_weight or self.local_fit_weight
+<<<<<<< Updated upstream
                     or self.max_point_error_weight
+=======
+>>>>>>> Stashed changes
                     or getattr(model, "parameter_trust_enabled", False)
                     or self.teacher_greedy_steps):
                 deployment_output = self._decode_output(model, context, mask)
@@ -2069,8 +2127,11 @@ class V16SubsetLoss(nn.Module):
                     best_mask, searched_best_mse, greedy_targets, greedy_metrics = self._greedy_teacher(
                         model, context, best_mask, searched_best_mse, mask,
                         deployment_output, points, degree, tolerance, minimum,
+<<<<<<< Updated upstream
                         deployment_mse=deployment_mse, supervised_counts=supervised_counts,
                         supervised_valid=supervised_valid,
+=======
+>>>>>>> Stashed changes
                     )
                 teacher_feasible = searched_best_mse <= tolerance
                 teacher_match_metrics = self._teacher_match_metrics(
@@ -2088,11 +2149,14 @@ class V16SubsetLoss(nn.Module):
                 greedy_metrics["teacher_greedy_refits"] = (
                     greedy_metrics["teacher_greedy_refits"] + auxiliary_refits
                 )
+<<<<<<< Updated upstream
             if self.teacher_compact_mask_weight and greedy_targets:
                 compact_mask_loss, compact_metrics = self._compact_mask_distillation(
                     model, context, greedy_targets, mask,
                 )
                 greedy_metrics.update(compact_metrics)
+=======
+>>>>>>> Stashed changes
             # Re-decode the actual chosen set with gradients. Targets are from
             # this model/context, so relocation is trained for the selected set.
             best_mse = self._decode_mse(model, context, best_mask, points, degree)
@@ -2324,8 +2388,11 @@ class V16SubsetLoss(nn.Module):
             loss = loss + self.proposal_ordered_weight * proposal_ordered_loss
         if self.teacher_geometry_distillation_weight:
             loss = loss + self.teacher_geometry_distillation_weight * geometry_distillation_loss
+<<<<<<< Updated upstream
         if self.teacher_compact_mask_weight:
             loss = loss + self.teacher_compact_mask_weight * compact_mask_loss
+=======
+>>>>>>> Stashed changes
         if not torch.isfinite(loss):
             raise RuntimeError("non-finite v16 subset objective")
         proposal_trust = context.get("proposal_parameter_trust")

@@ -74,14 +74,18 @@ ENHANCED_TRAINING_DEFAULTS = {
     "feasible_fit_weight": 0.02,
     "teacher_greedy_steps": 0,
     "teacher_greedy_max_curves": 2,
+<<<<<<< Updated upstream
     "teacher_greedy_priority": "sequential",
     "teacher_compact_mask_weight": 0.0,
     "teacher_greedy_trajectory_checks": 0,
     "teacher_geometry_trajectory_targets": 0,
+=======
+>>>>>>> Stashed changes
     "teacher_geometry_distillation_weight": 0.0,
     "count_reserve_alignment": False,
     "synthetic_simple_fraction": 0.0,
     "synthetic_shape_fraction": 0.0,
+<<<<<<< Updated upstream
     "synthetic_shape_domain": "mixed",
     "proposal_refinement_layers": 0,
     "selection_refinement_layers": 0,
@@ -89,6 +93,8 @@ ENHANCED_TRAINING_DEFAULTS = {
     "coupled_proposal_steps": 0,
     "coupled_subset_steps": 0,
     "parameter_chord_blend": 0.0,
+=======
+>>>>>>> Stashed changes
 }
 
 
@@ -114,8 +120,11 @@ def parser():
                    help="Training-only fraction of synthetic draws biased to low source K")
     p.add_argument("--synthetic-shape-fraction", type=float, default=0.0,
                    help="Training-only procedural shapes; no fabricated true-knot labels")
+<<<<<<< Updated upstream
     p.add_argument("--synthetic-shape-domain", choices=("mixed", "industrial", "terrain", "handwriting"),
                    default="mixed", help="Training-only procedural family restriction; never loads real test points")
+=======
+>>>>>>> Stashed changes
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--num-points", type=int, default=192)
     p.add_argument("--point-dim", type=int, choices=(2, 3), default=2)
@@ -214,6 +223,7 @@ def parser():
                    help="Training-only fixed-geometry full single-deletion search rounds")
     p.add_argument("--teacher-greedy-max-curves", type=int, default=2,
                    help="Maximum curves per batch receiving full deletion search")
+<<<<<<< Updated upstream
     p.add_argument("--teacher-greedy-priority", choices=("sequential", "compact"), default="sequential",
                    help="compact prioritizes feasible, overcomplete curves for bounded training-only search")
     p.add_argument("--teacher-compact-mask-weight", type=float, default=0.0,
@@ -222,6 +232,8 @@ def parser():
                    help="Training-only decoded checkpoints per greedy seed; zero keeps endpoint-only supervision")
     p.add_argument("--teacher-geometry-trajectory-targets", type=int, default=0,
                    help="Per-curve reachable/frontier geometry targets; zero keeps legacy endpoint targets")
+=======
+>>>>>>> Stashed changes
     p.add_argument("--teacher-geometry-distillation-weight", type=float, default=0.0)
     p.add_argument("--count-reserve-alignment", action="store_true",
                    help="Align mask-probability mass targets with deployed count/safety reserve")
@@ -258,10 +270,13 @@ def parser():
         "--complexity-max-scale", type=float, default=4.0,
         help="Maximum validation-controlled multiplier on the complexity loss",
     )
+<<<<<<< Updated upstream
     p.add_argument("--subset-geometry-mode", choices=("legacy", "anchored"), default="legacy",
                    help="Opt-in anchor-preserving subset geometry; stored in the model checkpoint")
     p.add_argument("--subset-geometry-residual-scale", type=float, default=1.0,
                    help="Bounded subset geometry residual scale in [0,1]; zero keeps the anchor geometry")
+=======
+>>>>>>> Stashed changes
     p.add_argument("--complexity-pass-margin", type=float, default=0.02)
     p.add_argument("--simplification-controller", choices=("worst_source", "per_curve"),
                    default="worst_source",
@@ -338,20 +353,26 @@ def validate_args(args):
         "teacher_refinement_steps",
         "teacher_geometry_candidates",
         "teacher_greedy_steps",
+<<<<<<< Updated upstream
         "teacher_greedy_trajectory_checks", "teacher_geometry_trajectory_targets",
         "joint_geometry_calibration_epochs",
         "proposal_refinement_layers", "selection_refinement_layers", "survivor_refinement_layers",
         "coupled_proposal_steps", "coupled_subset_steps",
+=======
+>>>>>>> Stashed changes
     ):
         value = getattr(args, key)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError(f"{key} must be a non-negative integer")
+<<<<<<< Updated upstream
     if not math.isfinite(args.parameter_chord_blend) or not 0 <= args.parameter_chord_blend <= 1:
         raise ValueError("parameter-chord-blend must be in [0,1]")
     if (args.coupled_proposal_steps or args.coupled_subset_steps) and args.subset_geometry_mode != "anchored":
         raise ValueError("coupled updates require --subset-geometry-mode anchored")
     if args.joint_geometry_calibration_epochs > args.epochs - args.proposal_epochs:
         raise ValueError("joint-geometry-calibration-epochs cannot exceed the total joint epochs")
+=======
+>>>>>>> Stashed changes
     for key in ("teacher_refinement_candidates", "boundary_ranking_candidates",
                 "teacher_greedy_max_curves"):
         if getattr(args, key) < 1:
@@ -400,13 +421,17 @@ def validate_args(args):
         "boundary_ranking_weight",
         "parameter_counterfactual_weight", "local_fit_weight", "proposal_ordered_weight",
         "teacher_geometry_distillation_weight", "feasible_fit_weight",
+<<<<<<< Updated upstream
         "teacher_compact_mask_weight",
         "max_point_error_weight",
+=======
+>>>>>>> Stashed changes
     ):
         if not math.isfinite(getattr(args, key)) or getattr(args, key) < 0:
             raise ValueError(f"{key} must be finite and nonnegative")
     if args.joint_final_lr_ratio > 1:
         raise ValueError("joint-final-lr-ratio must lie in (0,1]")
+<<<<<<< Updated upstream
     if args.max_point_error_tolerance is not None and (
         not math.isfinite(args.max_point_error_tolerance) or args.max_point_error_tolerance <= 0
     ):
@@ -415,12 +440,15 @@ def validate_args(args):
         raise ValueError("max-point-error-weight requires an explicit max-point-error-tolerance")
     if not math.isfinite(args.max_point_error_tail_fraction) or not 0 < args.max_point_error_tail_fraction <= 1:
         raise ValueError("max-point-error-tail-fraction must lie in (0,1]")
+=======
+>>>>>>> Stashed changes
     if not math.isfinite(args.feasible_fit_margin) or not 0 < args.feasible_fit_margin <= 1:
         raise ValueError("feasible-fit-margin must lie in (0,1]")
     if args.feasible_fit_weight > 1:
         raise ValueError("feasible-fit-weight must lie in [0,1]")
     if args.teacher_geometry_distillation_weight and not args.teacher_greedy_steps:
         raise ValueError("teacher-geometry-distillation-weight requires teacher-greedy-steps > 0")
+<<<<<<< Updated upstream
     if args.teacher_greedy_trajectory_checks and not args.teacher_greedy_steps:
         raise ValueError("teacher-greedy-trajectory-checks requires teacher-greedy-steps > 0")
     if args.teacher_compact_mask_weight and not args.teacher_greedy_trajectory_checks:
@@ -433,6 +461,8 @@ def validate_args(args):
         raise ValueError("teacher-geometry-trajectory-targets requires teacher-greedy-trajectory-checks > 0")
     if args.teacher_geometry_trajectory_targets and not args.teacher_geometry_distillation_weight:
         raise ValueError("teacher-geometry-trajectory-targets requires teacher-geometry-distillation-weight > 0")
+=======
+>>>>>>> Stashed changes
     if args.simplification_controller == "per_curve" and not args.feasible_objective:
         raise ValueError("per_curve controller requires --feasible-objective")
     if args.minimality_max_attempts < 1:
@@ -1392,10 +1422,13 @@ def main(argv=None):
         feasible_fit_weight=args.feasible_fit_weight,
         teacher_greedy_steps=args.teacher_greedy_steps,
         teacher_greedy_max_curves=args.teacher_greedy_max_curves,
+<<<<<<< Updated upstream
         teacher_greedy_priority=args.teacher_greedy_priority,
         teacher_compact_mask_weight=args.teacher_compact_mask_weight,
         teacher_greedy_trajectory_checks=args.teacher_greedy_trajectory_checks,
         teacher_geometry_trajectory_targets=args.teacher_geometry_trajectory_targets,
+=======
+>>>>>>> Stashed changes
         teacher_geometry_distillation_weight=args.teacher_geometry_distillation_weight,
         count_reserve_alignment=args.count_reserve_alignment,
         count_weight=args.count_weight,
@@ -1442,11 +1475,14 @@ def main(argv=None):
         flush=True,
     )
     print("Validation checkpoint quality uses the worst source pass rate. Additional subset fits run only during training.", flush=True)
+<<<<<<< Updated upstream
     if args.joint_geometry_calibration_epochs:
         print(f"Joint geometry calibration: first {args.joint_geometry_calibration_epochs} joint epochs "
               "freeze encoder/ParameterHead/Proposal and pause complexity/safety curriculum; "
               "Selector and subset decoder learn compact teacher geometry. Later joint epochs "
               "unfreeze dense geometry at the configured proposal LR scale.", flush=True)
+=======
+>>>>>>> Stashed changes
     if args.simplification_controller == "per_curve":
         print("Per-curve simplification: scheduled complexity ramp; infeasible training curves receive no complexity pressure. "
               "Worst-source validation still governs checkpoint selection, not the training ramp.", flush=True)
@@ -1503,8 +1539,12 @@ def main(argv=None):
         train_data = MixedTrainingCurves(dataset_config, sources, size=args.train_size, seed=args.seed,
             real_fraction=args.real_fraction, epoch=epoch-1, resample=args.resample_train_each_epoch,
             synthetic_simple_fraction=args.synthetic_simple_fraction,
+<<<<<<< Updated upstream
             synthetic_shape_fraction=args.synthetic_shape_fraction,
             synthetic_shape_domain=args.synthetic_shape_domain)
+=======
+            synthetic_shape_fraction=args.synthetic_shape_fraction)
+>>>>>>> Stashed changes
         loader_generator = torch.Generator().manual_seed(args.seed + epoch)
         train_loader = DataLoader(
             train_data, batch_size=args.batch_size, shuffle=True,
@@ -1588,8 +1628,11 @@ def main(argv=None):
             feasible_streak=feasible_streak,
             seconds=time.perf_counter()-started,
         )
+<<<<<<< Updated upstream
         if args.joint_geometry_calibration_epochs:
             entry.update(phase=phase, proposal_frozen=geometry_calibration)
+=======
+>>>>>>> Stashed changes
         if training_family_counts:
             entry["training_family_counts"] = dict(training_family_counts)
         history.append(entry)
@@ -1623,8 +1666,11 @@ def main(argv=None):
             training_config=current_config, dataset_config=dataset_config, history=history,
             training_schedule=dict(joint_end_epoch=joint_schedule_end_epoch,
                                    joint_final_lr_ratio=args.joint_final_lr_ratio,
+<<<<<<< Updated upstream
                                    **({"joint_geometry_calibration_epochs": args.joint_geometry_calibration_epochs}
                                       if args.joint_geometry_calibration_epochs else {}),
+=======
+>>>>>>> Stashed changes
                                    **({"simplification_controller": args.simplification_controller}
                                       if args.simplification_controller != "worst_source" else {})),
             initializer_provenance=initializer_provenance,
@@ -1703,6 +1749,7 @@ def main(argv=None):
                              teacher_geometry_candidates=args.teacher_geometry_candidates,
                              teacher_greedy_steps=args.teacher_greedy_steps,
                              teacher_greedy_max_curves=args.teacher_greedy_max_curves,
+<<<<<<< Updated upstream
                              teacher_greedy_priority=args.teacher_greedy_priority,
                              teacher_greedy_trajectory_checks=args.teacher_greedy_trajectory_checks,
                              teacher_geometry_trajectory_targets=args.teacher_geometry_trajectory_targets,
@@ -1711,6 +1758,11 @@ def main(argv=None):
                              feasible_fit_weight=args.feasible_fit_weight,
                              max_point_error_tolerance=args.max_point_error_tolerance,
                              max_point_error_tail_fraction=args.max_point_error_tail_fraction,
+=======
+                             feasible_objective=args.feasible_objective,
+                             feasible_fit_margin=args.feasible_fit_margin,
+                             feasible_fit_weight=args.feasible_fit_weight,
+>>>>>>> Stashed changes
                              count_reserve_alignment=args.count_reserve_alignment,
                              boundary_ranking_candidates=args.boundary_ranking_candidates,
                              ranked_prefix_teacher=objective.ranked_prefix_teacher,
@@ -1726,8 +1778,12 @@ def main(argv=None):
                                   "proposal_knot_coverage_weight",
                                   "selected_knot_position_weight", "boundary_ranking_weight",
                                   "parameter_counterfactual_weight", "local_fit_weight",
+<<<<<<< Updated upstream
                                   "proposal_ordered_weight", "teacher_geometry_distillation_weight",
                                   "teacher_compact_mask_weight", "max_point_error_weight")}))
+=======
+                                  "proposal_ordered_weight", "teacher_geometry_distillation_weight")}))
+>>>>>>> Stashed changes
         payload["qualification"] = assess_v16_checkpoint(
             payload,
             required_pass_rate=V16_FORMAL_PASS_RATE,
@@ -1788,6 +1844,7 @@ def main(argv=None):
                 f"extra_refits={train_metrics['teacher_greedy_refits']:.1f}, "
                 f"complexity_active={train_metrics['complexity_active_fraction']:.1%}", flush=True,
             )
+<<<<<<< Updated upstream
         if args.teacher_greedy_trajectory_checks and stage == "joint":
             print(
                 f"  reachable teacher: checks_total={train_metrics['teacher_greedy_trajectory_checks']:.0f}, "
@@ -1806,6 +1863,8 @@ def main(argv=None):
                 f"ranking_loss={train_metrics['teacher_compact_ranking_loss']:.4f}; "
                 "targets require smaller count AND decoded feasibility", flush=True,
             )
+=======
+>>>>>>> Stashed changes
         if training_family_counts:
             print(f"  training families: {dict(training_family_counts)}", flush=True)
         for name, values in measured["by_source"].items():

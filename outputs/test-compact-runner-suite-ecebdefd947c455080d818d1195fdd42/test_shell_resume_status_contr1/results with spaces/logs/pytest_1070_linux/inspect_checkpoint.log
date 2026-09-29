@@ -1,0 +1,2 @@
+
+[inspect_checkpoint] /e/SelfSurpervisedSplineFitting/outputs/test-compact-runner-suite-ecebdefd947c455080d818d1195fdd42/test_shell_resume_status_contr1/stub\ python scripts/inspect_v16_checkpoint.py --checkpoint /e/SelfSurpervisedSplineFitting/outputs/test-compact-runner-suite-ecebdefd947c455080d818d1195fdd42/test_shell_resume_status_contr1/results\ with\ spaces/checkpoints/pytest_1070_linux.pt --mse-tolerance 5e-5
