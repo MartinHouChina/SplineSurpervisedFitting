@@ -1,0 +1,7 @@
+Highlights
+
+- Candidate selection couples parameter prediction, knot relocation, and refitting.
+- Residual insertion and pruning expose the cost of error-constrained deployment.
+- Four tolerances assess knot count, peak error, pass rate, and full runtime.
+- At MSE 1e-5, the pipeline reached 62.3% joint pass rate on 61 curves.
+- At MSE 5e-5, it used 16.64 mean internal knots at 78.7% joint pass rate.

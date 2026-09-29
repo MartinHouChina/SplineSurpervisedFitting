@@ -6,7 +6,8 @@
 
 ## 文件与状态
 
-- `manuscript.tex`：问题、方法、训练、实验协议、待填结果、局限及结论；暂不放图。
+- `manuscript.tex`：问题、方法、训练、实验协议、结果、局限及结论；暂不放图。
+- `highlights.txt`：Elsevier/CAD 投稿用 Highlights（5 条，每条不超过 85 字符）。
 - `references.bib`：五个对照论文及三个真实数据来源的基础书目。
 - [结果审计](../../docs/overnight_results_audit_20260921.md)：本次服务器结果的数字、来源、失败和解释边界。
 
@@ -14,7 +15,7 @@
 
 这不是CAD最终投稿合规声明。官方[作者指南](https://www.sciencedirect.com/journal/computer-aided-design/publish/guide-for-authors)本次访问403，未据此编造最新字数/排版要求。采用通用Elsevier LaTeX结构；作者、基金、声明、最终实验表和学习领域相关文献仍需补充。当前环境没有LaTeX编译器，未声称已编译PDF。
 
-已训练检查点的新评估协议见[10%随机测试说明](../../docs/saved_models_test10pct.md)。实际训练配置应以这两份检查点与history为准，不能把默认60轮当成已完成轮数。结果部分仍保留待填标记，不写未经此次评估得到的优势数值。
+已训练检查点的新评估协议见[10%随机测试说明](../../docs/saved_models_test10pct.md)。实际训练配置应以这两份检查点与history为准，不能把默认60轮当成已完成轮数。2026-09-28 已用 32K、61 曲线、四阈值重跑的已核验结果更新摘要、引言和 Highlights；该实验为“所有方法插入修复、仅 Ours 后剪枝”的历史非对称协议，不能与 64K、全方法统一后处理的消融结果混写。结果章节和最终图表仍需在投稿前统一到一个明确协议。
 
 框架明确区分：
 
