@@ -8,8 +8,8 @@
 \journal{Computer-Aided Design}
 \begin{document}
 \begin{frontmatter}
-\title{Learning-Guided Candidate Selection and Error-Constrained Knot Pruning
-for Compact B-Spline Fitting}
+\title{Learning-Guided Candidate Knot Selection with KeepMask-Conditioned
+Refinement for Compact B-Spline Fitting}
 \author{Author names and affiliations to be supplied}
 \begin{abstract}
 Recovering a compact B-spline from ordered samples requires selecting both a
@@ -17,11 +17,11 @@ discrete knot subset and continuous point parameters and knot positions. This
 work studies a learning-guided candidate-selection pipeline for this coupled
 problem. A geometry encoder and parameter head produce parameter-positioned
 features; local cross-attention predicts redundant knot candidates; and a
-KeepMask-conditioned decoder selects and relocates a compact subset. Standard
-endpoint-constrained least squares then computes the control points. To make
-the approximation constraints explicit at deployment, residual-driven knot
-insertion repairs tolerance violations and a feasibility-preserving
-post-pruning stage removes redundant retained knots. We evaluate six methods on
+KeepMask-conditioned decoder selects a variable-cardinality subset while
+feeding the survivor geometry back to point-parameter and knot-position
+updates. Standard endpoint-constrained least squares then computes the control
+points. A disclosed numerical wrapper is used only to evaluate the learned
+initialization under sampled error constraints. We evaluate six methods on
 a fixed 61-curve cohort comprising synthetic B-splines, UJI handwriting,
 Natural Earth coastlines, USGS contours, and procedural industrial offsets.
 At four normalized MSE tolerances from $10^{-5}$ to $10^{-4}$, we report
@@ -75,12 +75,12 @@ This paper investigates a learning-guided candidate-to-spline pipeline. It
 extracts local geometric features from ordered samples, predicts point
 parameters and a redundant set of candidate knots, and applies a
 KeepMask-conditioned geometry decoder to select and relocate the survivor
-subset. A standard endpoint-constrained least-squares solve obtains the final
-control points. The current deployment protocol supplements this learned
-initialization with residual-driven insertion when a specified error bound is
-violated and with feasibility-preserving post-pruning for the proposed method.
-This latter numerical stage is part of the measured system, rather than an
-unreported fallback.
+subset. The central architectural idea is that the mask is not merely a final
+binary output: it changes the attention memory, neighbourhood geometry, point
+parameter update, and surviving knot coordinates before a standard
+least-squares spline solve. The evaluation protocol additionally records a
+brief numerical feasibility wrapper; it is disclosed in the experiment
+section rather than treated as the learned contribution.
 
 The empirical question is consequently not whether a learned predictor proves
 a globally minimal knot vector, but whether it supplies a useful initialization
@@ -97,12 +97,13 @@ authors' original software.
 
 The contributions of this study are as follows:
 \begin{itemize}
-\item A learning-guided candidate-selection framework that couples predicted
-point parameters, local candidate knots, survivor-conditioned knot relocation,
-and a standard cubic B-spline least-squares refit.
-\item An explicit dual-error deployment protocol that combines residual-driven
-insertion with feasibility-preserving post-pruning, thereby exposing rather
-than hiding the numerical work required after learned inference.
+\item An order-aware geometric encoding and local cross-attention proposal
+mechanism that combines chord-normalized derivatives, learned point
+parameters, and parameter-domain locality to generate ordered, high-recall
+candidate knots.
+\item A KeepMask-conditioned survivor interaction mechanism in which the hard
+subset determines the attention memory, retained-neighbour geometry, updated
+point parameters, and relocated knot positions before B-spline refitting.
 \item A multi-threshold experimental protocol that reports both MSE and
 maximum pointwise squared error, knot complexity, full end-to-end runtime, and
 all attempted-curve failures across synthetic, handwriting, geographic, and
@@ -136,9 +137,10 @@ is naturally error-aware but sequential; the second can refine positions but
 still requires a model order; the third exposes individual knot contributions
 but depends on regularization and subsequent thresholding. Our approach does
 not replace their numerical guarantees. It amortizes the proposal and subset
-decision across curves, then restores an explicit sampled-error check through
-bounded insertion and deletion. The distinction between learned initialization
-and verified numerical completion is central to the method and its timing.
+decision across curves and returns a standard B-spline that can be checked by
+conventional solvers. The reported evaluation also uses a disclosed bounded
+insertion/deletion wrapper; this wrapper is kept separate from the learned
+architecture and from the claimed network contribution.
 
 \section{Problem and error definitions}
 Let $\bm Q=(\bm q_i)_{i=1}^M$ be normalized ordered observations in
@@ -167,8 +169,8 @@ this goal, without certifying feasibility or global minimality. A peak target
 $\delta$, if enabled, is separate from $\varepsilon$. Discrete corresponding-point
 errors are not Hausdorff distances or guarantees between observations.
 
-\section{Method}
-\subsection{Design rationale and pipeline}
+\section{Framework overview}
+\subsection{Task decomposition}
 The target in Eq.~\eqref{eq:target} mixes a discrete decision (which knots to
 retain) with continuous variables (point parameters, knot positions, and
 control points). Directly regressing a short knot vector therefore creates two
@@ -177,16 +179,15 @@ early count decision cannot be repaired by later coordinate prediction. At the
 other extreme, retaining a large fixed knot vector gives low residuals but
 does not produce a compact representation.
 
-We separate the problem into three roles. First, an amortized network predicts
-a redundant, high-recall set of geometrically plausible knots. Second, a
-mask-conditioned selector chooses a variable-cardinality subset and updates
-the parameters and surviving knot positions jointly. Third, an explicit
-numerical completion stage checks the requested error bounds, inserts knots
-only when the learned result is infeasible, and then deletes individually
-redundant knots without violating either bound. This separation is deliberate:
-the network supplies a strong initialization in one forward pass, while the
-numerical stage makes feasibility testable rather than asking a classifier to
-certify a continuous fitting constraint.
+The proposed network separates this coupled problem into proposal, selection,
+and survivor-conditioned refinement. The proposal path deliberately
+over-generates ordered candidates to preserve recall. The selection path turns
+candidate evidence into a curve-level cardinality and a hard KeepMask. The
+refinement path then treats that mask as part of the geometry: only retained
+tokens define the neighbourhoods and attention memory used to update point
+parameters and knot locations. A conventional least-squares solve converts the
+network output into control points. Thus the network predicts spline structure
+and coordinates, but does not replace the standard spline solver.
 
 \begin{table}[t]
 \centering
@@ -205,33 +206,128 @@ selection and coordinates should not be optimized independently. \\
 Parameterization bias & Chord-anchored learned parameters and a shared
 parameter warp for knots & Keeps samples and knots in one coordinate system
 while allowing data-dependent corrections. \\
-No neural feasibility certificate & Residual insertion followed by verified
-single-knot deletion & Separates fast prediction from explicit enforcement of
-the sampled MSE and peak-error criteria. \\
+CAD-compatible output & Standard cubic B-spline least-squares refit & Keeps the
+learned component focused on parameterization and knot structure while the
+control points remain explicitly solvable. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-The complete data flow is
+\subsection{End-to-end data flow}
+For a batch of ordered points $\bm Q\in\mathbb R^{B\times M\times d}$, the
+forward path is
 \begin{equation}
 \bm Q\rightarrow(\bm F,\bm t^{(p)})\rightarrow
 (\bm U^{(p)},\bm h)\rightarrow
 (\bm m,\bm t',\bm U')\rightarrow
-\operatorname{Refit}\rightarrow
-\operatorname{Repair}\rightarrow\operatorname{Prune}.
+\operatorname{BSplineRefit}(\bm Q,\bm t',\bm U').
 \label{eq:pipeline}
 \end{equation}
 Here $\bm F$ denotes point features, $\bm U^{(p)}$ the redundant proposals,
-$\bm m$ the discrete KeepMask, and $\bm U'$ the relocated surviving knots.
+$\bm h$ their candidate tokens, $\bm m$ the discrete KeepMask, and $\bm U'$
+the relocated surviving knots. The six operations are:
+\begin{enumerate}
+\item encode the ordered samples using coordinate and chord-normalized
+derivative channels;
+\item predict strictly increasing sample parameters around a chord-length
+reference and inject their positional encoding into the point memory;
+\item use anchored local cross-attention to generate $K_c$ ordered candidate
+knots and one token per candidate;
+\item infer a curve-level requested count and choose a hard KeepMask by
+probability-mass Top-$K$ with coarse domain-coverage anchors;
+\item rebuild neighbourhood and attention features from the surviving subset,
+then update point parameters and surviving knot positions together;
+\item solve the control points of the resulting clamped cubic B-spline by one
+endpoint-constrained least-squares refit.
+\end{enumerate}
 
-\subsection{Geometry encoding and proposal parameters}
-The geometry encoder consumes coordinates and sequential features, including
-first and second differences. Pointwise and pooled features feed a ParameterHead,
-which predicts monotone parameters relative to chord-length parameters.
-Positive interval constraints, endpoint normalization, and a learned trust
-factor restrict the update. Parameter positional encodings augment point
-features used as attention memory. This head reads encoded observations,
-not ground-truth knots.
+Proposal and joint selection are trained in two stages, but inference follows
+the single path in Eq.~\eqref{eq:pipeline}. For the comparative experiments,
+an additional residual insertion/deletion wrapper is recorded after this raw
+output; Section~\ref{sec:evaluation-wrapper} describes it briefly because it is
+an evaluation protocol rather than a neural module.
+
+\section{Network architecture}
+
+\subsection{Order-aware geometric encoding}
+The observations are samples of a curve in traversal order, not an unordered
+point cloud. The encoder should therefore preserve adjacency and distinguish
+the same spatial point reached with different local tangents. After curve-level
+normalization, let
+\begin{equation}
+\Delta\bm q_i=\bm q_{i+1}-\bm q_i,\qquad
+\ell_i=\|\Delta\bm q_i\|_2,
+\qquad h_i=\frac{\ell_i}{\sum_l\ell_l}.
+\end{equation}
+The first derivative proxy divides each segment by its normalized chord span,
+\begin{equation}
+\bm d_i=\frac{\Delta\bm q_i}{h_i},
+\end{equation}
+and the interior second derivative proxy is
+\begin{equation}
+\bm a_i=\frac{\bm d_i-\bm d_{i-1}}
+{\tfrac12(h_i+h_{i-1})}.
+\end{equation}
+Boundary channels use their implemented one-sided/zero extensions. The input
+at sample $i$ is the concatenation
+\begin{equation}
+\bm x_i=[\bm q_i,\bm d_i,\bm a_i].
+\end{equation}
+
+These channels have complementary roles. Normalized coordinates retain the
+coarse curve shape and endpoint configuration; $\bm d_i$ represents local
+tangent and parameter-domain speed; and $\bm a_i$ responds to changes in
+tangent, providing a discrete bending cue. Dividing by chord spans reduces the
+dependence of both derivative channels on nonuniform sampling density. It does
+not turn them into exact differential invariants: noise and resampling still
+affect the estimates, which is why the network reads all three channels rather
+than using curvature alone.
+
+Three width-128 one-dimensional convolution blocks with kernel size three map
+the ordered sequence to local features $\bm F=(\bm f_i)_{i=1}^M$. Each block
+uses GroupNorm and GELU. A 1D convolution is chosen because its receptive field
+respects consecutive curve samples, while GroupNorm does not rely on large
+batch statistics. Global max pooling gives a curve descriptor
+\begin{equation}
+\bm f_g=\max_i\bm f_i,
+\end{equation}
+which conveys whether a local pattern occurs anywhere on the curve without
+discarding the pointwise sequence needed by later attention.
+
+\subsection{Chord-anchored parameter encoding}
+Knot coordinates live in parameter space, so spatial features alone are
+insufficient for candidate queries. We first construct the chord-length
+reference
+\begin{equation}
+c_1=0,\qquad
+c_i=\frac{\sum_{l<i}\ell_l}{\sum_l\ell_l},\qquad c_M=1.
+\end{equation}
+The ParameterHead reads $[\bm f_i,\bm f_g]$ and predicts bounded residual
+logits for the $M-1$ parameter gaps. For minimum gap $\eta_t$, let
+$g_i^c=c_{i+1}-c_i$ and $r_i$ be a bounded, mean-centred logit. The strict
+gaps are
+\begin{equation}
+g_i=\eta_t+
+[1-(M-1)\eta_t]
+\frac{(g_i^c-\eta_t)_+\exp(r_i)}
+{\sum_l(g_l^c-\eta_t)_+\exp(r_l)}.
+\label{eq:parameter-gaps}
+\end{equation}
+Cumulative summation fixes $t_1=0$ and $t_M=1$ and guarantees strict
+monotonicity by construction. A learned curve-level trust factor blends this
+proposal back toward the strict chord reference. Chord length is used as an
+anchor because it is deterministic, order-preserving, and usually a reasonable
+initial parameterization; the residual path remains necessary because equal
+spatial travel does not imply equal approximation difficulty.
+
+Finally, sinusoidal parameter encoding is added to every local feature,
+\begin{equation}
+\bm M_i=\bm f_i+\operatorname{PE}(t_i),
+\end{equation}
+and $\bm M$ becomes the point memory for candidate cross-attention. This step
+expresses geometry and location in a common coordinate system: a knot query can
+now ask both \emph{what} geometric event occurs and \emph{where} it occurs in
+$[0,1]$. Ground-truth knots are not inputs to either encoder or ParameterHead.
 
 \subsection{Candidate generation}
 Candidate queries use local Gaussian-biased cross-attention to read
@@ -253,7 +349,7 @@ Positional encodings, learned projections, residual connections, and
 normalization are included in the implementation. The Gaussian term is a
 locality bias, not a guarantee that attention finds curvature extrema.
 
-\subsection{Adaptive selection and survivor interaction}
+\subsection{Adaptive selection and variable cardinality}
 Candidate interaction combines point memory, neighborhood coverage features,
 and a tolerance embedding. With importance scores $a_j$ and a curve-level
 adaptive threshold $\beta$, the profile uses
@@ -273,16 +369,67 @@ separately. The mask supplies the output length; separate decoders for every
 possible $K$ are not evaluated. This makes cardinality a curve-level decision
 rather than $K_c$ unrelated binary classifications.
 
-Distances to nearest retained neighbors, retained rank, and retained count
-form a geometry embedding added to each candidate token. Here a
-\emph{keep embedding} means mask-conditioned geometry, not an independent
-binary lookup table. Only retained tokens supply survivor-attention keys and
-values. Point queries also attend to this survivor memory to update parameter
-features. A masked zero sentinel handles empty subsets. Discarded candidates
-are not used as survivor evidence, and candidates are not independent.
-This interaction is important because a knot that is redundant in the dense
-proposal can become necessary after a neighbour is removed; conversely, the
-best location for a surviving knot generally changes with its new interval.
+\subsection{KeepMask-conditioned survivor interaction}
+Let $m_j\in\{0,1\}$ denote the KeepMask and
+$K=\sum_jm_j$. For every candidate position $u_j$, define its nearest retained
+neighbours
+\begin{align}
+u_j^-&=\max\bigl(\{0\}\cup\{u_l:l<j,\ m_l=1\}\bigr),\\
+u_j^+&=\min\bigl(\{1\}\cup\{u_l:l>j,\ m_l=1\}\bigr),
+\end{align}
+and its retained rank
+\begin{equation}
+\rho_j=\frac{\sum_{l\leq j}m_l}{K+1}.
+\end{equation}
+The mask-conditioned geometry vector is
+\begin{equation}
+\bm g_j=\left[u_j-u_j^-,\ u_j^+-u_j,\ \rho_j,\ K/K_c\right].
+\label{eq:keep-geometry}
+\end{equation}
+An MLP embeds $\bm g_j$ and adds it to the original candidate token,
+\begin{equation}
+\bm z_j=\bm h_j+\operatorname{MLP}_{g}(\bm g_j).
+\end{equation}
+This is what we mean by a \emph{KeepMask-conditioned embedding}: it is not a
+two-entry lookup table for ``keep'' and ``discard''. Its value changes when any
+neighbour is deleted because the distances, retained rank, and retained count
+must be recomputed for the new subset.
+
+The survivor memory contains only retained tokens,
+\begin{equation}
+\mathcal S=\{\bm z_j\mid m_j=1\}.
+\end{equation}
+In the batched implementation all $K_c$ storage slots remain present, but a
+key-padding mask prevents discarded candidates from serving as attention keys
+or values. A zero sentinel is exposed only for an empty subset. Survivor tokens
+are updated by
+\begin{equation}
+\widehat{\bm z}_j=\operatorname{LN}\left(
+\bm z_j+\operatorname{Attn}(\bm z_j,\mathcal S,\mathcal S)\right),
+\end{equation}
+and parameter-point queries attend to the same memory,
+\begin{equation}
+\widehat{\bm f}_i=\operatorname{LN}\left(
+\bm p_i+\operatorname{Attn}(\bm p_i,\mathcal S,\mathcal S)\right),
+\qquad
+\bm p_i=\bm f_i+\operatorname{PE}(t_i)+\bm e_{\varepsilon},
+\end{equation}
+where $\bm e_{\varepsilon}$ is the tolerance embedding.
+
+This construction serves four purposes. First, it prevents a discarded token
+from leaking geometric evidence into the final decoder through attention.
+Second, it replaces proposal-grid spacing by the actual spacing of the retained
+subset, including intervals spanning several deleted slots. Third, retained
+rank and count tell the decoder whether the same local feature belongs to a
+sparse or dense final representation. Fourth, point-to-survivor attention lets
+the hard structural decision modify parameterization before knot relocation.
+Consequently, KeepMask determines not only which coordinates are exported but
+also how the surviving coordinates are interpreted and updated.
+
+The dependence is combinatorial: a candidate judged redundant in the complete
+proposal may become necessary after a neighbour disappears. Training therefore
+uses the same subset decoder for predicted and teacher masks; supervising a
+mask without redecoding its survivor geometry would not match deployment.
 
 \subsection{Coupled parameter and knot refinement}
 The selected subset is also evidence for parameterization. Let
@@ -318,32 +465,18 @@ decode once; it does not contain the later experimental repeated-refinement
 blocks. The warp aligns coordinate systems but is not an exact
 shape-preserving reparameterization of a cubic spline.
 
-\subsection{Error-constrained numerical completion}
-\label{sec:numerical-completion}
-Selected coordinates become the interior of a clamped knot vector. One
-standard endpoint-constrained B-spline least-squares refit produces the control
-points. This raw network result is retained for ablation, but the principal
-error-constrained system applies two disclosed numerical operations.
+\subsection{Spline output}
+The retained coordinates form the interior of an open-clamped cubic knot
+vector. Given the predicted parameters and knots, one endpoint-constrained
+double-precision least-squares solve computes the control points. This is the
+raw output of the proposed network and the endpoint of the architectural
+description.
 
-If either $\MSE>\varepsilon$ or $\Peak>\delta$, additive repair constructs
-candidate positions from the largest sampled residuals and high-residual knot
-spans. Each trial inserts one simple knot, keeps the predicted parameters and
-all existing knots fixed, and refits only the control points. Trials are ranked
-first by joint feasibility and then by normalized constraint violation. Search
-stops when both bounds pass, the capacity $K_c$ is reached, or no legal
-candidate remains.
-
-For a feasible repaired fit, post-pruning scans every single-knot deletion.
-Each trial keeps the parameters and surviving knot positions fixed and solves
-the control points again in double precision. Among feasible trials, the one
-with the smallest worst normalized error is accepted; scanning repeats until
-no single deletion preserves both bounds. Consequently, every accepted
-deletion is verified on the observations, but the result is a greedy
-one-deletion fixed-geometry minimum, not a globally minimal free-knot spline.
-
-The final reported deployment time includes network inference, the initial
-refit, any residual insertion, and post-pruning. Teacher search is used only
-during training. BIC sweeps and Hard-Concrete sampling are not used.
+For threshold-based comparisons, we additionally record a conventional
+post-fit wrapper that can insert a knot at a high-residual location and can
+test redundant single-knot deletions. It contains no learned parameters and is
+not presented as a network component; its use, timing, and asymmetry across
+methods are stated in Section~\ref{sec:evaluation-wrapper}.
 
 \section{Training}
 \subsection{Why proposal and selection are trained in stages}
@@ -432,7 +565,8 @@ parameterization; external curves are evaluated by sampled fitting error,
 complexity, and time. Upsampling short records does not create independent
 measurements.
 
-\subsection{Methods and fairness scope}
+\subsection{Evaluation wrapper and fairness scope}
+\label{sec:evaluation-wrapper}
 Ours is compared with five disclosed repository adaptations: Park--Lee,
 Liang, Dung, Kang, and Luo. They share the same normalized input and maximum
 of 32 internal knots, but retain their documented parameterization and
@@ -441,14 +575,13 @@ unconstrained control-point paths, whereas Ours uses endpoint-constrained
 least squares. The comparison must therefore be described as an implementation
 study, not an exact reproduction of the authors' original software.
 
-To evaluate all methods under the same sampled dual-error target, each raw
-method is followed by the additive residual-insertion procedure described in
-Section~\ref{sec:numerical-completion}. This wrapper never deletes, replaces,
-or relocates an existing
-knot. Ours then applies the verified deletion stage; the five adaptations do
-not. This asymmetry is intentional and disclosed: the experiment evaluates
-the proposed complete pipeline, while common insertion prevents a baseline
-failure from being confused with the absence of an error-repair mechanism.
+For the threshold-based comparison, every raw method is followed by the same
+additive residual-insertion wrapper. It keeps existing parameters and knots
+fixed and refits the control points after each insertion. Ours additionally
+uses verified single-knot deletion after reaching the sampled bounds; the five
+adaptations do not. Neither operation is a learned network layer. This
+asymmetry and all associated time are retained in the reported protocol rather
+than folded into the architecture claim.
 
 \subsection{Metrics and timing}
 The principal setting is $\varepsilon=5\times10^{-5}$ and
@@ -541,11 +674,10 @@ the aggregate plots rather than displaying only favourable curves.
 
 \section{Limitations and validity}
 Raw one-shot fits can fail the tolerance and retain too many knots. Candidate
-capacity and proposal quality limit performance before selection, while the
-numerical completion stage increases runtime and makes the final system a
-hybrid rather than a purely one-shot predictor. The Ours-only deletion stage
-also makes the principal six-method protocol asymmetric; raw, insertion-only,
-and complete-pipeline ablations are needed to attribute gains correctly.
+capacity and proposal quality limit performance before selection. The
+comparison wrapper increases runtime, and its Ours-only deletion stage makes
+the principal six-method protocol asymmetric; raw, insertion-only, and
+wrapper-complete ablations are needed to attribute gains correctly.
 Teacher verification covers only selected training curves and does not
 guarantee a feasible learned policy. Distribution shift and parameter bias
 remain visible on coastline and contour data.
@@ -562,12 +694,15 @@ not silent removal. Procedural offsets do not establish general performance
 on measured industrial geometry.
 
 \section{Conclusion}
-We presented a hybrid framework for compact cubic B-spline fitting from ordered
-samples. A learned proposal network predicts parameter-aware redundant knots;
-adaptive mass-based selection determines a variable-cardinality KeepMask; and
-a survivor-conditioned decoder updates parameters and remaining knot positions
-together. Explicit residual insertion and verified deletion then translate the
-learned initialization into a measurable sampled-error/complexity trade-off.
+We presented a learning-guided framework for compact cubic B-spline fitting
+from ordered samples. An order-aware encoder combines coordinates with
+chord-normalized derivative cues; a local cross-attention proposal network
+predicts parameter-aware redundant knots; adaptive mass-based selection
+determines a variable-cardinality KeepMask; and a survivor-conditioned decoder
+uses that mask to update parameters and remaining knot positions together.
+Control points remain the result of a standard least-squares spline solve.
+Residual insertion and verified deletion are used only as a disclosed
+comparison wrapper for sampled threshold experiments.
 
 On the fixed 61-curve cohort, the complete pipeline used 16.64 internal knots
 on average at $\varepsilon=5\times10^{-5}$, the smallest overall mean among the
