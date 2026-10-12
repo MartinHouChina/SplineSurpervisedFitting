@@ -20,6 +20,11 @@ class GeometryEncoder(nn.Module):
         if feature_mode not in {"raw_differences", "chord_derivatives"}:
             raise ValueError("unsupported geometry feature mode")
         self.feature_mode = feature_mode
+        # Runtime-only switch used by paired inference ablations.  It does not
+        # change the parameter layout or checkpoint schema, so every ablation
+        # reuses exactly the same trained weights.  Training and ordinary
+        # deployment always use ``all`` unless a caller explicitly opts in.
+        self.ablation_feature_components = "all"
 
         layers: list[nn.Module] = []
         in_channels = point_dim * 3
@@ -50,7 +55,7 @@ class GeometryEncoder(nn.Module):
                 second[:, 1:-1] = (
                     segment_derivative[:, 1:] - segment_derivative[:, :-1]
                 ) / midpoint_gap.unsqueeze(-1).clamp_min(1e-6)
-            return torch.cat([points, first, second], dim=-1)
+            return self._select_feature_components(points, first, second)
 
         first = torch.zeros_like(points)
         first[:, 1:] = points[:, 1:] - points[:, :-1]
@@ -59,6 +64,35 @@ class GeometryEncoder(nn.Module):
         if points.shape[1] > 2:
             second[:, 1:-1] = points[:, 2:] - 2.0 * points[:, 1:-1] + points[:, :-2]
 
+        return self._select_feature_components(points, first, second)
+
+    def set_ablation_feature_components(self, mode: str) -> None:
+        """Select input components for a paired, no-retraining ablation.
+
+        All variants keep the same ``3 * point_dim`` tensor shape.  Removed
+        components are replaced by zeros, which permits an exact shared-weight
+        comparison without changing the convolutional parameter count.
+        """
+        if mode not in {"all", "coordinates_first", "coordinates"}:
+            raise ValueError(
+                "feature ablation mode must be all, coordinates_first, or coordinates"
+            )
+        self.ablation_feature_components = mode
+
+    def _select_feature_components(
+        self,
+        points: torch.Tensor,
+        first: torch.Tensor,
+        second: torch.Tensor,
+    ) -> torch.Tensor:
+        mode = self.ablation_feature_components
+        if mode == "coordinates":
+            first = torch.zeros_like(first)
+            second = torch.zeros_like(second)
+        elif mode == "coordinates_first":
+            second = torch.zeros_like(second)
+        elif mode != "all":
+            raise RuntimeError(f"unsupported feature ablation mode: {mode}")
         return torch.cat([points, first, second], dim=-1)
 
     def forward(self, points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:

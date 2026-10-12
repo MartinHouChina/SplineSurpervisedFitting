@@ -1,0 +1,19 @@
+\begin{table*}[t]
+\centering
+\caption{Shared-weight feature and module ablations on the fixed test cohort. No numerical repair or post-pruning is applied.}
+\label{tab:paired-ablation}
+\begin{tabular}{llrrrrrr}
+\toprule
+Group & Variant & Pass (\%) & Mean $K$ & Mean MSE & Mean MaxSE & Worst MaxSE & Network (ms)\\
+\midrule
+Feature & Coordinates only & 4.9 & 4.00 & 5.326e-03 & 2.662e-02 & 1.995e-01 & 13.51\\
+Feature & Coordinates $+$ first derivative & 6.6 & 4.74 & 3.532e-03 & 1.918e-02 & 1.263e-01 & 12.31\\
+Feature & Coordinates $+$ first $+$ second derivatives & 59.0 & 23.36 & 8.609e-05 & 7.004e-04 & 1.088e-02 & 12.49\\
+Module & Complete network & 59.0 & 23.36 & 8.609e-05 & 7.004e-04 & 1.088e-02 & 12.93\\
+Module & Fixed $0.5$ KeepMask & 62.3 & 23.52 & 7.390e-05 & 5.888e-04 & 5.201e-03 & 11.74\\
+Module & No survivor-conditioned decoder & 36.1 & 23.36 & 1.499e-04 & 1.704e-03 & 1.454e-02 & 8.84\\
+Module & No candidate selection & 75.4 & 32.00 & 5.452e-05 & 3.871e-04 & 4.367e-03 & 11.70\\
+Module & Chord parameters after selection & 37.7 & 23.36 & 9.644e-05 & 8.659e-04 & 9.321e-03 & 13.83\\
+\bottomrule
+\end{tabular}
+\end{table*}

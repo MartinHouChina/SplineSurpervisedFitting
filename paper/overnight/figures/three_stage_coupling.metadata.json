@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "figure": "three_stage_coupling",
+  "source": "scripts/plot_three_stage_coupling.py",
+  "source_sha256": "63c9bdee29710729b0c72848cddf2c17a4be1c92f5d50e905f7550f3c40d0cb4",
+  "claim_scope": "Learned forward path followed by one explicit least-squares solve; training-only teacher and numerical deployment checks are shown outside the learned stages.",
+  "outputs": [
+    "three_stage_coupling.png",
+    "three_stage_coupling.pdf",
+    "three_stage_coupling.svg"
+  ]
+}
